@@ -1,0 +1,295 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.13.0",
+  "planned_values": {
+    "root_module": {
+      "resources": [
+        {
+          "address": "aws_sqs_queue.events",
+          "mode": "managed",
+          "type": "aws_sqs_queue",
+          "name": "events",
+          "provider_name": "registry.opentofu.org/hashicorp/aws",
+          "schema_version": 0,
+          "values": {
+            "content_based_deduplication": false,
+            "delay_seconds": 0,
+            "fifo_queue": false,
+            "kms_master_key_id": null,
+            "max_message_size": 262144,
+            "message_retention_seconds": 345600,
+            "name": "fan-out-choudoufu-cluster-a-events",
+            "receive_wait_time_seconds": 0,
+            "region": "us-east-1",
+            "tags": {
+              "tier": "cluster",
+              "tofu-address": "aws_sqs_queue.events",
+              "tofu-estate": "fo-cluster-a"
+            },
+            "tags_all": {
+              "tier": "cluster",
+              "tofu-address": "aws_sqs_queue.events",
+              "tofu-estate": "fo-cluster-a"
+            },
+            "timeouts": null,
+            "visibility_timeout_seconds": 120
+          },
+          "sensitive_values": {
+            "tags": {},
+            "tags_all": {}
+          },
+          "identity": {
+            "url": null
+          },
+          "identity_schema_version": 1
+        }
+      ]
+    }
+  },
+  "resource_changes": [
+    {
+      "address": "aws_sqs_queue.events",
+      "mode": "managed",
+      "type": "aws_sqs_queue",
+      "name": "events",
+      "provider_name": "registry.opentofu.org/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "content_based_deduplication": false,
+          "delay_seconds": 0,
+          "fifo_queue": false,
+          "kms_master_key_id": null,
+          "max_message_size": 262144,
+          "message_retention_seconds": 345600,
+          "name": "fan-out-choudoufu-cluster-a-events",
+          "receive_wait_time_seconds": 0,
+          "region": "us-east-1",
+          "tags": {
+            "tier": "cluster",
+            "tofu-address": "aws_sqs_queue.events",
+            "tofu-estate": "fo-cluster-a"
+          },
+          "tags_all": {
+            "tier": "cluster",
+            "tofu-address": "aws_sqs_queue.events",
+            "tofu-estate": "fo-cluster-a"
+          },
+          "timeouts": null,
+          "visibility_timeout_seconds": 120
+        },
+        "after_unknown": {
+          "arn": true,
+          "deduplication_scope": true,
+          "fifo_throughput_limit": true,
+          "id": true,
+          "kms_data_key_reuse_period_seconds": true,
+          "name_prefix": true,
+          "policy": true,
+          "redrive_allow_policy": true,
+          "redrive_policy": true,
+          "sqs_managed_sse_enabled": true,
+          "tags": {},
+          "tags_all": {},
+          "url": true
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "tags": {},
+          "tags_all": {}
+        },
+        "after_identity": {
+          "url": null
+        }
+      }
+    }
+  ],
+  "prior_state": {
+    "format_version": "1.0",
+    "terraform_version": "1.13.0",
+    "values": {
+      "outputs": {
+        "release": {
+          "sensitive": false,
+          "value": "r597",
+          "type": "string"
+        },
+        "table": {
+          "sensitive": false,
+          "value": "fan-out-choudoufu-cluster-a",
+          "type": "string"
+        }
+      },
+      "root_module": {}
+    }
+  },
+  "configuration": {
+    "provider_config": {
+      "aws": {
+        "name": "aws",
+        "full_name": "registry.opentofu.org/hashicorp/aws",
+        "version_constraint": "6.67.0",
+        "expressions": {
+          "region": {
+            "constant_value": "us-east-1"
+          },
+          "s3_use_path_style": {
+            "constant_value": true
+          },
+          "skip_credentials_validation": {
+            "constant_value": true
+          },
+          "skip_metadata_api_check": {
+            "constant_value": true
+          }
+        }
+      },
+      "terraform": {
+        "name": "terraform",
+        "full_name": "terraform.io/builtin/terraform"
+      }
+    },
+    "root_module": {
+      "outputs": {
+        "release": {
+          "expression": {
+            "references": [
+              "data.terraform_estate_outputs.network.values.release",
+              "data.terraform_estate_outputs.network.values",
+              "data.terraform_estate_outputs.network"
+            ]
+          }
+        },
+        "table": {
+          "expression": {
+            "references": [
+              "aws_dynamodb_table.jobs.name",
+              "aws_dynamodb_table.jobs"
+            ]
+          }
+        }
+      },
+      "resources": [
+        {
+          "address": "aws_cloudwatch_log_group.jobs",
+          "mode": "managed",
+          "type": "aws_cloudwatch_log_group",
+          "name": "jobs",
+          "provider_config_key": "aws",
+          "expressions": {
+            "name": {
+              "constant_value": "/fan-out-choudoufu/cluster-a/jobs"
+            },
+            "retention_in_days": {
+              "constant_value": 7
+            },
+            "tags": {
+              "constant_value": {
+                "tier": "cluster"
+              }
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "aws_dynamodb_table.jobs",
+          "mode": "managed",
+          "type": "aws_dynamodb_table",
+          "name": "jobs",
+          "provider_config_key": "aws",
+          "expressions": {
+            "attribute": [
+              {
+                "name": {
+                  "constant_value": "id"
+                },
+                "type": {
+                  "constant_value": "S"
+                }
+              }
+            ],
+            "billing_mode": {
+              "constant_value": "PAY_PER_REQUEST"
+            },
+            "hash_key": {
+              "constant_value": "id"
+            },
+            "name": {
+              "constant_value": "fan-out-choudoufu-cluster-a"
+            },
+            "tags": {
+              "references": [
+                "data.terraform_estate_outputs.network.values.release",
+                "data.terraform_estate_outputs.network.values",
+                "data.terraform_estate_outputs.network"
+              ]
+            }
+          },
+          "schema_version": 1
+        },
+        {
+          "address": "aws_sqs_queue.dead_letters",
+          "mode": "managed",
+          "type": "aws_sqs_queue",
+          "name": "dead_letters",
+          "provider_config_key": "aws",
+          "expressions": {
+            "name": {
+              "constant_value": "fan-out-choudoufu-cluster-a-dead-letters"
+            },
+            "tags": {
+              "constant_value": {
+                "tier": "cluster"
+              }
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "aws_sqs_queue.events",
+          "mode": "managed",
+          "type": "aws_sqs_queue",
+          "name": "events",
+          "provider_config_key": "aws",
+          "expressions": {
+            "name": {
+              "constant_value": "fan-out-choudoufu-cluster-a-events"
+            },
+            "tags": {
+              "constant_value": {
+                "tier": "cluster"
+              }
+            },
+            "visibility_timeout_seconds": {
+              "constant_value": 120
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "data.terraform_estate_outputs.network",
+          "mode": "data",
+          "type": "terraform_estate_outputs",
+          "name": "network",
+          "provider_config_key": "terraform",
+          "expressions": {
+            "estate": {
+              "constant_value": "fo-network"
+            },
+            "names": {
+              "constant_value": [
+                "release"
+              ]
+            }
+          },
+          "schema_version": 0
+        }
+      ]
+    }
+  },
+  "timestamp": "2026-10-19T01:15:34Z",
+  "errored": false
+}

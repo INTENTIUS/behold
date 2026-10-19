@@ -16,7 +16,7 @@
 // lights, the glows and the modals off; the trail stays, since it is the
 // record.
 
-import { EH_STORE, LATE_ORDER, TIP_MS, cycleFacts, storyKey, ehSnapshot, ehStore, ehStored, modalQueue, newEvents, storyTrail, tipsQueue } from "./kiosk-event-help.js";
+import { EH_STORE, LATE_ORDER, TIP_MS, cycleFacts, storyKey, ehSnapshot, ehStore, ehStored, modalQueue, modalShownElsewhere, newEvents, storyTrail, tipsQueue, tipsShown } from "./kiosk-event-help.js";
 
 /** How long after the page opens (or the cycle turns) what arrives is the story so far, not news: the reads land one by one. */
 export const SETTLE_MS = 8_000;
@@ -263,10 +263,20 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     node.style.transform = at;
   };
   const trailChip = (id) => trailHost && trailHost.querySelector(`.eh-chip[data-eh-id="${CSS.escape(id)}"]`);
-  const showTips = (h) => {
+  const showTips = (h, { asked = false } = {}) => {
+    // A held small stage in Watch: no bubble over the graph (its cards say it), but a chip the viewer clicks still shows.
+    if (asked) st.asked = true;
+    if (!st.asked && h && !tipsShown({ watch: !!h.watch, held: !!h.held })) {
+      for (const n of st.nodes.values()) n.remove();
+      st.nodes.clear();
+      st.tips = null;
+      return;
+    }
     const t = now();
     const prev = st.tips;
     st.tips = tipsQueue(st.tips, { now: t, ...(st.tipsMax ? { max: st.tipsMax } : {}) });
+    // The tip a viewer asked for has had its time: the held stage's rule holds again.
+    if (!st.tips.shown.length && !st.tips.waiting.length) st.asked = false;
     const up = new Set(st.tips.shown.map((x) => x.event.id));
     // Each tip whose time is up shrinks toward its chip on the trail, then goes.
     for (const [id, node] of st.nodes) {
@@ -386,7 +396,7 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     for (const n of st.nodes.values()) n.remove();
     st.nodes.clear();
     st.tips = { shown: [], waiting: [f] };
-    showTips(get());
+    showTips(get(), { asked: true });
   };
 
   // ---- modals --------------------------------------------------------------
@@ -469,7 +479,8 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     } else if (m.kind === "failed") {
       if (d && (d.cycle !== m.cycle || ["resumed", "applying", "waiting", "applied"].includes(d.step))) m.api.resolve(d.cycle === m.cycle ? "the waves run again" : null);
       // behold#631: a chant failure's modal goes once the cycle moves on, to a new pull request or a new step (the fix's plan, its wait).
-      if (m.event.chant && d && (d.cycle !== m.cycle || d.pull !== m.pull || d.step !== m.step)) m.api.close();
+      // behold#736: a terragucci story's too (#741's look): on fan-out-choudoufu it stayed over the fix's cone plan.
+      if ((m.event.chant || st.story) && d && (d.cycle !== m.cycle || d.pull !== m.pull || d.step !== m.step)) m.api.close();
     }
   };
 
@@ -511,6 +522,8 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     for (const f of storyTrail(facts)) st.trail.set(f.id, f);
     drawTrail(h);
     settleModal(h, facts);
+    // A modal Inspect opened goes when the viewer turns to Watch on a held small stage, where nothing overlays the graph.
+    if (st.modal && modalShownElsewhere(st.modal.event, { watch: !!h.watch, held: !!h.held })) st.modal.api.close();
     if (!st.on) return;
     // behold#631: a new pull request of a chant cycle (the fix) starts with no tip of the one before.
     if (h.chant && st.tipsPull !== undefined && st.tipsPull !== h.demo.pull) {
@@ -531,7 +544,7 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     st.story = !!(h.chant || h.story);
     if (news.length) st.tips = tipsQueue(st.tips, { add: news, now: now(), ...(st.tipsMax ? { max: st.tipsMax } : {}) });
     // While a modal is up, the tips wait their turn behind it.
-    if (!st.modal) showTips(h);
+    if (!st.modal && tipsShown({ watch: !!h.watch, held: !!h.held })) showTips(h);
     // behold#631: on a chant kiosk no tip shows at all while a modal is open, not even one already up.
     else if (st.story) for (const n of st.nodes.values()) n.style.visibility = "hidden";
     ageGlows();
@@ -544,7 +557,9 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     }
     // behold#631: a chant repo's approval is the card beside the graph; a modal over it would hide it, so its hold opens none.
     // Its result is the Applied card beside the graph; a modal would say it twice, over the cards.
-    st.modals = modalQueue(st.modals, { add: h.chant ? news.filter((f) => f.kind !== "held" && f.kind !== "applied") : news, now: now(), lastInput: st.lastInput, open: !!st.modal });
+    // On a held small stage in Watch no modal opens: nothing overlays the graph there, and the caption says each step.
+    const told = (e) => modalShownElsewhere(e, { watch: !!h.watch, held: !!h.held });
+    st.modals = modalQueue(st.modals, { add: (h.chant ? news.filter((f) => f.kind !== "held" && f.kind !== "applied") : news).filter((e) => !told(e)), now: now(), lastInput: st.lastInput, open: !!st.modal });
     // A modal opens only while its event is still the step's: one that waited out a viewer at the page and went by is history.
     if (st.modals.next && stillNow(st.modals.next, h.demo)) {
       openModal(st.modals.next, h);

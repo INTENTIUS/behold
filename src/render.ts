@@ -379,6 +379,8 @@ export function renderGraph(
      * wave before it, when each depends on exactly one ({@link alignChildBlocks}).
      * A chant repo's pull-request loop asks for it; nothing else does. */
     childBlocks?: boolean;
+    /** The ranks' direction (dagre's `rankdir`): the kiosk's held small stage lays a terragucci repo's waves in a row. Top to bottom unless told. */
+    rankdir?: "TB" | "BT" | "LR" | "RL";
   } = {},
 ): RenderResult {
   const groupsIn = irIn.groups as ExtraGroups;
@@ -393,6 +395,7 @@ export function renderGraph(
   const chains = face.chains;
   const layout = layoutIr(chains.ir, {
     fit: true,
+    ...(opts.rankdir ? { rankdir: opts.rankdir } : {}),
     overrides: face.overrides,
     ...(boxes ? { groups: boxes } : {}),
     ...(face.subgroups ? { subgroups: face.subgroups } : {}),

@@ -31,6 +31,7 @@ import { liveShow, stampArrivals, showKey, currentMigration, boxName, playedCoun
 import { provenanceText, migrationTool, stepMsFor } from "./tour-player.js";
 import { tourNow, tourFocus, tourFx, fxKey, tourMessage } from "./dots-tour.js";
 import { wallTicks, recordedLabel, recordedMarks, speedWords, skippedWords, clockWords, RECORDED_SPEEDS } from "./dots-timeline.js";
+import { resourceLight, rootLight } from "./cone.js";
 import { GRID, cardLabel, cardShape, cardText, cardTextAlpha, pickMark, cardsMark, cardsFrame, cardsEstate, middleCard, gridScale, gridSlots, cardSize, cardNeed, rosterLod, unitKeyOf, minViewWidth, tipSpot, CARD_TEXT } from "./dots-cards.js";
 
 /** #715: how often the live layer asks for the carve. The route shares one read for 1.5 s while a migration runs. */
@@ -88,6 +89,35 @@ function rosterNeed(roster) {
 
 export function dotsActive() {
   return !!S;
+}
+
+/** Report minor 34: the cone plan's lights (web/cone.js coneLights), set by the frame while it draws a pull request's plan; null otherwise. Kept across a remount. */
+let coneNow = null;
+
+/** The frame's cone lights, or null: planned resources lit, the rest of their root dimmed, a root not planned dimmed. */
+export function setDotsCone(lights) {
+  coneNow = lights || null;
+  if (S) S.dirty = true;
+}
+
+/** Each box's root, from the carve's rosters (estates.json's `root`); an adopted stock root's box answers for its estate too. */
+function rootsOfBoxes() {
+  const out = new Map();
+  const alias = new Map(((S.answer && S.answer.adopted) || []).map((a) => [a.to, a.from]));
+  for (const e of (S.answer && S.answer.estates) || []) {
+    if (!e.root) continue;
+    out.set(e.estate, e.root);
+    if (alias.has(e.estate)) out.set(alias.get(e.estate), e.root);
+  }
+  return out;
+}
+
+/** A cone light's glow on a dot or a card: planned lit, a changed one ringed, the rest dimmed (cone.js resourceLight). */
+export function coneGlow(light, colour) {
+  if (light === "changed") return { colour, a: 1, ring: true, dim: false };
+  if (light === "lit") return { colour, a: 0.85, ring: false, dim: false };
+  if (light === "dim") return { colour, a: 0, ring: false, dim: true };
+  return null;
 }
 
 /** How far past the fit the zoom may go out, as a multiple of the fit's width; null when not mounted. */
@@ -168,6 +198,8 @@ function addStyle() {
   .dots-keep-bar .dots-bar { opacity: 0.55; transition: opacity 0.2s; }
   .dots-rail { transition: opacity 0.4s; }
   .dots-directing .dots-rail { opacity: 0; pointer-events: none; }
+  /* The kiosk's Watch holds one framing of a small stage (web/app.js kioskShotBox): no zoom to pick, and the docked column sits where the rail would. */
+  html.kiosk-held .dots-rail { opacity: 0; pointer-events: none; }
   .dots-keep-bar .dots-bar:hover, .dots-keep-bar .dots-bar:focus-within { opacity: 1; }
   /* In Watch the director holds the camera; the rail is Inspect's. */
   .dots-kiosk.dots-watch:not(.dots-keep-bar) .dots-rail { display: none; }
@@ -515,7 +547,7 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source 
   const setInsets = (ins) => {
     if (S) S.insets = { top: Number(ins.top) || 0, bottom: Number(ins.bottom) || 0 };
   };
-  window.__dots = { select: (id) => selectDot(id), landed: () => S && landedIds(), seek, play, step, zoomTo, zoomCardPx, setInsets, pause: () => play(false), fly, setSpeed, stats: () => S && S.stats, length: () => S && S.clock.length, marks: () => S && currentMarks(), state: () => S && { t: S.t, level: S.level, reduced: S.reduced, cardPx: S.cardPx, pitchPx: S.pitchPx, rosterCards: S.own, rosterCardPx: S.rosterCardPx, directing: !!S.directing }, debug: () => S && { band: (({ left, right, w }) => ({ left, right, w }))(band()), svg: S.svg.getBoundingClientRect().toJSON(), rail: S.ui.querySelector('.dots-rail').getBoundingClientRect().toJSON(), vb: S.getVB(), dir: S.dir, directing: S.directing, focusBox: S.dir && focusBox(S.dir.focus), want: S.dir && frameBox(focusBox(S.dir.focus)), pitch: S.pitch, origin: S.origin, frame: S.frameNums || null, smallStage: smallStage(), roster: S.show.roster.length }, story: () => S && S.story && { start: S.story.start, end: S.story.end, firstRefusal: S.story.firstRefusal ? S.story.firstRefusal.end : null } };
+  window.__dots = { cone: () => S && S.coneShown, select: (id) => selectDot(id), landed: () => S && landedIds(), seek, play, step, zoomTo, zoomCardPx, setInsets, pause: () => play(false), fly, setSpeed, stats: () => S && S.stats, length: () => S && S.clock.length, marks: () => S && currentMarks(), state: () => S && { t: S.t, level: S.level, reduced: S.reduced, cardPx: S.cardPx, pitchPx: S.pitchPx, rosterCards: S.own, rosterCardPx: S.rosterCardPx, directing: !!S.directing }, debug: () => S && { band: (({ left, right, w }) => ({ left, right, w }))(band()), svg: S.svg.getBoundingClientRect().toJSON(), rail: S.ui.querySelector('.dots-rail').getBoundingClientRect().toJSON(), vb: S.getVB(), dir: S.dir, directing: S.directing, focusBox: S.dir && focusBox(S.dir.focus), want: S.dir && frameBox(focusBox(S.dir.focus)), pitch: S.pitch, origin: S.origin, frame: S.frameNums || null, smallStage: smallStage(), roster: S.show.roster.length }, story: () => S && S.story && { start: S.story.start, end: S.story.end, firstRefusal: S.story.firstRefusal ? S.story.firstRefusal.end : null } };
   const loop = (wall) => {
     if (!S) return;
     S.raf = requestAnimationFrame(loop);
@@ -1382,8 +1414,11 @@ function draw(dt) {
   const titlePx = BOX.title * P * s;
   // Where each box's label went, so a Tips bubble keeps off it (web/carve-narration.js).
   const labelPx = new Map();
+  // Report minor 34: a box whose root the pull request did not plan, while a cone plan is drawn: dimmed, and said.
+  const boxRoots = coneNow ? rootsOfBoxes() : null;
+  const notPlanned = (e) => !!boxRoots && boxRoots.has(e) && rootLight(coneNow, boxRoots.get(e)) === "dim";
   for (const [e, b] of boxes) {
-    const a = dotLayerA * (1 - (td.get(e) ?? 0));
+    const a = dotLayerA * (1 - (td.get(e) ?? 0)) * (notPlanned(e) ? 0.5 : 1);
     if (a <= 0.01) continue;
     const c = col.estate.get(e) || col.neutral;
     const bp = boxPx(b);
@@ -1442,7 +1477,7 @@ function draw(dt) {
       ctx.textBaseline = "middle";
       ctx.textAlign = "left";
       let nm = shortName(e);
-      const cnt = fmt(Math.max(0, counts.get(e) ?? 0));
+      const cnt = `${fmt(Math.max(0, counts.get(e) ?? 0))}${notPlanned(e) ? " · not planned" : ""}`;
       let nw = ctx.measureText(nm).width;
       const cw = ctx.measureText(cnt).width;
       const tw = nw + fs * 0.5 + cw;
@@ -1553,6 +1588,22 @@ function draw(dt) {
     const g = tourGlow(l, anyChanged, col.foreign);
     if (!prev || g.a >= prev.a) glow.set(id, g);
   }
+  // Report minor 34: a cone plan's lights, from the frame (setDotsCone). Planned resources lit, the rest dimmed, never hidden.
+  const coneShown = coneNow ? { lit: [], changed: [], dim: [], notPlanned: [] } : null;
+  if (coneNow) {
+    const rootOfBox = rootsOfBoxes();
+    for (const [e, root] of rootOfBox) if (rootLight(coneNow, root) === "dim" && boxes.has(e)) coneShown.notPlanned.push(e);
+    for (const a of addrs) {
+      const root = rootOfBox.get(owners.get(a) ?? scene.source);
+      const light = root ? resourceLight(coneNow, root, a.replace(/#\d+$/, "")) : null;
+      const g = coneGlow(light, col.pending);
+      if (!g) continue;
+      coneShown[light === "changed" ? "changed" : light].push(a);
+      const prev = glow.get(a);
+      if (!prev || g.a >= prev.a) glow.set(a, g);
+    }
+  }
+  S.coneShown = coneShown;
   ctx.globalAlpha = 1;
   const refusedLit = [];
   S.cellMoving = false;
@@ -1658,10 +1709,19 @@ function draw(dt) {
     const margin = shape ? 20 + shape.w / 2 : 20;
     if (q.x < -margin || q.y < -margin || q.x > W + margin || q.y > H + margin) continue;
     const g = glow.get(a);
-    if (f || g) markLit(est);
+    if (f || (g && !g.dim)) markLit(est);
     if (vis <= 0.01) continue;
     if (shape) {
       drawRosterCard(ctx, a, shape, u, { vis, colour, glow: g, ring: rings.has(a), selected: a === S.selected, takeoff: flying ? (t - f.start) / (f.end - f.start) : 1 });
+      continue;
+    }
+    // A cone plan's dimmed dot: faded, still drawn.
+    if (g && g.dim) {
+      ctx.globalAlpha = vis * 0.35;
+      ctx.fillStyle = colour;
+      ctx.beginPath();
+      ctx.arc(q.x, q.y, rDot, 0, Math.PI * 2);
+      ctx.fill();
       continue;
     }
     if (g) {

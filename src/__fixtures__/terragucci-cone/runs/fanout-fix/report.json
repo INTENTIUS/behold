@@ -1,0 +1,1386 @@
+{
+  "schema": "terragucci.report/v1",
+  "minor": 41,
+  "run": {
+    "project": "forgejo:3000/terragucci-admin/demo-choudoufu-fanout",
+    "commit": "fe809a32a64b580b4c6ae14eb305a666a010a3b6",
+    "base": "main",
+    "job_url": "http://forgejo:3000/terragucci-admin/demo-choudoufu-fanout/actions/runs/6689",
+    "commit_url": "http://forgejo:3000/terragucci-admin/demo-choudoufu-fanout/commit/fe809a32a64b580b4c6ae14eb305a666a010a3b6",
+    "pull_request": "45",
+    "pull_request_url": "http://forgejo:3000/terragucci-admin/demo-choudoufu-fanout/pulls/45",
+    "stage": "tf-plan",
+    "binary": "choudoufu",
+    "runtime": "forge",
+    "started": "2026-10-19T01:15:31.742Z",
+    "finished": "2026-10-19T01:15:39.989Z",
+    "terragucci": "0.4.35",
+    "trace_id": "a3997b3376a150142c6ca1ec0371eb5e"
+  },
+  "change_set": "jcs1-sha256:0d054378148f49686f94bb37340821c64bb795f3b4d0d28fc20ee073a66c720f",
+  "unit": "member",
+  "units": 7,
+  "totals": {
+    "create": 1,
+    "update": 6,
+    "replace": 0,
+    "delete": 0,
+    "read": 0,
+    "no-op": 0,
+    "forget": 0
+  },
+  "totals_roots": 7,
+  "groups": [
+    {
+      "id": "26ad17e1df93",
+      "units": [
+        "app-01",
+        "app-02",
+        "app-03",
+        "app-04",
+        "app-05",
+        "app-06"
+      ],
+      "outlier": false,
+      "noChanges": false,
+      "changes": [
+        {
+          "line": "~ aws_sqs_queue.work: tags, tags_all",
+          "action": "update",
+          "count": 1
+        }
+      ],
+      "destroys": 0,
+      "varies": [
+        {
+          "address": "aws_sqs_queue.work",
+          "paths": [
+            "tags",
+            "tags_all"
+          ]
+        }
+      ],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "id": "84beb7abd2af",
+      "units": [
+        "cluster-a"
+      ],
+      "outlier": true,
+      "noChanges": false,
+      "changes": [
+        {
+          "line": "+ aws_sqs_queue.events",
+          "action": "create",
+          "count": 1
+        }
+      ],
+      "destroys": 0,
+      "varies": [],
+      "fold": "open",
+      "why": [
+        "outlier: read it on its own"
+      ]
+    }
+  ],
+  "roots": [
+    {
+      "path": "app-01",
+      "binary": {
+        "name": "choudoufu",
+        "version": "1.13.0"
+      },
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:8144662769cb85a111096f0389561de4a78a08be32034d3ee51e5de6c4931b39",
+      "counts": {
+        "update": 1
+      },
+      "group": "26ad17e1df93",
+      "plan": {
+        "text": "roots/app-01/plan.txt",
+        "json": "roots/app-01/plan.json"
+      },
+      "job_url": "http://forgejo:3000/terragucci-admin/demo-choudoufu-fanout/actions/runs/6689",
+      "changes": [
+        {
+          "address": "aws_sqs_queue.work",
+          "type": "aws_sqs_queue",
+          "action": "update",
+          "disruption": "in-place",
+          "attributes": [
+            {
+              "path": "tags",
+              "before": {
+                "release": "r0",
+                "table": "fan-out-choudoufu-cluster-a",
+                "tier": "app",
+                "tofu-address": "aws_sqs_queue.work",
+                "tofu-estate": "fo-app-01"
+              },
+              "after": {
+                "release": "r597",
+                "table": "fan-out-choudoufu-cluster-a",
+                "tier": "app",
+                "tofu-address": "aws_sqs_queue.work",
+                "tofu-estate": "fo-app-01"
+              }
+            },
+            {
+              "path": "tags_all",
+              "before": {
+                "release": "r0",
+                "table": "fan-out-choudoufu-cluster-a",
+                "tier": "app",
+                "tofu-address": "aws_sqs_queue.work",
+                "tofu-estate": "fo-app-01"
+              },
+              "after": {
+                "release": "r597",
+                "table": "fan-out-choudoufu-cluster-a",
+                "tier": "app",
+                "tofu-address": "aws_sqs_queue.work",
+                "tofu-estate": "fo-app-01"
+              }
+            }
+          ],
+          "kind": "tags",
+          "fold": "folded"
+        }
+      ],
+      "highlights": [],
+      "fold": "folded",
+      "why": [],
+      "reads": [
+        {
+          "upstream": "cluster-a",
+          "data": "cluster",
+          "outputs": "applied",
+          "why": "its plan names no outputs"
+        }
+      ],
+      "cone": {
+        "base": "origin/main",
+        "fallback": {
+          "kind": "empty-cone",
+          "reason": "the diff reaches no resource, data source or module call"
+        }
+      },
+      "timings": {
+        "seconds": 2.45,
+        "plan_seconds": 2.02,
+        "spans": 35,
+        "detail": "resources",
+        "resources": [
+          {
+            "address": "aws_sqs_queue.work",
+            "type": "aws_sqs_queue",
+            "action": "Update",
+            "provider": "provider[\"registry.opentofu.org/hashicorp/aws\"]",
+            "ms": 23.5
+          },
+          {
+            "address": "data.terraform_estate_outputs.cluster",
+            "type": "terraform_estate_outputs",
+            "provider": "provider[\"terraform.io/builtin/terraform\"]",
+            "ms": 2.2
+          }
+        ],
+        "provider_calls": [
+          {
+            "method": "GetProviderSchema",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "ms": 262.8
+          },
+          {
+            "method": "ReadResource",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "type": "aws_sqs_queue",
+            "ms": 7.7
+          },
+          {
+            "method": "ConfigureProvider",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "ms": 5.2
+          },
+          {
+            "method": "ConfigureProvider",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "ms": 4
+          },
+          {
+            "method": "PlanResourceChange",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "type": "aws_sqs_queue",
+            "address": "aws_sqs_queue.work",
+            "ms": 1.9
+          },
+          {
+            "method": "ImportResourceState",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "type": "aws_sqs_queue",
+            "ms": 0.6
+          }
+        ],
+        "provider_init": [
+          {
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "count": 4,
+            "ms": 850.6,
+            "max_ms": 483.8
+          },
+          {
+            "provider": "terraform.io/builtin/terraform",
+            "count": 3,
+            "ms": 0,
+            "max_ms": 0
+          }
+        ],
+        "lock_waits": [],
+        "aggregates": []
+      }
+    },
+    {
+      "path": "app-02",
+      "binary": {
+        "name": "choudoufu",
+        "version": "1.13.0"
+      },
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:c6428f72402972892d6407c2e3e13ee91c5398e1f1b1708da295c191f11db8b8",
+      "counts": {
+        "update": 1
+      },
+      "group": "26ad17e1df93",
+      "plan": {
+        "text": "roots/app-02/plan.txt",
+        "json": "roots/app-02/plan.json"
+      },
+      "job_url": "http://forgejo:3000/terragucci-admin/demo-choudoufu-fanout/actions/runs/6689",
+      "changes": [
+        {
+          "address": "aws_sqs_queue.work",
+          "type": "aws_sqs_queue",
+          "action": "update",
+          "disruption": "in-place",
+          "attributes": [
+            {
+              "path": "tags",
+              "before": {
+                "release": "r0",
+                "table": "fan-out-choudoufu-cluster-a",
+                "tier": "app",
+                "tofu-address": "aws_sqs_queue.work",
+                "tofu-estate": "fo-app-02"
+              },
+              "after": {
+                "release": "r597",
+                "table": "fan-out-choudoufu-cluster-a",
+                "tier": "app",
+                "tofu-address": "aws_sqs_queue.work",
+                "tofu-estate": "fo-app-02"
+              }
+            },
+            {
+              "path": "tags_all",
+              "before": {
+                "release": "r0",
+                "table": "fan-out-choudoufu-cluster-a",
+                "tier": "app",
+                "tofu-address": "aws_sqs_queue.work",
+                "tofu-estate": "fo-app-02"
+              },
+              "after": {
+                "release": "r597",
+                "table": "fan-out-choudoufu-cluster-a",
+                "tier": "app",
+                "tofu-address": "aws_sqs_queue.work",
+                "tofu-estate": "fo-app-02"
+              }
+            }
+          ],
+          "kind": "tags",
+          "fold": "folded"
+        }
+      ],
+      "highlights": [],
+      "fold": "folded",
+      "why": [],
+      "reads": [
+        {
+          "upstream": "cluster-a",
+          "data": "cluster",
+          "outputs": "applied",
+          "why": "its plan names no outputs"
+        }
+      ],
+      "cone": {
+        "base": "origin/main",
+        "fallback": {
+          "kind": "empty-cone",
+          "reason": "the diff reaches no resource, data source or module call"
+        }
+      },
+      "timings": {
+        "seconds": 2.81,
+        "plan_seconds": 2,
+        "spans": 35,
+        "detail": "resources",
+        "resources": [
+          {
+            "address": "aws_sqs_queue.work",
+            "type": "aws_sqs_queue",
+            "action": "Update",
+            "provider": "provider[\"registry.opentofu.org/hashicorp/aws\"]",
+            "ms": 22.4
+          },
+          {
+            "address": "data.terraform_estate_outputs.cluster",
+            "type": "terraform_estate_outputs",
+            "provider": "provider[\"terraform.io/builtin/terraform\"]",
+            "ms": 2.5
+          }
+        ],
+        "provider_calls": [
+          {
+            "method": "GetProviderSchema",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "ms": 284.1
+          },
+          {
+            "method": "ConfigureProvider",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "ms": 5.3
+          },
+          {
+            "method": "ConfigureProvider",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "ms": 3.8
+          },
+          {
+            "method": "ReadResource",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "type": "aws_sqs_queue",
+            "ms": 2.6
+          },
+          {
+            "method": "PlanResourceChange",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "type": "aws_sqs_queue",
+            "address": "aws_sqs_queue.work",
+            "ms": 1.3
+          },
+          {
+            "method": "ImportResourceState",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "type": "aws_sqs_queue",
+            "ms": 0.8
+          }
+        ],
+        "provider_init": [
+          {
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "count": 4,
+            "ms": 826.1,
+            "max_ms": 476.8
+          },
+          {
+            "provider": "terraform.io/builtin/terraform",
+            "count": 3,
+            "ms": 0,
+            "max_ms": 0
+          }
+        ],
+        "lock_waits": [],
+        "aggregates": []
+      }
+    },
+    {
+      "path": "app-03",
+      "binary": {
+        "name": "choudoufu",
+        "version": "1.13.0"
+      },
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:0c78f6825088e6f505ac4ae6330a3fea3cf73a6a6bab1e96dd2f2cfaa7d9063a",
+      "counts": {
+        "update": 1
+      },
+      "group": "26ad17e1df93",
+      "plan": {
+        "text": "roots/app-03/plan.txt",
+        "json": "roots/app-03/plan.json"
+      },
+      "job_url": "http://forgejo:3000/terragucci-admin/demo-choudoufu-fanout/actions/runs/6689",
+      "changes": [
+        {
+          "address": "aws_sqs_queue.work",
+          "type": "aws_sqs_queue",
+          "action": "update",
+          "disruption": "in-place",
+          "attributes": [
+            {
+              "path": "tags",
+              "before": {
+                "release": "r0",
+                "table": "fan-out-choudoufu-cluster-a",
+                "tier": "app",
+                "tofu-address": "aws_sqs_queue.work",
+                "tofu-estate": "fo-app-03"
+              },
+              "after": {
+                "release": "r597",
+                "table": "fan-out-choudoufu-cluster-a",
+                "tier": "app",
+                "tofu-address": "aws_sqs_queue.work",
+                "tofu-estate": "fo-app-03"
+              }
+            },
+            {
+              "path": "tags_all",
+              "before": {
+                "release": "r0",
+                "table": "fan-out-choudoufu-cluster-a",
+                "tier": "app",
+                "tofu-address": "aws_sqs_queue.work",
+                "tofu-estate": "fo-app-03"
+              },
+              "after": {
+                "release": "r597",
+                "table": "fan-out-choudoufu-cluster-a",
+                "tier": "app",
+                "tofu-address": "aws_sqs_queue.work",
+                "tofu-estate": "fo-app-03"
+              }
+            }
+          ],
+          "kind": "tags",
+          "fold": "folded"
+        }
+      ],
+      "highlights": [],
+      "fold": "folded",
+      "why": [],
+      "reads": [
+        {
+          "upstream": "cluster-a",
+          "data": "cluster",
+          "outputs": "applied",
+          "why": "its plan names no outputs"
+        }
+      ],
+      "cone": {
+        "base": "origin/main",
+        "fallback": {
+          "kind": "empty-cone",
+          "reason": "the diff reaches no resource, data source or module call"
+        }
+      },
+      "timings": {
+        "seconds": 3.17,
+        "plan_seconds": 1.98,
+        "spans": 35,
+        "detail": "resources",
+        "resources": [
+          {
+            "address": "aws_sqs_queue.work",
+            "type": "aws_sqs_queue",
+            "action": "Update",
+            "provider": "provider[\"registry.opentofu.org/hashicorp/aws\"]",
+            "ms": 19.6
+          },
+          {
+            "address": "data.terraform_estate_outputs.cluster",
+            "type": "terraform_estate_outputs",
+            "provider": "provider[\"terraform.io/builtin/terraform\"]",
+            "ms": 1.8
+          }
+        ],
+        "provider_calls": [
+          {
+            "method": "GetProviderSchema",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "ms": 271.4
+          },
+          {
+            "method": "ConfigureProvider",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "ms": 3.8
+          },
+          {
+            "method": "ConfigureProvider",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "ms": 3.5
+          },
+          {
+            "method": "ReadResource",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "type": "aws_sqs_queue",
+            "ms": 2.2
+          },
+          {
+            "method": "PlanResourceChange",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "type": "aws_sqs_queue",
+            "address": "aws_sqs_queue.work",
+            "ms": 1.2
+          },
+          {
+            "method": "ImportResourceState",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "type": "aws_sqs_queue",
+            "ms": 0.8
+          }
+        ],
+        "provider_init": [
+          {
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "count": 4,
+            "ms": 820.5,
+            "max_ms": 470.2
+          },
+          {
+            "provider": "terraform.io/builtin/terraform",
+            "count": 3,
+            "ms": 0,
+            "max_ms": 0
+          }
+        ],
+        "lock_waits": [],
+        "aggregates": []
+      }
+    },
+    {
+      "path": "app-04",
+      "binary": {
+        "name": "choudoufu",
+        "version": "1.13.0"
+      },
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:d0336a28532a343d7d917463994f0de8749ddcfbe077bff9fd63f8eb3953a95e",
+      "counts": {
+        "update": 1
+      },
+      "group": "26ad17e1df93",
+      "plan": {
+        "text": "roots/app-04/plan.txt",
+        "json": "roots/app-04/plan.json"
+      },
+      "job_url": "http://forgejo:3000/terragucci-admin/demo-choudoufu-fanout/actions/runs/6689",
+      "changes": [
+        {
+          "address": "aws_sqs_queue.work",
+          "type": "aws_sqs_queue",
+          "action": "update",
+          "disruption": "in-place",
+          "attributes": [
+            {
+              "path": "tags",
+              "before": {
+                "release": "r0",
+                "table": "fan-out-choudoufu-cluster-a",
+                "tier": "app",
+                "tofu-address": "aws_sqs_queue.work",
+                "tofu-estate": "fo-app-04"
+              },
+              "after": {
+                "release": "r597",
+                "table": "fan-out-choudoufu-cluster-a",
+                "tier": "app",
+                "tofu-address": "aws_sqs_queue.work",
+                "tofu-estate": "fo-app-04"
+              }
+            },
+            {
+              "path": "tags_all",
+              "before": {
+                "release": "r0",
+                "table": "fan-out-choudoufu-cluster-a",
+                "tier": "app",
+                "tofu-address": "aws_sqs_queue.work",
+                "tofu-estate": "fo-app-04"
+              },
+              "after": {
+                "release": "r597",
+                "table": "fan-out-choudoufu-cluster-a",
+                "tier": "app",
+                "tofu-address": "aws_sqs_queue.work",
+                "tofu-estate": "fo-app-04"
+              }
+            }
+          ],
+          "kind": "tags",
+          "fold": "folded"
+        }
+      ],
+      "highlights": [],
+      "fold": "folded",
+      "why": [],
+      "reads": [
+        {
+          "upstream": "cluster-a",
+          "data": "cluster",
+          "outputs": "applied",
+          "why": "its plan names no outputs"
+        }
+      ],
+      "cone": {
+        "base": "origin/main",
+        "fallback": {
+          "kind": "empty-cone",
+          "reason": "the diff reaches no resource, data source or module call"
+        }
+      },
+      "timings": {
+        "seconds": 3.56,
+        "plan_seconds": 1.98,
+        "spans": 35,
+        "detail": "resources",
+        "resources": [
+          {
+            "address": "aws_sqs_queue.work",
+            "type": "aws_sqs_queue",
+            "action": "Update",
+            "provider": "provider[\"registry.opentofu.org/hashicorp/aws\"]",
+            "ms": 16.5
+          },
+          {
+            "address": "data.terraform_estate_outputs.cluster",
+            "type": "terraform_estate_outputs",
+            "provider": "provider[\"terraform.io/builtin/terraform\"]",
+            "ms": 5.4
+          }
+        ],
+        "provider_calls": [
+          {
+            "method": "GetProviderSchema",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "ms": 306.9
+          },
+          {
+            "method": "ConfigureProvider",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "ms": 7.3
+          },
+          {
+            "method": "ConfigureProvider",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "ms": 3.2
+          },
+          {
+            "method": "ReadResource",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "type": "aws_sqs_queue",
+            "ms": 3
+          },
+          {
+            "method": "PlanResourceChange",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "type": "aws_sqs_queue",
+            "address": "aws_sqs_queue.work",
+            "ms": 1.1
+          },
+          {
+            "method": "ImportResourceState",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "type": "aws_sqs_queue",
+            "ms": 0.6
+          }
+        ],
+        "provider_init": [
+          {
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "count": 4,
+            "ms": 801.7,
+            "max_ms": 484.6
+          },
+          {
+            "provider": "terraform.io/builtin/terraform",
+            "count": 3,
+            "ms": 0,
+            "max_ms": 0
+          }
+        ],
+        "lock_waits": [],
+        "aggregates": []
+      }
+    },
+    {
+      "path": "app-05",
+      "binary": {
+        "name": "choudoufu",
+        "version": "1.13.0"
+      },
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:593004ecdfc70b619bceb8aafea5a1798754db80a8127b01b84cb61384ffac3e",
+      "counts": {
+        "update": 1
+      },
+      "group": "26ad17e1df93",
+      "plan": {
+        "text": "roots/app-05/plan.txt",
+        "json": "roots/app-05/plan.json"
+      },
+      "job_url": "http://forgejo:3000/terragucci-admin/demo-choudoufu-fanout/actions/runs/6689",
+      "changes": [
+        {
+          "address": "aws_sqs_queue.work",
+          "type": "aws_sqs_queue",
+          "action": "update",
+          "disruption": "in-place",
+          "attributes": [
+            {
+              "path": "tags",
+              "before": {
+                "release": "r0",
+                "table": "fan-out-choudoufu-cluster-a",
+                "tier": "app",
+                "tofu-address": "aws_sqs_queue.work",
+                "tofu-estate": "fo-app-05"
+              },
+              "after": {
+                "release": "r597",
+                "table": "fan-out-choudoufu-cluster-a",
+                "tier": "app",
+                "tofu-address": "aws_sqs_queue.work",
+                "tofu-estate": "fo-app-05"
+              }
+            },
+            {
+              "path": "tags_all",
+              "before": {
+                "release": "r0",
+                "table": "fan-out-choudoufu-cluster-a",
+                "tier": "app",
+                "tofu-address": "aws_sqs_queue.work",
+                "tofu-estate": "fo-app-05"
+              },
+              "after": {
+                "release": "r597",
+                "table": "fan-out-choudoufu-cluster-a",
+                "tier": "app",
+                "tofu-address": "aws_sqs_queue.work",
+                "tofu-estate": "fo-app-05"
+              }
+            }
+          ],
+          "kind": "tags",
+          "fold": "folded"
+        }
+      ],
+      "highlights": [],
+      "fold": "folded",
+      "why": [],
+      "reads": [
+        {
+          "upstream": "cluster-a",
+          "data": "cluster",
+          "outputs": "applied",
+          "why": "its plan names no outputs"
+        }
+      ],
+      "cone": {
+        "base": "origin/main",
+        "fallback": {
+          "kind": "empty-cone",
+          "reason": "the diff reaches no resource, data source or module call"
+        }
+      },
+      "timings": {
+        "seconds": 2.28,
+        "plan_seconds": 1.86,
+        "spans": 35,
+        "detail": "resources",
+        "resources": [
+          {
+            "address": "aws_sqs_queue.work",
+            "type": "aws_sqs_queue",
+            "action": "Update",
+            "provider": "provider[\"registry.opentofu.org/hashicorp/aws\"]",
+            "ms": 16.3
+          },
+          {
+            "address": "data.terraform_estate_outputs.cluster",
+            "type": "terraform_estate_outputs",
+            "provider": "provider[\"terraform.io/builtin/terraform\"]",
+            "ms": 3.5
+          }
+        ],
+        "provider_calls": [
+          {
+            "method": "GetProviderSchema",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "ms": 274.1
+          },
+          {
+            "method": "ConfigureProvider",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "ms": 3.3
+          },
+          {
+            "method": "ConfigureProvider",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "ms": 3
+          },
+          {
+            "method": "ReadResource",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "type": "aws_sqs_queue",
+            "ms": 2
+          },
+          {
+            "method": "PlanResourceChange",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "type": "aws_sqs_queue",
+            "address": "aws_sqs_queue.work",
+            "ms": 1.1
+          },
+          {
+            "method": "ImportResourceState",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "type": "aws_sqs_queue",
+            "ms": 0.6
+          }
+        ],
+        "provider_init": [
+          {
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "count": 4,
+            "ms": 776.1,
+            "max_ms": 459.6
+          },
+          {
+            "provider": "terraform.io/builtin/terraform",
+            "count": 3,
+            "ms": 0,
+            "max_ms": 0
+          }
+        ],
+        "lock_waits": [],
+        "aggregates": []
+      }
+    },
+    {
+      "path": "app-06",
+      "binary": {
+        "name": "choudoufu",
+        "version": "1.13.0"
+      },
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:da100d92168d195f68f173f354cafa9afd4e531614a01aa30cad1b412d22d399",
+      "counts": {
+        "update": 1
+      },
+      "group": "26ad17e1df93",
+      "plan": {
+        "text": "roots/app-06/plan.txt",
+        "json": "roots/app-06/plan.json"
+      },
+      "job_url": "http://forgejo:3000/terragucci-admin/demo-choudoufu-fanout/actions/runs/6689",
+      "changes": [
+        {
+          "address": "aws_sqs_queue.work",
+          "type": "aws_sqs_queue",
+          "action": "update",
+          "disruption": "in-place",
+          "attributes": [
+            {
+              "path": "tags",
+              "before": {
+                "release": "r0",
+                "table": "fan-out-choudoufu-cluster-a",
+                "tier": "app",
+                "tofu-address": "aws_sqs_queue.work",
+                "tofu-estate": "fo-app-06"
+              },
+              "after": {
+                "release": "r597",
+                "table": "fan-out-choudoufu-cluster-a",
+                "tier": "app",
+                "tofu-address": "aws_sqs_queue.work",
+                "tofu-estate": "fo-app-06"
+              }
+            },
+            {
+              "path": "tags_all",
+              "before": {
+                "release": "r0",
+                "table": "fan-out-choudoufu-cluster-a",
+                "tier": "app",
+                "tofu-address": "aws_sqs_queue.work",
+                "tofu-estate": "fo-app-06"
+              },
+              "after": {
+                "release": "r597",
+                "table": "fan-out-choudoufu-cluster-a",
+                "tier": "app",
+                "tofu-address": "aws_sqs_queue.work",
+                "tofu-estate": "fo-app-06"
+              }
+            }
+          ],
+          "kind": "tags",
+          "fold": "folded"
+        }
+      ],
+      "highlights": [],
+      "fold": "folded",
+      "why": [],
+      "reads": [
+        {
+          "upstream": "cluster-a",
+          "data": "cluster",
+          "outputs": "applied",
+          "why": "its plan names no outputs"
+        }
+      ],
+      "cone": {
+        "base": "origin/main",
+        "fallback": {
+          "kind": "empty-cone",
+          "reason": "the diff reaches no resource, data source or module call"
+        }
+      },
+      "timings": {
+        "seconds": 2.27,
+        "plan_seconds": 1.84,
+        "spans": 35,
+        "detail": "resources",
+        "resources": [
+          {
+            "address": "aws_sqs_queue.work",
+            "type": "aws_sqs_queue",
+            "action": "Update",
+            "provider": "provider[\"registry.opentofu.org/hashicorp/aws\"]",
+            "ms": 18.8
+          },
+          {
+            "address": "data.terraform_estate_outputs.cluster",
+            "type": "terraform_estate_outputs",
+            "provider": "provider[\"terraform.io/builtin/terraform\"]",
+            "ms": 1.8
+          }
+        ],
+        "provider_calls": [
+          {
+            "method": "GetProviderSchema",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "ms": 252.3
+          },
+          {
+            "method": "ConfigureProvider",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "ms": 4.6
+          },
+          {
+            "method": "ConfigureProvider",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "ms": 3.2
+          },
+          {
+            "method": "PlanResourceChange",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "type": "aws_sqs_queue",
+            "address": "aws_sqs_queue.work",
+            "ms": 2.9
+          },
+          {
+            "method": "ReadResource",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "type": "aws_sqs_queue",
+            "ms": 1.5
+          },
+          {
+            "method": "ImportResourceState",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "type": "aws_sqs_queue",
+            "ms": 0.6
+          }
+        ],
+        "provider_init": [
+          {
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "count": 4,
+            "ms": 787.8,
+            "max_ms": 486.8
+          },
+          {
+            "provider": "terraform.io/builtin/terraform",
+            "count": 3,
+            "ms": 0,
+            "max_ms": 0
+          }
+        ],
+        "lock_waits": [],
+        "aggregates": []
+      }
+    },
+    {
+      "path": "cluster-a",
+      "binary": {
+        "name": "choudoufu",
+        "version": "1.13.0"
+      },
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:d6a012627ba547fe4674002ad3a3350285cf8de6a34a0b09f26e7cadc1a9f26a",
+      "counts": {
+        "create": 1
+      },
+      "group": "84beb7abd2af",
+      "plan": {
+        "text": "roots/cluster-a/plan.txt",
+        "json": "roots/cluster-a/plan.json"
+      },
+      "job_url": "http://forgejo:3000/terragucci-admin/demo-choudoufu-fanout/actions/runs/6689",
+      "changes": [
+        {
+          "address": "aws_sqs_queue.events",
+          "type": "aws_sqs_queue",
+          "action": "create",
+          "attributes": [
+            {
+              "path": "arn",
+              "unknown": true
+            },
+            {
+              "path": "content_based_deduplication",
+              "after": false
+            },
+            {
+              "path": "deduplication_scope",
+              "unknown": true
+            },
+            {
+              "path": "delay_seconds",
+              "after": 0
+            },
+            {
+              "path": "fifo_queue",
+              "after": false
+            },
+            {
+              "path": "fifo_throughput_limit",
+              "unknown": true
+            },
+            {
+              "path": "id",
+              "unknown": true
+            },
+            {
+              "path": "kms_data_key_reuse_period_seconds",
+              "unknown": true
+            },
+            {
+              "path": "max_message_size",
+              "after": 262144
+            },
+            {
+              "path": "message_retention_seconds",
+              "after": 345600
+            },
+            {
+              "path": "name",
+              "after": "fan-out-choudoufu-cluster-a-events"
+            },
+            {
+              "path": "name_prefix",
+              "unknown": true
+            },
+            {
+              "path": "policy",
+              "unknown": true
+            },
+            {
+              "path": "receive_wait_time_seconds",
+              "after": 0
+            },
+            {
+              "path": "redrive_allow_policy",
+              "unknown": true
+            },
+            {
+              "path": "redrive_policy",
+              "unknown": true
+            },
+            {
+              "path": "region",
+              "after": "us-east-1"
+            },
+            {
+              "path": "sqs_managed_sse_enabled",
+              "unknown": true
+            },
+            {
+              "path": "tags",
+              "after": {
+                "tier": "cluster",
+                "tofu-address": "aws_sqs_queue.events",
+                "tofu-estate": "fo-cluster-a"
+              }
+            },
+            {
+              "path": "tags_all",
+              "after": {
+                "tier": "cluster",
+                "tofu-address": "aws_sqs_queue.events",
+                "tofu-estate": "fo-cluster-a"
+              }
+            },
+            {
+              "path": "url",
+              "unknown": true
+            },
+            {
+              "path": "visibility_timeout_seconds",
+              "after": 120
+            }
+          ],
+          "fold": "open"
+        }
+      ],
+      "highlights": [],
+      "fold": "open",
+      "why": [
+        "outlier: its change matches no other root's"
+      ],
+      "reads": [
+        {
+          "upstream": "network",
+          "data": "network",
+          "outputs": "applied",
+          "why": "this change does not reach it, so its records stand"
+        }
+      ],
+      "cone": {
+        "base": "origin/main",
+        "blocks": 1,
+        "of": 5,
+        "targets": 1
+      },
+      "timings": {
+        "seconds": 2.34,
+        "plan_seconds": 1.92,
+        "spans": 33,
+        "detail": "resources",
+        "resources": [
+          {
+            "address": "aws_sqs_queue.events",
+            "type": "aws_sqs_queue",
+            "action": "Create",
+            "provider": "provider[\"registry.opentofu.org/hashicorp/aws\"]",
+            "ms": 18.8
+          }
+        ],
+        "provider_calls": [
+          {
+            "method": "GetProviderSchema",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "ms": 285.2
+          },
+          {
+            "method": "ConfigureProvider",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "ms": 3.2
+          },
+          {
+            "method": "ConfigureProvider",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "ms": 3.2
+          },
+          {
+            "method": "PlanResourceChange",
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "type": "aws_sqs_queue",
+            "address": "aws_sqs_queue.events",
+            "ms": 1.2
+          }
+        ],
+        "provider_init": [
+          {
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "count": 4,
+            "ms": 769.5,
+            "max_ms": 452.5
+          },
+          {
+            "provider": "terraform.io/builtin/terraform",
+            "count": 2,
+            "ms": 0,
+            "max_ms": 0
+          }
+        ],
+        "lock_waits": [],
+        "aggregates": []
+      }
+    }
+  ],
+  "waves": [
+    {
+      "number": 2,
+      "roots": [
+        "cluster-a"
+      ],
+      "set_digest": "jcs1-sha256:6e7c8864730f7c5a52a60df516353129162f39425fc39164547273848ebe7f16",
+      "approval": "not-requested",
+      "review_digest": "jcs1-sha256:6e7c8864730f7c5a52a60df516353129162f39425fc39164547273848ebe7f16",
+      "waits": false,
+      "state": "planned",
+      "reads": [
+        1
+      ]
+    },
+    {
+      "number": 3,
+      "roots": [
+        "app-01",
+        "app-02",
+        "app-03",
+        "app-04",
+        "app-05",
+        "app-06"
+      ],
+      "set_digest": "jcs1-sha256:6a64764c709ad8774acfc716e8b847e629c5343a58434ce875c933bc53a3268d",
+      "approval": "not-requested",
+      "review_digest": "jcs1-sha256:6a64764c709ad8774acfc716e8b847e629c5343a58434ce875c933bc53a3268d",
+      "waits": false,
+      "state": "planned",
+      "reads": [
+        2
+      ]
+    }
+  ],
+  "named": [],
+  "holes": [],
+  "redaction": {
+    "marker": "(sensitive, redacted by terragucci)",
+    "values": 0
+  },
+  "blast": {
+    "roots": [
+      "app-01",
+      "app-02",
+      "app-03",
+      "app-04",
+      "app-05",
+      "app-06",
+      "cluster-a"
+    ],
+    "downstream": []
+  },
+  "tips": [
+    {
+      "rule": "terragucci-no-canary",
+      "message": "The project has 15 roots and no waves.canary, so the first wave is chosen by apply order. Name one or two low-risk roots there, since the first wave is the riskiest.",
+      "url": "https://intentius.io/terragucci/reference/tips/#terragucci-no-canary"
+    }
+  ],
+  "timings": {
+    "roots": [
+      {
+        "root": "app-04",
+        "seconds": 3.56,
+        "plan_seconds": 1.98,
+        "detail": "resources"
+      },
+      {
+        "root": "app-03",
+        "seconds": 3.17,
+        "plan_seconds": 1.98,
+        "detail": "resources"
+      },
+      {
+        "root": "app-02",
+        "seconds": 2.81,
+        "plan_seconds": 2,
+        "detail": "resources"
+      },
+      {
+        "root": "app-01",
+        "seconds": 2.45,
+        "plan_seconds": 2.02,
+        "detail": "resources"
+      },
+      {
+        "root": "cluster-a",
+        "seconds": 2.34,
+        "plan_seconds": 1.92,
+        "detail": "resources"
+      },
+      {
+        "root": "app-05",
+        "seconds": 2.28,
+        "plan_seconds": 1.86,
+        "detail": "resources"
+      },
+      {
+        "root": "app-06",
+        "seconds": 2.27,
+        "plan_seconds": 1.84,
+        "detail": "resources"
+      }
+    ],
+    "resources": [
+      {
+        "root": "app-01",
+        "address": "aws_sqs_queue.work",
+        "type": "aws_sqs_queue",
+        "ms": 23.5
+      },
+      {
+        "root": "app-02",
+        "address": "aws_sqs_queue.work",
+        "type": "aws_sqs_queue",
+        "ms": 22.4
+      },
+      {
+        "root": "app-03",
+        "address": "aws_sqs_queue.work",
+        "type": "aws_sqs_queue",
+        "ms": 19.6
+      },
+      {
+        "root": "app-06",
+        "address": "aws_sqs_queue.work",
+        "type": "aws_sqs_queue",
+        "ms": 18.8
+      },
+      {
+        "root": "cluster-a",
+        "address": "aws_sqs_queue.events",
+        "type": "aws_sqs_queue",
+        "ms": 18.8
+      },
+      {
+        "root": "app-04",
+        "address": "aws_sqs_queue.work",
+        "type": "aws_sqs_queue",
+        "ms": 16.5
+      },
+      {
+        "root": "app-05",
+        "address": "aws_sqs_queue.work",
+        "type": "aws_sqs_queue",
+        "ms": 16.3
+      },
+      {
+        "root": "app-04",
+        "address": "data.terraform_estate_outputs.cluster",
+        "type": "terraform_estate_outputs",
+        "ms": 5.4
+      },
+      {
+        "root": "app-05",
+        "address": "data.terraform_estate_outputs.cluster",
+        "type": "terraform_estate_outputs",
+        "ms": 3.5
+      },
+      {
+        "root": "app-02",
+        "address": "data.terraform_estate_outputs.cluster",
+        "type": "terraform_estate_outputs",
+        "ms": 2.5
+      }
+    ]
+  }
+}

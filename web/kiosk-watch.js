@@ -13,6 +13,7 @@
 
 import { STEP_WORDS, focusRoots, matchingPull, matchingRun, scenarioHead, introText, aboutRows, nextWords, demoStage } from "./kiosk.js";
 import { defaultJob, defaultStep, logLineWords, setupLine } from "./kiosk-runs.js";
+import { backendLine, coneLine, coneOf } from "./cone.js";
 
 /** The two modes, Watch first: it is the default. */
 export const MODES = [
@@ -118,7 +119,7 @@ export function shotFor(demo, { answer = null, progress = null, held = null, gat
  * step. `lead` says which line leads: "changes" before the merge, when the
  * change is what to read, else "step". Between scenarios, the intro.
  */
-export function captionModel(demo, { vendor = null, now = new Date() } = {}) {
+export function captionModel(demo, { vendor = null, now = new Date(), answer = null } = {}) {
   if (!demo) return null;
   const head = scenarioHead(demo, { vendor });
   const rows = aboutRows(demo);
@@ -133,7 +134,76 @@ export function captionModel(demo, { vendor = null, now = new Date() } = {}) {
     intro: intro ? { label: "What this demo is about", text: intro } : null,
     step: { word: STEP_WORDS[demo.step] || demo.step, text: demo.label || "", tone: stepTone(demo.step), id: demo.step },
     next: nx.action ? { action: nx.action, when: nx.when } : null,
+    cone: coneCaption(demo, answer),
   };
+}
+
+/**
+ * Report minor 34: the plan line while the step shows this cycle's pull
+ * request plan and a root of it was planned with `-cone`: `{ line, backend }`,
+ * the line from the report's numbers (web/cone.js coneLine) and, when the
+ * reports say so, "3 estates · 1 backend · no state files". Null otherwise:
+ * every other plan's caption is as it was.
+ */
+export function coneCaption(demo, answer) {
+  if (!demo || demoStage(demo) !== "pull-request") return null;
+  const cone = coneOf(matchingPull(answer, demo));
+  const line = coneLine(cone);
+  return line ? { line, backend: backendLine(cone) } : null;
+}
+
+/**
+ * What may sit over the graph in Watch. On a held small stage (`held`: one
+ * framing holds it, web/kiosk-shot.js heldFrame), nothing the step puts
+ * there: the result card, the approval callout, the waves' badges and the
+ * step's own log drawer stay off the stage (their words are the caption's:
+ * stepLine and the quiet line), and a drawer the viewer opened on a wave
+ * (`opened`) shows until they fold it. Any other stage is as it always was:
+ * the result card at applied, the callout at a held wave, the badges, and
+ * the drawer while the run is on a wave (`kind` "active"). Inspect keeps its
+ * cards either way.
+ */
+export function watchOverlays({ kind = null, opened = false, held = false } = {}) {
+  if (held) return { result: false, callout: false, badges: false, drawer: !!opened };
+  return { result: true, callout: true, badges: true, drawer: kind === "active" || !!opened };
+}
+
+/** At most this many of the caption's one-line rows show at once (the cone line, the step line, the quiet line). */
+export const CAPTION_EXTRA_ROWS = 2;
+/** And at most this many lines of event-help's trail over it, as a cycle's beats come in. */
+export const TRAIL_LINES = 2;
+
+/**
+ * The tallest the caption gets in a cycle, as the bottom inset in px a held
+ * stage keeps (web/kiosk-shot.js heldInsets `room`): the caption as it is now
+ * less the one-line rows it shows now (`extras`, their heights), plus
+ * CAPTION_EXTRA_ROWS of them (`rowH` each), plus the trail over it at
+ * TRAIL_LINES lines (`trailLineH` each) or as it is now if taller, plus the
+ * frame's foot under the caption (`below`) and 16 px. Measured, so the frame
+ * keeps this room from the first step and no row that comes moves it.
+ */
+export function captionRoom({ capHeight = 0, extras = [], rowH = 0, trailH = 0, trailLineH = 0, below = 0 } = {}) {
+  const base = Math.max(0, capHeight - extras.reduce((a, h) => a + (h > 0 ? h : 0), 0));
+  const trail = Math.max(trailH, TRAIL_LINES * trailLineH);
+  return Math.round(Math.max(0, below) + base + CAPTION_EXTRA_ROWS * rowH + trail + 16);
+}
+
+/**
+ * The caption's quiet line, on a held small stage only, for what a card on
+ * the stage says elsewhere: at applied the run's counts ("2 waves applied ·
+ * 1 updated · 3.2 s of job time", resultModel); at a held wave, the wave and
+ * how its hold ends ("Wave 2 · plan 1a2b3c4d: chant approve …"). Null
+ * otherwise, and on any other stage, whose cards say it.
+ */
+export function stepLine(demo, { result = null, hold = null, held = false } = {}) {
+  if (!demo || !held) return null;
+  if (demo.step === "applied" && result && result.counts && result.counts.length) return result.counts.join(" · ");
+  if ((demo.step === "waiting" || demo.step === "approved") && hold) {
+    const head = hold.head || "The plan";
+    if (hold.kind === "driver" && hold.appr) return `${head}: ${hold.appr.approve}`;
+    if (hold.kind === "approval") return `${head} waits for an approval`;
+  }
+  return null;
 }
 
 /** "1.6 s · held 25 s · 4 created": one wave's numbers from the metrics model's wave, or null when it has none. */

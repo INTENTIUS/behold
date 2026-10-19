@@ -1,0 +1,73 @@
+{
+  "schema": "terragucci.report/v1",
+  "minor": 34,
+  "run": {
+    "project": "forgejo:3000/demo/demo-cone",
+    "commit": "1111111",
+    "stage": "tf-apply",
+    "binary": "choudoufu",
+    "runtime": "node",
+    "started": "2026-10-17T10:00:00.000Z",
+    "finished": "2026-10-17T10:00:00.000Z",
+    "wave": 1
+  },
+  "roots": [
+    {
+      "path": "network",
+      "binary": {
+        "name": "choudoufu",
+        "version": "0.28.0"
+      },
+      "status": "planned",
+      "plan_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "counts": {},
+      "plan": {},
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "service-a",
+      "binary": {
+        "name": "choudoufu",
+        "version": "0.28.0"
+      },
+      "status": "planned",
+      "plan_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "counts": {},
+      "plan": {},
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "service-b",
+      "binary": {
+        "name": "choudoufu",
+        "version": "0.28.0"
+      },
+      "status": "planned",
+      "plan_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "counts": {},
+      "plan": {},
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    }
+  ],
+  "waves": [
+    {
+      "number": 1,
+      "roots": [
+        "network",
+        "service-a",
+        "service-b"
+      ],
+      "set_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "approval": "not-required"
+    }
+  ]
+}

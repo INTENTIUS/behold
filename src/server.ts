@@ -187,7 +187,7 @@ import {
 } from "./layout.ts";
 import { emulatorUp, emulatorDown, mergedEnv, type EmulatorInfo } from "./emulator.ts";
 import { productRefusal, refusedWrite, servedProductRepo, terragucciRefusal } from "./terragucci-repo.ts";
-import { repoBase, terragucciRoutes, type TerragucciOptions } from "./terragucci-view.ts";
+import { repoBase, servedChoudoufu, terragucciRoutes, type TerragucciOptions } from "./terragucci-view.ts";
 import { terragucciSource } from "./terragucci-source.ts";
 import { metricsRoute } from "./prometheus-metrics.ts";
 import { tracesRoute } from "./tempo-traces.ts";
@@ -1922,6 +1922,8 @@ export function createApp(
       // #571: the repo declares its roots as components, so the page opens on
       // the components zoom (web/app.js `bootZoom`).
       ...(servedTerragucciComponents() ? { terragucciComponents: true } : {}),
+      // A terragucci repo whose roots run on choudoufu: the kiosk's frame asks for its waves in a row (`waves=row`).
+      ...(servedTerragucciComponents() && servedChoudoufu(cfg.projectDirs ?? [cfg.projectDir]) ? { terragucciChoudoufu: true } : {}),
       // behold#571: the declared roots and the wave jobs that apply them, so
       // the kiosk gives each root its colour and ties a job row to its roots.
       ...((): { terragucciRoots?: { roots: string[]; waves: { job: string; wave: number; roots: string[] }[]; tools?: string[]; rootTools?: Record<string, string[]>; forge?: string } } => {
@@ -2423,7 +2425,7 @@ export function createApp(
   };
 
   /** #571: the components picture of a terragucci repo — see the graph route. */
-  const terragucciComponentsGraph = async (decl: TerragucciComponents, opts: GraphOptions, childBlocks = false) => {
+  const terragucciComponentsGraph = async (decl: TerragucciComponents, opts: GraphOptions, { childBlocks = false, row = false }: { childBlocks?: boolean; row?: boolean } = {}) => {
     const state = terraformReaderState();
     if (state.refusal) throw new TerraformReadError(state.refusal, cfg.projectDir);
     const { project } = terraformMemberProject(cfg.projectDir);
@@ -2434,7 +2436,8 @@ export function createApp(
     const tools = repoTools(cfg.projectDir, tgConfig());
     const rootToolsByName = declaredRootTools(cfg.projectDir, decl.roots);
     // behold#741: one block per parent in a fan-out wave, only when the kiosk asks (a step that carries a chapter).
-    const { svg } = renderGraph(ir, { waveTitles: titles, ...(childBlocks ? { childBlocks: true } : {}) });
+    // `row`: the waves left to right, wave 1 on the left (dagre lays a reader before what it reads, so right to left), for the kiosk's held small stage.
+    const { svg } = renderGraph(ir, { waveTitles: titles, ...(childBlocks ? { childBlocks: true } : {}), ...(row ? { rankdir: "RL" as const } : {}) });
     const waves = Object.keys((ir.groups as { byWave?: Record<string, string[]> }).byWave ?? {}).length;
     // behold#571: a Terragrunt repo's roots are its units.
     const noun = hasTerragruntUnits(cfg.projectDir) ? "unit" : "root";
@@ -2685,8 +2688,9 @@ export function createApp(
       // declaration is all there is to read, so no env, tier or live join runs
       // here, which is also what lets a public view draw it.
       const tgDecl = components ? servedTerragucciComponents() : undefined;
-      // behold#741: a kiosk telling a chapter-carrying scenario's story asks for its wave blocks (`blocks=1`), as chant's loop does.
-      if (tgDecl) return c.json(await terragucciComponentsGraph(tgDecl, opts, url.searchParams.get("blocks") === "1"));
+      // behold#741: a kiosk telling a chapter-carrying scenario's story asks for its wave blocks (`blocks=1`), as chant's loop does;
+      // the held small stage asks for its waves in a row (`waves=row`).
+      if (tgDecl) return c.json(await terragucciComponentsGraph(tgDecl, opts, { childBlocks: url.searchParams.get("blocks") === "1", row: url.searchParams.get("waves") === "row" }));
       let ir: GraphIR;
       let mode: "component-status" | undefined;
       let metaEnv = cfg.env ?? null;

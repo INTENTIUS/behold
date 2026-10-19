@@ -13,6 +13,7 @@
 
 import { BLOCKED_TONE, blockedHeader, blockedOf, pinsCommit, rootStates, totalsLine } from "./terragucci-change.js";
 import { shortReason } from "./chant-pr-marks.js";
+import { rootNames } from "./cone.js";
 
 /** A job's status as its wave box says it. A job held at a terragucci gate is never a failure. */
 export const JOB_WORDS = {
@@ -175,9 +176,12 @@ export function componentMarks(answer, progress, facets, { runs = null, pin = nu
       tone: st.tone,
       words: reason ? `failed: ${reason}` : st.words.replace(/^wave \d+ · /, ""),
       ...(reason ? { mid: `failed: ${shortReason(st.error, 16)}`, reason } : {}),
-      short: SHORT_WORDS[st.state] || st.state,
+      short: st.cone === "not-planned" ? "not planned" : st.cone === "cone" || st.cone === "full" ? "planned" : SHORT_WORDS[st.state] || st.state,
       facts,
       ...(st.blockedBy ? { blockedBy: st.blockedBy } : {}),
+      // Report minor 34: the cone's resources, short lines inside the card's body.
+      ...(st.lines ? { lines: st.lines } : {}),
+      ...(st.cone ? { cone: st.cone } : {}),
     };
   }
   // behold#741: a wave's header once some of its roots are blocked (terragucci#1161); none for older reports.
@@ -189,8 +193,16 @@ export function componentMarks(answer, progress, facets, { runs = null, pin = nu
     const members = jobs.filter((j) => j.wave === n).map((j) => cards[j.component]).filter(Boolean);
     const w = waveState(answer, progress, stage, n);
     const status = commit ? waveStatus(jobStatus(runs, commit, jobName), w) : null;
+    // The wave's job ended well and the run view never started a root: the wave applied nothing to it. Say so,
+    // never "queued" under a box that says the job succeeded.
+    if (stage === "apply" && status && status.status === "success") for (const m of members) settleMember(m, progress, n);
     const facts = [];
-    for (const m of members) for (const f of m.facts) if (!facts.includes(f)) facts.push(f);
+    // behold#736: a cone's fact is its root's (each card's first), so the wave's box names whose it is: "cluster-a: 1
+    // of 5 blocks, as a cone", "app-01 to app-06 planned in full: empty cone" for a wave of several estates.
+    const coneSaid = new Map();
+    for (const m of members) if ((m.cone === "cone" || m.cone === "full") && m.facts[0]) coneSaid.set(m.facts[0], [...(coneSaid.get(m.facts[0]) || []), m]);
+    for (const [f, ms] of coneSaid) facts.push(ms[0].cone === "full" ? `${rootNames(ms.map((m) => m.root))} ${f}` : `${rootNames(ms.map((m) => m.root))}: ${f}`);
+    for (const m of members) for (const f of m.facts) if (!facts.includes(f) && !coneSaid.has(f)) facts.push(f);
     // The plan a waiting wave is approved for first, as it's what the approval
     // names; then, for a wave that failed, the waves before it that stay applied.
     const rank = (f) => (/^approve plan /.test(f) ? 0 : / stays applied$/.test(f) ? 1 : 2);
@@ -230,6 +242,27 @@ export function componentMarks(answer, progress, facets, { runs = null, pin = nu
   const needs = rootNeeds(answer, progress, stage, jobs, rootOf);
   const reach = tgReachOf(cards, { stage, answer, needs, earlier });
   return { stage, cards, waves, commit, needs, ...(reach ? { reach } : {}), ...(story.kiosk ? { statusRight: true, cardFont: 15, waveFont: 18 } : {}) };
+}
+
+/**
+ * A card still `not-started` in a wave whose job succeeded: `unchanged` when
+ * the run view's wave says it changed nothing (its totals, or `changed`
+ * leaving the root out); else the wave's report isn't read yet, and the card
+ * says so ("wave done, reading its report") until the report decides, never
+ * that the root was skipped. Changes the card in place; any other card is
+ * left as it is.
+ */
+export function settleMember(card, progress, n) {
+  if (!card || card.state !== "not-started") return card;
+  const w = progress && Array.isArray(progress.states) ? progress.states.find((x) => x.number === n) : null;
+  const moved = w && w.totals ? Object.entries(w.totals).some(([a, k]) => a !== "no-op" && a !== "read" && typeof k === "number" && k > 0) : null;
+  const unchanged = (w && Array.isArray(w.changed) && !w.changed.includes(card.root)) || moved === false;
+  card.state = unchanged ? "unchanged" : "reading";
+  card.tone = "idle";
+  card.words = unchanged ? "unchanged" : "wave done, reading its report";
+  card.short = unchanged ? "unchanged" : "reading its report";
+  card.facts = [unchanged ? "its wave applied no change to it" : "its wave's job ended; its report says what it applied, once read", ...card.facts];
+  return card;
 }
 
 const toneOf = (state) => ({ planned: "plan", waiting: "wait", applying: "busy", applied: "ok", failed: "bad", refused: "bad" })[state] || "idle";

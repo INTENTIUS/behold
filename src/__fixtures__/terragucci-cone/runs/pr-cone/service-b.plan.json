@@ -1,0 +1,35 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {
+      "address": "aws_iam_role_policy.service_b",
+      "mode": "managed",
+      "type": "aws_iam_role_policy",
+      "change": {
+        "actions": [
+          "update"
+        ]
+      }
+    },
+    {
+      "address": "aws_iam_role.service_b",
+      "mode": "managed",
+      "type": "aws_iam_role",
+      "change": {
+        "actions": [
+          "no-op"
+        ]
+      }
+    },
+    {
+      "address": "data.aws_iam_policy_document.service_b",
+      "mode": "data",
+      "type": "aws_iam_policy_document",
+      "change": {
+        "actions": [
+          "read"
+        ]
+      }
+    }
+  ]
+}

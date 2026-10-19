@@ -64,7 +64,7 @@ export function viewFromMessage(event, host) {
       if (typeof v === "boolean") want.radial = v;
       continue;
     }
-    if (k === "env" || k === "gates" || k === "focus" || k === "run") {
+    if (k === "env" || k === "gates" || k === "focus" || k === "run" || k === "pull") {
       // env: null or "" is the source graph. gates: null or "" hands the
       // gate strip back to the graph's env. focus: null or "" brings nothing forward. run: null or "" draws the newest run again.
       if (v === null || v === "") want[k] = null;

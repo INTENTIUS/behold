@@ -1,0 +1,65 @@
+{
+  "schema": "terragucci.report/v1",
+  "minor": 34,
+  "run": {
+    "project": "forgejo:3000/demo/demo-cone",
+    "commit": "2222222",
+    "stage": "tf-plan",
+    "binary": "choudoufu",
+    "runtime": "node",
+    "started": "2026-10-17T10:05:00.000Z",
+    "finished": "2026-10-17T10:05:00.000Z",
+    "base": "origin/main",
+    "pull_request": "7"
+  },
+  "roots": [
+    {
+      "path": "service-b",
+      "binary": {
+        "name": "choudoufu",
+        "version": "0.28.0"
+      },
+      "status": "planned",
+      "plan_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "counts": {
+        "update": 1,
+        "no-op": 1
+      },
+      "plan": {
+        "text": "service-b.plan.txt",
+        "json": "service-b.plan.json"
+      },
+      "changes": [
+        {
+          "address": "aws_iam_role_policy.service_b",
+          "type": "aws_iam_role_policy",
+          "action": "update",
+          "attributes": [
+            {
+              "path": "policy"
+            }
+          ]
+        }
+      ],
+      "highlights": [],
+      "fold": "folded",
+      "why": [],
+      "cone": {
+        "base": "origin/main",
+        "blocks": 2,
+        "of": 6,
+        "targets": 2
+      }
+    }
+  ],
+  "waves": [
+    {
+      "number": 1,
+      "roots": [
+        "service-b"
+      ],
+      "set_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "approval": "not-required"
+    }
+  ]
+}

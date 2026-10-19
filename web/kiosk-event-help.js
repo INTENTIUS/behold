@@ -288,6 +288,22 @@ export function tipsQueue(state, { add = [], now = 0, max = TIPS_AT_ONCE, ms = T
 }
 
 /**
+ * Whether the caption already says what a critical modal would, so the modal
+ * stays shut: on a held small stage in Watch (`held`) nothing overlays the
+ * graph (web/kiosk-watch.js watchOverlays), and the caption says each step
+ * (the applied counts, a held wave's approval, a failure's label). Any other
+ * stage, and Inspect, open them as they always have.
+ */
+export function modalShownElsewhere(event, { watch = false, held = false } = {}) {
+  return !!watch && !!held && !!event;
+}
+
+/** Whether Tips' bubbles show: everywhere but a held small stage in Watch, where nothing overlays the graph; the trail over the caption stays. */
+export function tipsShown({ watch = false, held = false } = {}) {
+  return !(watch && held);
+}
+
+/**
  * The critical modals' queue: one at a time, never while a viewer is at the
  * page (a pointer or a key within `quietMs`), and only the newest of each
  * kind, since an old one is already history.
