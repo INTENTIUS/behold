@@ -1043,6 +1043,31 @@ function landedIds() {
   return out;
 }
 
+/**
+ * A selected dot's tip follows the dot as the camera moves (the director reframes the boxes at each chapter), hides
+ * while the dot is not drawn, and goes with the selection when a new read's scene no longer holds the dot.
+ */
+function followSelected() {
+  if (!S || !S.selected || !S.tip) return;
+  const i = S.idx.get(S.selected);
+  if (i === undefined) {
+    S.selected = null;
+    S.tip.style.display = "none";
+    S.tipAt = null;
+    if (S.provLink) S.provLink.hidden = true;
+    return;
+  }
+  if (!S.pvis[i]) {
+    S.tip.style.display = "none";
+    S.tipAt = null;
+    return;
+  }
+  const at = `${Math.round(S.px[i])},${Math.round(S.py[i])},${Math.round(S.ph[i])}`;
+  if (at === S.tipAt && S.tip.style.display === "block") return;
+  S.tipAt = at;
+  showTip(S.selected, S.px[i], S.py[i] + S.ph[i], S.py[i] - S.ph[i]);
+}
+
 /** Select a dot: its tip stays up, and its provenance is read out in the live region, for a reader without a pointer. */
 function selectDot(id) {
   if (!S) return;
@@ -1280,6 +1305,7 @@ function polyline(ctx, pts) {
 }
 
 function draw(dt) {
+  followSelected();
   const { ctx, canvas, scene, pitch: P, origin: O, col } = S;
   const cam = camera();
   const dpr = window.devicePixelRatio || 1;

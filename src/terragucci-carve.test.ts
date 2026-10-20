@@ -397,6 +397,26 @@ describe("cycle 5's adoption: found by listing, and one box with its stock root"
     expect(readProgress(JSON.stringify(stamp(0)), "2026-10-17T08:00:00Z").lines).toHaveLength(1);
   });
 
+  it("keeps following a migration it found by listing once demo.json names another repo (#711's team beat)", async () => {
+    const dir = cycle5();
+    const remembered = new Set<string>();
+    const places = new Map<string, string | null>();
+    const a = await readCarve(terragucciSource(dir), { choudoufu: () => false, remembered, places });
+    if (!a.live) throw new Error(`shut: ${a.reason}`);
+    expect([...remembered]).toEqual(["adopt"]);
+    expect(places.get("adopt")).toBe(P);
+    // The team beat: the listing asks team B's repo's project, which holds no migrations.
+    put(dir, "demo.json", JSON.stringify({ cycle: 5, scenario: "terralith", title: "t", step: "planned", label: "l", started_at: START, next: null, pull: 3, commit: "abc", tool: "terralith", repo: "terragucci-admin/demo-terralith-team-b" }));
+    const b = await readCarve(terragucciSource(dir), { choudoufu: () => false, remembered, places });
+    if (!b.live) throw new Error(`shut: ${b.reason}`);
+    expect(b.migrations.map((m) => m.name)).toEqual(["adopt"]);
+    expect(b.estates.map((e) => e.estate)).toEqual(["tl5-terralith"]);
+    // Without the memory, the team beat draws none of the cycle's estates.
+    const c = await readCarve(terragucciSource(dir), { choudoufu: () => false });
+    if (!c.live) throw new Error(`shut: ${c.reason}`);
+    expect(c.estates).toEqual([]);
+  });
+
   it("draws the adopted estate in place of its stock root, as one box", async () => {
     const a = await readCarve(terragucciSource(cycle5()), { choudoufu: () => false });
     if (!a.live) throw new Error(`shut: ${a.reason}`);

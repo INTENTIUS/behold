@@ -77,6 +77,11 @@ import { RUNS_INDEX_KEY } from "./terragucci-runs.ts";
 export const CARVE_READ_TTL_MS = 1_500;
 /** And while none runs. */
 export const CARVE_IDLE_TTL_MS = 10_000;
+/**
+ * While a tour plays (#711): its chapters and visuals are in this read, and the driver holds a step about 8 s, so a
+ * read shared for the idle 10 s would draw a chapter's card and numbers a step behind the kiosk's trail.
+ */
+export const CARVE_TOUR_TTL_MS = 3_000;
 /** The most rosters one read takes, so a large estate list cannot turn one poll into hundreds of GETs. */
 export const MAX_ROSTERS = 64;
 /** The most migrations one read follows. */
@@ -319,7 +324,7 @@ const FINISHED = new Set(["applied", "refused", "failed", "proof-failed", "done"
 export interface CarveReadOptions {
   /** Whether the served estate has choudoufu roots. Asked per read, since a project switch changes it. */
   choudoufu: () => boolean;
-  /** Migrations seen before (a name demo.json named a step ago), so a finished one stays drawn. */
+  /** Migrations seen before (a name demo.json named a step ago, or one a listing found), so a finished one stays drawn. */
   remembered?: Set<string>;
   /** Where each migration's files were found, so the next read asks one key, not every candidate. */
   places?: Map<string, string | null>;
@@ -618,7 +623,10 @@ export async function readCarve(source: TerragucciSource, opts: CarveReadOptions
     const finished = isRecord(record) && str(record.finished) ? record.finished : null;
     // A listed migration is followed when it belongs to this cycle: a line, its finish or its record's write at or after started_at.
     if (f.listed && !inCycle(startedAt!, lines, finished, f.listed.modified)) continue;
-    if (home !== null && !f.listed) opts.places?.set(m.name, home);
+    // A listed one is remembered too, with its place: the listing asks only the repo demo.json names now, and the
+    // terralith's team beat names team B's repo, where the cycle's adoption and split are not (#711).
+    if (home !== null) opts.places?.set(m.name, home);
+    if (home !== null && f.listed) opts.remembered?.add(m.name);
     if (bad) problems.push(`${progress}: ${bad} line${bad === 1 ? " is" : "s are"} not a progress record`);
     const counts = recordCounts(record) ?? lineCounts ?? countLines(lines);
     const done = !!finished || (status !== null && FINISHED.has(status)) || (counts.left === 0 && lines.length > 0 && named !== m.name);
@@ -733,7 +741,7 @@ export function terragucciCarveRoute(app: Hono, source: TerragucciSource, opts: 
         }
         // A tour's waves land in seconds (the cross beat's two waves take about 12 s): while its run applies, read as often as for a migration.
         const applying = !!a.tour && !!a.demo && ["merged", "applying", "resumed", "approved"].includes(a.demo.step);
-        entry.ttl = a.running || applying ? CARVE_READ_TTL_MS : CARVE_IDLE_TTL_MS;
+        entry.ttl = a.running || applying ? CARVE_READ_TTL_MS : a.tour ? CARVE_TOUR_TTL_MS : CARVE_IDLE_TTL_MS;
         // A new cycle of the demo's loop starts from its own migrations.
         if (a.demo && cycle !== null && a.demo.cycle !== cycle) {
           remembered.clear();

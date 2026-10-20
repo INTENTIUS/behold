@@ -267,6 +267,9 @@ export function resourceCounts(migration) {
 /** The Tip for a migration that has just finished. */
 export function liveEndTip(migration, t) {
   const c = resourceCounts(migration);
+  // An adoption only stamps and a retag only moves: the count it has none of is left out (#711), not said as a 0.
+  const parts = [c.moved ? `${fmt(c.moved)} moved` : null, c.stamped ? `${fmt(c.stamped)} stamped` : null].filter(Boolean);
+  const what = parts.length ? parts.join(" and ").replace(/^(\S+) (moved|stamped)/, "$1 resources $2") : "0 resources moved";
   return {
     key: `end:${migration.name}`,
     at: t,
@@ -274,6 +277,6 @@ export function liveEndTip(migration, t) {
     estate: null,
     tone: c.refused ? "bad" : "ok",
     title: `${migration.name}: done`,
-    text: `${migration.name} is done: ${fmt(c.moved)} resources moved and ${fmt(c.stamped)} stamped by tag writes alone, none recreated${c.refused ? `; ${c.refused} refused, left where they were` : ""}.`,
+    text: `${migration.name} is done: ${what} by tag writes alone, none recreated${c.refused ? `; ${c.refused} refused, left where they were` : ""}.`,
   };
 }
