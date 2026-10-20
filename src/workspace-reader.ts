@@ -107,8 +107,18 @@ export const CHANGE_SET_READ = "change-set show";
  */
 export const POINTS_READ = "points --open";
 
+/**
+ * behold#815: chant's run index (ci-run-index.schema.json, chant#4098), the
+ * document `chant ci runs --report-url <url> --json` prints. The runner keeps
+ * it at `<url>/runs/index.json`, and behold reads that file from the report
+ * URL rather than running a chant: the CI host's chant wrote it, not the
+ * project's. It still comes through {@link ciRunIndexOf} here, refused at any
+ * contract but 1, and its floor is in src/chant-floors.ts.
+ */
+export const CI_RUNS_READ = "ci runs";
+
 /** The reads named outside `chant workspace`, for a refusal's wording. */
-const OUTSIDE_WORKSPACE: readonly string[] = [...TRUNK_READS, CHANGE_SET_READ];
+const OUTSIDE_WORKSPACE: readonly string[] = [...TRUNK_READS, CHANGE_SET_READ, CI_RUNS_READ];
 
 export interface WorkspaceReader {
   /** Run one contract command with `args`, and return the document chant printed, unchanged. */
@@ -177,6 +187,21 @@ function documentOf(run: TransportRun, shown: string, code: string, command: str
   }
   if (!isRecord(doc)) throw new WorkspaceReadError({ error: `${shown} printed JSON that is not an object.`, code, remedy: `Run \`${shown}\` in the workspace root.` });
   const refused = contractRefusal(doc, command);
+  if (refused) throw new WorkspaceReadError(refused);
+  return doc;
+}
+
+/** behold#815: the run index's text, read from `where`, as a contract 1 document, or a {@link WorkspaceReadError}. */
+export function ciRunIndexOf(text: string, where: string): WorkspaceDocument {
+  const remedy = "`chant ci runs --report-url <url> --json` prints the index as chant reads it.";
+  let doc: unknown;
+  try {
+    doc = JSON.parse(text);
+  } catch {
+    throw new WorkspaceReadError({ error: `${where} is not JSON.`, code: "ci-runs", remedy });
+  }
+  if (!isRecord(doc)) throw new WorkspaceReadError({ error: `${where} is JSON that is not an object.`, code: "ci-runs", remedy });
+  const refused = contractRefusal(doc, CI_RUNS_READ);
   if (refused) throw new WorkspaceReadError(refused);
   return doc;
 }

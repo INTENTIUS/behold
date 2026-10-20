@@ -295,10 +295,10 @@ const disabledPage =
  * `GET /kiosk`: the kiosk page. Without `--terragucci` there is nothing to
  * narrate, and the page says so instead of loading.
  */
-export function kioskRoute(app: Hono, webRoot: string, enabled: boolean, allowedHosts: string[] = [], opts: { chantDemo?: boolean } = {}): void {
+export function kioskRoute(app: Hono, webRoot: string, enabled: boolean, allowedHosts: string[] = [], opts: KioskPageOptions = {}): void {
   app.get("/kiosk", (c) => {
     // behold#752: with chant's fan-out demo the only one served (`--chant-demo`, no `--terragucci`), /kiosk is its page.
-    if (!enabled && opts.chantDemo) return chantFanoutPage(c, webRoot, allowedHosts, "/kiosk");
+    if (!enabled && opts.chantDemo) return chantFanoutPage(c, webRoot, allowedHosts, "/kiosk", opts.ciRuns);
     if (!enabled) {
       return c.html(disabledPage, 404);
     }
@@ -308,7 +308,7 @@ export function kioskRoute(app: Hono, webRoot: string, enabled: boolean, allowed
       origin: shareOrigin(c.req.header("host"), c.req.header("x-forwarded-proto"), allowedHosts),
       path: "/kiosk",
     });
-    return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } });
+    return new Response(runsMeta(html, opts.ciRuns), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } });
   });
 }
 
@@ -527,6 +527,20 @@ export function terragucciCyclesRoute(app: Hono, source: TerragucciSource, opts:
  */
 export type KioskSource = "chant-demo";
 
+/** What a kiosk page is served with: chant's demo (`--chant-demo`), and behold#815 chant's run index (`--ci-report-url`). */
+export interface KioskPageOptions {
+  chantDemo?: boolean;
+  ciRuns?: boolean;
+}
+
+/**
+ * behold#815: a page whose runs pane reads chant's run index (/api/chant/ci/runs) rather than the forge's runs,
+ * told so by a meta tag web/kiosk-source.js reads. Without `--ci-report-url` the page is as it was.
+ */
+export function runsMeta(html: string, ciRuns?: boolean): string {
+  return ciRuns ? html.replace(/<meta charset="utf-8" \/>/, `<meta charset="utf-8" />\n    <meta name="kiosk-runs" content="chant-ci" />`) : html;
+}
+
 /** The kiosk page for one tool: kiosk.html, told its tool (and, behold#752, its demo's source) by meta tags the page reads. */
 export function vendorPage(html: string, tool: VendorTool, source?: KioskSource): string {
   const src = source ? `\n    <meta name="kiosk-source" content="${source}" />` : "";
@@ -534,7 +548,7 @@ export function vendorPage(html: string, tool: VendorTool, source?: KioskSource)
 }
 
 /** behold#752: chant's fan-out page, reading chant's own demo records, at `path`. */
-function chantFanoutPage(c: { req: { header(name: string): string | undefined } }, webRoot: string, allowedHosts: string[], path: string): Response {
+function chantFanoutPage(c: { req: { header(name: string): string | undefined } }, webRoot: string, allowedHosts: string[], path: string, ciRuns?: boolean): Response {
   const name = VENDOR_NAMES["chant-fanout"];
   const shared = sharePage(readFileSync(join(webRoot, "kiosk.html"), "utf8"), {
     title: `behold · ${name}`,
@@ -542,18 +556,18 @@ function chantFanoutPage(c: { req: { header(name: string): string | undefined } 
     origin: shareOrigin(c.req.header("host"), c.req.header("x-forwarded-proto"), allowedHosts),
     path,
   });
-  return new Response(vendorPage(shared, "chant-fanout", "chant-demo"), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } });
+  return new Response(runsMeta(vendorPage(shared, "chant-fanout", "chant-demo"), ciRuns), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } });
 }
 
 /**
  * `GET /<tool>` for each of {@link VENDOR_TOOLS}: the kiosk for that tool
  * alone. Without `--terragucci` it says what /kiosk says.
  */
-export function vendorRoutes(app: Hono, webRoot: string, enabled: boolean, allowedHosts: string[] = [], opts: { chantDemo?: boolean } = {}): void {
+export function vendorRoutes(app: Hono, webRoot: string, enabled: boolean, allowedHosts: string[] = [], opts: KioskPageOptions = {}): void {
   for (const tool of VENDOR_TOOLS) {
     app.get(`/${tool}`, (c) => {
       // behold#752: `--chant-demo` gives /chant-fanout chant's own records, whatever else is served.
-      if (opts.chantDemo && tool === "chant-fanout") return chantFanoutPage(c, webRoot, allowedHosts, `/${tool}`);
+      if (opts.chantDemo && tool === "chant-fanout") return chantFanoutPage(c, webRoot, allowedHosts, `/${tool}`, opts.ciRuns);
       if (!enabled) return c.html(disabledPage, 404);
       const name = VENDOR_NAMES[tool];
       const shared = sharePage(readFileSync(join(webRoot, "kiosk.html"), "utf8"), {
@@ -562,7 +576,7 @@ export function vendorRoutes(app: Hono, webRoot: string, enabled: boolean, allow
         origin: shareOrigin(c.req.header("host"), c.req.header("x-forwarded-proto"), allowedHosts),
         path: `/${tool}`,
       });
-      const html = vendorPage(shared, tool);
+      const html = runsMeta(vendorPage(shared, tool), opts.ciRuns);
       return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } });
     });
   }

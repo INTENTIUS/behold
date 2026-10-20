@@ -1,0 +1,66 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/ci-run-index/v1/ci-run-index.schema.json",
+  "contract": 1,
+  "chant": "0.124.31",
+  "updated": "2026-10-19T02:31:40.512Z",
+  "runs": [
+    {
+      "job": "plan",
+      "pr": 775,
+      "commit": "9b1e3f0c2d4a5b6c7d8e9f00112233445566778a",
+      "status": "ok",
+      "member": "web",
+      "started": "2026-10-19T02:31:02.004Z",
+      "ended": "2026-10-19T02:31:40.410Z",
+      "runId": "chant-1792376662004",
+      "key": "775/9b1e3f0c2d4a5b6c7d8e9f00112233445566778a/web",
+      "runOrigin": { "forge": "chant" },
+      "signer": "ci-runner@chant-demo"
+    },
+    {
+      "job": "apply",
+      "pr": 774,
+      "commit": "80eef4a5e0eb747fddb04a7067e91ea59dd8dade",
+      "status": "ok",
+      "started": "2026-10-19T02:27:13.312Z",
+      "ended": "2026-10-19T02:27:17.839Z",
+      "runId": "6784",
+      "key": "774/80eef4a5e0eb747fddb04a7067e91ea59dd8dade",
+      "runOrigin": { "forge": "github", "repo": "chant-demo/fan-out-estate", "url": "http://forgejo:3000/chant-demo/fan-out-estate/actions/runs/6784", "attempt": 1 }
+    },
+    {
+      "job": "plan",
+      "pr": 774,
+      "commit": "47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+      "status": "ok",
+      "started": "2026-10-19T02:26:44.525Z",
+      "ended": "2026-10-19T02:26:44.624Z",
+      "runId": "6783",
+      "key": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+      "runOrigin": { "forge": "github", "repo": "chant-demo/fan-out-estate", "url": "http://forgejo:3000/chant-demo/fan-out-estate/actions/runs/6783", "attempt": 1 }
+    },
+    {
+      "job": "apply",
+      "pr": 773,
+      "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+      "status": "fail",
+      "failure": { "code": "failed" },
+      "started": "2026-10-19T02:26:01.917Z",
+      "ended": "2026-10-19T02:26:10.991Z",
+      "runId": "6782",
+      "key": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+      "runOrigin": { "forge": "github", "repo": "chant-demo/fan-out-estate", "url": "http://forgejo:3000/chant-demo/fan-out-estate/actions/runs/6782", "attempt": 1 }
+    },
+    {
+      "job": "plan",
+      "pr": 773,
+      "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+      "status": "ok",
+      "started": "2026-10-19T02:25:19.777Z",
+      "ended": "2026-10-19T02:25:19.881Z",
+      "runId": "6780",
+      "key": "773/6d4a48da36317886b549ca0d46c44646e697f561",
+      "runOrigin": { "forge": "github", "repo": "chant-demo/fan-out-estate", "url": "http://forgejo:3000/chant-demo/fan-out-estate/actions/runs/6780", "attempt": 1 }
+    }
+  ]
+}

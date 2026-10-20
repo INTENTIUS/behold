@@ -41,3 +41,26 @@ export function pageSource(doc) {
   const s = m ? m.getAttribute("content") : null;
   return s === "chant-demo" ? s : null;
 }
+
+/**
+ * behold#815: the runs pane's reads when serve was given `--ci-report-url`:
+ * chant's run index and each run's events (src/ci-run-index.ts), in place of
+ * the forge's runs. Only the runs pane reads them; the demo's cycle and its
+ * approval panel read as before. `from` is the pane's line under "Runs".
+ */
+export const CI_RUNS_READS = {
+  runs: "/api/chant/ci/runs",
+  run: (id) => `/api/chant/ci/runs/${encodeURIComponent(id)}`,
+  from: "From chant's run index, newest first.",
+};
+
+/** The runs the page was served for (`<meta name="kiosk-runs">`): `chant-ci`, or null for the source's own. */
+export function pageRuns(doc) {
+  const m = doc && doc.querySelector ? doc.querySelector('meta[name="kiosk-runs"]') : null;
+  return m && m.getAttribute("content") === "chant-ci" ? "chant-ci" : null;
+}
+
+/** The runs pane's reads: chant's run index for `chant-ci`, else the source's (`reads.runs`, `reads.run`). */
+export function runsReadsFor(runs, reads) {
+  return runs === "chant-ci" ? CI_RUNS_READS : { runs: reads.runs, run: reads.run };
+}

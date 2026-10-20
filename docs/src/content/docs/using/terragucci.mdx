@@ -613,6 +613,33 @@ refused: chant may add steps within a version, so the page shows it by its
 name and lights no stop. Without
 `--chant-demo`, every page reads terragucci's loop as above.
 
+#### Runs from chant's run index
+
+`chant ci run --report-url <url>` (chant 0.124.31 and newer) keeps a run index
+at `<url>/runs/index.json` (`ci-run-index/v1`), the document
+`chant ci runs --report-url <url> --json` prints. Give behold the same URL and
+the kiosk's runs pane reads its runs there instead of the forge's:
+
+```sh
+behold serve <checkout> --terragucci s3://reports --ci-report-url s3://reports/chant
+```
+
+`BEHOLD_CI_REPORT_URL` does the same. The URL is s3://, https://, file:// or
+a directory. The pane lists the index's runs, newest first, each with its
+member, why it failed and, when the run's record was signed, who signed it.
+An apply that exited 3 (the plan moved, or a gate waits) is drawn held, not
+failed. Opening a run reads its `pr-<job>.events.jsonl` under the entry's key
+as the log, the way the fan-out demo's runs are built. A job run without
+`--events-json` has no events file, and its log says so. A run whose forge
+names it links to it.
+
+`GET /api/chant/ci/runs` and `GET /api/chant/ci/runs/<runId>` answer them;
+a run is read only by an id the index lists, and only under its own key, so
+`--public` serves both. An index of another contract, or one written by a
+chant older than 0.124.31, is refused with the reason in the pane. Without
+`--ci-report-url` the pane reads the forge's runs, as before. Once chant
+declares the report URL (chant#4160), behold will read it from there.
+
 ## Try it on terragucci's example
 
 behold ships a reports bucket for terragucci's own example estate, written by

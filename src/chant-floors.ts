@@ -103,6 +103,12 @@ export const OVERLAP_CHANT_FLOOR = "0.124.29";
  * beside its gate (#472). Below it the gate strip draws no points and says
  * which chant adds them. */
 export const DECISION_POINTS_CHANT_FLOOR = "0.107.0";
+/** The first chant whose runner keeps a run index at its report URL,
+ * `<url>/runs/index.json` (ci-run-index/v1, INTENTIUS/chant#4098,
+ * INTENTIUS/chant#4114), which `chant ci runs --json` prints. The kiosk's runs
+ * pane under `serve --ci-report-url` (#815). The index names the chant that
+ * wrote it, and one written by an older chant is refused. */
+export const CI_RUN_INDEX_CHANT_FLOOR = "0.124.31";
 
 export interface ChantFloor {
   /** The read, in words: `the why of a member or a card`. */
@@ -134,6 +140,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "why chain", floor: WHY_TRACE_CHANT_FLOOR, adds: "graph --intent writes a trace, the why chain (chant#4023)", degraded: "the why pane shows decisions, runs and commits without the chain from work item to release" },
   { read: "mixed environment", floor: MIXED_ENVIRONMENT_CHANT_FLOOR, adds: "workspace status mixed, with redeploy and rollback lines (chant#4035, chant#4072)", degraded: "the Trunk tab marks no environment mixed" },
   { read: "work overlap", floor: OVERLAP_CHANT_FLOOR, adds: "workspace status overlap (chant#4025)", degraded: "the graph draws no collision marks, and the Collisions tab says which chant adds them" },
+  { read: "CI run index", floor: CI_RUN_INDEX_CHANT_FLOOR, adds: "chant ci run --report-url keeps runs/index.json, read by chant ci runs (chant#4098, chant#4114)" },
   { read: "decision points", floor: DECISION_POINTS_CHANT_FLOOR, adds: "a gate that asks a decision point, read with chant workspace points --open (chant#3170)", degraded: "the gate strip draws no open decision points, and says which chant adds them" },
 ];
 

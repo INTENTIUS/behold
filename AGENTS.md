@@ -97,6 +97,29 @@ an address it answers 404. The kiosk's "Pipeline metrics" pane
 (web/kiosk-metrics.js) shows only what it returns, and no pane when it
 returns nothing for the repo.
 
+## Runs from chant's run index (behold#815)
+
+`behold serve --ci-report-url <url>` (or `BEHOLD_CI_REPORT_URL`) points the
+kiosk's runs pane at chant's run index, `<url>/runs/index.json`
+(ci-run-index/v1, floor `CI_RUN_INDEX_CHANT_FLOOR`, 0.124.31), instead of the
+forge's runs (src/ci-run-index.ts). The text goes through
+`ciRunIndexOf` in src/workspace-reader.ts (contract 1), then the floor against
+the index's own `chant`, then the vendored schema
+(src/ci-run-index-schema/, chant commit in `CI_RUN_INDEX_SCHEMA_SOURCE`) with
+its `status` and `job` enums left out, since v1 adds to them. An entry the
+schema refuses, or whose key is not `<pr>/<commit>[/<member>]`, is dropped and
+listed in `skipped`. `GET /api/chant/ci/runs` answers the runs in demo.runs/v1
+shape; `GET /api/chant/ci/runs/:runId` reads that entry's
+`pr-<job>.events.jsonl` and `pr-<job>.json` under its key only and builds the
+log with `demoRunOf` (src/chant-demo.ts). No events file is one step saying
+so. An apply refused with `plan-changed`, `not-approved` or a wave's
+equivalent exited 3 and is drawn waiting with "the plan moved or waits:
+re-plan and re-approve". `signer` shows only when it is a string; runOrigin's
+URL is the link, named by its host, never by `forge`. The page learns of it
+from `<meta name="kiosk-runs" content="chant-ci">` (web/kiosk-source.js
+`pageRuns`); only the runs pane switches, the cycle and approval panel read
+as before. Without the flag nothing changes. chant#4160 will declare the URL.
+
 ## A terragucci estate, from its reports (#490)
 
 `behold serve <repo> --terragucci <dir|s3://bucket/prefix|https://…>`
