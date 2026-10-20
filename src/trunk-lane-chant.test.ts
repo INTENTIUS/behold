@@ -15,7 +15,9 @@ import { C1, C2, C3, C4, DIGEST, makeLaneWorkspace, R1, R2, R3 } from "./trunk-l
 // four trunk commits with ci tags (two green, one green then revoked, one
 // undecided), three releases on chant/lifecycle (v2 config-only, v3 cut from
 // the revoked commit and running in staging), a gate in prod waiting on the
-// second green commit and v3's release gate there. behold reads the lane and
+// second green commit and v3's release gate there, and the outcome of a promote
+// of v3 to staging that deployed api and failed on web (#731), so staging is
+// mixed. behold reads the lane and
 // its release column, approves the gate through `chant approve`, and reads
 // the lane again.
 //
@@ -99,6 +101,16 @@ describe.skipIf(!CHANT || !existsSync(CHANT))("the trunk lane, through chant (#6
       expect.objectContaining({ label: "v2", commit: C2, components: ["web"], rollback: [] }),
     ]);
     expect(prod.releases).toEqual([expect.objectContaining({ label: "v1", commit: C1, approver: "github:alice" })]);
+    // #731: the promote of v3 to staging deployed api and failed on web.
+    expect(staging.mixed).toEqual([
+      expect.objectContaining({
+        member: "web",
+        components: [expect.objectContaining({ component: "api", state: "settled" }), expect.objectContaining({ component: "web", state: "failed", attempt: expect.objectContaining({ verb: "promote", runId: "run-3" }) })],
+        redeploy: ["chant components redeploy staging --component web"],
+        rollback: "chant components rollback staging --release v2",
+      }),
+    ]);
+    expect(prod.mixed).toEqual([]);
     expect(prod.waiting).toEqual([expect.objectContaining({ key: "web/web/promote", gitSha: C2, runId: "run-9", commitState: "green" })]);
     expect(prod.superseded).toEqual([expect.objectContaining({ key: "web/release/promote", releaseDigest: R3, revoked: expect.objectContaining({ tag: `ci/revoked/${C3}`, phase: "test" }) })]);
     expect(lane.commits.find((c: any) => c.sha === C2).where).toEqual([
@@ -141,5 +153,6 @@ describe.skipIf(!CHANT || !existsSync(CHANT))("the trunk lane, through chant (#6
       ["v1", null, null],
     ]);
     expect(lane.environments[1].superseded).toEqual([]);
+    expect(lane.environments[0].mixed).toEqual([]);
   }, 180_000);
 });

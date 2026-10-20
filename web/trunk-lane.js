@@ -7,7 +7,9 @@
 // draws it on the graph (#681). Between the two, the releases cut from those
 // commits (#692): each with its cut, a config-only mark, a revoked mark with
 // the rollback line, where it runs and waits, and the environment it is
-// promoted to next. Nothing here is behold's own state.
+// promoted to next. An environment chant reads as mixed (#731) says so, with
+// each component's release and state and chant's redeploy and rollback lines,
+// shown to copy and never run. Nothing here is behold's own state.
 
 import { ago, clock } from "./terragucci.js";
 import { approveAffordance, HOST_APPROVES, overrideCard } from "./workspace-gates.js";
@@ -168,6 +170,35 @@ export function releaseRow(r, now = new Date()) {
   };
 }
 
+/**
+ * One member's mixed state in an environment (#731), as lines: a head, what
+ * each component runs and whether it settled, then chant's redeploy lines and
+ * its rollback line, which behold shows and does not run.
+ */
+export function mixedLines(m, env, now = new Date()) {
+  const unsettled = m.components.filter((c) => c.state !== "settled");
+  const ran = [...new Set(m.components.map((c) => (c.release ? releaseName(c.release) : null)).filter(Boolean))];
+  const head = unsettled.length
+    ? { text: `mixed: ${plural(unsettled.length, "component")} of ${m.member} not settled`, title: "A promote, rollback or redeploy left them failed or gated, and chant has recorded nothing for them since, so what they run is not known." }
+    : { text: `mixed: ${m.member} runs ${ran.join(" and ")}`, title: "Its components run different releases." };
+  const components = m.components.map((c) => {
+    const runs = c.release ? `runs ${releaseName(c.release)}` : c.digest ? `runs ${short(c.digest)}` : "no deploy record";
+    if (!c.attempt || c.state === "settled") return { text: `${c.component} ${runs}`, title: c.release ? `release ${c.release.releaseDigest}` : "", unsettled: false };
+    const what = `${c.attempt.verb}${c.attempt.release ? ` of ${releaseName(c.attempt.release)}` : ""}`;
+    return {
+      text: `${c.component} ${runs} · ${c.state} in ${what}, run ${c.attempt.runId}`,
+      title: `${c.state === "gated" ? "Stopped at its gate" : "Failed"} in ${what}, run ${c.attempt.runId} ${clock(c.attempt.timestamp, now)}. The ledger's record is older than that run, so what ${c.component} runs is not known.`,
+      unsettled: true,
+    };
+  });
+  const where = `Run in ${m.dir}. behold does not run it.`;
+  const commands = [
+    ...m.redeploy.map((l) => ({ label: "redeploy", line: l, title: `Puts back the release the ledger records for the component. ${where}` })),
+    ...(m.rollback ? [{ label: "roll back", line: m.rollback, title: `Restores the newest release ${env} ran that is kept and not revoked. ${where}` }] : []),
+  ].map((c) => ({ ...c, text: `${c.label}: ${c.line}` }));
+  return { head, components, commands };
+}
+
 /** A release gate chant reads as superseded, as a line in its environment. */
 export function supersededLine(g, a) {
   const r = ((a && a.releases) || []).find((x) => x.releaseDigest === g.releaseDigest);
@@ -225,9 +256,11 @@ export function laneView(a, now = new Date(), opts = {}) {
       : null,
     environments: (a.environments || []).map((e) => ({
       env: e.env,
-      heading: e.canary ? `${e.env} (canary)` : e.env,
+      heading: `${e.env}${[e.canary ? "canary" : "", e.mixed && e.mixed.length ? "mixed" : ""].filter(Boolean).map((t) => ` (${t})`).join("")}`,
       refusal: e.refusal ? `not read: ${e.refusal.error}` : null,
       runs: e.refusal ? [] : runsLines(e, now),
+      // #731: absent from an answer before it, and empty below its floor.
+      mixed: (e.mixed || []).map((m) => mixedLines(m, e.env, now)),
       superseded: (e.superseded || []).map((g) => supersededLine(g, a)),
       gates: (e.waiting || []).filter((g) => g.state === "pending" || g.override).map((g) => laneGateCard(g, a, opts)),
     })),
@@ -360,6 +393,18 @@ export function renderTrunkLane(host, a, now, ui) {
     host.appendChild(eh);
     if (e.refusal) line("tg-refusal", e.refusal);
     for (const r of e.runs) line(r.revoked ? "lane-runs lane-runs-revoked" : "lane-runs", r.text, r.title);
+    for (const m of e.mixed) {
+      line("lane-mixed", m.head.text, m.head.title);
+      for (const c of m.components) line(c.unsettled ? "lane-mixed-component lane-mixed-unsettled" : "lane-mixed-component", c.text, c.title);
+      // The line alone selects as one piece, so it copies without its label.
+      for (const l of m.commands) {
+        const d = line("lane-command", `${l.label}: `, l.title);
+        const cmd = document.createElement("span");
+        cmd.className = "lane-command-line";
+        cmd.textContent = l.line;
+        d.appendChild(cmd);
+      }
+    }
     for (const g of e.superseded) line("lane-superseded", g.text, g.title);
     for (const g of e.gates) {
       const box = document.createElement("div");

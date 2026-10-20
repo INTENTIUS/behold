@@ -291,6 +291,12 @@
       #tab-trunk .lane-revoked-why { color: var(--degraded); overflow-wrap: anywhere; }
       #tab-trunk .lane-rollback { font-family: var(--font-mono); color: var(--muted); overflow-wrap: anywhere; }
       #tab-trunk .lane-runs-revoked, #tab-trunk .lane-superseded { color: var(--degraded); overflow-wrap: anywhere; }
+      /* #731: a mixed environment, and chant's lines that settle it. */
+      #tab-trunk .lane-mixed { color: var(--pending); font-weight: 600; overflow-wrap: anywhere; }
+      #tab-trunk .lane-mixed-component { color: var(--muted); padding-left: var(--s3); overflow-wrap: anywhere; }
+      #tab-trunk .lane-mixed-unsettled { color: var(--degraded); }
+      #tab-trunk .lane-command { font-family: var(--font-mono); color: var(--muted); padding-left: var(--s3); overflow-wrap: anywhere; }
+      #tab-trunk .lane-command-line { user-select: all; }
       /* #681: a gate's change set, previewed on the graph. */
       #panel-body #tab-change-set.active { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--t-caption); }
       #tab-change-set h3 { margin: var(--s3) 0 0; font-size: var(--t-caption); }

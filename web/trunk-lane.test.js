@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commitRow, laneGateCard, laneLegend, laneView, releaseColumnNote, releaseRow, renderTrunkLane, runsLines, signatureWords, supersededLine, UNDECIDED_NOTE, whereWords, workWords } from "./trunk-lane.js";
+import { commitRow, laneGateCard, laneLegend, laneView, mixedLines, releaseColumnNote, releaseRow, renderTrunkLane, runsLines, signatureWords, supersededLine, UNDECIDED_NOTE, whereWords, workWords } from "./trunk-lane.js";
 
 const NOW = new Date("2026-10-05T10:00:00Z");
 const C1 = "6828a7f5b398ea48543fe27c018ba302ce2aba14";
@@ -217,6 +217,85 @@ describe("the release column (#692)", () => {
       expect(text(rows[0])).toContain(`roll back: ${ROLLBACK}`);
       expect(host.children.findIndex((c) => c.className === "lane-release")).toBeGreaterThan(host.children.findIndex((c) => c.className === "lane-commit"));
       expect(host.children.find((c) => c.className === "lane-superseded").textContent).toBe("web/release/promote superseded: release v3 is revoked (test failed)");
+    } finally {
+      globalThis.document = saved;
+    }
+  });
+});
+
+// #731: staging after the promote of v3 there deployed api and failed on web,
+// as the recorded src/__fixtures__/trunk-lane/status-staging.json gives it.
+const REDEPLOY = "chant components redeploy staging --component web";
+const mixed = {
+  member: "web",
+  dir: "web",
+  components: [
+    { component: "api", release: { releaseDigest: R3, label: "v3" }, digest: "sha256:4b5e57f6eb2f", state: "settled", attempt: null },
+    { component: "web", release: { releaseDigest: R2, label: "v2" }, digest: "sha256:4b5e57f6eb2f", state: "failed", attempt: { verb: "promote", runId: "run-3", timestamp: "2026-10-04T12:00:00Z", release: { releaseDigest: R3, label: "v3" } } },
+  ],
+  redeploy: [REDEPLOY],
+  rollback: ROLLBACK,
+};
+const mixedAnswer = { ...column, mixedEnvironments: { read: true, floor: "0.124.29" }, environments: [{ ...column.environments[0], mixed: [mixed] }, { ...column.environments[1], mixed: [] }] };
+
+describe("a mixed environment (#731)", () => {
+  it("says which components are not settled, what each runs, and chant's redeploy and rollback lines", () => {
+    const m = mixedLines(mixed, "staging", NOW);
+    expect(m.head.text).toBe("mixed: 1 component of web not settled");
+    expect(m.components.map((c) => [c.text, c.unsettled])).toEqual([
+      ["api runs v3", false],
+      ["web runs v2 · failed in promote of v3, run run-3", true],
+    ]);
+    expect(m.components[1].title).toContain("what web runs is not known");
+    expect(m.commands.map((c) => c.text)).toEqual([`redeploy: ${REDEPLOY}`, `roll back: ${ROLLBACK}`]);
+    expect(m.commands.map((c) => c.line)).toEqual([REDEPLOY, ROLLBACK]);
+    expect(m.commands[0].title).toContain("Run in web. behold does not run it.");
+  });
+
+  it("words a mix of settled releases, a gated component with no record, and no rollback line", () => {
+    const settled = mixedLines({ ...mixed, components: [mixed.components[0], { ...mixed.components[1], state: "settled", attempt: null }], redeploy: [], rollback: null }, "staging", NOW);
+    expect(settled.head.text).toBe("mixed: web runs v3 and v2");
+    expect(settled.commands).toEqual([]);
+    const gated = mixedLines({ ...mixed, components: [{ component: "api", release: null, digest: null, state: "gated", attempt: { verb: "redeploy", runId: "r", timestamp: "2026-10-04T12:00:00Z", release: null } }], redeploy: [], rollback: null }, "staging", NOW);
+    expect(gated.components[0].text).toBe("api no deploy record · gated in redeploy, run r");
+  });
+
+  it("heads the environment as mixed, and an answer without mixed draws as before", () => {
+    expect(laneView(mixedAnswer, NOW).environments.map((e) => [e.heading, e.mixed.length])).toEqual([
+      ["staging (mixed)", 1],
+      ["prod", 0],
+    ]);
+    expect(laneView(column, NOW).environments.map((e) => [e.heading, e.mixed])).toEqual([
+      ["staging", []],
+      ["prod", []],
+    ]);
+    expect(laneView({ ...mixedAnswer, environments: [{ ...mixedAnswer.environments[0], canary: true }] }, NOW).environments[0].heading).toBe("staging (canary) (mixed)");
+  });
+
+  it("draws the mix under what the environment runs, each line as text to copy", () => {
+    const make = (tag) => {
+      const el = { tag, children: [], dataset: {}, className: "", textContent: "", title: "", listeners: {} };
+      Object.defineProperty(el, "childNodes", { get: () => el.children });
+      el.appendChild = (c) => (el.children.push(c), c);
+      el.append = (...cs) => cs.forEach((c) => el.children.push(c));
+      el.replaceChildren = () => (el.children = []);
+      el.addEventListener = (k, f) => (el.listeners[k] = f);
+      return el;
+    };
+    const saved = globalThis.document;
+    globalThis.document = { createElement: make, createTextNode: (t) => ({ tag: "#text", textContent: t, children: [] }) };
+    try {
+      const host = make("div");
+      renderTrunkLane(host, mixedAnswer, NOW, {});
+      const at = host.children.findIndex((c) => c.tag === "h3" && c.textContent === "staging (mixed)");
+      const next = host.children.findIndex((c, i) => i > at && c.tag === "h3");
+      const lane = host.children.slice(at + 1, next);
+      expect(lane.map((c) => c.className)).toEqual(["lane-runs lane-runs-revoked", "lane-runs", "lane-mixed", "lane-mixed-component", "lane-mixed-component lane-mixed-unsettled", "lane-command", "lane-command"]);
+      const commands = lane.filter((c) => c.className === "lane-command");
+      expect(commands.map((c) => [c.textContent, c.children[0].className, c.children[0].textContent])).toEqual([
+        ["redeploy: ", "lane-command-line", REDEPLOY],
+        ["roll back: ", "lane-command-line", ROLLBACK],
+      ]);
     } finally {
       globalThis.document = saved;
     }

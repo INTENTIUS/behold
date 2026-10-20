@@ -1074,10 +1074,25 @@ superseded, never approvable), `rollback` on an environment's releases, and
 `release` and `rollback` on a deploy record. `releaseColumn: {full, floor}`
 says whether they were read. Below the floor nothing is refused: the column
 comes from `release list` alone with no revoked mark, and the tab says which
-chant would add it. The fixtures in `src/__fixtures__/trunk-lane/` are
-recorded from chant main in the workspace `src/trunk-lane-fixture.ts` makes,
-and `src/trunk-lane-chant.test.ts` reads the same workspace through a real
-chant when `BEHOLD_TEST_CHANT_BIN` names one.
+chant would add it.
+
+A mixed environment (#731): from chant 0.124.29
+(`MIXED_ENVIRONMENT_CHANT_FLOOR`, chant#4035, chant#4072) status gives an
+environment `mixed` when its components run different releases, or a
+promote, rollback or redeploy left one `failed` or `gated` (its
+`outcomes.jsonl` on chant/lifecycle). Each environment carries `mixed[]`, one
+per member: `components` (each with its recorded `release`, `state` and the
+`attempt` that left it unsettled), `redeploy` lines and the `rollback` line,
+as chant wrote them. The tab heads the environment `(mixed)` and shows the
+lines to copy, run in the member's directory; behold runs none of them.
+`mixedEnvironments: {read, floor}` says whether it was read; below the floor
+`mixed` is empty and the lane is drawn as before.
+
+The fixtures in `src/__fixtures__/trunk-lane/` are recorded from chant main
+in the workspace `src/trunk-lane-fixture.ts` makes (staging carries a deploy
+outcome: v3's promote deployed api and failed on web), and
+`src/trunk-lane-chant.test.ts` reads the same workspace through a real chant
+when `BEHOLD_TEST_CHANT_BIN` names one.
 
 ## A gate's change set on the graph (#681)
 
