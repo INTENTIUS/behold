@@ -13,6 +13,7 @@
 
 import { ago, clock } from "./terragucci.js";
 import { approveAffordance, HOST_APPROVES, overrideCard } from "./workspace-gates.js";
+import { HOST_ANSWERS } from "./decision-points.js";
 
 const short = (s) => (s ? String(s).replace(/^(jcs1-)?sha256:/, "").slice(0, 12) : "");
 const sha7 = (s) => (s ? String(s).slice(0, 7) : "");
@@ -229,7 +230,8 @@ export function laneGateCard(g, answer, { embed = false } = {}) {
   };
   // #681: the change set is a link that draws it on the graph.
   if (g.changeSet) card.changeSet = { text: `change set ${short(g.changeSet)}`, title: `Draw this change set on the graph, as a preview.\n${show}` };
-  if (embed) card.note = HOST_APPROVES;
+  // #472: a gate that waits on a decision point is answered, not approved, and never here.
+  if (embed) card.note = g.answer ? HOST_ANSWERS : HOST_APPROVES;
   else Object.assign(card, approveAffordance(g, answer));
   return card;
 }

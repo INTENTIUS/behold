@@ -96,6 +96,17 @@ export type TrunkReadCommand = (typeof TRUNK_READS)[number];
  */
 export const CHANGE_SET_READ = "change-set show";
 
+/**
+ * #472: the open decision points, `chant workspace points --open --json`
+ * (points.schema.json, ws-058), run at the workspace root. It is a `chant
+ * workspace` command, but chant's reader conformance suite does not list it
+ * (its `commands` are the read-contract table's), so it is not in
+ * {@link BEHOLD_READS}; its floor is in src/chant-floors.ts. behold reads the
+ * questions and never answers one: `points answer` is a person's, at a shell
+ * or in the host's rail.
+ */
+export const POINTS_READ = "points --open";
+
 /** The reads named outside `chant workspace`, for a refusal's wording. */
 const OUTSIDE_WORKSPACE: readonly string[] = [...TRUNK_READS, CHANGE_SET_READ];
 
@@ -106,6 +117,8 @@ export interface WorkspaceReader {
   readTrunk(command: TrunkReadCommand, args: string[], dir?: string): Promise<WorkspaceDocument>;
   /** #681: the change set stored under `digest` in `member`'s ledger, as chant printed it. chant exits 1 when none is stored, and still prints the document. */
   readChangeSet(digest: string, member: string): Promise<WorkspaceDocument>;
+  /** #472: the workspace's open decision points and their questions, as chant printed them. */
+  readPoints(): Promise<WorkspaceDocument>;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -145,6 +158,11 @@ export function changeSetArgv(digest: string, member: string): string[] {
   return ["change-set", "show", digest, "--member", member, "--json"];
 }
 
+/** The argv the points read runs: `workspace points --open --json`. */
+export function pointsArgv(): string[] {
+  return ["workspace", ...POINTS_READ.split(" "), "--json"];
+}
+
 /** Check what one run printed: a JSON object written to the contract behold reads. */
 function documentOf(run: TransportRun, shown: string, code: string, command: string): WorkspaceDocument {
   if (!run.stdout.trim()) {
@@ -178,6 +196,10 @@ export function workspaceReader(chant: ChantTransport): WorkspaceReader {
     async readChangeSet(digest, member) {
       const argv = changeSetArgv(digest, member);
       return documentOf(await chant.run(argv), `chant ${argv.join(" ")}`, "change-set-show", CHANGE_SET_READ);
+    },
+    async readPoints() {
+      const argv = pointsArgv();
+      return documentOf(await chant.run(argv), `chant ${argv.join(" ")}`, "workspace-points", POINTS_READ);
     },
   };
 }

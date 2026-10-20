@@ -8,6 +8,8 @@
 // running behold. A gate that needs a signed approval gets a button only when
 // behold holds that person's key.
 
+import { HOST_ANSWERS, loosePointTitle, placePoints, pointLines } from "./decision-points.js";
+
 /** Where the approver's name came from, in the words a button's tooltip uses. */
 const SOURCE_WORDS = {
   header: "from your sign-in",
@@ -21,37 +23,52 @@ export const HOST_APPROVES = "approve in the host that framed this graph";
 /**
  * Cards for a gates answer. `embed` is whether behold is framed; `member`
  * narrows to one member's gates when a host opened behold on it (the rest are
- * counted, not hidden without a word).
+ * counted, not hidden without a word). `points` is the points answer (#472):
+ * each open question is drawn on the card of the gate that waits on it, and
+ * one no waiting gate names gets a card of its own after the gates.
  */
-export function gateCards(answer, { embed = false, member = null } = {}) {
+export function gateCards(answer, { embed = false, member = null, points = null } = {}) {
   const all = (answer && answer.gates) || [];
   const shown = member ? all.filter((g) => g.member === member) : all;
+  const { byGate, loose } = placePoints((points && points.points) || [], all);
   const cards = shown.map((g) => {
-    if (g.override) return overrideCard(g);
-    const facts = [`${g.approvals.length} of ${g.needed} approval${g.needed === 1 ? "" : "s"}`];
-    if (g.env) facts.push(`env ${g.env}`);
-    if (g.planDigest) facts.push(`plan ${shortDigest(g.planDigest)}`);
-    if (g.approvals.length) facts.push(`approved by ${g.approvals.map((a) => a.principal).join(", ")}`);
-    const card = {
-      key: g.key,
-      member: g.member,
-      title: `${g.member}: ${g.op} waits at gate ${g.gate}`,
-      facts: facts.join(" · "),
-      command: g.approve,
-    };
-    if (embed) card.note = HOST_APPROVES;
-    else Object.assign(card, approveAffordance(g, answer));
+    const card = gateCard(g, answer, embed);
+    const asks = byGate.get(g.key);
+    if (asks) card.points = asks.map((p) => pointLines(p, { embed }));
     return card;
   });
+  for (const p of loose) cards.push({ key: `point/${p.id}`, member: null, ...pointLines(p, { embed }), title: loosePointTitle(p), point: true });
   const elsewhere = all.length - shown.length;
-  return { cards, elsewhere, refusal: (answer && answer.refusal) || null };
+  return { cards, elsewhere, refusal: (answer && answer.refusal) || null, pointsRefusal: (points && points.refusal) || null };
+}
+
+function gateCard(g, answer, embed) {
+  if (g.override) return overrideCard(g);
+  // #472: a gate that asks a decision point counts no approvals; its point's quorum decides.
+  const facts = g.answer ? [] : [`${g.approvals.length} of ${g.needed} approval${g.needed === 1 ? "" : "s"}`];
+  if (g.env) facts.push(`env ${g.env}`);
+  if (g.planDigest) facts.push(`plan ${shortDigest(g.planDigest)}`);
+  if (g.approvals.length) facts.push(`approved by ${g.approvals.map((a) => a.principal).join(", ")}`);
+  const card = {
+    key: g.key,
+    member: g.member,
+    title: g.answer ? `${g.member}: ${g.op} waits at gate ${g.gate} on decision point ${g.answer.point}` : `${g.member}: ${g.op} waits at gate ${g.gate}`,
+    facts: facts.join(" · "),
+    command: g.approve,
+  };
+  if (embed) card.note = g.answer ? HOST_ANSWERS : HOST_APPROVES;
+  else Object.assign(card, approveAffordance(g, answer));
+  return card;
 }
 
 /**
  * #690: the button, or the note in its place, for a standalone card. The label
- * says who the approval is recorded as before the click.
+ * says who the approval is recorded as before the click. A gate that waits on
+ * a decision point gets no button (#472): `chant approve` refuses it, and the
+ * question is answered elsewhere.
  */
 export function approveAffordance(g, answer) {
+  if (g.answer) return { note: `waits on decision point ${g.answer.point}, which behold doesn't answer. Run ${g.approve}` };
   const refusal = answer && answer.approverRefusal;
   if (refusal) return { note: `can't approve here: ${refusal.error}. Run ${g.approve}` };
   const id = (answer && answer.approverIdentity) || null;

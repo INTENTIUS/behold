@@ -1,0 +1,206 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/points/v1/points.schema.json",
+  "contract": 1,
+  "chant": "0.124.31",
+  "at": null,
+  "workspace": {
+    "name": "acme",
+    "root": "."
+  },
+  "open": true,
+  "sources": [
+    {
+      "kind": "answers/answer.kind.mjs",
+      "points": "decisions/points.json",
+      "reason": null
+    }
+  ],
+  "points": [
+    {
+      "name": "staging-apply",
+      "title": "Apply this plan to staging",
+      "kind": "answers/answer.kind.mjs",
+      "file": "decisions/points.json",
+      "version": "4104b7c7e266edaf7ffa73f27cf8999819de0b5bccecb64ece73f0d44da4e505",
+      "questionType": "noul",
+      "instructions": "Should this plan be applied to staging?",
+      "candidates": [
+        true,
+        false
+      ],
+      "criteria": {
+        "true": "Apply it.",
+        "false": "Do not apply it."
+      },
+      "adhoc": false,
+      "inputs": [
+        {
+          "name": "gate.component",
+          "output": "gate",
+          "description": "the Op"
+        },
+        {
+          "name": "gate.name",
+          "output": "gate",
+          "description": "the gate"
+        },
+        {
+          "name": "gate.env",
+          "output": "gate",
+          "description": "the environment"
+        }
+      ],
+      "deciders": [
+        {
+          "kind": "quorum",
+          "count": 2,
+          "roles": [
+            "maintainer"
+          ]
+        }
+      ],
+      "quorum": {
+        "count": 2,
+        "roles": [
+          "maintainer"
+        ]
+      }
+    },
+    {
+      "name": "launch-tier",
+      "title": "Which tier the launch goes out on",
+      "kind": "answers/answer.kind.mjs",
+      "file": "decisions/points.json",
+      "version": "26df0e024d67ee74ee928a03d71c6a23b4e94c15ae0032ae4b84babaae608e59",
+      "questionType": "choice",
+      "instructions": "Pick the tier the launch goes out on.",
+      "candidates": [
+        "small",
+        "large"
+      ],
+      "criteria": {
+        "small": "One region.",
+        "large": "Every region."
+      },
+      "adhoc": false,
+      "inputs": [
+        {
+          "name": "ask.id",
+          "output": "ask",
+          "description": "the launch"
+        }
+      ],
+      "deciders": [
+        {
+          "kind": "quorum",
+          "count": 1
+        }
+      ],
+      "quorum": {
+        "count": 1
+      }
+    }
+  ],
+  "questions": [
+    {
+      "id": "launch-tier-1f278d6a8207",
+      "path": "answers/launch-tier-1f278d6a8207.md",
+      "point": "launch-tier",
+      "title": "Which tier the launch goes out on (L-7): open for people",
+      "subject": "L-7",
+      "state": "escalated",
+      "open": true,
+      "questionType": "choice",
+      "candidates": [
+        "small",
+        "large"
+      ],
+      "inputs": {
+        "ask.id": "L-7"
+      },
+      "inputsHash": "1f278d6a8207a2dd6b575ac69a38471670f5f8bb3faa0da4dcfed214ced2bd75",
+      "pointVersion": "26df0e024d67ee74ee928a03d71c6a23b4e94c15ae0032ae4b84babaae608e59",
+      "current": true,
+      "answer": null,
+      "decider": {
+        "kind": "quorum",
+        "count": 1
+      },
+      "probabilities": null,
+      "confidence": null,
+      "threshold": null,
+      "reason": null,
+      "model": null,
+      "escalations": [],
+      "answeredBy": [],
+      "askedOn": "2026-10-20",
+      "answeredOn": null,
+      "note": null,
+      "relayedBy": null,
+      "retractions": [],
+      "withdrawn": null,
+      "asked": null,
+      "askedBy": null,
+      "ledger": null,
+      "valid": true,
+      "warnings": []
+    },
+    {
+      "id": "staging-apply-ec72c7930446",
+      "path": "answers/staging-apply-ec72c7930446.md",
+      "point": "staging-apply",
+      "title": "Apply this plan to staging (gate:deploy/approve-apply@staging): open for people",
+      "subject": "gate:deploy/approve-apply@staging",
+      "state": "escalated",
+      "open": true,
+      "questionType": "noul",
+      "candidates": [
+        true,
+        false
+      ],
+      "inputs": {
+        "gate.component": "deploy",
+        "gate.name": "approve-apply",
+        "gate.env": "staging"
+      },
+      "inputsHash": "ec72c79304467425e2d4bd77b2fb97174267152d0be22282a00b6feb2147cad0",
+      "pointVersion": "4104b7c7e266edaf7ffa73f27cf8999819de0b5bccecb64ece73f0d44da4e505",
+      "current": true,
+      "answer": null,
+      "decider": {
+        "kind": "quorum",
+        "count": 2,
+        "roles": [
+          "maintainer"
+        ]
+      },
+      "probabilities": null,
+      "confidence": null,
+      "threshold": null,
+      "reason": null,
+      "model": null,
+      "escalations": [],
+      "answeredBy": [],
+      "askedOn": "2026-10-20",
+      "answeredOn": null,
+      "note": null,
+      "relayedBy": null,
+      "retractions": [],
+      "withdrawn": null,
+      "asked": null,
+      "askedBy": null,
+      "ledger": null,
+      "valid": true,
+      "warnings": []
+    }
+  ],
+  "summary": {
+    "points": 2,
+    "questions": 2,
+    "open": 2,
+    "escalated": 2,
+    "proposed": 0,
+    "answered": 0,
+    "withdrawn": 0
+  }
+}
