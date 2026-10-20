@@ -217,7 +217,8 @@ export function laneGateCard(g, answer, { embed = false } = {}) {
   }
   const facts = [];
   facts.push(g.gitSha ? `for ${sha7(g.gitSha)}${g.commitState ? ` (${g.commitState})` : ""}` : "commit unknown");
-  facts.push(`${g.approvals.length} of ${plural(g.needed, "approval")}`);
+  // #472: a gate that asks a decision point counts no approvals; its point's quorum decides.
+  facts.push(g.answer ? `waits on decision point ${g.answer.point}` : `${g.approvals.length} of ${plural(g.needed, "approval")}`);
   if (g.runId) facts.push(`run ${g.runId}`);
   if (g.releaseDigest) facts.push(`release ${short(g.releaseDigest)}`);
   if (g.approvals.length) facts.push(`approved by ${g.approvals.map((a) => a.principal).join(", ")}`);

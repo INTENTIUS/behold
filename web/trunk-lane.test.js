@@ -130,6 +130,8 @@ describe("an environment's lane (#680)", () => {
     expect(laneGateCard({ ...gate, op: "release", releaseDigest: "jcs1-sha256:1a23268fa8b1fc419cffde4c1780f4387ff0346495f97bd9e22b0508bef99f9d" }, answer).facts).toBe("for a14610e (green) · 0 of 1 approval · run run-9 · release 1a23268fa8b1");
     expect(laneGateCard({ ...gate, gitSha: undefined, commitState: null, changeSet: undefined }, answer)).toMatchObject({ facts: "commit unknown · 0 of 1 approval · run run-9" });
     expect(laneGateCard({ ...gate, changeSet: undefined }, answer).changeSet).toBeUndefined();
+    // #472: a gate that waits on a decision point counts no approvals.
+    expect(laneGateCard({ ...gate, changeSet: undefined, answer: { point: "apply-approval", id: "q1", path: "answers/q1.md" } }, answer).facts).toBe("for a14610e (green) · waits on decision point apply-approval · run run-9");
     expect(laneGateCard(gate, answer, { embed: true }).button).toBeUndefined();
   });
   it("lays the environments out in the order the answer gives", () => {
