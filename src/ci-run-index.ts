@@ -330,8 +330,15 @@ export interface CiRunsOptions {
   source?: TerragucciSource;
 }
 
-/** The two routes, each read shared for {@link CI_RUNS_READ_TTL_MS}. */
-export function ciRunsRoutes(app: Hono, opts: CiRunsOptions): void {
+/**
+ * behold#685: CI's run of `job` at `commit` (and `member`, or none), newest
+ * first, with its log: what a local run is shown beside. Absent with the
+ * reason when the index has none, or could not be read.
+ */
+export type CiRunLookup = (job: string, commit: string, member: string | null) => Promise<{ doc: CiRun } | { doc: null; absent: string } | { doc: null; error: string }>;
+
+/** The two routes, each read shared for {@link CI_RUNS_READ_TTL_MS}, and the lookup a local run uses. */
+export function ciRunsRoutes(app: Hono, opts: CiRunsOptions): CiRunLookup {
   const source = opts.source ?? reportSourceOf(opts.url, { ...(opts.aws ? { aws: opts.aws } : {}), ...(opts.fetch ? { fetch: opts.fetch } : {}) });
   const now = () => (opts.now ? opts.now() : new Date());
   const urlFrom: CiReportUrlFrom = opts.from ?? "flag";
@@ -368,4 +375,12 @@ export function ciRunsRoutes(app: Hono, opts: CiRunsOptions): void {
     if (!e) return c.json({ source: a.source, urlFrom, read: a.read, key, doc: null, absent: `Run ${id} is not in chant's run index (it keeps the newest 200).` }, 404, { "cache-control": "no-store" });
     return c.json({ source: a.source, urlFrom, read: a.read, key, doc: await readRun(e) }, 200, { "cache-control": "no-store" });
   });
+  return async (job, commit, member) => {
+    const a = await readIndex();
+    if (!a.doc || !a.entries) return "error" in a ? { doc: null, error: a.error } : { doc: null, absent: "absent" in a ? a.absent : "chant's run index listed no runs" };
+    // Newest first. CI plans a pull request at its head, so any pull request's run of the job at this commit is the one.
+    const e = a.entries.find((x) => x.job === job && x.commit === commit && (x.member ?? null) === member);
+    if (!e) return { doc: null, absent: `chant's run index has no ${job} job at ${commit.slice(0, 12)}${member ? ` for ${member}` : ""} among the runs it keeps.` };
+    return { doc: await readRun(e) };
+  };
 }

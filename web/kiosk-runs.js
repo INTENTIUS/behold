@@ -290,7 +290,8 @@ export function placeWords(run, scenarios, titles = {}, names = {}) {
  * from anywhere else.
  */
 export function indexWords(run) {
-  if (!run || run.from !== "ci-run-index") return [];
+  // behold#685: a plan behold ran locally (src/ci-local-run.ts) says the same of itself.
+  if (!run || (run.from !== "ci-run-index" && run.from !== "chant-ci-local")) return [];
   // The status beside it already says failed: chant's reason is added only when it says more than that.
   const why = run.moved ? `${run.moved} (${run.heldBy || run.failure})` : run.failure && run.failure !== "failed" ? `failed: ${run.failure}` : null;
   return [run.member || null, why, typeof run.signer === "string" && run.signer ? `signed by ${run.signer}` : null].filter(Boolean);

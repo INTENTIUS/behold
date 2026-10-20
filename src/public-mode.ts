@@ -96,6 +96,7 @@ const REFUSED_READS: Array<[RegExp, string]> = [
   [/^\/api\/choudoufu\/(moves|split)$/, "it runs choudoufu"],
   [/^\/choudoufu\/(morph|split)$/, "it runs choudoufu"],
   [/^\/api\/sql-yodeler\/lifecycle$/, "a public view shows a terragucci repo"],
+  [/^\/api\/chant\/ci\/local(\/|$)/, "a local run is a job started on this machine, and a public view starts nothing"],
 ];
 
 /** Query parameters that turn a source-graph read into a live one, or re-point it. */

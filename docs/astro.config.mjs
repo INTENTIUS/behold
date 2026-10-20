@@ -89,6 +89,7 @@ export default defineConfig({
 						{ label: 'Acting on it', slug: 'using/acting' },
 						{ label: 'Approving a gate', slug: 'using/approving' },
 						{ label: 'The trunk lane', slug: 'using/trunk' },
+						{ label: 'Running a CI job locally', slug: 'using/local-run' },
 						{ label: 'A change set on the graph', slug: 'using/change-set' },
 						{ label: 'Feature flags on the graph', slug: 'using/flags' },
 						{ label: 'Collision marks', slug: 'using/collisions' },

@@ -232,6 +232,20 @@ describe("GET /api/chant/ci/runs (behold#815)", () => {
   });
 });
 
+describe("CI's run of a job at a commit, for a local run beside it (behold#685)", () => {
+  const lookup = (source: TerragucciSource = fixture) => ciRunsRoutes(new Hono(), { url: URL, source });
+  it("finds the job at the commit, and the member's run only for the member", async () => {
+    expect(await lookup()("plan", "47f4df6dc66e00aa3cff1d8a1512554ee3bb8404", null)).toMatchObject({ doc: { id: "6783", job: "plan", status: "success" } });
+    expect(await lookup()("plan", "9b1e3f0c2d4a5b6c7d8e9f00112233445566778a", "web")).toMatchObject({ doc: { id: "chant-1792376662004", member: "web" } });
+    expect(await lookup()("plan", "9b1e3f0c2d4a5b6c7d8e9f00112233445566778a", null)).toMatchObject({ doc: null, absent: expect.stringMatching(/^chant's run index has no plan job at 9b1e3f0c2d4a/) });
+    // An apply at a plan's commit is another job.
+    expect((await lookup()("apply", "47f4df6dc66e00aa3cff1d8a1512554ee3bb8404", null)).doc).toBeNull();
+  });
+  it("says why when the index is refused", async () => {
+    expect(await lookup(withIndex({ ...indexDoc(), chant: "0.124.20" }))("plan", "47f4df6dc66e00aa3cff1d8a1512554ee3bb8404", null)).toMatchObject({ doc: null, error: expect.stringContaining("needs chant 0.124.31") });
+  });
+});
+
 describe("the kiosk page names chant's run index only when serve has --ci-report-url", () => {
   const web = join(import.meta.dirname, "..", "web");
   const page = async (ciRuns: boolean, path: string) => {

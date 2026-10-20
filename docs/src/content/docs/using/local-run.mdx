@@ -1,0 +1,86 @@
+---
+title: Running a CI job locally
+description: Run a pull request's plan job on this machine with chant ci run --local, and read it beside CI's run of the same job at the same commit.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+When behold serves a chant workspace, the panel has a **Local** tab. It runs a
+pull request's plan job on this machine the way CI runs it, and shows the run
+next to CI's run of the same job at the same commit.
+
+behold starts:
+
+```sh
+chant ci run plan --local --events-json --env <env> --base <sha> --commit <sha> --pr <n> --forge <forge>
+```
+
+chant runs the job in a fresh worktree of the commit, with the job's clean
+environment, and writes nothing beyond this machine: no push, no commit status,
+nothing under a report URL and nothing in the run index. Its record stays on
+your local `chant/lifecycle` with `runOrigin: {forge: "local"}`. A member's job
+runs in the member's directory, as CI runs it.
+
+## Starting one
+
+Fill in the commit and its pull request's number (chant's plan job reads it as
+`PR_NUMBER`), or, when serve has [`--ci-report-url`](/behold/using/terragucci/#runs-from-chants-run-index),
+press **Run this job locally** on one of CI's plan jobs from chant's run index.
+
+| Field | Default |
+|---|---|
+| env | the env behold serves (`--env`) |
+| base | where the commit leaves the trunk (`git merge-base` with `origin/HEAD`, else `main` or `master`), or the commit's parent when it is on the trunk |
+| member | the workspace |
+| forge | the one workflow directory the checkout has (`.github`, `.gitlab-ci.yml`, `.forgejo`) |
+
+One command runs at a time, as for an Op run: a second start while one runs is
+refused.
+
+## What it shows
+
+The run is drawn the way the kiosk's runs pane draws one: a job named after
+chant's Op (`pr-plan`), a step per phase of the run, each with chant's event
+lines and the step output chant tagged with it, and a last step with what chant
+printed outside a phase. The lines arrive as chant writes them. The verdict is
+the stream's own `run-settle`; a stream that ends without one reads `lost`. The
+heading says the base and env it ran with, and says so if chant's events do not
+name the run local.
+
+Beside it is CI's run of the same job at the same commit (and member), read
+from chant's run index with its log, when serve has `--ci-report-url`. Without
+it the CI side says there is no index to read.
+
+behold keeps the last 20 runs it started, in memory. chant keeps the record.
+
+## Plan only
+
+<Aside type="caution" title="--local does not make an apply safe">
+`chant ci run apply --local` still changes the environment's real
+infrastructure and pushes its release records and gate facts. The job's clean
+environment keeps `HOME`, so your own cloud credentials would apply even when
+behold serves with `--local` against an emulator. behold never offers it, and
+`POST /api/chant/ci/local` answers an apply `422` with code `local-apply`.
+</Aside>
+
+## Where it is not offered
+
+The tab is not drawn, and the route refuses, in a public view (`--public`), an
+embed, a static export, preview mode, and a terragucci or SQL Yodeler repository.
+On a chant older than 0.124.32 the tab says `Local CI run needs chant 0.124.32 or
+newer` with the project's version, and starts nothing.
+
+## Routes
+
+| Route | What it does |
+|---|---|
+| `GET /api/chant/ci/local` | what is offered, and the runs behold started |
+| `POST /api/chant/ci/local` | start one: `{job: "plan", commit, pr, env?, base?, member?, forge?}` |
+| `GET /api/chant/ci/local/<id>` | one run, and CI's run of the same job at the same commit |
+
+## Limits
+
+- Steps chant served from its step cache are not marked yet: that waits on
+  chant's step cache (chant#4015).
+- The job runs with the default image's set-up lines, as in CI, so a machine
+  without OpenTofu downloads it.
