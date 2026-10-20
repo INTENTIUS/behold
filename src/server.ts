@@ -68,6 +68,7 @@ import { resourcesByComponent, resourcesByRoot, nonResourceEntities } from "./re
 import { configKeys, declaredRootTools, pipelineForge, repoTools, toolOfBinary } from "./pipeline-marks.ts";
 import { chantPrFacets, chantPrRoute, prLoopOf, reportSourceOf } from "./chant-pr.ts";
 import { ChantDemo, chantDemoRoutes } from "./chant-demo.ts";
+import { ciRunsRoutes } from "./ci-run-index.ts";
 import type { GitRun } from "./terragucci-lifecycle.ts";
 import { TERRAGUCCI_COMPONENTS_FILE, componentJobs, componentRootMap, readTerragucciComponents, waveTitles, type TerragucciComponents } from "./terragucci-components.ts";
 import { hasTerragruntUnits } from "./terragrunt-units.ts";
@@ -251,6 +252,8 @@ export interface ServerOptions {
   chantReportUrl?: string;
   /** behold#752 `--chant-demo`: where chant's fan-out demo writes step.json and cycles/ (src/chant-demo.ts); /chant-fanout reads it. */
   chantDemo?: string;
+  /** behold#815 `--ci-report-url`: where chant's runner keeps its run index (src/ci-run-index.ts); the kiosk's runs pane reads it over the forge's runs. */
+  ciReportUrl?: string;
   /** #471: hud's address (`--hud`, BEHOLD_HUD_URL). A proposed decision in a
    * "why" links to its review there; without it the decision is named by id. */
   hud?: string;
@@ -1097,6 +1100,8 @@ export function createApp(
     // behold#752: chant's fan-out demo, from its own records; its stages are the pull-request loop's runs.
     const chantDemo = cfg.chantDemo ? new ChantDemo({ source: cfg.chantDemo, ...(cfg.chantReportUrl ? { reportUrl: cfg.chantReportUrl } : {}), ...via }) : undefined;
     if (chantDemo) chantDemoRoutes(app, chantDemo);
+    // behold#815: chant's run index and each run's events, from the runner's report URL.
+    if (cfg.ciReportUrl) ciRunsRoutes(app, { url: cfg.ciReportUrl, ...via });
     chantPrRoute(app, () => cfg.projectDir, {
       ...(chantDemo ? { demoReports: (d: string, g?: GitRun) => chantDemo.prReports(d, g), ...(runs ? { source: runs } : {}) } : runs ? { source: runs } : {}),
       ...(cfg.chantReportUrl ? { reportUrl: cfg.chantReportUrl } : {}),
@@ -1205,7 +1210,7 @@ export function createApp(
   app.get("/healthz", (c) => c.json({ ok: true, projectDir: cfg.projectDir, env: cfg.env ?? null, frames: frames.size }));
 
   // #569 step 2: the kiosk, a looping terragucci demo narrated from demo.json.
-  kioskRoute(app, webRoot, !!cfg.terragucci, guard.allowedHosts, { chantDemo: !!cfg.chantDemo });
+  kioskRoute(app, webRoot, !!cfg.terragucci, guard.allowedHosts, { chantDemo: !!cfg.chantDemo, ciRuns: !!cfg.ciReportUrl });
   // behold#571: the image link previews show, which the kiosk's og:image names.
   shareImageRoute(app, webRoot);
   // behold#571: the kiosk's "Pipeline metrics", from Prometheus; dora.json beside the reports when Prometheus has no DORA gauges.
@@ -1214,7 +1219,7 @@ export function createApp(
   // behold#571: a job's trace for the kiosk's Trace view, from Tempo, by fixed queries only.
   tracesRoute(app, cfg.tempo ? { tempo: cfg.tempo } : {});
   // behold#571: a page per tool (/terraform, /terragrunt, ...), the kiosk for that tool alone.
-  vendorRoutes(app, webRoot, !!cfg.terragucci, guard.allowedHosts, { chantDemo: !!cfg.chantDemo });
+  vendorRoutes(app, webRoot, !!cfg.terragucci, guard.allowedHosts, { chantDemo: !!cfg.chantDemo, ciRuns: !!cfg.ciReportUrl });
 
   // Deployment lanes (#5): the captured keyframes as a per-substrate filmstrip.
   app.get("/api/frames", (c) => c.json({ frames: frames.summaries() }));

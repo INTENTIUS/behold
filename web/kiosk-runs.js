@@ -282,6 +282,36 @@ export function placeWords(run, scenarios, titles = {}, names = {}) {
 }
 
 /**
+ * behold#815: what chant's run index says of a run beside its trigger: its
+ * workspace member, why it failed, and who signed its record. A run nobody
+ * signed says nothing of it (signing is opt-in, chant#4156). An apply that
+ * exited 3 says its plan moved or waits, never that it failed. Empty for a
+ * run from anywhere else.
+ */
+export function indexWords(run) {
+  if (!run || run.from !== "ci-run-index") return [];
+  const why = run.moved ? `${run.moved} (${run.failure})` : run.failure ? `failed: ${run.failure}` : null;
+  return [run.member || null, why, typeof run.signer === "string" && run.signer ? `signed by ${run.signer}` : null].filter(Boolean);
+}
+
+/**
+ * behold#815: where a run of chant's run index says it ran, as a link: its
+ * runOrigin's URL, named by the URL's own host (a Forgejo run is recorded as
+ * forge `github`, so the forge's name is never taken from the record). Null
+ * without an http(s) URL.
+ */
+export function originLink(run) {
+  if (!run || run.from !== "ci-run-index" || typeof run.origin !== "string") return null;
+  let u;
+  try {
+    u = new URL(run.origin);
+  } catch {
+    return null;
+  }
+  return u.protocol === "http:" || u.protocol === "https:" ? { href: u.href, text: `the run on ${u.host}` } : null;
+}
+
+/**
  * behold#571: a runner's or an action's set-up line, not terragucci's own:
  * git's hints, the checkout's `[command]` lines and groups, the runner's
  * docker and fetch lines.
@@ -414,13 +444,14 @@ export function statusIcon(status) {
 }
 
 /** The sidebar: the live run pinned, then the recent ones. `pick(id)` selects one; nothing here writes. */
-export function renderSidebar(host, index, selectedId, { now = new Date(), scenarios = {}, titles = {}, names = {}, pick = () => {}, merged = null, replay = false, chant = false } = {}) {
+export function renderSidebar(host, index, selectedId, { now = new Date(), scenarios = {}, titles = {}, names = {}, pick = () => {}, merged = null, replay = false, chant = false, from = null } = {}) {
   host.replaceChildren();
   const head = el("div", "r-side-head");
   head.appendChild(el("div", "r-side-title", "Runs"));
   // behold#571: a tool's page replays an earlier cycle's runs, and says so.
   // behold#752: chant's demo's runs are built from chant's run events, not copied from the forge.
-  head.appendChild(el("div", "r-side-note", replay ? "The replayed cycle's runs, newest first." : chant ? "From chant's run events, newest first." : "From the forge, newest first."));
+  // behold#815: `from` names where else they come from (chant's run index).
+  head.appendChild(el("div", "r-side-note", replay ? "The replayed cycle's runs, newest first." : from || (chant ? "From chant's run events, newest first." : "From the forge, newest first.")));
   host.appendChild(head);
   if (!index || index.error || index.absent || !index.doc) {
     host.appendChild(el("p", "r-note", index ? index.absent || index.error : "Reading the runs…"));
@@ -445,7 +476,7 @@ export function renderSidebar(host, index, selectedId, { now = new Date(), scena
     li.appendChild(statusIcon(r.status));
     const body = el("div", "r-run-body");
     body.appendChild(el("div", "r-run-title", triggerWords(r)));
-    const place = placeWords(r, scenarios, named, names);
+    const place = [placeWords(r, scenarios, named, names), ...indexWords(r)].filter(Boolean).join(" · ");
     if (place) body.appendChild(el("div", "r-run-place", place));
     const meta = el("div", "r-run-meta");
     meta.append(
@@ -525,13 +556,23 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
   const meta = el("div", "r-head-meta");
   const bits = [
     `#${run.id}`,
-    run.status === "waiting" ? "held at a terragucci gate, waiting for an approval" : STATUS_WORDS[run.status] || run.status,
+    run.status === "waiting" ? `held at a ${run.from === "ci-run-index" ? "" : "terragucci "}gate, waiting for an approval` : STATUS_WORDS[run.status] || run.status,
     run.ref ? `on ${run.ref}` : null,
     run.commit ? `commit ${run.commit.slice(0, 8)}` : null,
+    ...indexWords(run),
     run.started_at ? `started ${agoWords(run.started_at, now)}` : null,
     durationWords(run.started_at, run.ended_at, now),
   ].filter(Boolean);
   meta.textContent = bits.join(" · ");
+  // behold#815: the forge's own run, when chant's run index names one.
+  const link = originLink(run);
+  if (link) {
+    const a = el("a", "r-origin", link.text);
+    a.href = link.href;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    meta.append(" · ", a);
+  }
   head.appendChild(meta);
   host.appendChild(head);
 
@@ -831,6 +872,7 @@ export function startRuns(
     replay = () => false,
     hideLine = null,
     // behold#752: where the live runs are read: terragucci's copies of forge runs, or chant's demo's runs built from its run events.
+    // behold#815: or chant's run index, whose `from` is the sidebar's line.
     urls = { runs: "/api/terragucci/runs", run: (id) => `/api/terragucci/runs/${id}` },
   } = {},
 ) {
@@ -880,7 +922,7 @@ export function startRuns(
     }
     // One merged read of the selected run for both the sidebar and its page.
     const merged = ans && ans.doc ? mergeRun(entry, ans.doc) : null;
-    renderSidebar(side, s.index, id, { now: shown(), scenarios, titles: titles(), names: names(), pick, merged, replay: replay(), chant: urls.runs.startsWith("/api/chant/") });
+    renderSidebar(side, s.index, id, { now: shown(), scenarios, titles: titles(), names: names(), pick, merged, replay: replay(), chant: urls.runs.startsWith("/api/chant/"), from: urls.from || null });
     // The redraw replaces the scrollers: keep where a viewer left them.
     const old = main.querySelector(".r-log");
     const oldSteps = main.querySelector(".r-steps");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CHANT_DEMO_READS, TERRAGUCCI_READS, pageSource, readsFor } from "./kiosk-source.js";
+import { CHANT_DEMO_READS, CI_RUNS_READS, TERRAGUCCI_READS, pageRuns, pageSource, readsFor, runsReadsFor } from "./kiosk-source.js";
 import { startMetrics } from "./kiosk-metrics.js";
 
 // behold#752: a kiosk page reads terragucci's loop unless the server tells it chant's demo is its source.
@@ -35,5 +35,23 @@ describe("where a kiosk page reads its demo (behold#752)", () => {
     };
     expect(await asked(null)).toEqual(["/api/terragucci/demo", "/api/terragucci/cycles/chant-fanout"]);
     expect(await asked(CHANT_DEMO_READS)).toEqual(["/api/chant/demo", "/api/chant/demo/cycle"]);
+  });
+});
+
+// behold#815: with --ci-report-url, the runs pane alone reads chant's run index.
+const runsDoc = (content) => ({ querySelector: (q) => (q === 'meta[name="kiosk-runs"]' && content !== null ? { getAttribute: () => content } : null) });
+
+describe("where the runs pane reads its runs (behold#815)", () => {
+  it("a page without the tag reads the source's runs, the forge's or chant's demo's", () => {
+    expect(pageRuns(runsDoc(null))).toBeNull();
+    expect(runsReadsFor(null, TERRAGUCCI_READS)).toEqual({ runs: "/api/terragucci/runs", run: TERRAGUCCI_READS.run });
+    expect(runsReadsFor(null, CHANT_DEMO_READS).runs).toBe("/api/chant/demo/runs");
+  });
+  it("a page told `chant-ci` reads chant's run index, whatever its source, and says so in the sidebar", () => {
+    expect(pageRuns(runsDoc("chant-ci"))).toBe("chant-ci");
+    for (const reads of [TERRAGUCCI_READS, CHANT_DEMO_READS]) expect(runsReadsFor("chant-ci", reads)).toBe(CI_RUNS_READS);
+    expect([CI_RUNS_READS.runs, CI_RUNS_READS.run("chant-1792376662004"), CI_RUNS_READS.run("a/b")]).toEqual(["/api/chant/ci/runs", "/api/chant/ci/runs/chant-1792376662004", "/api/chant/ci/runs/a%2Fb"]);
+    expect(CI_RUNS_READS.from).toBe("From chant's run index, newest first.");
+    expect(pageRuns(runsDoc("forge"))).toBeNull();
   });
 });

@@ -34,7 +34,7 @@ import { creditLines, filterIndex, keepRun, kioskVendorOf, liveEstimate, liveFor
 import { repoParam, repoUrl, stepCheckout } from "./kiosk-repo.js";
 import { startKioskCarve } from "./kiosk-carve.js";
 import { drawWaveList, waveListKey } from "./kiosk-wave-list.js";
-import { readsFor } from "./kiosk-source.js";
+import { readsFor, runsReadsFor } from "./kiosk-source.js";
 import { STATE_WORDS, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
 
 /** The scenarios terragucci#1014 numbers. An id not here is shown by the title demo.json carries. */
@@ -1618,9 +1618,11 @@ export const CHANT_SIDE_ROOM = 520;
  * countdown. When the roots the step is about change, move the framed view
  * with a `behold:view` message; the frame takes them only from this origin.
  */
-export function startKiosk({ bar, frame, side, main, views, read = null, tools = null, watch = null, eh = null }, { fetchJson = defaultFetch, now = () => new Date(), origin = location.origin, tool = null, source = null } = {}) {
+export function startKiosk({ bar, frame, side, main, views, read = null, tools = null, watch = null, eh = null }, { fetchJson = defaultFetch, now = () => new Date(), origin = location.origin, tool = null, source = null, runs = null } = {}) {
   // behold#752: terragucci's loop, or chant's fan-out demo from its own records (web/kiosk-source.js).
   const reads = readsFor(source);
+  // behold#815: the runs pane's own reads, chant's run index when serve has --ci-report-url.
+  const runsReads = runsReadsFor(runs, reads);
   const s = { source: reads.source, demo: null, answer: null, progress: null, components: false, pick: null, view: "resources", roots: [], waves: [], light: false, hover: null, frameHover: null, held: null };
   // behold#571: Watch or Inspect, the viewer's pick kept in their browser; Watch until they pick Inspect.
   const shelf = typeof localStorage !== "undefined" ? (() => { try { return localStorage; } catch { return null; } })() : null;
@@ -2831,11 +2833,13 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
         tools: () => s.tools || [],
         rootTools: () => s.rootTools || {},
         light: () => s.light,
-        source: runsSource,
-        filter: vendor ? (index) => filterIndex(index, { tool, repo: s.repo }) : (index) => index,
-        replay: () => s.mode === "replay",
+        // behold#815: chant's run index is the served repo's runs alone and their history, so the pane reads it whole,
+        // on a tool's page and in a replay alike.
+        source: runsReads.from ? () => null : runsSource,
+        filter: vendor && !runsReads.from ? (index) => filterIndex(index, { tool, repo: s.repo }) : (index) => index,
+        replay: () => !runsReads.from && s.mode === "replay",
         hideLine: vendor ? (line) => namesOther(line, tool) : null,
-        urls: { runs: reads.runs, run: reads.run },
+        urls: runsReads,
       },
     );
   }

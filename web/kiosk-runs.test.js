@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { FEATURE_LINES, fitFeatures, FOLLOW_LINES, followsLog, logKey, nearEnd, mergeRun, newerOf, agoWords, defaultJob, defaultStep, durationWords, jobOrder, liveRun, codeish, logLineWords, logRows, placeWords, scenarioTitles, setupLine, sidebarRuns, splitSkipped, STATUS_TONE, toneOf, triggerWords } from "./kiosk-runs.js";
+import { FEATURE_LINES, fitFeatures, FOLLOW_LINES, followsLog, logKey, nearEnd, mergeRun, newerOf, agoWords, defaultJob, defaultStep, durationWords, indexWords, jobOrder, originLink, liveRun, codeish, logLineWords, logRows, placeWords, scenarioTitles, setupLine, sidebarRuns, splitSkipped, STATUS_TONE, toneOf, triggerWords } from "./kiosk-runs.js";
 
 const FIX = join(import.meta.dirname, "..", "src", "__fixtures__", "terragucci-demo", "runs");
 const run = (id) => JSON.parse(readFileSync(join(FIX, `${id}.json`), "utf8"));
@@ -294,5 +294,41 @@ describe("the left bar's tone (behold#571)", () => {
   it("has a bar rule in kiosk.html for every tone a status can take", () => {
     const html = readFileSync(join(import.meta.dirname, "kiosk.html"), "utf8");
     for (const tone of new Set(Object.values(STATUS_TONE))) expect(html).toContain(`[data-k-tone="${tone}"]`);
+  });
+});
+
+// behold#815: chant's run index, as src/ci-run-index.ts hands it to the pane.
+describe("runs from chant's run index (behold#815)", () => {
+  const ci = (over = {}) => ({ schema: "demo.run/v1", from: "ci-run-index", id: "6782", status: "failure", trigger: "merge", pull: 773, ref: null, member: null, failure: "failed", signer: null, started_at: "2026-10-19T02:26:01.917Z", ended_at: "2026-10-19T02:26:10.991Z", jobs: [{ id: "6782", name: "pr-apply", needs: [], status: "failure" }], ...over });
+  it("names the member, why it failed, and who signed it, beside the trigger", () => {
+    expect(triggerWords(ci())).toBe("Merge of #773 to main");
+    expect(indexWords(ci())).toEqual(["failed: failed"]);
+    expect(indexWords(ci({ member: "web", failure: null, signer: "ci-runner@chant-demo", status: "success" }))).toEqual(["web", "signed by ci-runner@chant-demo"]);
+  });
+  it("says nothing of a signer a run doesn't have: signing is opt-in (chant#4156)", () => {
+    for (const signer of [null, undefined, ""]) expect(indexWords(ci({ signer, failure: null })).join(" ")).not.toMatch(/sign/);
+  });
+  it("words an apply that exited 3 as a plan that moved or waits, not a failure (chant#4156)", () => {
+    expect(indexWords(ci({ status: "waiting", failure: "plan-changed", moved: "the plan moved or waits: re-plan and re-approve" }))).toEqual(["the plan moved or waits: re-plan and re-approve (plan-changed)"]);
+    expect(toneOf("waiting")).not.toBe(toneOf("failure"));
+  });
+  it("links the forge's run by its URL's host, never by runOrigin's forge name", () => {
+    expect(originLink(ci({ origin: "http://forgejo:3000/chant-demo/fan-out-estate/actions/runs/6782" }))).toEqual({ href: "http://forgejo:3000/chant-demo/fan-out-estate/actions/runs/6782", text: "the run on forgejo:3000" });
+    expect(originLink(ci({ origin: "javascript:alert(1)" }))).toBeNull();
+    expect(originLink(ci())).toBeNull();
+    expect(originLink({ origin: "https://x.example/r/1" })).toBeNull();
+  });
+  it("adds nothing to a run from anywhere else", () => {
+    expect(indexWords({ ...ci(), from: undefined, member: "web" })).toEqual([]);
+    expect(indexWords(null)).toEqual([]);
+  });
+  it("calls a job chant adds later a run, and draws a status it adds by its own word", () => {
+    expect(triggerWords(ci({ trigger: null, event: null }))).toBe("a run");
+    expect(toneOf("cancelled-by-host")).toBe("idle");
+  });
+  it("keys runs by chant's run id, a string, through the merge and the live pick", () => {
+    const entry = ci({ status: "waiting", ended_at: null });
+    expect(mergeRun(entry, ci({ status: "waiting", ended_at: null, jobs: [{ id: "6782", name: "pr-apply", needs: [], status: "waiting", steps: [] }] })).id).toBe("6782");
+    expect(liveRun([ci({ id: "b" }), ci({ id: "a" })]).id).toBe("b");
   });
 });
