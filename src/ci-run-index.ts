@@ -6,9 +6,10 @@
  * run-event/v1 lines at `<url>/<key>/pr-<job>.events.jsonl`, beside its report
  * `<url>/<key>/pr-<job>.json`.
  *
- * `serve --ci-report-url <url>` (or `BEHOLD_CI_REPORT_URL`) names the URL
- * until chant declares one (chant#4160). Two routes, both GET, so `--public`
- * keeps them:
+ * `serve --ci-report-url <url>` (or `BEHOLD_CI_REPORT_URL`) names the URL, or
+ * (#818) a served workspace declares it, `ci.reportUrl` in its ls document
+ * (chant#4160, floor 0.124.32); the flag wins, and each answer's `urlFrom`
+ * says which. Two routes, both GET, so `--public` keeps them:
  *
  * - `GET /api/chant/ci/runs`: the index, as the runs pane's demo.runs/v1.
  * - `GET /api/chant/ci/runs/:runId`: one run, its log built from its events
@@ -78,6 +79,24 @@ export const runStatusOf = (status: string): string => STATUS[status] ?? status;
  */
 export const MOVED_OR_WAITING: ReadonlySet<string> = new Set(["not-approved", "plan-changed", "wave-not-approved", "wave-plan-changed"]);
 export const MOVED_WORDS = "the plan moved or waits: re-plan and re-approve";
+/**
+ * #818: refusals that are not a moved plan. An apply whose entry records its
+ * `exitCode` (chant#4165) as 3 is held like a moved plan unless its failure is
+ * one of these: the report refused it for another reason. From chant's
+ * pr-apply (cli/handlers/pr.ts): a reviewer with no standing review, an
+ * approver who wrote the change (#4145), and a push no merged pull request
+ * matched. `failed` and `command-failed` with exit 3 are a step whose plan
+ * moved (#4151) and a second approval round (#4159): held.
+ */
+const OTHER_REFUSALS: ReadonlySet<string> = new Set(["not-a-reviewer", "author-approved", "no-pull-request"]);
+
+/** Why an entry is held rather than failed: its moved refusal's code, `exit 3`, or null when it isn't held. */
+export function heldBy(e: Pick<CiRunEntry, "status" | "job" | "failure" | "exitCode">): string | null {
+  if (e.status !== "fail") return null;
+  if (e.failure && MOVED_OR_WAITING.has(e.failure.code)) return e.failure.code;
+  if (e.job === "apply" && e.exitCode === 3 && !(e.failure && OTHER_REFUSALS.has(e.failure.code))) return "exit 3";
+  return null;
+}
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const str = (v: unknown): v is string => typeof v === "string";
@@ -97,6 +116,13 @@ export interface CiRunEntry {
   runOrigin: { forge: string } & Record<string, unknown>;
   /** chant#4156: who signed the run's record, null or absent when nobody did. */
   signer?: string | null;
+  /**
+   * chant#4165, not merged as this is written: the code the job's command
+   * exited with (0, 1, 3). The field's name is the one chant's session gave;
+   * the vendored schema doesn't carry it yet, and an entry without it reads as
+   * before.
+   */
+  exitCode?: number;
 }
 
 /**
@@ -146,6 +172,9 @@ export interface CiRun extends Omit<DemoRun, "id" | "cycle" | "jobs" | "schema" 
   failure: string | null;
   /** {@link MOVED_WORDS} for a run that exited 3, else null. */
   moved: string | null;
+  /** {@link heldBy}: what says it exited 3, the refusal or `exit 3`. */
+  heldBy: string | null;
+  exitCode: number | null;
   signer: string | null;
   key: string;
   jobs: { id: string; name: string; needs: string[]; status: string; started_at: string | null; ended_at: string | null; steps?: DemoRun["jobs"][number]["steps"] }[];
@@ -153,7 +182,8 @@ export interface CiRun extends Omit<DemoRun, "id" | "cycle" | "jobs" | "schema" 
 
 /** An entry with no file read: the sidebar's row, and the run before its events are. */
 export function ciRunOf(e: CiRunEntry, url: string): CiRun {
-  const moved = e.status === "fail" && !!e.failure && MOVED_OR_WAITING.has(e.failure.code);
+  const held = heldBy(e);
+  const moved = held !== null;
   const status = moved ? "waiting" : runStatusOf(e.status);
   // A run still waiting has not ended; one that exited 3 has, and waits for the next.
   const ended = e.status === "waiting" ? null : e.ended;
@@ -182,6 +212,8 @@ export function ciRunOf(e: CiRunEntry, url: string): CiRun {
     member: e.member ?? null,
     failure: e.failure ? e.failure.code : null,
     moved: moved ? MOVED_WORDS : null,
+    heldBy: held,
+    exitCode: Number.isInteger(e.exitCode) ? e.exitCode! : null,
     signer: str(e.signer) && e.signer ? e.signer : null,
     key: e.key,
     jobs: [{ id: e.runId, name: job, needs: [], status, started_at: e.started, ended_at: ended }],
@@ -212,7 +244,7 @@ export function ciRunWithLog(e: CiRunEntry, url: string, read: EventsRead, repor
   return { ...base, ...(built.origin && !base.origin ? { origin: built.origin } : {}), jobs: base.jobs.map((j) => ({ ...j, steps })) };
 }
 
-export type CiRunsAnswer = { source: string; read: string; key: string } & (
+export type CiRunsAnswer = { source: string; read: string; key: string; urlFrom?: CiReportUrlFrom } & (
   | { doc: { schema: "demo.runs/v1"; runs: CiRun[] }; chant: string; updated: string; skipped: string[] }
   | { doc: null; absent: string }
   | { doc: null; error: string; code: string; remedy?: string }
@@ -277,9 +309,20 @@ export async function readCiRun(source: TerragucciSource, url: string, e: CiRunE
 /** A run id as the route takes one, or null. */
 export const runIdOf = (raw: string): string | null => (RUN_ID.test(raw) ? raw : null);
 
+/** #818: where the report URL came from: `--ci-report-url` (or its variable), or the workspace declaration's `ci.reportUrl`. */
+export type CiReportUrlFrom = "flag" | "declaration";
+
+/** #818: the URL the runs pane reads and which named it. The flag overrides the declaration; neither, undefined. */
+export function ciReportUrlOf(flag: string | undefined, declared: string | undefined): { url: string; from: CiReportUrlFrom } | undefined {
+  if (flag) return { url: flag, from: "flag" };
+  return declared ? { url: declared, from: "declaration" } : undefined;
+}
+
 export interface CiRunsOptions {
-  /** `--ci-report-url`: s3://, https://, file:// or a directory. */
+  /** `--ci-report-url`: s3://, https://, file:// or a directory; or the declaration's `ci.reportUrl`. */
   url: string;
+  /** #818: which named it, said in each answer as `urlFrom`. The flag when not given. */
+  from?: CiReportUrlFrom;
   aws?: AwsRun;
   fetch?: typeof fetch;
   now?: () => Date;
@@ -291,11 +334,12 @@ export interface CiRunsOptions {
 export function ciRunsRoutes(app: Hono, opts: CiRunsOptions): void {
   const source = opts.source ?? reportSourceOf(opts.url, { ...(opts.aws ? { aws: opts.aws } : {}), ...(opts.fetch ? { fetch: opts.fetch } : {}) });
   const now = () => (opts.now ? opts.now() : new Date());
+  const urlFrom: CiReportUrlFrom = opts.from ?? "flag";
   let index: { at: number; read: ReturnType<typeof readCiRunIndex> } | undefined;
   const runs = new Map<string, { at: number; read: Promise<CiRun> }>();
   const readIndex = () => {
     const t = Date.now();
-    if (!index || t - index.at >= CI_RUNS_READ_TTL_MS) index = { at: t, read: readCiRunIndex(source, opts.url, now()) };
+    if (!index || t - index.at >= CI_RUNS_READ_TTL_MS) index = { at: t, read: readCiRunIndex(source, opts.url, now()).then((a) => ({ ...a, urlFrom })) };
     return index.read;
   };
   const readRun = (e: CiRunEntry) => {
@@ -321,7 +365,7 @@ export function ciRunsRoutes(app: Hono, opts: CiRunsOptions): void {
     const key = `runs/${id}`;
     if (!a.doc || !a.entries) return c.json({ ...a, entries: undefined, key }, statusOf(a), { "cache-control": "no-store" });
     const e = a.entries.find((x) => x.runId === id);
-    if (!e) return c.json({ source: a.source, read: a.read, key, doc: null, absent: `Run ${id} is not in chant's run index (it keeps the newest 200).` }, 404, { "cache-control": "no-store" });
-    return c.json({ source: a.source, read: a.read, key, doc: await readRun(e) }, 200, { "cache-control": "no-store" });
+    if (!e) return c.json({ source: a.source, urlFrom, read: a.read, key, doc: null, absent: `Run ${id} is not in chant's run index (it keeps the newest 200).` }, 404, { "cache-control": "no-store" });
+    return c.json({ source: a.source, urlFrom, read: a.read, key, doc: await readRun(e) }, 200, { "cache-control": "no-store" });
   });
 }

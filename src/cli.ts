@@ -227,6 +227,9 @@ Options:
                       kiosk's runs pane lists those runs and opens a run's
                       events as its log, in place of the forge's runs
                       (behold#815). GET only, so --public keeps it.
+                      Without it, a served workspace's declared
+                      ci.reportUrl (chant 0.124.32 or newer) is read
+                      instead; given, it overrides that (behold#818).
   --yodel-report <file|dir>
                       serve/export: mark SQL Yodeler's \`yodel report --json\`
                       output and any \`yodel drift <env> --json\` beside it
@@ -522,6 +525,9 @@ export async function run(argv: string[]): Promise<void> {
     process.stderr.write(`behold: ${approver.as} is not a forge identity; a workspace with identity.attribution identified takes it only if .chant/allowed_signers lists it\n`);
   }
   const target = await serveTarget(dirs, "serve");
+  if (target.ciReportUrlDeclared) {
+    process.stdout.write(ciReportUrl ? `behold: --ci-report-url ${ciReportUrl} overrides the declared ci.reportUrl ${target.ciReportUrlDeclared}\n` : `behold: the runs pane reads chant's run index at ${target.ciReportUrlDeclared}, the declaration's ci.reportUrl\n`);
+  }
   const viewRepos = reposParent !== undefined ? await serveRepos(resolve(reposParent), target) : undefined;
   await startServer({
     ...target,
@@ -575,7 +581,7 @@ async function serveRepos(parent: string, primary: ServeTarget): Promise<ViewRep
 const PUBLIC_TERRAGUCCI_POLL_SECS = 10;
 
 /** What `serve` and `export` read for the directories on the command line. */
-type ServeTarget = { projectDir: string; projectDirs?: string[]; workspace?: Workspace };
+type ServeTarget = { projectDir: string; projectDirs?: string[]; workspace?: Workspace; ciReportUrlDeclared?: string };
 
 /**
  * #464: one directory holding a chant.workspace.json is a declared workspace,
@@ -586,12 +592,15 @@ type ServeTarget = { projectDir: string; projectDirs?: string[]; workspace?: Wor
  */
 async function serveTarget(dirs: string[], verb: "serve" | "export"): Promise<ServeTarget> {
   const workspace = dirs.length === 1 && hasDeclaration(dirs[0]) ? await declaredWorkspace(dirs[0], verb) : undefined;
+  // #818: a declaration with no members can still declare its CI report URL.
+  const declared = workspace?.ciReportUrl ? { ciReportUrlDeclared: workspace.ciReportUrl } : {};
   if (workspace && workspace.members.length > 0) {
     const drawn = drawnMembers(workspace).map((m) => m.abs);
-    return { projectDir: drawn[0] ?? workspace.root, projectDirs: drawn, workspace };
+    return { projectDir: drawn[0] ?? workspace.root, projectDirs: drawn, workspace, ...declared };
   }
   for (const d of dirs) warnIfNotChantProject(d);
   return {
+    ...declared,
     projectDir: dirs[0], // primary — ops/overlay/rollback act on it
     // #389: more than one directory composes, and so does one that is a member
     // of a kind chant cannot read — a lone choudoufu estate has no chant to
