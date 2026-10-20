@@ -36,7 +36,7 @@ export function yodelGateCard(env, g, now = new Date()) {
   const facts = [];
   if (g.pending) facts.push(`asked ${clock(g.pending.timestamp, now)}, ${ago(g.pending.timestamp, now)}`);
   if (g.approval) {
-    const how = [g.approval.signed ? "signed" : "unsigned", g.approval.via ? `via ${g.approval.via}` : "", g.approval.pr !== undefined ? `PR #${g.approval.pr}` : "", g.approval.relayedBy ? `relayed by ${g.approval.relayedBy}` : ""].filter(Boolean).join(", ");
+    const how = [g.approval.signed ? "signed" : "", g.approval.via ? `via ${g.approval.via}` : "", g.approval.pr !== undefined ? `PR #${g.approval.pr}` : "", g.approval.relayedBy ? `relayed by ${g.approval.relayedBy}` : ""].filter(Boolean).join(", ");
     facts.push(`approved by ${g.approval.by} (${how}) ${clock(g.approval.at, now)}, ${ago(g.approval.at, now)}`);
   }
   if (g.applied) facts.push(`applied ${clock(g.applied.at, now)}, ${ago(g.applied.at, now)}${g.applied.result ? "" : " (outcome not recorded)"}`);

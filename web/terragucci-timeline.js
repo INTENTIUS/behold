@@ -34,11 +34,12 @@ export function toneOf(entry) {
   return "ok";
 }
 
-/** One entry as a line: "approved wave-2 by dana: unsigned · plan 4be1…". */
+/** One entry as a line: "approved wave-2 by dana · plan 4be1…". */
 export function entryLine(entry) {
   const what = KIND_WORDS[entry.kind] || entry.kind;
   const by = entry.who ? ` by ${entry.who}` : "";
-  const result = entry.result && entry.result !== entry.kind ? `: ${entry.result}` : "";
+  // Signing is opt-in: an unsigned approval is the normal case and goes unmarked.
+  const result = entry.result && entry.result !== entry.kind && entry.result !== "unsigned" ? `: ${entry.result}` : "";
   const digest = entry.digest ? ` · plan ${entry.digest.replace(/^(jcs1-)?sha256:/, "").slice(0, 12)}` : "";
   return `${what} ${entry.what}${by}${result}${digest}`;
 }
@@ -131,12 +132,12 @@ const HISTORY_WORDS = {
   "override-spent": "override spent",
 };
 
-/** One ledger entry as a line: "approved wave-2 by dana: unsigned · plan 4be1…". */
+/** One ledger entry as a line: "approved wave-2 by dana · plan 4be1…". */
 export function historyLine(entry) {
   const what = entry.kind === "revoked" ? `${entry.subject || "approval"} revoked` : HISTORY_WORDS[entry.kind] || entry.kind;
   const op = entry.op && entry.op !== "tf-apply" ? ` (${entry.op})` : "";
   const by = entry.actor ? ` by ${entry.actor}` : "";
-  const seal = entry.seal && (entry.kind === "approved" || entry.kind === "override-recorded") ? `: ${entry.seal}` : "";
+  const seal = entry.seal && entry.seal !== "unsigned" && (entry.kind === "approved" || entry.kind === "override-recorded") ? `: ${entry.seal}` : "";
   const digest = entry.digest ? ` · plan ${entry.digest.replace(/^(jcs1-)?sha256:/, "").slice(0, 12)}` : "";
   return `${what} ${entry.gate}${op}${by}${seal}${digest}`;
 }
