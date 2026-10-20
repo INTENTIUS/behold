@@ -166,6 +166,7 @@ function addStyle() {
   .dots-on > svg { position: relative; z-index: 1; background: transparent; }
   /* Once the cards are out of the paint a touch lands on the host: a pinch there is the camera's, never the page's zoom. */
   .dots-on { touch-action: none; }
+  html.kiosk-touch .dots-on { touch-action: pan-x pan-y; }
   .dots-on > svg > rect[fill^="url(#pin-"] { display: none; }
   .dots-on > svg [data-node-id], .dots-on > svg rect[data-group-id], .dots-on > svg text { opacity: var(--dots-card-a, 1); }
   #dots-canvas { position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; }
@@ -2046,10 +2047,19 @@ function viewerHold() {
  */
 function watchViewer() {
   const host = S.host;
-  const dragging = (e) => {
-    if (e.buttons) viewerHold();
+  // The kiosk on a phone: one finger scrolls the page (web/app.js kioskTouch), so only a second finger has the camera.
+  const phone = () => document.documentElement.classList.contains("kiosk-touch");
+  // A tap's compatibility mousedown carries no pointerType: on a phone it is the tap.
+  const pressed = (e) => {
+    if (!(phone() && (e.pointerType === "touch" || e.type === "mousedown"))) viewerHold();
   };
-  for (const [ev, f] of [["wheel", viewerHold], ["pointerdown", viewerHold], ["mousedown", viewerHold], ["touchstart", viewerHold], ["touchmove", viewerHold], ["pointermove", dragging]]) {
+  const dragging = (e) => {
+    if (e.buttons && !(phone() && e.pointerType === "touch")) viewerHold();
+  };
+  const touched = (e) => {
+    if (!phone() || e.touches.length >= 2) viewerHold();
+  };
+  for (const [ev, f] of [["wheel", viewerHold], ["pointerdown", pressed], ["mousedown", pressed], ["touchstart", touched], ["touchmove", touched], ["pointermove", dragging]]) {
     host.addEventListener(ev, f, { passive: true });
     S.off.push(() => host.removeEventListener(ev, f));
   }
