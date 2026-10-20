@@ -197,6 +197,9 @@ export function localRunOf(rec: LocalRunRecord): LocalRun {
     job: rec.ask.job,
     member: rec.ask.member,
     failure,
+    // A local run is a plan: never held at a gate (#818's heldBy is for an apply in the index).
+    heldBy: null,
+    exitCode: rec.exitCode,
     runId: start && str(start.runId) ? start.runId : null,
     where: { forge: origin, runtime: start && str(start.runtime) ? start.runtime : null },
     base: rec.ask.base,
