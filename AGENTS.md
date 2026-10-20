@@ -114,11 +114,18 @@ shape; `GET /api/chant/ci/runs/:runId` reads that entry's
 log with `demoRunOf` (src/chant-demo.ts). No events file is one step saying
 so. An apply refused with `plan-changed`, `not-approved` or a wave's
 equivalent exited 3 and is drawn waiting with "the plan moved or waits:
-re-plan and re-approve". `signer` shows only when it is a string; runOrigin's
+re-plan and re-approve". So is an apply whose entry has `exitCode: 3` and a
+failure that isn't another refusal (#818; the field follows chant#4165, not
+merged, and isn't in the vendored schema; absent reads as before). `signer` shows only when it is a string; runOrigin's
 URL is the link, named by its host, never by `forge`. The page learns of it
 from `<meta name="kiosk-runs" content="chant-ci">` (web/kiosk-source.js
 `pageRuns`); only the runs pane switches, the cycle and approval panel read
-as before. Without the flag nothing changes. chant#4160 will declare the URL.
+as before. #818: without the flag, a served workspace's declared
+`ci.reportUrl` (s3:// or file://, read from the `workspace ls` behold already
+makes, `declaredReportUrl` in src/workspace.ts, floor
+`CI_REPORT_URL_CHANT_FLOOR`, 0.124.32, chant#4160) is used, a memberless
+declaration included; the flag overrides it, and each answer's `urlFrom` says
+`flag` or `declaration`. With neither, nothing changes.
 
 ## A terragucci estate, from its reports (#490)
 

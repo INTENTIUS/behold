@@ -30,6 +30,7 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { GraphIR } from "@intentius/chant";
 import { envOverridesFor, resolveChant, type GraphOptions } from "./chant.ts";
+import { CI_REPORT_URL_CHANT_FLOOR } from "./chant-floors.ts";
 import type { MemberVia } from "./member-ir.ts";
 import { meetsFloor } from "./floor.ts";
 import { setStampExclusions } from "./member-source.ts";
@@ -77,6 +78,8 @@ export interface Workspace {
   /** The chant version that wrote the listing. */
   chant: string;
   members: WorkspaceMember[];
+  /** #818: the declaration's `ci.reportUrl` (chant#4160), s3:// or file://, from a chant at or above its floor. */
+  ciReportUrl?: string;
 }
 
 export type WorkspaceRead = { ok: true; workspace: Workspace } | { ok: false; refusal: WorkspaceRefusal };
@@ -145,10 +148,22 @@ export function workspaceFromLs(doc: WorkspaceDocument, root: string): Workspace
       because: typeof m.because === "string" ? m.because : null,
     });
   }
+  const ciReportUrl = declaredReportUrl(doc);
   return {
     ok: true,
-    workspace: { name: ws.name, root: resolve(root), file: typeof ws.file === "string" ? ws.file : "chant.workspace.json", chant: String(doc.chant ?? ""), members },
+    workspace: { name: ws.name, root: resolve(root), file: typeof ws.file === "string" ? ws.file : "chant.workspace.json", chant: String(doc.chant ?? ""), members, ...(ciReportUrl ? { ciReportUrl } : {}) },
   };
+}
+
+/**
+ * #818: the declaration's CI report URL, `ci.reportUrl` in the ls document
+ * (chant#4160), when the chant that wrote it is at {@link CI_REPORT_URL_CHANT_FLOOR}
+ * or newer and the URL is s3:// or file://, the two chant takes there.
+ */
+export function declaredReportUrl(doc: WorkspaceDocument): string | undefined {
+  if (!isRecord(doc.ci) || typeof doc.ci.reportUrl !== "string") return undefined;
+  if (!meetsFloor(typeof doc.chant === "string" ? doc.chant : undefined, CI_REPORT_URL_CHANT_FLOOR)) return undefined;
+  return /^(?:s3|file):\/\/./.test(doc.ci.reportUrl) ? doc.ci.reportUrl : undefined;
 }
 
 /** Ask the workspace's own chant for its member list. */

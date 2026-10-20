@@ -628,7 +628,8 @@ behold serve <checkout> --terragucci s3://reports --ci-report-url s3://reports/c
 a directory. The pane lists the index's runs, newest first, each with its
 member, why it failed and, when the run's record was signed, who signed it.
 An apply that exited 3 (the plan moved, or a gate waits) is drawn held, not
-failed. Opening a run reads its `pr-<job>.events.jsonl` under the entry's key
+failed, whether its report says why or only the entry's `exitCode` does
+(chant#4165). Opening a run reads its `pr-<job>.events.jsonl` under the entry's key
 as the log, the way the fan-out demo's runs are built. A job run without
 `--events-json` has no events file, and its log says so. A run whose forge
 names it links to it.
@@ -636,9 +637,21 @@ names it links to it.
 `GET /api/chant/ci/runs` and `GET /api/chant/ci/runs/<runId>` answer them;
 a run is read only by an id the index lists, and only under its own key, so
 `--public` serves both. An index of another contract, or one written by a
-chant older than 0.124.31, is refused with the reason in the pane. Without
-`--ci-report-url` the pane reads the forge's runs, as before. Once chant
-declares the report URL (chant#4160), behold will read it from there.
+chant older than 0.124.31, is refused with the reason in the pane.
+
+A workspace can declare the URL instead, in `chant.workspace.json`
+(chant 0.124.32 and newer, chant#4160):
+
+```json
+{ "ci": { "reportUrl": "s3://reports/chant" } }
+```
+
+When `behold serve` is pointed at that workspace without `--ci-report-url`,
+it reads the run index at the declared URL. The flag still overrides the
+declaration, and both routes' answers carry `urlFrom`, `flag` or
+`declaration`, to say which one named it. `behold doctor` lists the floor
+with the rest. With neither, or on an older chant, the pane reads the forge's
+runs, as before.
 
 ## Try it on terragucci's example
 

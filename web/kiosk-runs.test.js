@@ -314,6 +314,9 @@ describe("runs from chant's run index (behold#815)", () => {
     expect(indexWords(ci({ status: "waiting", failure: "plan-changed", moved: "the plan moved or waits: re-plan and re-approve" }))).toEqual(["the plan moved or waits: re-plan and re-approve (plan-changed)"]);
     expect(toneOf("waiting")).not.toBe(toneOf("failure"));
   });
+  it("words an apply held by its exit code alone the same way, naming the code (#818, chant#4165)", () => {
+    expect(indexWords(ci({ status: "waiting", failure: "failed", moved: "the plan moved or waits: re-plan and re-approve", heldBy: "exit 3", exitCode: 3 }))).toEqual(["the plan moved or waits: re-plan and re-approve (exit 3)"]);
+  });
   it("links the forge's run by its URL's host, never by runOrigin's forge name", () => {
     expect(originLink(ci({ origin: "http://forgejo:3000/chant-demo/fan-out-estate/actions/runs/6782" }))).toEqual({ href: "http://forgejo:3000/chant-demo/fan-out-estate/actions/runs/6782", text: "the run on forgejo:3000" });
     expect(originLink(ci({ origin: "javascript:alert(1)" }))).toBeNull();

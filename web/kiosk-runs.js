@@ -285,13 +285,14 @@ export function placeWords(run, scenarios, titles = {}, names = {}) {
  * behold#815: what chant's run index says of a run beside its trigger: its
  * workspace member, why it failed, and who signed its record. A run nobody
  * signed says nothing of it (signing is opt-in, chant#4156). An apply that
- * exited 3 says its plan moved or waits, never that it failed. Empty for a
- * run from anywhere else.
+ * exited 3 says its plan moved or waits, never that it failed, with the
+ * refusal that says so or (#818, chant#4165) its exit code. Empty for a run
+ * from anywhere else.
  */
 export function indexWords(run) {
   if (!run || run.from !== "ci-run-index") return [];
   // The status beside it already says failed: chant's reason is added only when it says more than that.
-  const why = run.moved ? `${run.moved} (${run.failure})` : run.failure && run.failure !== "failed" ? `failed: ${run.failure}` : null;
+  const why = run.moved ? `${run.moved} (${run.heldBy || run.failure})` : run.failure && run.failure !== "failed" ? `failed: ${run.failure}` : null;
   return [run.member || null, why, typeof run.signer === "string" && run.signer ? `signed by ${run.signer}` : null].filter(Boolean);
 }
 

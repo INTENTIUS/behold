@@ -5,7 +5,7 @@ import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import { CHANT_FLOORS, CI_RUN_INDEX_CHANT_FLOOR, floorFor } from "./chant-floors.ts";
 import ciRunIndexSchema from "./ci-run-index-schema/ci-run-index.schema.json" with { type: "json" };
-import { CI_RUN_INDEX_SCHEMA_ID, CI_RUN_INDEX_SCHEMA_SOURCE, ciRunsRoutes, ciRunWithLog, readCiRunIndex, readerSchema, runIdOf, type CiRun, type CiRunEntry } from "./ci-run-index.ts";
+import { CI_RUN_INDEX_SCHEMA_ID, CI_RUN_INDEX_SCHEMA_SOURCE, ciReportUrlOf, ciRunsRoutes, ciRunWithLog, readCiRunIndex, readerSchema, runIdOf, type CiRun, type CiRunEntry } from "./ci-run-index.ts";
 import { kioskRoute, vendorRoutes } from "./terragucci-demo.ts";
 import { terragucciSource, TerragucciDenied, type TerragucciSource } from "./terragucci-source.ts";
 
@@ -67,6 +67,32 @@ describe("readCiRunIndex", () => {
       ["waiting", "the plan moved or waits: re-plan and re-approve", "wave-not-approved", true],
       ["failure", null, "failed", true],
     ]);
+  });
+  // #818: exitCode follows chant#4165, which hasn't merged; the vendored schema doesn't name it.
+  it("draws an apply whose entry says it exited 3, with no refusal, as held the same way (chant#4165)", async () => {
+    const d = indexDoc();
+    // The schema asks a failed entry for its failure, so "no refusal" is a code that isn't one.
+    d.runs[1] = { ...d.runs[1], status: "fail", failure: { code: "command-failed" }, exitCode: 3 };
+    d.runs[3] = { ...d.runs[3], exitCode: 3 };
+    d.runs[2] = { ...d.runs[2], status: "fail", failure: { code: "failed" }, exitCode: 3 };
+    d.runs[4] = { ...d.runs[4], status: "fail", failure: { code: "failed" }, exitCode: 3 };
+    const a = await readCiRunIndex(withIndex(d), URL);
+    expect(a.doc!.runs.slice(1).map((r) => [r.job, r.status, r.moved, r.heldBy, r.exitCode])).toEqual([
+      ["apply", "waiting", "the plan moved or waits: re-plan and re-approve", "exit 3", 3],
+      // A plan that exited 3 is not an apply held at its approval.
+      ["plan", "failure", null, null, 3],
+      ["apply", "waiting", "the plan moved or waits: re-plan and re-approve", "exit 3", 3],
+      ["plan", "failure", null, null, 3],
+    ]);
+  });
+  it("keeps a failure whose report refused it for another reason, and reads an entry without exitCode as before", async () => {
+    const d = indexDoc();
+    d.runs[3] = { ...d.runs[3], failure: { code: "not-a-reviewer" }, exitCode: 3 };
+    const a = await readCiRunIndex(withIndex(d), URL);
+    expect(a.doc!.runs[3]).toMatchObject({ status: "failure", moved: null, heldBy: null, failure: "not-a-reviewer", exitCode: 3 });
+    const before = (await readCiRunIndex(fixture, URL)).doc!.runs;
+    expect(before.map((r) => [r.status, r.moved, r.exitCode])).toEqual(before.map((r) => [r.status, null, null]));
+    expect(before[3]).toMatchObject({ status: "failure", failure: "failed", heldBy: null });
   });
   it("links no origin that is not an http(s) URL", async () => {
     const d = indexDoc();
@@ -180,6 +206,19 @@ describe("GET /api/chant/ci/runs (behold#815)", () => {
     expect((await app().request("/api/chant/ci/runs/..%2F..%2Fetc")).status).toBe(400);
     expect(runIdOf("../x")).toBeNull();
     expect(runIdOf("chant-1792376662004")).toBe("chant-1792376662004");
+  });
+  it("says which named the URL: the flag unless told the declaration did (#818)", async () => {
+    expect(await (await app().request("/api/chant/ci/runs")).json()).toMatchObject({ urlFrom: "flag" });
+    const a = new Hono();
+    ciRunsRoutes(a, { url: URL, from: "declaration", source: fixture });
+    expect(await (await a.request("/api/chant/ci/runs")).json()).toMatchObject({ urlFrom: "declaration" });
+    expect(await (await a.request("/api/chant/ci/runs/6784")).json()).toMatchObject({ urlFrom: "declaration" });
+    expect(await (await a.request("/api/chant/ci/runs/9999")).json()).toMatchObject({ urlFrom: "declaration" });
+  });
+  it("takes the flag over the declaration, the declaration without the flag, and neither as no runs pane of chant's (#818)", () => {
+    expect(ciReportUrlOf("s3://flag/reports", "s3://acme-ci/reports")).toEqual({ url: "s3://flag/reports", from: "flag" });
+    expect(ciReportUrlOf(undefined, "s3://acme-ci/reports")).toEqual({ url: "s3://acme-ci/reports", from: "declaration" });
+    expect(ciReportUrlOf("", undefined)).toBeUndefined();
   });
   it("answers the refusal on both routes when the index is refused", async () => {
     const old = app(withIndex({ ...indexDoc(), chant: "0.124.20" }));

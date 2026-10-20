@@ -1,0 +1,43 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/ls/v1/ls.schema.json",
+  "contract": 1,
+  "chant": "0.124.32",
+  "at": null,
+  "workspace": {
+    "name": "acme",
+    "root": ".",
+    "file": "chant.workspace.json",
+    "schema": 1,
+    "minReader": "0.124.32",
+    "pins": [],
+    "records": [],
+    "agentsFrom": "base"
+  },
+  "members": [
+    {
+      "name": "web",
+      "dir": "web",
+      "kind": "chant",
+      "roles": [],
+      "upstream": null,
+      "because": "the app",
+      "readable": true,
+      "reason": null,
+      "records": [],
+      "generated": [],
+      "agents": []
+    }
+  ],
+  "groups": [],
+  "diagrams": [],
+  "ci": {
+    "green": null,
+    "reportUrl": "s3://acme-ci/reports"
+  },
+  "summary": {
+    "members": 1,
+    "unreadable": 0,
+    "groups": 0,
+    "matches": 0
+  }
+}
