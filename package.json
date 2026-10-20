@@ -37,6 +37,7 @@
     "preview:dots": "tsx scripts/dots-preview.ts",
     "export:carve": "tsx scripts/export-carve.ts",
     "preview:carve": "tsx scripts/export-carve.ts && node scripts/serve-static.mjs dist-carve 4712",
+    "preview:tour": "tsx scripts/tour-preview.ts",
     "tsc": "tsc --noEmit",
     "test": "vitest run",
     "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --external:hono --external:@hono/node-server --external:@intentius/pinhole --external:@kubernetes/client-node --external:ajv --outfile=dist/cli.js && chmod +x dist/cli.js",
