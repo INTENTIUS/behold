@@ -290,7 +290,8 @@ export function placeWords(run, scenarios, titles = {}, names = {}) {
  */
 export function indexWords(run) {
   if (!run || run.from !== "ci-run-index") return [];
-  const why = run.moved ? `${run.moved} (${run.failure})` : run.failure ? `failed: ${run.failure}` : null;
+  // The status beside it already says failed: chant's reason is added only when it says more than that.
+  const why = run.moved ? `${run.moved} (${run.failure})` : run.failure && run.failure !== "failed" ? `failed: ${run.failure}` : null;
   return [run.member || null, why, typeof run.signer === "string" && run.signer ? `signed by ${run.signer}` : null].filter(Boolean);
 }
 
@@ -556,7 +557,8 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
   const meta = el("div", "r-head-meta");
   const bits = [
     `#${run.id}`,
-    run.status === "waiting" ? `held at a ${run.from === "ci-run-index" ? "" : "terragucci "}gate, waiting for an approval` : STATUS_WORDS[run.status] || run.status,
+    // A run of chant's index whose plan moved says why on its own (indexWords): "held" is all the status adds.
+    run.status === "waiting" ? (run.moved ? "held" : `held at a ${run.from === "ci-run-index" ? "" : "terragucci "}gate, waiting for an approval`) : STATUS_WORDS[run.status] || run.status,
     run.ref ? `on ${run.ref}` : null,
     run.commit ? `commit ${run.commit.slice(0, 8)}` : null,
     ...indexWords(run),
