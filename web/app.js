@@ -3623,7 +3623,15 @@ function mountLiveCarve(g, svgEl) {
       }
       if (!on && kioskShot) queueMicrotask(() => applyKioskShot(true));
     },
-  }).catch((err) => console.warn("live carve:", err));
+  })
+    .then(fitClearOfRail)
+    .catch((err) => console.warn("live carve:", err));
+}
+
+/** behold#729: the rail mounts after the graph's first fit; a view still at its fit or shot moves clear of it. */
+function fitClearOfRail() {
+  if (kioskShot) applyKioskShot(false);
+  else if (vbAtFit) fitGraph();
 }
 
 let tgLifecycle = null;
@@ -5608,7 +5616,7 @@ function kioskShotBox() {
   }
   kioskHeld = null;
   document.documentElement.classList.remove("kiosk-held");
-  return shotViewBox(kioskShotTarget(svg, kioskShot), pane, insets);
+  return shotViewBox(kioskShotTarget(svg, kioskShot), pane, { ...insets, right: Math.max(insets.right, railInset(pane)) });
 }
 /** The whole-graph framing Watch holds on a small stage while the graph and the pane stay (web/kiosk-shot.js heldFrame); null on a bigger one. */
 var kioskHeld = null;
@@ -8307,7 +8315,9 @@ function render(ir, svg, m) {
   }
   // #712: only the dots preview's meta carries `dots`. #715: a live carve, when the gate opened.
   if (svgEl && m && m.dots) {
-    mountDots({ host: g, svg: svgEl, meta: m, vbInit: vbInit.slice(), getVB: () => vb, setVB: (a) => { vb = a.slice(); vbAtFit = false; applyVB(); } }).catch((err) => console.warn("dots preview:", err));
+    mountDots({ host: g, svg: svgEl, meta: m, vbInit: vbInit.slice(), getVB: () => vb, setVB: (a) => { vb = a.slice(); vbAtFit = false; applyVB(); } })
+      .then(fitClearOfRail)
+      .catch((err) => console.warn("dots preview:", err));
   } else if (svgEl && liveCarve) mountLiveCarve(g, svgEl);
   else unmountDots();
   ensureZoomControls(g);
@@ -8479,6 +8489,21 @@ function panelInsets(pane) {
     : { left: 0, right: Math.min(cap, Math.max(0, pane.right - r.left)) };
 }
 
+// behold#729: the dots zoom rail floats on the pane's right edge, so a fit or a
+// kiosk shot that ignores it leaves the rightmost cards under it. Read at fit
+// time like the panel: Watch hides it, a held stage and a directing carve fade
+// it out, and then it covers nothing.
+const RAIL_GAP = 8;
+function railInset(pane) {
+  const rail = document.querySelector("#dots-ui .dots-rail");
+  if (!rail) return 0;
+  const cs = getComputedStyle(rail);
+  if (cs.display === "none" || cs.visibility === "hidden" || Number(cs.opacity) === 0) return 0;
+  const r = rail.getBoundingClientRect();
+  if (!r.width || r.bottom <= pane.top || r.top >= pane.bottom || r.left >= pane.right) return 0;
+  return Math.min(pane.width * 0.3, Math.max(0, pane.right - r.left + RAIL_GAP));
+}
+
 /**
  * The viewBox that fits the whole graph into the pane's UNCOVERED part.
  *
@@ -8496,7 +8521,8 @@ function fittedViewBox() {
   const pane = host.getBoundingClientRect();
   const [x0, y0, w0, h0] = vbInit;
   if (!(pane.width > 0 && pane.height > 0 && w0 > 0 && h0 > 0)) return null;
-  const { left, right } = panelInsets(pane);
+  const { left, right: panelRight } = panelInsets(pane);
+  const right = Math.max(panelRight, railInset(pane));
   const band = Math.max(1, pane.width - left - right);
   const s = Math.min(band / w0, pane.height / h0);
   const vw = pane.width / s;
