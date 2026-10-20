@@ -1144,6 +1144,8 @@ function drawWatchHead(bar, s, now) {
   if (s.mode === "replay" && s.replay && s.replay.asked) bar.appendChild(askedLine(s));
   const intro = introFor(s);
   if (intro) bar.appendChild(el("p", "k-w-intro", intro));
+  // A phone leads with what the demo shows (kiosk.html shows it there only); the caption's copy of it goes.
+  if (demo && demo.title) bar.appendChild(el("p", "k-w-point", demo.title));
   const strip = el("ol", "k-strip");
   // behold#631: a chant pull request's wait for its approval comes before its merge. Without a stop of its own on the
   // strip it shows as "planned", for the fix's pull request as for the first.

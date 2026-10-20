@@ -331,8 +331,9 @@ body.k-watch #k-track { position: fixed; z-index: 7; left: 5px; right: 5px; }
   #k-track .kt-chapter-title { font-size: 0.88em; }
   #k-track .kt-segs .kt-label { display: none; }
   #k-track .kt-seg { height: 0.8em; min-width: 0.6em !important; }
-  #k-track .kt-here { display: block; margin: 0; color: var(--pending); font-size: 0.92em; }
-  #k-track .kt-now { font-size: 0.92em; white-space: normal; }
+  /* A phone leads with one line of what is happening now: the chapter in the rail already says which step. */
+  #k-track .kt-now { font-size: 1em; font-weight: 600; white-space: normal; margin-top: 0.3em; }
+  #k-track .kt-now::before { content: "Now: "; color: var(--pending); }
   /* behold#787: a phone's segments are too thin to press; a past chapter's title is the 44px target. */
   #k-track button.kt-seg.kt-seek { pointer-events: none; }
   #k-track button.kt-chapter-title.kt-seek { align-self: flex-start; max-width: 100%; min-height: 44px; padding: 0 0.8em; border: 1.5px solid color-mix(in srgb, var(--pending) 70%, transparent); border-radius: 999px; text-decoration: none; }
