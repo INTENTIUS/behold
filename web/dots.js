@@ -182,13 +182,14 @@ function addStyle() {
   .dots-rail-mark:hover i, .dots-rail-mark:focus-visible i { border-color: var(--focus); }
   .dots-rail-mark:disabled { cursor: default; color: var(--muted); }
   .dots-rail-mark:disabled:hover i { border-color: var(--muted); }
-  .dots-bottom { position: absolute; left: 50%; transform: translateX(-50%); bottom: 12px; display: flex; flex-direction: column; align-items: center; gap: 6px; max-width: calc(100% - 24px); pointer-events: none; }
+  /* behold#729: the pane's whole width less a gutter, so the caption can use it; a box centred at left 50% could never be wider than half the pane. */
+  .dots-bottom { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; }
   .dots-bottom > * { pointer-events: auto; }
   .dots-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: calc(100% - 24px); background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; box-sizing: border-box; }
   .dots-bar button, .dots-bar select { background: var(--well); color: var(--fg); border: 1px solid var(--line); border-radius: 5px; padding: 3px 8px; font: inherit; cursor: pointer; }
   .dots-bar input[type=range] { width: min(320px, 40vw); accent-color: var(--focus); }
   .dots-time { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 12em; }
-  .dots-caption { padding: 3px 8px; border-radius: 6px; background: color-mix(in srgb, var(--bg) 80%, transparent); color: var(--fg); white-space: nowrap; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; }
+  .dots-caption { padding: 3px 8px; border-radius: 6px; background: color-mix(in srgb, var(--bg) 80%, transparent); color: var(--fg); max-width: min(72ch, 100%); text-align: center; box-sizing: border-box; }
   .dots-kiosk .dots-caption { display: none; }
   /* #715: a live carve has no playback head: it plays as it is written. */
   .dots-live .dots-bar { display: none; }
