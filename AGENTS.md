@@ -1191,6 +1191,33 @@ the graph draws no marks. A public view refuses the route.
 `BEHOLD_TEST_CHANT_BIN` names one. `status.schema.json` in
 src/trunk-lane-schemas/ is chant main at e9c996e93.
 
+## Open decision points beside their gates (#472)
+
+The approvals inbox is arugula's rail (arugula-salad/arugula#621); behold
+draws open decision points and answers none. `GET /api/workspace/points`
+(src/decision-points.ts) reads `chant workspace points --open --json` through
+the reader's `readPoints` (floor `DECISION_POINTS_CHANT_FLOOR`, 0.107.0, the
+chant where a gate can ask a point, chant#3170). chant's conformance suite
+does not list `points`, so the read is not in `BEHOLD_READS`; the reader test
+holds every other module to not naming it. Each open question carries its
+point's question, who may answer (the quorum's count and roles), a model's
+proposal when there is one, and chant's `points answer` line. A gate that
+asks a point carries `answer` in `workspace status` (the open question's id,
+its point and path), and its `approve` is that same `points answer` line. The
+gate strip (web/decision-points.js, web/workspace-gates.js) puts a question
+on the card of the gate whose `answer.id` names it and gives a question no
+waiting gate names a card of its own, naming the gate from its
+`gate:<op>/<gate>@<env>` subject when a gate asked it. Such a gate gets no
+approve button, framed or not, and `POST /api/workspace/gates/approve`
+refuses it with `422 decision-point`. Standalone, a point card shows the line
+as text to copy; framed, it says to answer in the host's rail. There is no
+write route. Below the floor the route answers the refusal and `degraded`,
+and the strip says which chant adds points. A public view refuses the route.
+`src/decision-points-chant.test.ts` reads the workspace
+`src/decision-points-fixture.ts` makes through a real chant when
+`BEHOLD_TEST_CHANT_BIN` names one; src/__fixtures__/decision-points/ is
+chant 0.124.31's output for it.
+
 ## Invariant
 
 If a request would have behold write to a cloud or to source directly, it's wrong.

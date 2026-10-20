@@ -96,6 +96,13 @@ export const MIXED_ENVIRONMENT_CHANT_FLOOR = "0.124.29";
  * Collisions tab (#684). Below it the graph draws no collision marks and the
  * tab says which chant adds them. */
 export const OVERLAP_CHANT_FLOOR = "0.124.29";
+/** The first chant where a gate can ask a declared decision point: `workspace
+ * status` names the open question a gate waits on as its `answer`, and the
+ * `approve` line is the `points answer` one (INTENTIUS/chant#3170). behold reads
+ * `chant workspace points --open --json` from it and draws each open question
+ * beside its gate (#472). Below it the gate strip draws no points and says
+ * which chant adds them. */
+export const DECISION_POINTS_CHANT_FLOOR = "0.107.0";
 
 export interface ChantFloor {
   /** The read, in words: `the why of a member or a card`. */
@@ -127,6 +134,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "why chain", floor: WHY_TRACE_CHANT_FLOOR, adds: "graph --intent writes a trace, the why chain (chant#4023)", degraded: "the why pane shows decisions, runs and commits without the chain from work item to release" },
   { read: "mixed environment", floor: MIXED_ENVIRONMENT_CHANT_FLOOR, adds: "workspace status mixed, with redeploy and rollback lines (chant#4035, chant#4072)", degraded: "the Trunk tab marks no environment mixed" },
   { read: "work overlap", floor: OVERLAP_CHANT_FLOOR, adds: "workspace status overlap (chant#4025)", degraded: "the graph draws no collision marks, and the Collisions tab says which chant adds them" },
+  { read: "decision points", floor: DECISION_POINTS_CHANT_FLOOR, adds: "a gate that asks a decision point, read with chant workspace points --open (chant#3170)", degraded: "the gate strip draws no open decision points, and says which chant adds them" },
 ];
 
 /** One read's floor against one chant version. An unknown version meets it

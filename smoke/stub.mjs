@@ -1128,6 +1128,11 @@ export function startStub(port, { carve = false, nonChant = false, choudoufu = f
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(JSON.stringify({ workspace: false, env: "local", gates: [], approver: "smoke" }));
     }
+    // #472: the open decision points ride with the gates, and answer the same way off a workspace.
+    if (path === "/api/workspace/points") {
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ workspace: false, points: [] }));
+    }
     if (path === "/api/operator/status") {
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(JSON.stringify({ ...operator, operator }));

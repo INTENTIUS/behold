@@ -1,0 +1,104 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/status/v1/status.schema.json",
+  "contract": 1,
+  "chant": "0.124.31",
+  "env": "staging",
+  "compareTo": null,
+  "lifecycle": {
+    "ref": "chant/lifecycle",
+    "commit": "d324b2f6324cd1f98ad145d6466234e026cce8a6"
+  },
+  "checkout": {
+    "branch": "main",
+    "head": "5f73ed86ff02ebe781e8429f5de5189eb7808b0c",
+    "base": "5f73ed86ff02ebe781e8429f5de5189eb7808b0c",
+    "baseFrom": "main"
+  },
+  "workspace": {
+    "name": "acme",
+    "root": ".",
+    "file": "chant.workspace.json"
+  },
+  "plantable": {
+    "plantable": false,
+    "box": null,
+    "reason": {
+      "code": "box-none",
+      "message": "no member's box block declares services, so there is no box to plant"
+    }
+  },
+  "members": [
+    {
+      "name": "web",
+      "dir": "web",
+      "kind": "chant",
+      "fields": null,
+      "environments": [
+        {
+          "env": "staging",
+          "ledger": {
+            "layout": "members",
+            "path": "_members/web/staging/releases.jsonl",
+            "shared": false
+          },
+          "releases": [],
+          "reason": null
+        }
+      ],
+      "compare": null,
+      "readable": true,
+      "gateLedger": {
+        "layout": "members",
+        "path": "_members/web/_gates",
+        "shared": false,
+        "malformed": 0,
+        "reason": null
+      },
+      "gates": [
+        {
+          "component": "deploy",
+          "name": "approve-apply",
+          "env": "staging",
+          "planDigest": null,
+          "state": "pending",
+          "recordedAt": "2026-10-05T00:00:00Z",
+          "expiresAt": "2099-01-01T00:00:00Z",
+          "approvals": [],
+          "needed": 1,
+          "signed": null,
+          "approve": "chant workspace points answer staging-apply-ec72c7930446 --answer <value> --by <name>",
+          "answer": {
+            "point": "staging-apply",
+            "id": "staging-apply-ec72c7930446",
+            "path": "answers/staging-apply-ec72c7930446.md"
+          }
+        }
+      ],
+      "box": null,
+      "stewards": [],
+      "stewardReasons": [],
+      "promotionOrder": [
+        {
+          "name": "staging",
+          "canary": false
+        },
+        {
+          "name": "prod",
+          "canary": false
+        }
+      ],
+      "releaseCuts": [],
+      "featureFlags": []
+    }
+  ],
+  "leases": [],
+  "acceptance": [],
+  "replication": null,
+  "overlap": null,
+  "summary": {
+    "members": 1,
+    "released": 0,
+    "unreadable": 0,
+    "differing": null
+  }
+}

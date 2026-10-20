@@ -71,6 +71,8 @@ describe("every workspace read goes through the reader (#468)", () => {
       if (/\[\s*"(ci|release)"\s*,\s*"list"/.test(text)) offenders.push(f);
       // #681: and the stored change-set read.
       if (/\[\s*"change-set"\s*,\s*"show"/.test(text)) offenders.push(f);
+      // #472: and the open decision points (a fixture asks its questions with `points ask`, a write).
+      if (/\[\s*"workspace"\s*,\s*"points"\s*,\s*"--open"/.test(text)) offenders.push(f);
     }
     expect(offenders).toEqual([]);
   });

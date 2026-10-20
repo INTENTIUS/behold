@@ -20,6 +20,11 @@
  * the gate carries `override` (its rules, plan digest and the product's
  * override command) and the approve route refuses it. An override that counts
  * is kept too, as `overridden` until a run spends it and `spent` after.
+ *
+ * A gate that asks a decision point (chant#3170) carries `answer`, the open
+ * question it waits on. `chant approve` refuses it, so the approve route
+ * refuses it too, and the page draws the question beside it instead
+ * (src/decision-points.ts, #472).
  */
 import { resolve } from "node:path";
 import type { Workspace } from "./workspace.ts";
@@ -64,6 +69,13 @@ export interface WorkspaceGate {
   changeSet?: string;
   /** The release a release gate binds (op `release`, chant#4045): its change set was planned for this release and `env`. */
   releaseDigest?: string;
+  /**
+   * The open question the gate waits on, when it asks a decision point
+   * (chant#3170, chant 0.107.0 and newer): answered with `chant workspace
+   * points answer <id>`, never `chant approve`, so behold offers no approve
+   * for it (#472). `approve` is then chant's `points answer` line.
+   */
+  answer?: { point: string; id: string; path: string };
 }
 
 export type GatesRead = { ok: true; env: string; gates: WorkspaceGate[] } | { ok: false; refusal: WorkspaceRefusal };
@@ -144,10 +156,16 @@ export function gatesFromStatus(doc: WorkspaceDocument, root: string): GatesRead
         ...(str(g.runId) ? { runId: str(g.runId)! } : {}),
         ...(str(g.changeSet) ? { changeSet: str(g.changeSet)! } : {}),
         ...(str(g.releaseDigest) ? { releaseDigest: str(g.releaseDigest)! } : {}),
+        ...(isRecord(g.answer) && str(g.answer.id) ? { answer: { point: String(g.answer.point ?? ""), id: str(g.answer.id)!, path: String(g.answer.path ?? "") } } : {}),
       });
     }
   }
   return { ok: true, env: String(doc.env ?? ""), gates };
+}
+
+/** Whether a gate waits on a decision point's question, which behold never answers (#472). */
+export function isPointGate(g: Pick<WorkspaceGate, "answer">): boolean {
+  return g.answer !== undefined;
 }
 
 /** Whether a gate is a policy denial, which behold never approves (#519). */

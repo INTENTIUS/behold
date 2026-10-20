@@ -155,7 +155,8 @@ import { choudoufuLexiconNote, setEstateLexiconRead, type LexiconRead } from "./
 import { readTerralith } from "./terralith-demo.ts";
 import { discoverSplitPlans, moveMembers, moveReceipt, movesPayload, readSplitPlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
 import { servedWorkspace, setServedWorkspace, workspaceMemberOf, type Workspace } from "./workspace.ts";
-import { approveArgs, isEnvName, isOverrideGate, readWorkspaceGates } from "./workspace-gates.ts";
+import { approveArgs, isEnvName, isOverrideGate, isPointGate, readWorkspaceGates } from "./workspace-gates.ts";
+import { pointsFloorRefusal, readOpenPoints } from "./decision-points.ts";
 import { approverFlags, approverFor, approverView, type ApproverOptions, type ApproverRead } from "./approver.ts";
 import { readWhy, whyRegion, withChain } from "./workspace-why.ts";
 import { floorFor, floorMet, floorRefusal } from "./chant-floors.ts";
@@ -1683,6 +1684,22 @@ export function createApp(
     return c.json({ workspace: true, chant: version ?? null, ...read.collisions });
   });
 
+  // #472: the workspace's open decision points, from `chant workspace points
+  // --open --json`, for the gate strip to draw beside the gates that wait on
+  // them. behold answers none: the host's rail does, or a person at a shell
+  // with the line each point carries. No write route exists. Below the floor
+  // the strip says which chant adds them and the rest of behold works.
+  app.get("/api/workspace/points", async (c) => {
+    const ws = servedWorkspace();
+    if (!ws) return c.json({ workspace: false, points: [] });
+    const version = resolveChant(ws.root).version;
+    const tooOld = pointsFloorRefusal(version);
+    if (tooOld) return c.json({ workspace: true, chant: version ?? null, points: [], refusal: tooOld, degraded: floorFor("decision points").degraded ?? null });
+    const read = await readOpenPoints(ws);
+    if (!read.ok) return c.json({ workspace: true, chant: version ?? null, points: [], refusal: read.refusal });
+    return c.json({ workspace: true, chant: version ?? null, ...read.points });
+  });
+
   // #471: why a member or a node is the way it is, from `chant workspace graph
   // --intent <region> --json`. Read when the page asks (a click on "why"),
   // never at boot: on a large repository it takes tens of seconds. It is a
@@ -1746,6 +1763,8 @@ export function createApp(
     if (!g) return c.json({ error: `no gate ${key} is waiting in ${env}`, code: "no-gate" }, 404);
     // #519: a person overrides a policy denial with its rules and a reason; behold never approves one.
     if (isOverrideGate(g)) return c.json({ error: `${key} is a policy denial, which behold never overrides. Run, with your reason: ${g.approve}`, code: "override" }, 422);
+    // #472: a gate that asks a decision point waits on its question, which a person answers elsewhere.
+    if (isPointGate(g)) return c.json({ error: `${key} waits on decision point ${g.answer!.point}, which behold never answers. Answer it in the host's rail, or run: ${g.approve}`, code: "decision-point" }, 422);
     const who = approverOf(c);
     if (!who.ok) return c.json({ error: who.refusal.error, code: who.refusal.code, remedy: who.refusal.remedy }, 403);
     const approver = who.approver.principal;
@@ -2399,7 +2418,8 @@ export function createApp(
         { method: "GET", path: "/api/workspace/flags", desc: "the workspace's feature flags (#683), from chant workspace status <env> --json featureFlags (chant#4024): environments in promotion order, flags [{key, member, id, param, owner, work, implements, stale, kind, path, values, envs {<env>: {value, state on|off|default|set}}, waiting [{env, gate, changeSet, before, after, entries}], turnOn [{env, lines}]}], nodes member (every card of the flag's member), unreadable, refusals; a waiting flip comes from the gate's stored change set (chant change-set show); behold writes no flag record; a chant below 0.124.29 is refused with refusal code chant-too-old and degraded" },
         { method: "GET", path: "/api/workspace/collisions", desc: "the graph nodes two or more in-flight work items touch (#684), from chant workspace status <env> --json overlap (chant#4025): nodes [{node, items, entries [{changeSet, member, address, source, items}]}], files [{items, files}] for files two items changed (no node), unplaced for shared entries chant mapped to no node, items [{item, path, state, commits, with}] (every in-flight item, with empty when it collides with none), changeSets, unattributed; overlap absent (an older chant) or null (no work kind declared, or the read failed) is a refusal with code no-overlap or overlap-unavailable; behold records and locks nothing; a chant below 0.124.29 is refused with refusal code chant-too-old and degraded" },
         { method: "GET", path: "/api/workspace/why", desc: "why a member (?member=) or a node (?node=<member>/<id>) is the way it is: the decisions covering it, the runs and commits behind it, and from chant 0.124.29 the chain from each commit's work item to its green tag, release, gate resolution and deploys (trace, #682), from chant workspace graph --intent <region> --json; read on demand, cancelled with the request (#471)" },
-        { method: "POST", path: "/api/workspace/gates/approve", desc: "approve one workspace gate: JSON body {key, env}; env and plan come from a fresh status read; recorded as the request's approver with --actor and --note, a signed gate signed with that person's key or refused 422 code signed (#690); preview-locked (#477); a policy-override gate answers 422 code override with its command (#519)" },
+        { method: "GET", path: "/api/workspace/points", desc: "the workspace's open decision points (#472), from chant workspace points --open --json: points [{id, point, title, question, questionType, candidates, subject, gate {op, gate, env} when a gate asked it, state, quorum {count, roles}, model, askedOn, askedBy, stale, path, command}], unread answer kinds with chant's reason; a gate in /api/workspace/gates whose answer.id is a point's id waits on it; behold answers none and has no write route; a chant below 0.107.0 is refused with refusal code chant-too-old and degraded" },
+        { method: "POST", path: "/api/workspace/gates/approve", desc: "approve one workspace gate: JSON body {key, env}; env and plan come from a fresh status read; recorded as the request's approver with --actor and --note, a signed gate signed with that person's key or refused 422 code signed (#690); preview-locked (#477); a policy-override gate answers 422 code override with its command (#519); a gate that waits on a decision point answers 422 code decision-point with the points answer line (#472)" },
         { method: "POST", path: "/api/operator/approve/:op/:gate", desc: "record a converge gate's resolution (chant approve — a fact for the next tick, not an unblock)" },
         { method: "POST", path: "/api/rollback", desc: "open a rollback PR: ?to=<sha>" },
         { method: "POST", path: "/api/substrates/:name/up", desc: "bring a substrate up" },

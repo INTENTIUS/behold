@@ -2716,17 +2716,46 @@ function loadWorkspaceGates({ force = false } = {}) {
   // env the view has left never lands under the one it moved to.
   const seq = ++wsGates.seq;
   wsGates.env = env;
-  fetch(`/api/workspace/gates${env ? `?env=${encodeURIComponent(env)}` : ""}`)
-    .then((r) => r.json())
-    .then((j) => {
-      if (seq === wsGates.seq) wsGates.answer = j;
-    })
-    .catch(() => {
-      if (seq === wsGates.seq) wsGates.answer = null;
-    })
-    .finally(() => {
-      if (seq === wsGates.seq) paintWorkspaceGates();
-    });
+  // #472: the open decision points ride with the gates, so a question lands on
+  // the card of the gate that waits on it in the same paint.
+  const read = (url) =>
+    fetch(url)
+      .then((r) => r.json())
+      .catch(() => null);
+  Promise.all([read(`/api/workspace/gates${env ? `?env=${encodeURIComponent(env)}` : ""}`), read("/api/workspace/points")]).then(([gates, points]) => {
+    if (seq !== wsGates.seq) return;
+    wsGates.answer = gates;
+    wsGates.points = points;
+    paintWorkspaceGates();
+  });
+}
+/** #472: one open decision point's lines, inside a gate's card or as its own. */
+function pointBlock(p) {
+  const box = document.createElement("div");
+  box.className = "ws-point";
+  box.dataset.point = p.id;
+  const title = document.createElement("div");
+  title.className = "ws-gate-title";
+  title.textContent = p.title;
+  const question = document.createElement("div");
+  question.className = "ws-point-question";
+  question.textContent = p.question;
+  const facts = document.createElement("div");
+  facts.className = "ws-gate-facts";
+  facts.textContent = p.facts;
+  const note = document.createElement("div");
+  note.className = "ws-gate-note";
+  note.textContent = p.note;
+  note.title = p.command;
+  box.append(title, question, facts, note);
+  if (p.showCommand) {
+    // Text a person copies; behold never runs it.
+    const line = document.createElement("code");
+    line.className = "ws-point-command";
+    line.textContent = p.command;
+    box.appendChild(line);
+  }
+  return box;
 }
 function paintWorkspaceGates() {
   const host = document.getElementById("ws-gates");
@@ -2737,8 +2766,14 @@ function paintWorkspaceGates() {
     host.hidden = true;
     return;
   }
-  const { cards, elsewhere, refusal } = gateCards(answer, { embed: embedOpts.embed, member: embedOpts.embed ? view.member : null });
+  const { cards, elsewhere, refusal, pointsRefusal } = gateCards(answer, { embed: embedOpts.embed, member: embedOpts.embed ? view.member : null, points: wsGates.points });
   for (const c of cards) {
+    if (c.point) {
+      const own = pointBlock(c);
+      own.classList.add("ws-gate");
+      host.appendChild(own);
+      continue;
+    }
     const box = document.createElement("div");
     box.className = "ws-gate";
     box.dataset.gate = c.key;
@@ -2761,6 +2796,7 @@ function paintWorkspaceGates() {
       b.title = c.button.title;
       box.appendChild(b);
     }
+    for (const p of c.points || []) box.appendChild(pointBlock(p));
     host.appendChild(box);
   }
   if (elsewhere) {
@@ -2774,6 +2810,13 @@ function paintWorkspaceGates() {
     err.className = "ws-gate ws-gate-note";
     err.textContent = `gates unread: ${refusal.error}`;
     err.title = refusal.remedy || "";
+    host.appendChild(err);
+  }
+  if (pointsRefusal) {
+    const err = document.createElement("div");
+    err.className = "ws-gate ws-gate-note";
+    err.textContent = `decision points unread: ${pointsRefusal.error}`;
+    err.title = pointsRefusal.remedy || "";
     host.appendChild(err);
   }
   host.hidden = !host.children.length;
