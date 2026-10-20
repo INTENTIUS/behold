@@ -1,0 +1,5 @@
+[plan] shellCmd(cmd=/tmp/behold-685/bin/chant compo...) | planned 0 changes for pr-plan
+pr-plan passed at 4843c95071fb, run chant-1792518608689 in prod
+  record: prod/runs__pr-plan.jsonl on chant/lifecycle, unsigned
+  report: /tmp/behold-685/root/app/.chant/pr
+  local run: the record stays on this machine, with no push, commit status or report upload

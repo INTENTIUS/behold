@@ -289,6 +289,40 @@
       #tab-trunk .ws-gate-facts, #tab-trunk .ws-gate-note { color: var(--muted); overflow-wrap: anywhere; }
       #tab-trunk a { color: inherit; }
       #tab-trunk .lane-change-set { color: var(--pending); }
+      /* behold#685: a plan run locally, beside CI's, in the runs pane's run view (web/kiosk-runs.js renderRun; kiosk.html's rules, scoped). */
+      #panel-body #tab-local-runs.active { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--t-caption); }
+      #tab-local-runs h3 { margin: var(--s3) 0 0; font-size: var(--t-caption); }
+      #tab-local-runs .tg-legend { color: var(--muted); overflow-wrap: anywhere; }
+      #tab-local-runs .tg-refusal { color: var(--degraded); font-weight: 600; overflow-wrap: anywhere; }
+      #tab-local-runs .lr-form { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s3); align-items: end; }
+      #tab-local-runs .lr-field { display: flex; flex-direction: column; gap: 2px; color: var(--muted); }
+      #tab-local-runs .lr-field input { font: var(--t-caption) var(--font-mono); width: 12ch; }
+      #tab-local-runs .lr-field input[name="commit"], #tab-local-runs .lr-field input[name="base"] { width: 16ch; }
+      #tab-local-runs .lr-ci-row { display: flex; gap: var(--s3); align-items: center; border-top: 1px solid var(--rule); padding-top: 3px; }
+      #tab-local-runs .lr-ci-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+      #tab-local-runs .lr-run { cursor: pointer; border-top: 1px solid var(--rule); padding-top: 3px; font-family: var(--font-mono); }
+      #tab-local-runs .lr-run.lr-selected { background: var(--active); }
+      #tab-local-runs .lr-compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: var(--s3); margin-top: var(--s2); }
+      #tab-local-runs .lr-half { border: 1px solid var(--rule); border-radius: 6px; min-width: 0; }
+      #tab-local-runs .lr-half-head { font-weight: 600; padding: var(--s2) var(--s3); border-bottom: 1px solid var(--rule); overflow-wrap: anywhere; }
+      #tab-local-runs .r-head { padding: var(--s2) var(--s3); }
+      #tab-local-runs .r-head-title { display: flex; gap: var(--s2); align-items: center; font-weight: 600; }
+      #tab-local-runs .r-head-sub, #tab-local-runs .r-head-meta, #tab-local-runs .r-label, #tab-local-runs .r-note, #tab-local-runs .r-dur, #tab-local-runs .r-steps-word { color: var(--muted); }
+      #tab-local-runs .r-head-sub { overflow-wrap: anywhere; }
+      #tab-local-runs .r-label { display: block; font-weight: 600; padding: var(--s2) var(--s3) 0; }
+      #tab-local-runs .r-jobs { list-style: none; margin: 0; padding: 0; }
+      #tab-local-runs .r-job, #tab-local-runs .r-step-line, #tab-local-runs .r-steps-head { display: flex; gap: var(--s2); align-items: center; padding: 2px var(--s3); cursor: pointer; }
+      #tab-local-runs .r-job-name, #tab-local-runs .r-steps-job { font-family: var(--font-mono); font-weight: 600; }
+      #tab-local-runs .r-dur { margin-left: auto; white-space: nowrap; }
+      #tab-local-runs .r-icon { width: 1em; height: 1em; flex: none; }
+      #tab-local-runs .r-ok { color: var(--managed); } #tab-local-runs .r-bad { color: var(--degraded); } #tab-local-runs .r-wait, #tab-local-runs .r-busy { color: var(--foreign); } #tab-local-runs .r-idle { color: var(--neutral); }
+      #tab-local-runs .r-caret { color: var(--muted); width: 0.8em; }
+      #tab-local-runs .r-open > .r-step-line, #tab-local-runs .r-job.r-selected { background: var(--active); }
+      #tab-local-runs .r-log { margin: 2px var(--s3) var(--s2) 1.6em; padding: var(--s2) 0; background: var(--surface-box, transparent); border: 1px solid var(--rule); border-radius: 6px; font: 0.95em/1.45 var(--font-mono); overflow-x: auto; max-height: 20em; overflow-y: auto; white-space: pre-wrap; }
+      #tab-local-runs .r-log-line { display: grid; grid-template-columns: 3em 1fr; gap: var(--s3); padding-right: var(--s3); }
+      #tab-local-runs .r-ln { color: var(--muted); text-align: right; user-select: none; }
+      #tab-local-runs .r-log-cut, #tab-local-runs .r-log-setup { color: var(--muted); padding-left: 4em; font-style: italic; }
+      #tab-local-runs a { color: inherit; }
       /* #692: the release column. */
       #tab-trunk .lane-release { border-top: 1px solid var(--rule); padding-top: 3px; }
       #tab-trunk .lane-release .lane-where { overflow-wrap: anywhere; }

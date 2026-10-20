@@ -115,6 +115,12 @@ export const CI_RUN_INDEX_CHANT_FLOOR = "0.124.31";
  * `serve` has no `--ci-report-url` (#818); below it, or with none declared,
  * the pane reads the forge's runs as before. */
 export const CI_REPORT_URL_CHANT_FLOOR = "0.124.32";
+/** The first chant whose `ci run plan|apply` takes `--local` (INTENTIUS/chant#4161,
+ * chant PR #4163): the job runs on this machine with no push, no commit status
+ * and nothing under a report URL, its record says `runOrigin: {forge: "local"}`
+ * and its events `runtime: "local"`. "Run this job locally" (#685). Below it
+ * the button is not offered, and says which chant adds it. */
+export const CI_RUN_LOCAL_CHANT_FLOOR = "0.124.32";
 
 export interface ChantFloor {
   /** The read, in words: `the why of a member or a card`. */
@@ -148,6 +154,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "work overlap", floor: OVERLAP_CHANT_FLOOR, adds: "workspace status overlap (chant#4025)", degraded: "the graph draws no collision marks, and the Collisions tab says which chant adds them" },
   { read: "CI run index", floor: CI_RUN_INDEX_CHANT_FLOOR, adds: "chant ci run --report-url keeps runs/index.json, read by chant ci runs (chant#4098, chant#4114)" },
   { read: "declared CI report URL", floor: CI_REPORT_URL_CHANT_FLOOR, adds: "workspace ls ci.reportUrl, the declaration's report URL (chant#4160)", degraded: "the runs pane reads chant's run index only when serve is given --ci-report-url" },
+  { read: "local CI run", floor: CI_RUN_LOCAL_CHANT_FLOOR, adds: "chant ci run --local (chant#4161)" },
   { read: "decision points", floor: DECISION_POINTS_CHANT_FLOOR, adds: "a gate that asks a decision point, read with chant workspace points --open (chant#3170)", degraded: "the gate strip draws no open decision points, and says which chant adds them" },
 ];
 

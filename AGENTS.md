@@ -127,6 +127,33 @@ makes, `declaredReportUrl` in src/workspace.ts, floor
 declaration included; the flag overrides it, and each answer's `urlFrom` says
 `flag` or `declaration`. With neither, nothing changes.
 
+## A plan job run locally (behold#685)
+
+`POST /api/chant/ci/local` `{job: "plan", commit, pr, env?, base?, member?,
+forge?}` starts `chant ci run plan --local --events-json --env <env> --base
+<sha> --commit <sha> --pr <n> --forge <forge>` (src/ci-local-run.ts, floor
+`CI_RUN_LOCAL_CHANT_FLOOR`, 0.124.32, chant#4161) in the workspace root or the
+named member's declared directory. Each value is checked; the commit and base
+are resolved by `git rev-parse` in the root, the base defaulting to where the
+commit leaves the trunk, the forge to the one workflow directory present. It
+runs through the runner's `track`, so it shares the one-command guard and the
+now-line, and is refused like an Op run: preview `403`, a terragucci or SQL
+Yodeler repo `409` (not allowlisted), `--public` `405` and its GETs `403`.
+stdout lines cross `readRunLine`; stderr is the step output, filed under its
+`[<phase>]`. `GET /api/chant/ci/local/:id` answers the run in demo.run/v1
+(`from: "chant-ci-local"`) and `ci`, CI's run of the same job, commit and
+member from the run index (`ciRunsRoutes`' lookup) when `--ci-report-url` is
+set. The SSE `local-run` event names a run that moved. The page's **Local** tab
+(web/local-run.js) draws both with kiosk-runs.js `renderRun`, and is not drawn
+in a public view, an embed, a static export, preview or a guarded repo.
+
+Apply is never started: `job: "apply"` answers `422 local-apply`.
+`--local` does not make an apply safe (it still changes real infrastructure
+and pushes release records and gate facts), and behold has no emulator notion
+that holds for it: `ci run` gives the job a clean environment that keeps HOME,
+so `serve --local`'s emulator env does not reach the job and the operator's
+own credentials would. Cached-step marks wait on chant#4015.
+
 ## A terragucci estate, from its reports (#490)
 
 `behold serve <repo> --terragucci <dir|s3://bucket/prefix|https://…>`

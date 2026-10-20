@@ -1,0 +1,6 @@
+[plan] shellCmd(cmd=/tmp/behold-685/bin/chant compo...) | planned 0 changes for pr-plan
+pr-plan failed at 0359821ba028, run chant-1792518619550 in prod
+  failure: command-failed in plan, exit 1: command exited 1 (expected 0): Command failed: /tmp/behold-685/bin/chant components pr-plan --base "$BASE_SHA" --pr "$PR_NUMBER" --env prod --gate pr-apply --output .chant/pr --forge github --member app --events-json --no-status
+  record: prod/runs__pr-plan.jsonl on chant/lifecycle, unsigned
+  report: /tmp/behold-685/root/app/.chant/pr
+  local run: the record stays on this machine, with no push, commit status or report upload

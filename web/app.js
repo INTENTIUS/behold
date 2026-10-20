@@ -22,6 +22,7 @@ import { laneElement as tgLane, rootOfCard as tgRootOfCard, historyElement as tg
 import { renderLane } from "./terragucci-lifecycle.js";
 import { renderReleases } from "./releases.js";
 import { renderTrunkLane } from "./trunk-lane.js";
+import { startLocalRuns } from "./local-run.js";
 import { entriesFor as csEntriesFor, gapLines as csGapLines, inspectHeading as csInspectHeading, nodeMarks as csNodeMarks, offGraph as csOffGraph, overlayHeader as csHeader, overlayLegend as csLegend, PREVIEW_NOTE as CS_PREVIEW_NOTE } from "./change-set-overlay.js";
 import { collisionFilter as coFilter, collisionHeader as coHeader, collisionMarks as coMarks, collisionsFor as coFor, COLLISION_NOTE as CO_NOTE, FILES_NOTE as CO_FILES_NOTE, FILTER_OFF as CO_FILTER_OFF, FILTER_ON as CO_FILTER_ON, gapLines as coGapLines, hideEdge as coHideEdge, itemRow as coItemRow, nodeRow as coNodeRow, sideLines as coSideLines } from "./collision-marks.js";
 import { flagMarks as flFlagMarks, flagRow as flFlagRow, flagsFor as flFlagsFor, flagsHeader as flHeader, gapLines as flGapLines, NODES_NOTE as FL_NODES_NOTE, pickEnv as flPickEnv, STALE_COLOR as FL_STALE_COLOR, TURN_ON_NOTE as FL_TURN_ON_NOTE } from "./feature-flags.js";
@@ -6134,6 +6135,30 @@ function approveFromLane(key, env, btn) {
     });
 }
 initTrunkLane();
+
+// --- behold#685: run a plan job locally ---------------------------------------
+// chant ci run plan --local at a commit, drawn in the runs pane's run view
+// beside CI's run of the same job. It starts a command, so it is drawn only
+// where behold may start one: a served workspace, never in a public view, an
+// embed, a static export, preview mode or a terragucci or SQL Yodeler repo.
+async function initLocalRuns() {
+  if (staticMode || publicMode || embedOpts.embed) return;
+  const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
+  if (!project.workspace || project.previewMode || project.publicMode || project.terragucci || project.sqlYodeler) return;
+  const host = addPanelTab("local-runs", "Local", "Run a CI plan job on this machine with chant ci run --local, beside CI's run of it.");
+  if (!host) return;
+  host.id = "tab-local-runs";
+  let started = false;
+  const start = () => {
+    if (started) return;
+    started = true;
+    startLocalRuns(host, { fetchJson: (url, init) => fetch(url, init).then((r) => r.json()), events, toast: showToast });
+  };
+  const tab = document.querySelector('#panel-tabs button[data-tab="local-runs"]');
+  if (tab) tab.addEventListener("click", start);
+  if (host.classList.contains("active")) start();
+}
+initLocalRuns();
 
 // --- #683: feature flags, on or off per environment ---------------------------
 // The Flags tab reads /api/workspace/flags when it is opened: each flag of the

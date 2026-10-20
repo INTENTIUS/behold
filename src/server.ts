@@ -69,6 +69,7 @@ import { configKeys, declaredRootTools, pipelineForge, repoTools, toolOfBinary }
 import { chantPrFacets, chantPrRoute, prLoopOf, reportSourceOf } from "./chant-pr.ts";
 import { ChantDemo, chantDemoRoutes } from "./chant-demo.ts";
 import { ciReportUrlOf, ciRunsRoutes } from "./ci-run-index.ts";
+import { localRunRoutes } from "./ci-local-run.ts";
 import type { GitRun } from "./terragucci-lifecycle.ts";
 import { TERRAGUCCI_COMPONENTS_FILE, componentJobs, componentRootMap, readTerragucciComponents, waveTitles, type TerragucciComponents } from "./terragucci-components.ts";
 import { hasTerragruntUnits } from "./terragrunt-units.ts";
@@ -1105,7 +1106,9 @@ export function createApp(
     const chantDemo = cfg.chantDemo ? new ChantDemo({ source: cfg.chantDemo, ...(cfg.chantReportUrl ? { reportUrl: cfg.chantReportUrl } : {}), ...via }) : undefined;
     if (chantDemo) chantDemoRoutes(app, chantDemo);
     // behold#815: chant's run index and each run's events, from the runner's report URL.
-    if (ciRuns) ciRunsRoutes(app, { ...ciRuns, ...via });
+    const ciRunFor = ciRuns ? ciRunsRoutes(app, { ...ciRuns, ...via }) : undefined;
+    // behold#685: a plan job run on this machine (chant ci run --local), beside CI's run of it from the index.
+    localRunRoutes(app, { workspace: servedWorkspace, runner, broadcaster, ...(cfg.env ? { env: cfg.env } : {}), preview: () => !!cfg.previewMode, ...(ciRunFor ? { ciRunFor } : {}) });
     chantPrRoute(app, () => cfg.projectDir, {
       ...(chantDemo ? { demoReports: (d: string, g?: GitRun) => chantDemo.prReports(d, g), ...(runs ? { source: runs } : {}) } : runs ? { source: runs } : {}),
       ...(cfg.chantReportUrl ? { reportUrl: cfg.chantReportUrl } : {}),
