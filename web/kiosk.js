@@ -1103,6 +1103,21 @@ export const RESUME_WORDS = "Resume now";
 /** behold#779: how long a tap on a touch screen holds Watch's shot (a click holds it PICK_HOLD_MS). */
 export const TAP_HOLD_MS = 20_000;
 
+/**
+ * A paused Watch, said at the foot of the screen with its resume (kiosk.html shows it on a touch screen only): on a
+ * phone the header that also says it is scrolled away by the time a tap on the graph paused it.
+ */
+function drawHeldOver(doc, s) {
+  const over = doc && doc.getElementById ? doc.getElementById("k-held-over") : null;
+  if (!over) return;
+  over.hidden = !s.watchHeld;
+  if (!s.watchHeld) return void over.replaceChildren();
+  const b = el("button", "k-w-resume", RESUME_WORDS);
+  b.type = "button";
+  b.addEventListener("click", () => s.followSteps && s.followSteps());
+  over.replaceChildren(el("span", "k-held-words", heldWords(s.watchHeld.secs, true)), b);
+}
+
 /** Watch's header: the scenario's place and the strip on the left, the delivery numbers on the right. */
 function drawWatchHead(bar, s, now) {
   const demo = s.demo.demo;
@@ -1144,6 +1159,7 @@ function drawWatchHead(bar, s, now) {
     p.appendChild(b);
     bar.appendChild(p);
   }
+  drawHeldOver(bar.ownerDocument, s);
   const dora = doraLine(s.metrics);
   if (dora) {
     const p = el("p", "k-w-dora", dora);

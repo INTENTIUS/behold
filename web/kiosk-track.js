@@ -167,7 +167,9 @@ export function trackModel(track, { demo, pulls = [], since = null, now = Date.n
       };
     }),
   }));
-  for (const c of chapters) c.seek = c.segments.length ? c.segments[0].seek : null;
+  // A chapter's title replays it only once it is over: on the live cycle's current chapter the pill read as a label
+  // saying the demo was a replay, and a tap on it left live.
+  for (const c of chapters) c.seek = (replay || c.state === "done") && c.segments.length ? c.segments[0].seek : null;
   const nowLine = nowWords({ demo, segment: current, expected, elapsed, overrun, waves, jobs, now, fix: track.byStory ? pulls.indexOf(demo.pull) > 0 : at.chapter > 0 });
   return { chapters, at, elapsed, expected, overrun, now: nowLine, here: hereWords(chapters, at) };
 }
@@ -334,7 +336,7 @@ body.k-watch #k-track { position: fixed; z-index: 7; left: 5px; right: 5px; }
   /* behold#787: a phone's segments are too thin to press; a past chapter's title is the 44px target. */
   #k-track button.kt-seg.kt-seek { pointer-events: none; }
   #k-track button.kt-chapter-title.kt-seek { align-self: flex-start; max-width: 100%; min-height: 44px; padding: 0 0.8em; border: 1.5px solid color-mix(in srgb, var(--pending) 70%, transparent); border-radius: 999px; text-decoration: none; }
-  #k-track button.kt-chapter-title.kt-seek::after { content: " · replay"; color: var(--pending); font-weight: 500; }
+  #k-track button.kt-chapter-title.kt-seek::after { content: " · watch again"; color: var(--pending); font-weight: 500; }
 }
 `;
 

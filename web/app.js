@@ -142,6 +142,10 @@ const embedOpts = readEmbed(location.search);
 if (embedOpts.theme && !setTheme(embedOpts.theme, { persist: false })) console.warn(`behold: no theme named ${embedOpts.theme}`);
 if (embedOpts.embed) document.documentElement.classList.add("embed");
 if (embedOpts.embed && embedOpts.bare) document.documentElement.classList.add("bare"); // #569: the graph alone, for a kiosk
+// The kiosk on a phone: one finger scrolls the page and two pan or zoom the graph. A one-finger pan held most of the
+// screen, so any scroll over the graph moved it and paused Watch.
+const kioskTouch = () => !!(embedOpts.embed && embedOpts.bare) && typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+if (kioskTouch()) document.documentElement.classList.add("kiosk-touch");
 initPanel({ embed: embedOpts.embed, phone: typeof matchMedia === "function" && matchMedia(INSPECT_PHONE_QUERY).matches });
 mountThemePicker(document.getElementById("panel-theme"));
 
@@ -8789,6 +8793,9 @@ function ensureZoomControls(host) {
       const s = currentSvg();
       if (!touch || !vb || !s) return;
       const pts = touchPoints(e);
+      // The kiosk on a phone leaves one finger to the page's scroll, until a gesture has had two.
+      if (kioskTouch() && pts.length < 2 && !touch.pinched) return;
+      if (pts.length >= 2) touch.pinched = true;
       const r = s.getBoundingClientRect();
       e.preventDefault();
       if (pts.length >= 2 && touch.pts.length >= 2) {
@@ -8819,7 +8826,7 @@ function ensureZoomControls(host) {
     { passive: false },
   );
   host.addEventListener("touchend", (e) => {
-    touch = e.touches.length ? { pts: touchPoints(e), moved: !!(touch && touch.moved) } : null;
+    touch = e.touches.length ? { pts: touchPoints(e), moved: !!(touch && touch.moved), pinched: !!(touch && touch.pinched) } : null;
   });
   let drag = false;
   let px = 0;

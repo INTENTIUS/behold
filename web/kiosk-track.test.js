@@ -202,7 +202,8 @@ describe("a past step replays from its start (behold#787)", () => {
   it("gives each segment already past its first step's time, and each chapter its first segment's", () => {
     const m = trackModel(track, { demo: { step: "planned", pull: 13, chapter: chapters[2] }, pulls: [12, 13], since: now, now });
     expect(m.chapters[0].segments.map((g) => g.seek)).toEqual([T("18:49"), T("19:01"), T("19:14"), T("19:27"), T("19:30")]);
-    expect(m.chapters.map((c) => c.seek)).toEqual([T("18:49"), T("19:49"), T("20:10"), null]);
+    // The current chapter's title doesn't replay it: only a chapter that is over does.
+    expect(m.chapters.map((c) => c.seek)).toEqual([T("18:49"), T("19:49"), null, null]);
     // The current step and those ahead have no seek in the live cycle.
     expect(m.chapters[2].segments.map((g) => g.seek)).toEqual([T("20:10"), null, null, null, null]);
   });

@@ -128,6 +128,7 @@
          the "⤢ fit" button resets. behold also adds a selection highlight. */
       #graph svg { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none;
         user-select: none; -webkit-user-select: none; }
+      html.kiosk-touch #graph svg { touch-action: pan-x pan-y; }
       #graph svg.grabbing { cursor: grabbing; }
       /* Edge hover-highlight — trace a single edge through an overlapping bundle.
          pinhole already paints a fat transparent hit-path per edge (pointer-events
