@@ -34,6 +34,7 @@ import { Ajv2020 } from "ajv/dist/2020.js";
 import type {
   RunEvent,
   RunEventBody,
+  RunEventComponentSettleStatus,
   RunEventSettleStatus,
   RunEventStepStatus,
   RunEventStepSettle,
@@ -244,7 +245,7 @@ export interface WaitingOn {
 /** A run's verdict as the stream states it: `running` until run-settle. */
 export type FoldStatus = "idle" | "running" | RunEventSettleStatus;
 /** A wave's or a component's state. */
-export type UnitStatus = "pending" | "running" | RunEventSettleStatus;
+export type UnitStatus = "pending" | "running" | RunEventComponentSettleStatus;
 
 export interface RunEventFold {
   /** The run's identity, from the envelope (absent on a translated older line). */

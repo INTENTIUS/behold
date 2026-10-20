@@ -287,6 +287,7 @@ export const FORGE_WORD: Record<ReleaseStatus["forge"], string> = {
   gitlab: "gitlab",
   op: "op",
   local: "laptop",
+  chant: "chant",
   unknown: "?",
 };
 
