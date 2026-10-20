@@ -302,7 +302,9 @@ describe("runs from chant's run index (behold#815)", () => {
   const ci = (over = {}) => ({ schema: "demo.run/v1", from: "ci-run-index", id: "6782", status: "failure", trigger: "merge", pull: 773, ref: null, member: null, failure: "failed", signer: null, started_at: "2026-10-19T02:26:01.917Z", ended_at: "2026-10-19T02:26:10.991Z", jobs: [{ id: "6782", name: "pr-apply", needs: [], status: "failure" }], ...over });
   it("names the member, why it failed, and who signed it, beside the trigger", () => {
     expect(triggerWords(ci())).toBe("Merge of #773 to main");
-    expect(indexWords(ci())).toEqual(["failed: failed"]);
+    // "failed" beside a failed status says nothing more; a reason that does is kept.
+    expect(indexWords(ci())).toEqual([]);
+    expect(indexWords(ci({ failure: "command-failed" }))).toEqual(["failed: command-failed"]);
     expect(indexWords(ci({ member: "web", failure: null, signer: "ci-runner@chant-demo", status: "success" }))).toEqual(["web", "signed by ci-runner@chant-demo"]);
   });
   it("says nothing of a signer a run doesn't have: signing is opt-in (chant#4156)", () => {
