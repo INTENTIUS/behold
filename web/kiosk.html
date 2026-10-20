@@ -492,6 +492,19 @@
         body.k-watch #k-held-over:not([hidden]) { position: fixed; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); left: 12px; right: 12px; z-index: 40; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s2) var(--s3); padding: var(--s2) var(--s3); border: 2px solid var(--pending); border-radius: 10px; background: color-mix(in srgb, var(--panel) 94%, transparent); box-shadow: 0 2px 10px rgb(0 0 0 / 0.25); color: var(--fg); font-weight: 600; }
       }
       #k-held-over { display: none; }
+      .k-w-point { display: none; }
+      /* A phone's Watch says what it shows first and once: the point, the step track, one "Now:" line, the graph.
+         The intro, the waiting box and the caption's copy of the point repeat it; the facts under the graph fold. */
+      @media (max-width: 600px) {
+        body.k-watch .k-w-point { display: block; margin: 0.2em 0 0.1em; font: 700 1.2em/1.25 var(--font-ui); color: var(--fg); }
+        body.k-watch .k-w-intro, body.k-watch .k-cap-point, body.k-watch .k-cap-next, body.k-watch .k-cap-step { display: none; }
+        body.k-watch .eh-modal-wrap:has(> .eh-modal-waiting) { display: none; }
+        body.k-watch #k-change > .k-change-label, body.k-watch #k-waves > .k-wl-head { cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: var(--s3); }
+        body.k-watch #k-change:not(.k-open) > :not(.k-change-label), body.k-watch #k-waves:not(.k-open) > :not(.k-wl-head) { display: none; }
+        body.k-watch #k-change .k-change-label::after, body.k-watch #k-waves .k-wl-title::after { content: " · show"; color: var(--pending); font-weight: 500; }
+        body.k-watch #k-change.k-open .k-change-label::after, body.k-watch #k-waves.k-open .k-wl-title::after { content: " · hide"; }
+        body.k-watch #k-waves:not(.k-open) .k-wl-hint { display: none; }
+      }
       /* The caption: the title, what changes, the step. One of the two beats leads. */
       #k-caption { position: absolute; left: 5px; right: 5px; bottom: 5px; display: grid; grid-template-rows: auto calc(2 * 1.25em * 1.3) calc(2 * 1.25em * 1.3); gap: 0.25em; padding: var(--s3) 1.4em var(--s4);
         background: var(--surface-pane-b); border-top: 1px solid var(--rule); border-radius: 0 0 8px 8px; box-shadow: 0 -10px 30px color-mix(in srgb, var(--bg) 70%, transparent); }
@@ -769,6 +782,11 @@
     <div id="eh-modals"></div>
     <script type="module">
       import { initTheme, KIOSK_THEME, getThemeName, onThemeChange, stepTheme } from "/theme.js";
+      // A phone's facts under the graph fold to their heads; a tap on a head opens or folds them (the class outlives a redraw).
+      document.addEventListener("click", (e) => {
+        const head = e.target.closest && e.target.closest("#k-change > .k-change-label, #k-waves > .k-wl-head");
+        if (head) head.parentElement.classList.toggle("k-open");
+      });
       import { startKiosk } from "/kiosk.js";
       import { pageTool } from "/kiosk-vendor.js";
       import { pageSource, readsFor } from "/kiosk-source.js";
