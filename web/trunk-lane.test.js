@@ -149,10 +149,12 @@ describe("the release column (#692)", () => {
   it("names each release with its commit, its cut and its signature check", () => {
     const v2 = releaseRow(releases[1], NOW);
     expect(v2).toMatchObject({ head: "v2 · web", cutFrom: "cut from a14610e" });
-    expect(v2.facts.map((f) => f.text)).toEqual(["cut by github:alice 2d ago", "unsigned"]);
+    expect(v2.facts.map((f) => f.text)).toEqual(["cut by github:alice 2d ago"]);
     expect(releaseRow(releases[0], NOW).facts.map((f) => f.text)).toEqual(["cut by github:alice 25h ago", "signature does not count"]);
     expect(signatureWords({ status: "verified", reason: "" }).text).toBe("signed");
     expect(signatureWords(null)).toBeNull();
+    // Signing is opt-in: an unsigned cut goes unmarked.
+    expect(signatureWords({ status: "unsigned", reason: "the cut carries no signature" })).toBeNull();
     expect(releaseRow({ ...releases[2], cut: null, artifacts: 0, listed: false }, NOW)).toMatchObject({ cutFrom: "cut from 6828a7f (older than the trunk list)", facts: [{ text: "no cut recorded" }, { text: "no artifact digests" }] });
   });
 
@@ -215,7 +217,7 @@ describe("the release column (#692)", () => {
       const rows = host.children.filter((c) => c.className === "lane-release");
       expect(rows.map((r) => r.dataset.release)).toEqual([R3, R2, R1]);
       const text = (el) => (el.textContent || "") + el.children.map(text).join("");
-      expect(text(rows[1])).toBe("v2 · web · cut from a14610e · config-onlycut by github:alice 2d ago · unsignedruns in staging · waits in prod");
+      expect(text(rows[1])).toBe("v2 · web · cut from a14610e · config-onlycut by github:alice 2d agoruns in staging · waits in prod");
       expect(text(rows[0])).toContain(`roll back: ${ROLLBACK}`);
       expect(host.children.findIndex((c) => c.className === "lane-release")).toBeGreaterThan(host.children.findIndex((c) => c.className === "lane-commit"));
       expect(host.children.find((c) => c.className === "lane-superseded").textContent).toBe("web/release/promote superseded: release v3 is revoked (test failed)");

@@ -115,7 +115,7 @@ describe("chainView (#682)", () => {
     expect(rows[1].source).toBeNull();
     expect(rows[1].meta).toBe("the commit fell in its window, which does not link them");
     expect(rows[2].source.open).toBe(`git show refs/tags/ci/green/${LINKED}`);
-    expect(rows[2].meta).toBe("counts unsigned");
+    expect(rows[2].meta).toBe("");
     expect(rows[3].meta).toBe("cut from this commit · cut by alice at 2026-10-16T10:00:00.000Z");
     expect(rows[3].source.open).toBe(`git show chant/lifecycle:_members/delivery/_releases/${DIGEST.replace(/:/g, "_")}.json`);
     expect(rows[4].meta).toBe("prod-release in prod");

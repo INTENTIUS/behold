@@ -19,7 +19,7 @@ const answer = {
 describe("the timeline lane (#506)", () => {
   it("words an entry by its kind, who and result", () => {
     expect(entryLine(answer.entries[0])).toBe("apply wave-2: waiting · plan 2e0fba16ce38");
-    expect(entryLine(answer.entries[1])).toBe("approved wave-1 by dana: unsigned");
+    expect(entryLine(answer.entries[1])).toBe("approved wave-1 by dana");
   });
 
   it("draws refusals and failures as failed, waits as pending", () => {

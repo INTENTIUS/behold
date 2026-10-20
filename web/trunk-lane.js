@@ -119,7 +119,8 @@ const releaseName = (r) => (r ? r.label || short(r.releaseDigest) : "");
 export function signatureWords(sig) {
   if (!sig) return null;
   if (sig.status === "verified") return { text: "signed", title: sig.reason || "chant verified the cut's signature." };
-  if (sig.status === "unsigned") return { text: "unsigned", title: sig.reason || "The cut carries no signature." };
+  // Signing is opt-in: a cut without a signature is the normal case and goes unmarked.
+  if (sig.status === "unsigned") return null;
   return { text: "signature does not count", title: sig.reason || "" };
 }
 

@@ -178,7 +178,7 @@ export function chainView(answer) {
     // The ci tag.
     const t = c.tag;
     if (t.state === "revoked" && t.revoked) row("ci tag", t.revoked.tag, ["revoked", t.revoked.phase ? `phase ${t.revoked.phase} failed` : null, t.revoked.tagged].filter(Boolean).join(" · "), t.revoked.source);
-    else if (t.state === "green" && t.green) row("ci tag", t.green.tag, [t.green.signer ? `signed by ${t.green.signer}` : "counts unsigned", t.green.tagged].filter(Boolean).join(" · "), t.green.source);
+    else if (t.state === "green" && t.green) row("ci tag", t.green.tag, [t.green.signer ? `signed by ${t.green.signer}` : null, t.green.tagged].filter(Boolean).join(" · "), t.green.source);
     else row("ci tag", "no green tag", t.ignored.length ? t.ignored.map((x) => `${x.tag} is ${x.status}: ${x.reason}`).join("; ") : "", null, true);
 
     // The release that shipped it, and the gate resolution that let it through.
