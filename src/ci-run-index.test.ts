@@ -90,6 +90,9 @@ describe("readCiRunIndex", () => {
     d.runs[3] = { ...d.runs[3], failure: { code: "not-a-reviewer" }, exitCode: 3 };
     const a = await readCiRunIndex(withIndex(d), URL);
     expect(a.doc!.runs[3]).toMatchObject({ status: "failure", moved: null, heldBy: null, failure: "not-a-reviewer", exitCode: 3 });
+    // An approver who wrote the change is a refusal too (chant#4145), never a moved plan.
+    d.runs[3] = { ...d.runs[3], failure: { code: "author-approved" }, exitCode: 3 };
+    expect((await readCiRunIndex(withIndex(d), URL)).doc!.runs[3]).toMatchObject({ status: "failure", heldBy: null });
     const before = (await readCiRunIndex(fixture, URL)).doc!.runs;
     expect(before.map((r) => [r.status, r.moved, r.exitCode])).toEqual(before.map((r) => [r.status, null, null]));
     expect(before[3]).toMatchObject({ status: "failure", failure: "failed", heldBy: null });

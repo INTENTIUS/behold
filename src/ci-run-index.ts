@@ -82,9 +82,13 @@ export const MOVED_WORDS = "the plan moved or waits: re-plan and re-approve";
 /**
  * #818: refusals that are not a moved plan. An apply whose entry records its
  * `exitCode` (chant#4165) as 3 is held like a moved plan unless its failure is
- * one of these: the report refused it for another reason.
+ * one of these: the report refused it for another reason. From chant's
+ * pr-apply (cli/handlers/pr.ts): a reviewer with no standing review, an
+ * approver who wrote the change (#4145), and a push no merged pull request
+ * matched. `failed` and `command-failed` with exit 3 are a step whose plan
+ * moved (#4151) and a second approval round (#4159): held.
  */
-const OTHER_REFUSALS: ReadonlySet<string> = new Set(["not-a-reviewer", "no-pull-request", "refused"]);
+const OTHER_REFUSALS: ReadonlySet<string> = new Set(["not-a-reviewer", "author-approved", "no-pull-request"]);
 
 /** Why an entry is held rather than failed: its moved refusal's code, `exit 3`, or null when it isn't held. */
 export function heldBy(e: Pick<CiRunEntry, "status" | "job" | "failure" | "exitCode">): string | null {
