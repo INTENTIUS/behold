@@ -1,5 +1,5 @@
 /**
- * #680, #692: a throwaway chant workspace to read the trunk lane from, for
+ * #680, #692, #731: a throwaway chant workspace to read the trunk lane from, for
  * the real-chant test and for recording src/__fixtures__/trunk-lane/.
  *
  * Member `web` declares staging then prod (an order that is not alphabetical).
@@ -12,6 +12,8 @@
  *    new one, whose cut carries a signature that does not verify;
  *  - deploy records: prod runs v1 (component web), staging runs v2 (web) and
  *    v3 (component api), so staging runs a revoked release;
+ *  - a deploy outcome in staging (#731): the promote of v3 there deployed api
+ *    and failed on web, so staging is mixed, with web unsettled;
  *  - two gates pending in prod: the component gate web/promote on C2, whose
  *    plan has a change set stored, and the release gate release/promote for
  *    v3, which chant reads as superseded because v3's commit is revoked.
@@ -99,7 +101,24 @@ export function makeLaneWorkspace(scratch: string, opts: { chant?: string; versi
     `100644 blob ${blob(lines([cut(R1, "v1", "2026-10-02T09:00:00Z"), cut(R2, "v2", "2026-10-03T09:00:00Z"), cut(R3, "v3", "2026-10-04T09:00:00Z", "-----BEGIN SSH SIGNATURE-----\nbm90IGEgc2lnbmF0dXJl\n-----END SSH SIGNATURE-----")]))}\tcuts.jsonl`,
   ]);
   const prod = tree([`100644 blob ${blob(lines([deploy("prod", "web", C1, R1, { runId: "run-1", timestamp: "2026-10-02T12:00:00Z", approver: "github:alice" })]))}\treleases.jsonl`]);
+  // #731: run-3 promoted v3 to staging partly: api deployed, web failed, so
+  // the ledger still names v2 for web and the outcome says web is unsettled.
+  const outcome = {
+    version: 1,
+    env: "staging",
+    verb: "promote",
+    runId: "run-3",
+    timestamp: "2026-10-04T12:00:00Z",
+    actor: "ci",
+    releaseDigest: R3,
+    status: "fail",
+    components: [
+      { component: "api", outcome: "deployed", digest: DIGEST, releaseDigest: R3 },
+      { component: "web", outcome: "failed", digest: IMAGE_3, releaseDigest: R3 },
+    ],
+  };
   const staging = tree([
+    `100644 blob ${blob(JSON.stringify(outcome))}\toutcomes.jsonl`,
     `100644 blob ${blob(lines([deploy("staging", "web", C2, R2, { runId: "run-2", timestamp: "2026-10-03T12:00:00Z" }), deploy("staging", "api", C3, R3, { runId: "run-3", timestamp: "2026-10-04T12:00:00Z" })]))}\treleases.jsonl`,
   ]);
   const pending = { version: 1, kind: "pending", op: "web", gate: "promote", environment: "prod", timestamp: "2026-10-04T00:00:00Z", expiresAt: "2099-01-01T00:00:00Z", planDigest: DIGEST, gitSha: C2, runId: "run-9" };

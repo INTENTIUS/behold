@@ -43,8 +43,17 @@
  * with no components) is never marked, and neither is the oldest.
  * Approving a waiting gate goes through the existing route
  * (`POST /api/workspace/gates/approve`), as the gate strip's button does.
+ *
+ * #731: a mixed environment. With chant 0.124.29 and newer
+ * (`MIXED_ENVIRONMENT_CHANT_FLOOR`), status gives an environment `mixed` per
+ * member when its components run different releases, or a promote, rollback
+ * or redeploy left one failed or gated (chant#4035, chant#4072): each
+ * component's release and state, the lines that redeploy the unsettled ones
+ * and the line that rolls the environment back. The lane carries them as
+ * chant wrote them and runs none of them. Below the floor no environment is
+ * marked mixed.
  */
-import { floorFor, floorMet, floorRefusal, RELEASE_COLUMN_CHANT_FLOOR } from "./chant-floors.ts";
+import { floorFor, floorMet, floorRefusal, MIXED_ENVIRONMENT_CHANT_FLOOR, RELEASE_COLUMN_CHANT_FLOOR } from "./chant-floors.ts";
 import type { Workspace } from "./workspace.ts";
 import { gatesFromStatus, withOverrides, type WorkspaceGate } from "./workspace-gates.ts";
 import { rootReader, WorkspaceReadError, type WorkspaceDocument, type WorkspaceReader, type WorkspaceRefusal } from "./workspace-reader.ts";
@@ -187,6 +196,31 @@ export interface LaneReleaseRow {
   next: string | null;
 }
 
+/** One component of a mixed environment, as status gives it (chant#4035). */
+export interface LaneMixedComponent {
+  component: string;
+  /** The release the ledger records it running, or null (no record, or a record of no release). */
+  release: { releaseDigest: string; label: string | null } | null;
+  /** The digest the ledger records, or null when it has none in the environment. */
+  digest: string | null;
+  /** `settled`: the record is what it runs. `failed` or `gated`: the newest run that named it left it so, and what it runs is not known. */
+  state: "settled" | "failed" | "gated";
+  /** For an unsettled component, the run that left it so and the release it was deploying. */
+  attempt: { verb: string; runId: string; timestamp: string; release: { releaseDigest: string; label: string | null } | null } | null;
+}
+
+/** One member's mixed state in an environment (chant 0.124.29 and newer). The lines are chant's, run in the member's directory; behold runs none. */
+export interface LaneMixed {
+  member: string;
+  /** The member's directory, where chant says the lines are run. */
+  dir: string;
+  components: LaneMixedComponent[];
+  /** `chant components redeploy <env> --component <c>`, one per unsettled component the ledger records. */
+  redeploy: string[];
+  /** `chant components rollback <env> --release <label|digest>`, or null when there is no release to go back to. */
+  rollback: string | null;
+}
+
 export interface LaneEnvironment {
   env: string;
   canary: boolean;
@@ -197,6 +231,8 @@ export interface LaneEnvironment {
   waiting: LaneGate[];
   /** Release gates chant reads as superseded, their release revoked (chant 0.124.29 and newer). */
   superseded: LaneSupersededGate[];
+  /** The members whose components here run a mix (#731); empty when none does, and on a chant below the floor. */
+  mixed: LaneMixed[];
   /** Set when this environment's status could not be read. */
   refusal?: WorkspaceRefusal;
 }
@@ -215,6 +251,8 @@ export interface TrunkLane {
   releases: LaneReleaseRow[];
   /** `full`: the project's chant meets `floor`, so revoked releases are marked. Otherwise the column is `release list` alone. */
   releaseColumn: { full: boolean; floor: string };
+  /** `read`: the project's chant meets `floor`, so an environment that runs a mix says so (#731). */
+  mixedEnvironments: { read: boolean; floor: string };
   read: { at: string };
 }
 
@@ -381,6 +419,40 @@ function supersededGates(status: WorkspaceDocument, env: string): LaneSuperseded
   return out;
 }
 
+const releaseOf = (digest: unknown, label: unknown): LaneMixedComponent["release"] => (str(digest) ? { releaseDigest: digest as string, label: str(label) } : null);
+
+/** One environment's `mixed`, per member, from a status document (chant#4035). Empty when no member's environment carries it. */
+export function mixedIn(status: WorkspaceDocument, env: string): LaneMixed[] {
+  const out: LaneMixed[] = [];
+  for (const m of arr(status.members)) {
+    if (!isRecord(m) || typeof m.name !== "string") continue;
+    for (const e of arr(m.environments)) {
+      if (!isRecord(e) || e.env !== env || !isRecord(e.mixed)) continue;
+      const components = arr(e.mixed.components)
+        .filter(isRecord)
+        .filter((c) => typeof c.component === "string")
+        .map((c): LaneMixedComponent => {
+          const a = isRecord(c.attempt) ? c.attempt : null;
+          return {
+            component: c.component as string,
+            release: releaseOf(c.releaseDigest, c.releaseLabel),
+            digest: str(c.digest),
+            state: c.state === "failed" || c.state === "gated" ? c.state : "settled",
+            attempt: a ? { verb: String(a.verb ?? ""), runId: String(a.runId ?? ""), timestamp: String(a.timestamp ?? ""), release: releaseOf(a.releaseDigest, a.releaseLabel) } : null,
+          };
+        });
+      out.push({
+        member: m.name,
+        dir: typeof m.dir === "string" ? m.dir : ".",
+        components,
+        redeploy: arr(e.mixed.redeploy).filter((x): x is string => typeof x === "string" && x !== ""),
+        rollback: str(e.mixed.rollback),
+      });
+    }
+  }
+  return out;
+}
+
 const artifactKey = (v: unknown): string[] =>
   arr(v)
     .filter(isRecord)
@@ -470,6 +542,8 @@ export interface LaneInput {
   order: TrunkLane["order"];
   /** The project's chant meets `RELEASE_COLUMN_CHANT_FLOOR`, so the 0.124.29 fields are read. */
   full: boolean;
+  /** The project's chant meets `MIXED_ENVIRONMENT_CHANT_FLOOR`, so each environment's `mixed` is read. */
+  mixed: boolean;
   at: Date;
 }
 
@@ -511,7 +585,7 @@ export function laneFrom(input: LaneInput): TrunkLane {
 
   const environments: LaneEnvironment[] = input.statuses.map((s) => {
     const base = { env: s.env, canary: s.canary, members: s.members };
-    if (isRefusal(s.status)) return { ...base, releases: [], deploys: [], waiting: [], superseded: [], refusal: s.status };
+    if (isRefusal(s.status)) return { ...base, releases: [], deploys: [], waiting: [], superseded: [], mixed: [], refusal: s.status };
     const records = deployRecords(s.status, s.env, input.full);
     const releases: LaneRelease[] = releaseDocs.flatMap(({ member, doc }) =>
       releasesIn(doc, member, s.env).map((r) => {
@@ -536,7 +610,7 @@ export function laneFrom(input: LaneInput): TrunkLane {
     for (const r of releases) place(r.commit, { env: s.env, what: "runs" });
     for (const d of deploys) place(d.gitSha, { env: s.env, what: "runs" });
     for (const g of waiting) if (g.gitSha && g.state === "pending") place(g.gitSha, { env: s.env, what: "waits", gate: g.key });
-    return { ...base, releases, deploys, waiting, superseded: input.full ? supersededGates(s.status, s.env) : [] };
+    return { ...base, releases, deploys, waiting, superseded: input.full ? supersededGates(s.status, s.env) : [], mixed: input.mixed ? mixedIn(s.status, s.env) : [] };
   });
 
   const releases = releaseColumn(releaseDocs, commits, environments, input.full);
@@ -551,6 +625,7 @@ export function laneFrom(input: LaneInput): TrunkLane {
     releaseRefusals,
     releases,
     releaseColumn: { full: input.full, floor: RELEASE_COLUMN_CHANT_FLOOR },
+    mixedEnvironments: { read: input.mixed, floor: MIXED_ENVIRONMENT_CHANT_FLOOR },
     read: { at: input.at.toISOString() },
   };
 }
@@ -570,8 +645,9 @@ async function attempt(read: () => Promise<WorkspaceDocument>): Promise<Workspac
  * first asked about, which also stands alone when no member declares a
  * promotion order. The caller has checked {@link laneFloorRefusal}. `chant`
  * is the project's chant version: below `RELEASE_COLUMN_CHANT_FLOOR` the
- * release column is read without the 0.124.29 fields (an unknown version
- * meets it, as it meets every floor).
+ * release column is read without the 0.124.29 fields, and below
+ * `MIXED_ENVIRONMENT_CHANT_FLOOR` no environment's `mixed` is read (an
+ * unknown version meets both, as it meets every floor).
  */
 export async function readTrunkLane(ws: Workspace, opts: { env: string; chant?: string; reader?: WorkspaceReader; now?: () => Date }): Promise<LaneRead> {
   const reader = opts.reader ?? rootReader(ws.root);
@@ -599,5 +675,6 @@ export async function readTrunkLane(ws: Workspace, opts: { env: string; chant?: 
     Promise.all(members.map(async (m) => ({ member: m.name, doc: await attempt(() => reader.readTrunk("release list", [], m.dir)) }))),
   ]);
   const full = floorMet(floorFor("release column"), opts.chant);
-  return { ok: true, lane: laneFrom({ ci, statuses, releaseLists, order, full, at: (opts.now ?? (() => new Date()))() }) };
+  const mixed = floorMet(floorFor("mixed environment"), opts.chant);
+  return { ok: true, lane: laneFrom({ ci, statuses, releaseLists, order, full, mixed, at: (opts.now ?? (() => new Date()))() }) };
 }

@@ -8,9 +8,9 @@ import { Broadcaster } from "./events.ts";
 import { FrameBuffer } from "./frames.ts";
 import { OpRunner } from "./op-runner.ts";
 import { setServedWorkspace, type Workspace } from "./workspace.ts";
-import { CHANT_FLOORS, CI_LIST_CHANT_FLOOR, PROMOTION_ORDER_CHANT_FLOOR, RELEASE_COLUMN_CHANT_FLOOR, RELEASE_LIST_CHANT_FLOOR, floorFor } from "./chant-floors.ts";
+import { CHANT_FLOORS, CI_LIST_CHANT_FLOOR, MIXED_ENVIRONMENT_CHANT_FLOOR, PROMOTION_ORDER_CHANT_FLOOR, RELEASE_COLUMN_CHANT_FLOOR, RELEASE_LIST_CHANT_FLOOR, floorFor } from "./chant-floors.ts";
 import { gatesFromStatus } from "./workspace-gates.ts";
-import { laneFloorRefusal, laneFrom, promotionOrder, readTrunkLane, releaseColumn, releaseMembers, type TrunkLane } from "./trunk-lane.ts";
+import { laneFloorRefusal, laneFrom, mixedIn, promotionOrder, readTrunkLane, releaseColumn, releaseMembers, type TrunkLane } from "./trunk-lane.ts";
 import { C1, C2, C3, C4, R1, R2, R3 } from "./trunk-lane-fixture.ts";
 import { WorkspaceReadError, workspaceReader, type WorkspaceDocument } from "./workspace-reader.ts";
 import ciListSchema from "./trunk-lane-schemas/ci-list.schema.json" with { type: "json" };
@@ -33,16 +33,25 @@ import statusSchema from "./trunk-lane-schemas/status.schema.json" with { type: 
 // were recorded again from that commit: since chant#4072 the revoked v3's
 // rollback line names the release to restore (`--release v2`), and staging
 // carries `mixed`; both also carry `featureFlags: []`.
+// #731: status-staging.json and status-prod.json were recorded again with
+// chant 0.124.31 from npm (chant-v0.124.31, 1ed5be7b0, whose status code and
+// schema are chant main's), after the fixture gained a deploy outcome: the
+// promote of v3 to staging deployed api and failed on web. Staging's `mixed`
+// now has web failed, its redeploy line and the rollback line to v2; both
+// also carry `overlap: null`. status.schema.json is from that commit too.
 
 const FIX = join(import.meta.dirname, "__fixtures__", "trunk-lane");
 const fixture = (name: string): WorkspaceDocument => JSON.parse(readFileSync(join(FIX, name), "utf8")) as WorkspaceDocument;
 
-/** A document as chant 0.124.28 prints it: without the fields chant#4033 and chant#4043 add in 0.124.29. */
+/** A document as chant 0.124.28 prints it: without the fields chant#4033, chant#4043 and chant#4072 add in 0.124.29. */
 function as124_28(doc: WorkspaceDocument): WorkspaceDocument {
   const d = structuredClone(doc) as Record<string, any>;
   for (const r of d.releases ?? []) delete r.revoked;
   for (const m of d.members ?? []) {
-    for (const e of m.environments ?? []) for (const r of e.releases ?? []) for (const k of ["releaseDigest", "releaseLabel", "revoked"]) delete r[k];
+    for (const e of m.environments ?? []) {
+      delete e.mixed;
+      for (const r of e.releases ?? []) for (const k of ["releaseDigest", "releaseLabel", "revoked"]) delete r[k];
+    }
     for (const g of m.gates ?? []) {
       if (g.revoked) g.state = "pending";
       delete g.revoked;
@@ -95,7 +104,7 @@ function lane({ old = false, releases = fixture("release-list.json") }: { old?: 
     if (!gates.ok) throw new Error(gates.refusal.error);
     return { env, canary: false, members: ["web"], status, gates: gates.gates };
   });
-  return laneFrom({ ci: fixture("ci-list.json"), statuses, releaseLists: [{ member: "web", doc: read(releases) }], order: "promotion", full: !old, at: new Date("2026-10-16T00:00:00Z") });
+  return laneFrom({ ci: fixture("ci-list.json"), statuses, releaseLists: [{ member: "web", doc: read(releases) }], order: "promotion", full: !old, mixed: !old, at: new Date("2026-10-16T00:00:00Z") });
 }
 
 describe("laneFrom (#680)", () => {
@@ -158,6 +167,7 @@ describe("laneFrom (#680)", () => {
       releaseLists: [],
       order: "promotion",
       full: true,
+      mixed: true,
       at: new Date(),
     });
     expect(l.environments[0].releases).toEqual([]);
@@ -165,7 +175,7 @@ describe("laneFrom (#680)", () => {
       expect.objectContaining({ component: "web", gitSha: C1, listed: true, approver: "github:alice", runId: "run-1", release: { releaseDigest: R1, label: "v1" }, rollback: null }),
     ]);
     // An environment with no deploy record at all is empty, not guessed at.
-    const bare = laneFrom({ ci: fixture("ci-list.json"), statuses: [{ env: "dev", canary: false, members: [], status, gates: [] }], releaseLists: [], order: "env", full: true, at: new Date() });
+    const bare = laneFrom({ ci: fixture("ci-list.json"), statuses: [{ env: "dev", canary: false, members: [], status, gates: [] }], releaseLists: [], order: "env", full: true, mixed: true, at: new Date() });
     expect(bare.environments[0]).toMatchObject({ env: "dev", releases: [], deploys: [], waiting: [] });
   });
 
@@ -176,6 +186,7 @@ describe("laneFrom (#680)", () => {
       releaseLists: [{ member: "web", doc: { contract: 1, chant: "0.124.28", error: { code: "ledger-unreadable", message: "no chant/lifecycle" } } }],
       order: "env",
       full: true,
+      mixed: true,
       at: new Date(),
     });
     expect(l.trunk).toBeNull();
@@ -274,9 +285,82 @@ describe("the release column (#692)", () => {
       if (!gates.ok) throw new Error(gates.refusal.error);
       return { env, canary: false, members: ["web"], status, gates: gates.gates };
     });
-    const below = laneFrom({ ci: fixture("ci-list.json"), statuses, releaseLists: [{ member: "web", doc: fixture("release-list.json") }], order: "promotion", full: false, at: new Date() });
+    const below = laneFrom({ ci: fixture("ci-list.json"), statuses, releaseLists: [{ member: "web", doc: fixture("release-list.json") }], order: "promotion", full: false, mixed: false, at: new Date() });
     expect(below.releases.map((r) => r.revoked)).toEqual([null, null, null]);
     expect(below.environments[0].deploys).toEqual([]);
+  });
+});
+
+describe("a mixed environment (#731)", () => {
+  it("registers the floor, 0.124.29, which degrades the lane and refuses nothing", () => {
+    expect(MIXED_ENVIRONMENT_CHANT_FLOOR).toBe("0.124.29");
+    expect(floorFor("mixed environment")).toMatchObject({ floor: "0.124.29", degraded: expect.stringMatching(/no environment mixed/) });
+    expect(CHANT_FLOORS).toContain(floorFor("mixed environment"));
+    expect(laneFloorRefusal("0.124.28")).toBeUndefined();
+  });
+
+  it("marks staging mixed after a partly applied promote: each component's release and state, the redeploy line and the rollback line", () => {
+    const l = lane();
+    expect(l.mixedEnvironments).toEqual({ read: true, floor: "0.124.29" });
+    const [staging, prod] = l.environments;
+    expect(staging.mixed).toEqual([
+      {
+        member: "web",
+        dir: "web",
+        components: [
+          { component: "api", release: { releaseDigest: R3, label: "v3" }, digest: expect.stringMatching(/^sha256:/), state: "settled", attempt: null },
+          { component: "web", release: { releaseDigest: R2, label: "v2" }, digest: expect.stringMatching(/^sha256:/), state: "failed", attempt: { verb: "promote", runId: "run-3", timestamp: "2026-10-04T12:00:00Z", release: { releaseDigest: R3, label: "v3" } } },
+        ],
+        redeploy: ["chant components redeploy staging --component web"],
+        rollback: "chant components rollback staging --release v2",
+      },
+    ]);
+    expect(prod.mixed).toEqual([]);
+  });
+
+  it("marks nothing mixed on chant 0.124.28, nor when the documents carry it but the chant is below the floor", () => {
+    expect(lane({ old: true }).environments.map((e) => e.mixed)).toEqual([[], []]);
+    expect(lane({ old: true }).mixedEnvironments).toEqual({ read: false, floor: "0.124.29" });
+    const status = fixture("status-staging.json");
+    const below = laneFrom({ ci: fixture("ci-list.json"), statuses: [{ env: "staging", canary: false, members: ["web"], status, gates: [] }], releaseLists: [], order: "promotion", full: true, mixed: false, at: new Date() });
+    expect(below.environments[0].mixed).toEqual([]);
+  });
+
+  it("reads a mix of releases with every component settled, and a component with no record", () => {
+    const status = {
+      members: [
+        {
+          name: "web",
+          dir: "web",
+          environments: [
+            {
+              env: "prod",
+              mixed: {
+                components: [
+                  { component: "api", digest: null, releaseDigest: null, releaseLabel: null, state: "gated", attempt: { verb: "rollback", runId: "r", timestamp: "t", digest: "d", releaseDigest: null, releaseLabel: null } },
+                  { component: "web", digest: "sha256:ab", releaseDigest: R1, releaseLabel: null, state: "settled", attempt: null },
+                ],
+                redeploy: [],
+                rollback: null,
+              },
+            },
+          ],
+        },
+      ],
+    } as WorkspaceDocument;
+    expect(mixedIn(status, "prod")).toEqual([
+      {
+        member: "web",
+        dir: "web",
+        components: [
+          { component: "api", release: null, digest: null, state: "gated", attempt: { verb: "rollback", runId: "r", timestamp: "t", release: null } },
+          { component: "web", release: { releaseDigest: R1, label: null }, digest: "sha256:ab", state: "settled", attempt: null },
+        ],
+        redeploy: [],
+        rollback: null,
+      },
+    ]);
+    expect(mixedIn(status, "staging")).toEqual([]);
   });
 });
 
@@ -446,9 +530,13 @@ else { process.stderr.write("unexpected " + line); process.exit(2); }
       ["v1", null, null],
     ]);
     expect(full.environments[1].superseded.map((g: any) => g.key)).toEqual(["web/release/promote"]);
+    // #731: the same floor reads staging as mixed; 0.124.28 below does not.
+    expect(full.mixedEnvironments).toEqual({ read: true, floor: "0.124.29" });
+    expect(full.environments[0].mixed.map((m: any) => [m.redeploy, m.rollback])).toEqual([[["chant components redeploy staging --component web"], "chant components rollback staging --release v2"]]);
     const old = (await (await serve(root("0.124.28")).request("/api/workspace/lane")).json()) as Record<string, any>;
     expect(old.refusal).toBeUndefined();
     expect(old.releaseColumn).toEqual({ full: false, floor: "0.124.29" });
+    expect(old.environments.map((e: any) => e.mixed)).toEqual([[], []]);
     expect(old.releases.map((r: any) => [r.label, r.configOnly, r.revoked])).toEqual([
       ["v3", false, null],
       ["v2", true, null],

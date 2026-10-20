@@ -1,12 +1,12 @@
 {
   "$schema": "https://intentius.io/chant/schemas/workspace/status/v1/status.schema.json",
   "contract": 1,
-  "chant": "0.124.28",
+  "chant": "0.124.31",
   "env": "prod",
   "compareTo": null,
   "lifecycle": {
     "ref": "chant/lifecycle",
-    "commit": "75ff7f92aebab080e59e4c7a94bc1d344e6a84ee"
+    "commit": "40cd05536c8c38a60926518444cede2b6b8e04df"
   },
   "checkout": {
     "branch": "main",
@@ -177,6 +177,7 @@
   "leases": [],
   "acceptance": [],
   "replication": null,
+  "overlap": null,
   "summary": {
     "members": 1,
     "released": 1,

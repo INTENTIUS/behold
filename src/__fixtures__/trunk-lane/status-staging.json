@@ -1,12 +1,12 @@
 {
   "$schema": "https://intentius.io/chant/schemas/workspace/status/v1/status.schema.json",
   "contract": 1,
-  "chant": "0.124.28",
+  "chant": "0.124.31",
   "env": "staging",
   "compareTo": null,
   "lifecycle": {
     "ref": "chant/lifecycle",
-    "commit": "75ff7f92aebab080e59e4c7a94bc1d344e6a84ee"
+    "commit": "40cd05536c8c38a60926518444cede2b6b8e04df"
   },
   "checkout": {
     "branch": "main",
@@ -105,11 +105,20 @@
                 "digest": "sha256:4b5e57f6eb2f42b9039b3d1e13929295f231749c510cbe341cd68036d9af97e2",
                 "releaseDigest": "jcs1-sha256:6aafbba83be3cb5e1793979cfcc0b0f684a06eb57bca5c3dd3624769ea7ca71e",
                 "releaseLabel": "v2",
-                "state": "settled",
-                "attempt": null
+                "state": "failed",
+                "attempt": {
+                  "verb": "promote",
+                  "runId": "run-3",
+                  "timestamp": "2026-10-04T12:00:00Z",
+                  "digest": "sha256:b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3",
+                  "releaseDigest": "jcs1-sha256:bbdcfcdab12b9c484ab198b570477b0b568f6a43f4265fd6aef7823d563759b2",
+                  "releaseLabel": "v3"
+                }
               }
             ],
-            "redeploy": [],
+            "redeploy": [
+              "chant components redeploy staging --component web"
+            ],
             "rollback": "chant components rollback staging --release v2"
           }
         }
@@ -184,6 +193,7 @@
   "leases": [],
   "acceptance": [],
   "replication": null,
+  "overlap": null,
   "summary": {
     "members": 1,
     "released": 1,
