@@ -116,6 +116,16 @@ describe("the live carve as a show (#715)", () => {
     expect(done.focus).toEqual({ kind: "all" });
     expect(liveEndTip(m, 0).key).toBe("end:carve");
   });
+
+  it("says an adoption's end in stamps alone, with no 0 moved (#711)", () => {
+    const line = (address, outcome) => ({ at: "2026-10-20T10:00:00Z", estate_from: "", estate_to: "tl7-shared", address, live_id: address, outcome });
+    const adopt = { name: "adopt", counts: { moved: 0, stamped: 2, refused: 0, skipped: 0, left: 0 }, lines: [line("a", "stamped"), line("b", "stamped")] };
+    expect(liveEndTip(adopt, 0).text).toBe("adopt is done: 2 resources stamped by tag writes alone, none recreated.");
+    const split = { name: "split", counts: { moved: 1, stamped: 0, refused: 0, skipped: 0, left: 0 }, lines: [line("a", "moved")] };
+    expect(liveEndTip(split, 0).text).toBe("split is done: 1 resources moved by tag writes alone, none recreated.");
+    const both = { name: "m", counts: { moved: 1, stamped: 2, refused: 0, skipped: 0, left: 0 }, lines: [line("a", "moved"), line("b", "stamped"), line("c", "stamped")] };
+    expect(liveEndTip(both, 0).text).toBe("m is done: 1 resources moved and 2 stamped by tag writes alone, none recreated.");
+  });
 });
 
 describe("the gate, in the page (#715)", () => {

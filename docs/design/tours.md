@@ -47,6 +47,17 @@ last one in the file whose trigger has fired. The live carve feeds it now
 (`/api/terragucci/carve`'s `tour`); a recorded cycle (`cycles/<tool>/<n>.json`)
 or a bundle can feed the same events later, with the replay's clock as `t`.
 
+## Seeing it locally
+
+`npm run preview:tour` (`scripts/tour-preview.ts`) writes a reports directory
+the way terragucci's demo loop wrote one for the terralith scenario (estates
+and rosters, migration records and their progress lines, report rows, plans,
+runs, demo.json), steps demo.json through the five beats, and serves it with
+`behold serve --terragucci <dir> --public` on 127.0.0.1, so `/kiosk` plays the
+six chapters with no forge, cloud or Docker. Nothing in it is a recording: the
+resources are the thin terralith's 14 and every time is the wall clock's.
+`TourCycle` steps it one demo.json write at a time, for a headless check.
+
 ## Where tour files live
 
 The tour for a cycle is a served repo's `.behold/tours/*.json` first, so a
