@@ -130,7 +130,7 @@ export function projectGcpLogical(ir: GraphIR, env?: string): LogicalProjection 
   const gcp = ir.nodes.filter((n) => n.lexicon === "gcp");
   if (gcp.length === 0) return { ir: { nodes: [], edges: [], groups: {} }, byContainer: {} };
 
-  const componentOf = componentNamer(gcp);
+  const componentOf = componentNamer(gcp, ir.groups);
   const byId = new Map(gcp.map((n) => [n.id, n]));
 
   const project = declaredProject(gcp) ?? env;

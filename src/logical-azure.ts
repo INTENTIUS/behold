@@ -76,6 +76,11 @@ export const AZURE_HEADLINE_KINDS = new Set([
   "Microsoft.ContainerService/managedClusters",
   "Microsoft.ContainerInstance/containerGroups",
   "Microsoft.Web/sites",
+  // Container Apps (#826): the app is the workload card, and its managed
+  // environment is a card beside it the way an AKS cluster is, joined by the
+  // app's `managedEnvironmentId` reference.
+  "Microsoft.App/containerApps",
+  "Microsoft.App/managedEnvironments",
   // network edge
   "Microsoft.Network/publicIPAddresses",
   "Microsoft.Network/loadBalancers",
@@ -184,7 +189,7 @@ export function projectAzureLogical(ir: GraphIR, env?: string): LogicalProjectio
   const azure = ir.nodes.filter((n) => n.lexicon === "azure");
   if (azure.length === 0) return { ir: { nodes: [], edges: [], groups: {} }, byContainer: {} };
 
-  const componentOf = componentNamer(azure);
+  const componentOf = componentNamer(azure, ir.groups);
   const byId = new Map(azure.map((n) => [n.id, n]));
   // ARM expressions identify a resource by NAME, so this is the index that
   // turns `resourceId('…','my-nsg')` back into a node.

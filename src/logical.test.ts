@@ -361,6 +361,88 @@ describe("projectTopology — GCP dispatch (#101)", () => {
   });
 });
 
+// #826, found by #823's prototype: a workspace of four members, `dns` and `aws`
+// on the AWS lexicon, `azure` and `gcp` on their own. Member source paths are
+// member-relative and each member is one file at its root, so every node read
+// as having no directory and every lens named its one component "other". A box
+// key is its title, so the merged nesting had one "other" box under both the
+// AWS lens's lane and GCP's location, and the Route 53 and ALB cards were drawn
+// inside GCP's region.
+describe("projectTopology, a mixed-cloud workspace keeps each member's containment (#826)", () => {
+  const node = (id: string, kind: string, lexicon: string, attrs: Record<string, unknown> = {}) => ({
+    id,
+    kind,
+    lexicon,
+    attrs,
+    sourceLoc: { file: id.startsWith("dns/") ? "route53.ts" : "site.ts" },
+  });
+  const workspace = (): GraphIR =>
+    ({
+      nodes: [
+        node("dns/zone", "AWS::Route53::HostedZone", "aws", { Name: "example.com" }),
+        node("dns/awsRecord", "AWS::Route53::RecordSet", "aws", { HostedZoneId: ref("dns/zone.Id"), Region: "us-east-1" }),
+        node("aws/alb", "AWS::ElasticLoadBalancingV2::LoadBalancer", "aws", { Scheme: "internet-facing" }),
+        node("azure/env", "Microsoft.App/managedEnvironments", "azure", { name: "env", location: "westeurope" }),
+        node("azure/app", "Microsoft.App/containerApps", "azure", { name: "app", managedEnvironmentId: ref("azure/env.id") }),
+        node("gcp/web", "GCP::Run::Service", "gcp", { location: "asia-northeast1" }),
+      ],
+      edges: [],
+      groups: {
+        byStack: {
+          dns: ["dns/zone", "dns/awsRecord"],
+          aws: ["aws/alb"],
+          azure: ["azure/env", "azure/app"],
+          gcp: ["gcp/web"],
+        },
+      },
+    }) as unknown as GraphIR;
+
+  const parentsOf = (bc: Record<string, string[]>, id: string) =>
+    Object.entries(bc)
+      .filter(([, ids]) => ids.includes(id))
+      .map(([parent]) => parent);
+
+  it("gives every card exactly one box, its own member's", () => {
+    const { byContainer } = projectTopology(workspace(), "prod");
+    expect(parentsOf(byContainer, "dns/awsRecord")).toEqual(["dns"]);
+    expect(parentsOf(byContainer, "aws/alb")).toEqual(["aws"]);
+    expect(parentsOf(byContainer, "azure/app")).toEqual(["azure"]);
+    expect(parentsOf(byContainer, "gcp/web")).toEqual(["gcp"]);
+    for (const children of Object.values(byContainer)) {
+      for (const c of children) expect(parentsOf(byContainer, c)).toHaveLength(1);
+    }
+  });
+
+  it("nests each member under its own cloud's containers", () => {
+    const { byContainer } = projectTopology(workspace(), "prod");
+    expect(parentsOf(byContainer, "gcp")).toEqual(["location asia-northeast1"]);
+    expect(byContainer["location asia-northeast1"]).toEqual(["gcp"]);
+    expect(parentsOf(byContainer, "azure")).toEqual(["resource group prod"]);
+    expect(parentsOf(byContainer, "dns")).not.toContain("location asia-northeast1");
+    expect(parentsOf(byContainer, "aws")).not.toContain("location asia-northeast1");
+    expect(Object.keys(byContainer)).not.toContain("other");
+  });
+
+  it("draws the Azure member's Container App", () => {
+    const { ir: out } = projectTopology(workspace(), "prod");
+    expect(out.nodes.map((n) => n.id)).toEqual(expect.arrayContaining(["azure/app", "azure/env"]));
+  });
+
+  it("leaves a single project's byStack, chant's lexicon partition over bare ids, alone", () => {
+    const single = {
+      nodes: [
+        { id: "web", kind: "GCP::Run::Service", lexicon: "gcp", attrs: { location: "us-central1" }, sourceLoc: { file: "src/app/web.ts" } },
+        { id: "db", kind: "GCP::Sql::Instance", lexicon: "gcp", attrs: { location: "us-central1" }, sourceLoc: { file: "src/data/db.ts" } },
+      ],
+      edges: [],
+      groups: { byStack: { gcp: ["web", "db"] } },
+    } as unknown as GraphIR;
+    const { byContainer } = projectTopology(single, "p");
+    expect(parentsOf(byContainer, "web")).toEqual(["app"]);
+    expect(parentsOf(byContainer, "db")).toEqual(["data"]);
+  });
+});
+
 // #321 (measured in #166) — the one place behold used to delete an edge it had
 // derived. Every lens filters the IR's edges to its own surviving cards, so an
 // edge whose two endpoints belong to two DIFFERENT lenses satisfied neither
