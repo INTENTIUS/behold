@@ -372,6 +372,10 @@ const staticMode = !!window.__BEHOLD_STATIC__;
 const publicMode = !!window.__BEHOLD_PUBLIC__;
 let manifest = null;
 if (staticMode) {
+  // A snapshot has no live host behind it: the controls that only make sense
+  // against one (the lanes view, substrate readiness, the target endpoint,
+  // the deploy dial) are hidden by the `static` class (index.html).
+  document.documentElement.classList.add("static");
   try {
     manifest = await fetch("./manifest.json").then((r) => r.json());
   } catch {
@@ -1965,6 +1969,7 @@ function renderPanelView() {
     }),
   );
   const lanes = document.createElement("a");
+  lanes.className = "lanes-link";
   lanes.href = "/lanes";
   lanes.textContent = "lanes →";
   lanes.title = "The time-lanes view — captured frames of this graph over time";
@@ -2461,7 +2466,7 @@ function renderPanelScope() {
       );
     }
   }
-  if (targets.length) {
+  if (targets.length && !staticMode) {
     host.appendChild(panelHeading("target"));
     const sel = document.createElement("select");
     for (const t of targets) sel.add(new Option(t.endpoint, t.endpoint, false, view.target === t.endpoint));
@@ -8476,7 +8481,9 @@ function render(ir, svg, m) {
   // from /api/project when a route doesn't echo them, e.g. /api/overlay).
   if (m.tier !== undefined) axes.tier = m.tier;
   if (m.target !== undefined) axes.target = m.target;
-  const axesTail = `${axes.tier ? " · tier " + axes.tier : ""}${axes.target ? " · target " + axes.target : ""}`;
+  // A snapshot's target is the host it was captured from (a localhost
+  // emulator, usually), which means nothing to whoever reads the page.
+  const axesTail = `${axes.tier ? " · tier " + axes.tier : ""}${axes.target && !staticMode ? " · target " + axes.target : ""}`;
   const metaEl = document.getElementById("meta");
   metaEl.title = m.projectDir || "";
   // #195: the browser tab names the loaded project — with the header gone
@@ -10492,7 +10499,11 @@ async function initActions() {
     pill.title = "An exported, read-only snapshot — no live observe or deploy.";
     pill.style.cssText = "align-self:center;font:var(--t-caption)/1.4 var(--font-mono);color:var(--muted);border:1px solid var(--line);border-radius:var(--r-ctl);padding:2px 8px";
     bar.appendChild(pill);
-    mountHistoryPicker(bar); // #510: other commits' views, when ../history.json sits beside this one
+    // #510: other commits' views, when ../history.json sits beside this one.
+    // The deploy tab stays hidden unless there is history to pick from.
+    mountHistoryPicker(bar).then((picker) => {
+      if (picker) document.documentElement.classList.add("static-history");
+    });
     previewMode = true;
     return; // nothing else in the bar is a read
   }

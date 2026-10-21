@@ -557,6 +557,10 @@
       /* Folded in a frame, the panel is a small pill (⌘K and the expand
          chevron) in the corner, so the graph has the pane to itself. */
       .embed #panel.collapsed #panel-tabs button[data-tab] { display: none; }
+      /* A static export (behold export) has no live host behind it. */
+      .static #panel-tabs button[data-tab="substrates"], .static #panel-body section[data-tab="substrates"],
+      .static:not(.static-history) #panel-tabs button[data-tab="deploy"], .static:not(.static-history) #panel-body section[data-tab="deploy"],
+      .static .lanes-link { display: none !important; }
       .embed #panel.collapsed { width: auto; }
       .embed #panel.collapsed #panel-tabs { gap: var(--s1); padding: 2px var(--s1); }
       /* #569: ?embed=1&bare=1, the kiosk's frame: the graph alone. Nothing to
