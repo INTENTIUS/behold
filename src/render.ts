@@ -10,6 +10,7 @@ import {
   layoutIr,
   layoutArchitecture,
   renderSvg as pinholeRenderSvg,
+  defaultFields,
   renderMorphHtml,
   cardSizes,
   registerPack,
@@ -20,7 +21,7 @@ import {
   type NodeOverride,
 } from "@intentius/pinhole";
 import type { GraphIR, IRGroups, IRNode, Layout } from "@intentius/chant";
-import type { ByContainer } from "./logical.ts";
+import { CARD_IN, CARD_WITH, OUTSIDE_LEXICON, type ByContainer } from "./logical.ts";
 import { k8sIconFor, helmIconFor } from "./icon-packs.ts";
 import { awsIconFor, azureIconFor, gcpIconFor, terraformIconFor } from "./cloud-icons.ts";
 import { SQL_LEXICON, sqlCardFields, sqlIconFor } from "./sql-kinds.ts";
@@ -57,12 +58,25 @@ function renderSvg(...args: Parameters<typeof pinholeRenderSvg>): string {
   return routeEdges(pinholeRenderSvg(...args));
 }
 
+/**
+ * A card's usual lines, plus what the logical zoom adds to it (#873, #874):
+ * the resources it absorbs ("with") and the traffic its security groups let
+ * in ("in"). Cards without either keep pinhole's default.
+ */
+function logicalCardFields(node: { attrs: Record<string, unknown> }): Array<{ label: string; value: string }> | undefined {
+  const w = node.attrs[CARD_WITH];
+  const i = node.attrs[CARD_IN];
+  if (typeof w !== "string" && typeof i !== "string") return undefined;
+  const base = defaultFields(node as never).filter((f) => !f.label.startsWith("_")).slice(0, 2);
+  return [...base, ...(typeof i === "string" ? [{ label: "in", value: i }] : []), ...(typeof w === "string" ? [{ label: "with", value: w }] : [])];
+}
+
 registerPack({ lexicon: "k8s", iconFor: k8sIconFor });
 registerPack({ lexicon: "helm", iconFor: helmIconFor });
 // #872: the cloud vendors' own architecture icons, by kind then by service.
-registerPack({ lexicon: "aws", iconFor: awsIconFor });
-registerPack({ lexicon: "azure", iconFor: azureIconFor });
-registerPack({ lexicon: "gcp", iconFor: gcpIconFor });
+registerPack({ lexicon: "aws", iconFor: awsIconFor, fields: logicalCardFields });
+registerPack({ lexicon: "azure", iconFor: azureIconFor, fields: logicalCardFields });
+registerPack({ lexicon: "gcp", iconFor: gcpIconFor, fields: logicalCardFields });
 // #524: a SQL Yodeler project's schema (chant-lexicon-sql): a line glyph per
 // Postgres and ClickHouse kind, and cards that lead with the kind in words and
 // the qualified name instead of two alphabetical attrs.
@@ -129,6 +143,15 @@ registerPack({
 // would spend both its rows on `box` and `cards` — the two attrs the title
 // already says — because it picks them alphabetically.
 registerPack({ lexicon: SUMMARY_LEXICON, iconFor: () => undefined, fields: summaryCardFields });
+
+// behold#876: the card for everyone outside the estate. Its words say what it
+// is and how many ways in it has; pinhole's keyword glyph for "Internet" is
+// the picture.
+registerPack({
+  lexicon: OUTSIDE_LEXICON,
+  iconFor: () => undefined,
+  fields: (node) => [{ label: "the public internet", value: String((node.attrs as { reaches?: unknown } | undefined)?.reaches ?? "") }],
+});
 
 export interface RenderResult {
   svg: string;

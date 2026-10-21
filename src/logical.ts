@@ -467,6 +467,8 @@ export function projectTopology(ir: GraphIR, env?: string, boundContext?: string
   placeHelmReleases(nodes, byContainer, boxes);
   nestReleaseBoxes(byContainer);
   retainCrossLensEdges(ir, projections, nodes, edges, byContainer);
+  markEntryPoints(nodes, edges);
+  absorbOutsideAws(ir, nodes, byContainer);
   // Carried out for the same reason the k8s lens carries it in
   // (behold#328/#331, pinhole#119): a namespace box is addressed by this KEY,
   // never by its title, and `operatorHomeBoxMarks` (src/operator.ts) is the
@@ -586,6 +588,170 @@ function retainCrossLensEdges(
       frontier = next;
     }
   }
+}
+
+/** How a card line names a kind it absorbed, where the kind's own name says it badly. */
+const KIND_WORDS: Record<string, string> = {
+  "AWS::EC2::EIP": "Elastic IP",
+  "AWS::EC2::VPCEndpoint": "VPC Endpoint",
+  "Microsoft.ManagedIdentity/userAssignedIdentities": "Managed Identity",
+  "Microsoft.OperationalInsights/workspaces": "Log Analytics Workspace",
+  "GCP::Iam::PolicyMember": "IAM Binding",
+  "GCP::Iam::ServiceAccount": "Service Account",
+  "GCP::Compute::RegionNetworkEndpointGroup": "Endpoint Group",
+};
+
+/** A kind in words for a card line: its last segment, singular, split into words. */
+export function cardWordsForKind(kind: string): string {
+  if (KIND_WORDS[kind]) return KIND_WORDS[kind];
+  const last = kind.split(/::|\//).pop() ?? kind;
+  const singular = /(ss|sh|ch|x)es$/.test(last) ? last.slice(0, -2) : last.replace(/ies$/, "y").replace(/(?<![su])s$/, "");
+  const spaced = singular.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2");
+  const service = kind.startsWith("AWS::") ? kind.split("::")[1] : "";
+  const named = spaced.replace(/^./, (c) => c.toUpperCase());
+  // The AWS kinds that cut across services say whose they are ("IAM Role").
+  return ["IAM", "KMS", "SSM"].includes(service) && !named.startsWith(service) ? `${service} ${named}` : named;
+}
+
+/** Kinds drawn as boxes (or not at all) on the Azure and GCP lenses, never absorbed into a card. */
+const NOT_ABSORBED = new Set([
+  "Microsoft.Network/virtualNetworks",
+  "Microsoft.Network/virtualNetworks_subnets",
+  "Microsoft.Network/virtualNetworks/subnets",
+  "Microsoft.Network/routeTables",
+  "Microsoft.Network/networkSecurityGroups",
+  "GCP::Compute::Network",
+  "GCP::Compute::Subnetwork",
+  "GCP::Compute::Firewall",
+]);
+
+/**
+ * behold#873 on the Azure and GCP lenses: a resource the view leaves out goes
+ * on the card it serves as a "with" line, as the AWS lens does for its own.
+ * Each goes to the nearest card it is joined to by an edge inside its member,
+ * either way along it; one equally near several cards goes on none.
+ */
+function absorbOutsideAws(ir: GraphIR, nodes: IRNode[], byContainer: ByContainer): void {
+  const boxes = new Set(Object.keys(byContainer));
+  const cards = new Map(nodes.map((n, i) => [n.id, i]));
+  const memberOf = (id: string) => (id.includes("/") ? id.slice(0, id.indexOf("/")) : "");
+  const near = new Map<string, Set<string>>();
+  for (const e of ir.edges) {
+    if (memberOf(e.from) !== memberOf(e.to)) continue;
+    (near.get(e.from) ?? near.set(e.from, new Set()).get(e.from)!).add(e.to);
+    (near.get(e.to) ?? near.set(e.to, new Set()).get(e.to)!).add(e.from);
+  }
+  const kindOf = new Map(ir.nodes.map((n) => [n.id, n.kind]));
+  const absorbed = new Map<string, string[]>();
+  for (const n of ir.nodes) {
+    if (n.lexicon !== "azure" && n.lexicon !== "gcp") continue;
+    if (cards.has(n.id) || boxes.has(n.id) || NOT_ABSORBED.has(n.kind)) continue;
+    const seen = new Set([n.id]);
+    let frontier = [...(near.get(n.id) ?? [])];
+    const found = new Set<string>();
+    for (let depth = 0; depth < 4 && frontier.length && !found.size; depth++) {
+      const next: string[] = [];
+      for (const id of frontier) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+        if (cards.has(id)) {
+          found.add(id);
+          continue;
+        }
+        if (NOT_ABSORBED.has(kindOf.get(id) ?? "")) continue;
+        for (const r of near.get(id) ?? []) if (!seen.has(r)) next.push(r);
+      }
+      frontier = next;
+    }
+    if (found.size === 1) {
+      const owner = [...found][0];
+      (absorbed.get(owner) ?? absorbed.set(owner, []).get(owner)!).push(n.kind);
+    }
+  }
+  const words = cardWordsForKind;
+  for (const [owner, kinds] of absorbed) {
+    const i = cards.get(owner)!;
+    const counts = new Map<string, number>();
+    for (const k of kinds) counts.set(words(k), (counts.get(words(k)) ?? 0) + 1);
+    const line = [...counts]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([w, c]) => (c > 1 ? `${c} ${w}s` : w))
+      .join(", ");
+    nodes[i] = { ...nodes[i], attrs: { ...(nodes[i].attrs ?? {}), [CARD_WITH]: line } } as IRNode;
+  }
+}
+
+/** The card that stands for everyone outside the estate (behold#876). */
+export const OUTSIDE_ID = "outside";
+export const OUTSIDE_KIND = "Internet";
+/** Its own lexicon, so its card reads in words rather than as a resource (src/render.ts). */
+export const OUTSIDE_LEXICON = "outside";
+
+/** Whether a card is open to the public: where the outside world comes in. */
+export function isEntryPoint(n: IRNode): boolean {
+  const a = (n.attrs ?? {}) as Record<string, unknown>;
+  switch (n.kind) {
+    case "AWS::Route53::RecordSet":
+    case "AWS::CloudFront::Distribution":
+    case "AWS::ApiGateway::RestApi":
+    case "AWS::ApiGatewayV2::Api":
+    case "AWS::GlobalAccelerator::Accelerator":
+    case "Microsoft.Network/frontDoors":
+    case "Microsoft.Cdn/profiles":
+    case "Microsoft.Network/dnsZones":
+    case "GCP::Dns::RecordSet":
+      return true;
+    case "AWS::ElasticLoadBalancingV2::LoadBalancer":
+      return a.Scheme !== "internal";
+    case "AWS::Lambda::Url":
+      return true;
+    case "GCP::Compute::ForwardingRule":
+      return typeof a.loadBalancingScheme === "string" && /^EXTERNAL/.test(a.loadBalancingScheme);
+    case "Microsoft.App/containerApps": {
+      const ingress = ((a.configuration as Record<string, unknown> | undefined)?.ingress ?? {}) as { external?: unknown };
+      return ingress.external === true;
+    }
+    case "Microsoft.Network/applicationGateways":
+    case "Microsoft.Network/publicIPAddresses":
+      return true;
+    default:
+      return false;
+  }
+}
+
+/**
+ * behold#876: where the outside world comes in. One "outside" card, drawn at
+ * the top level, with an edge to each card open to the public, but only the
+ * outermost hop of a chain: a load balancer that a public DNS record already
+ * points at is reached through the record, so the edge goes to the record.
+ * Nothing is drawn for an estate with no public card. Mutates the joined
+ * projection.
+ */
+function markEntryPoints(nodes: IRNode[], edges: IREdge[]): void {
+  const entries = nodes.filter(isEntryPoint);
+  if (!entries.length) return;
+  // DNS is always a first hop, except a record that another record targets by
+  // name (an A record giving an address a name for a latency CNAME). Any other
+  // entry that a DNS record connects to is reached through the record. The
+  // joined edges' direction isn't reliable (the AWS lens contracts them
+  // undirected), so "connects to" is either way round.
+  const isDns = (n: IRNode | undefined) => !!n && /RecordSet$|dnsZones$/.test(n.kind);
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const recordName = (n: IRNode) => String((n.attrs as { Name?: unknown } | undefined)?.Name ?? "").replace(/\.$/, "");
+  const targetsOf = (n: IRNode) => {
+    const rr = (n.attrs as { ResourceRecords?: unknown } | undefined)?.ResourceRecords;
+    return Array.isArray(rr) ? rr.filter((r): r is string => typeof r === "string").map((r) => r.replace(/\.$/, "")) : [];
+  };
+  const dnsTargets = new Set(entries.filter(isDns).flatMap(targetsOf));
+  const behindDns = new Set<string>();
+  for (const e of edges) {
+    if (isDns(byId.get(e.from)) && !isDns(byId.get(e.to))) behindDns.add(e.to);
+    if (isDns(byId.get(e.to)) && !isDns(byId.get(e.from))) behindDns.add(e.from);
+  }
+  const outermost = entries.filter((n) => (isDns(n) ? !dnsTargets.has(recordName(n)) : !behindDns.has(n.id)));
+  if (!outermost.length) return;
+  nodes.push({ id: OUTSIDE_ID, kind: OUTSIDE_KIND, lexicon: OUTSIDE_LEXICON, attrs: { name: "outside", reaches: `${outermost.length} way${outermost.length === 1 ? "" : "s"} in` } } as unknown as IRNode);
+  for (const n of outermost) edges.push({ from: OUTSIDE_ID, to: n.id, kind: "ref", viaAttr: "from outside" } as IREdge);
 }
 
 /** The cluster picture's box KEYS, as the lens that drew them reported them —
@@ -910,10 +1076,21 @@ export function projectLogical(ir: GraphIR): LogicalProjection {
   // open to the VPC range, say) names no specific source resource, so it yields
   // no edge — that stays containment, not a hairball.
   const isSg = (id: string) => byId.get(id)?.kind === "AWS::EC2::SecurityGroup";
+  // A member that declares stacks has its ids qualified (`aws/<stack>::sg`)
+  // while its `$ref`s keep the bare form (`aws/sg`); the bare one is resolved
+  // to the qualified card of the same member and name.
+  const resolveRef = (id: string): string | undefined => {
+    if (byId.has(id)) return id;
+    const slash = id.indexOf("/");
+    if (slash < 0) return undefined;
+    const member = id.slice(0, slash + 1);
+    const name = id.slice(slash + 1);
+    return aws.find((n) => n.id.startsWith(member) && n.id.endsWith(`::${name}`))?.id;
+  };
   const firstRef = (v: unknown): string | undefined => {
     const s = new Set<string>();
     collectRefs(v, s);
-    return [...s].find((id) => byId.has(id));
+    return [...s].map(resolveRef).find((id): id is string => !!id);
   };
   // Which security groups each headline resource is attached to — resolved
   // through cross-stack `Parameter` bridges (a service's SG arrives as an import).
@@ -1010,5 +1187,94 @@ export function projectLogical(ir: GraphIR): LogicalProjection {
   const ACCOUNT = accountId ? `AWS account ${accountId}` : "AWS account";
   const nested = new Set(Object.values(byContainer).flat());
   for (const key of Object.keys(byContainer)) if (!nested.has(key)) child(ACCOUNT, key);
-  return { ir: { nodes: headline, edges, groups: {} }, byContainer };
+
+  // behold#873: the resources this view leaves out each serve one card, and
+  // the card says so ("with: 2 IAM roles, task definition"). Each goes to the
+  // nearest card it is joined to inside its own member, walking either way
+  // along references but never through the network fabric or a security group
+  // (which #874 puts on the card as its own line).
+  const fabric = new Set(["AWS::EC2::VPC", "AWS::EC2::Subnet", "AWS::EC2::RouteTable", "AWS::EC2::Route", "AWS::EC2::SubnetRouteTableAssociation", "AWS::EC2::VPCGatewayAttachment", "AWS::EC2::SecurityGroup", "AWS::EC2::SecurityGroupIngress", "AWS::EC2::SecurityGroupEgress", "AWS::CloudFormation::Parameter"]);
+  const near = new Map<string, Set<string>>();
+  const join = (a: string, b: string) => {
+    if (memberOf(byId.get(a)!) !== memberOf(byId.get(b)!)) return;
+    (near.get(a) ?? near.set(a, new Set()).get(a)!).add(b);
+    (near.get(b) ?? near.set(b, new Set()).get(b)!).add(a);
+  };
+  for (const [from, tos] of refOut) for (const to of tos) join(from, to);
+  const absorbed = new Map<string, string[]>(); // card id → absorbed node ids
+  for (const n of aws) {
+    if (keptSet.has(n.id) || fabric.has(n.kind)) continue;
+    const seen = new Set([n.id]);
+    let frontier = [...(near.get(n.id) ?? [])];
+    // Every card at the nearest depth; one serving several equally (a hosted
+    // zone shared by three records) belongs to none of them.
+    const found = new Set<string>();
+    for (let depth = 0; depth < 4 && frontier.length && !found.size; depth++) {
+      const next: string[] = [];
+      for (const id of frontier) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+        if (keptSet.has(id)) {
+          found.add(id);
+          continue;
+        }
+        if (fabric.has(byId.get(id)?.kind ?? "")) continue;
+        for (const r of near.get(id) ?? []) if (!seen.has(r)) next.push(r);
+      }
+      frontier = next;
+    }
+    const owner = found.size === 1 ? [...found][0] : undefined;
+    if (owner) (absorbed.get(owner) ?? absorbed.set(owner, []).get(owner)!).push(n.id);
+  }
+  const kindWords = cardWordsForKind;
+  const withLine = (ids: string[]) => {
+    const counts = new Map<string, number>();
+    for (const id of ids) {
+      const w = kindWords(byId.get(id)!.kind);
+      counts.set(w, (counts.get(w) ?? 0) + 1);
+    }
+    return [...counts]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([w, c]) => (c > 1 ? `${c} ${w}s` : w))
+      .join(", ");
+  };
+
+  // behold#874: a card's security groups, as the traffic they let in.
+  // The declared name: a deployed GroupName is a long generated string.
+  const sgName = (id: string) => id.split("::").pop()!.split("/").pop()!;
+  const ruleWords = (r: Record<string, unknown>) => {
+    const from = typeof r.FromPort === "number" ? r.FromPort : undefined;
+    const to = typeof r.ToPort === "number" ? r.ToPort : undefined;
+    const ports = from === undefined || from === -1 ? "all" : from === to || to === undefined ? String(from) : `${from}-${to}`;
+    const cidr = typeof r.CidrIp === "string" ? r.CidrIp : typeof r.CidrIpv6 === "string" ? r.CidrIpv6 : undefined;
+    const src = firstRef(r.SourceSecurityGroupId);
+    const who = cidr === "0.0.0.0/0" || cidr === "::/0" ? "anyone" : cidr ?? (src ? sgName(src) : "?");
+    return `${ports} from ${who}`;
+  };
+  const inLine = (card: string) => {
+    const rules: string[] = [];
+    for (const sg of sgsOf(card)) {
+      const own = byId.get(sg)!.attrs?.SecurityGroupIngress;
+      for (const r of Array.isArray(own) ? own : own ? [own] : []) rules.push(ruleWords(r as Record<string, unknown>));
+      for (const n of aws) {
+        if (n.kind !== "AWS::EC2::SecurityGroupIngress" || firstRef(n.attrs?.GroupId) !== sg) continue;
+        rules.push(ruleWords((n.attrs ?? {}) as Record<string, unknown>));
+      }
+    }
+    return [...new Set(rules)].join(", ");
+  };
+
+  const cards = headline.map((n) => {
+    const extra: Record<string, string> = {};
+    const w = absorbed.get(n.id);
+    if (w?.length) extra[CARD_WITH] = withLine(w);
+    const i = inLine(n.id);
+    if (i) extra[CARD_IN] = i;
+    return Object.keys(extra).length ? ({ ...n, attrs: { ...(n.attrs ?? {}), ...extra } } as IRNode) : n;
+  });
+  return { ir: { nodes: cards, edges, groups: {} }, byContainer };
 }
+
+/** The card lines the logical zoom adds (behold#873, #874), drawn by src/render.ts. */
+export const CARD_WITH = "_with";
+export const CARD_IN = "_in";
