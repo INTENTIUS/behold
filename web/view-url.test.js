@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine, isEnvName } from "./view-url.js";
+import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine, isEnvName, withOpening, defaultEnv } from "./view-url.js";
 
 describe("readViewQuery (#475)", () => {
   it("reads the view keys and nothing else", () => {
@@ -132,5 +132,28 @@ describe("run (#569)", () => {
     expect(settleView({ run: "pull" }, {}).apply).toEqual({ run: "pull" });
     expect(settleView({ run: "pull-x" }, {}).refused[0].key).toBe("run");
     expect(writeViewQuery("", { run: "none" })).toBe("?run=none");
+  });
+});
+
+describe("an export's opening view (#827)", () => {
+  it("opens on the manifest's env and zoom when the link names neither", () => {
+    expect(withOpening({ env: "frozen", zoom: "composites" }, readViewQuery(""))).toEqual({ env: "frozen", zoom: "composites" });
+  });
+  it("lets the link's own query win, key by key", () => {
+    expect(withOpening({ env: "frozen", zoom: "composites" }, readViewQuery("?zoom=resources"))).toEqual({ env: "frozen", zoom: "resources" });
+    // env= in a link is the source graph, and still wins over the opening env.
+    expect(withOpening({ env: "frozen" }, readViewQuery("?env="))).toEqual({ env: null });
+  });
+  it("is nothing for a bundle that chose no view, or a live serve with no manifest", () => {
+    expect(withOpening(undefined, readViewQuery("?member=dns"))).toEqual({ member: "dns" });
+    expect(withOpening(null, {})).toEqual({});
+    expect(withOpening({ env: 3, zoom: "", node: "x" }, {})).toEqual({});
+  });
+  it("makes the opening env the default a reload falls back to", () => {
+    expect(defaultEnv({ env: "frozen" }, null)).toBe("frozen");
+    expect(defaultEnv(undefined, "prod")).toBe("prod");
+    expect(defaultEnv({ zoom: "composites" }, null)).toBe(null);
+    // the source graph in such a bundle is written env=, so a reload keeps it
+    expect(writeViewQuery("", { zoom: "composites", env: null }, { env: defaultEnv({ env: "frozen" }, null) })).toBe("?zoom=composites&env=");
   });
 });

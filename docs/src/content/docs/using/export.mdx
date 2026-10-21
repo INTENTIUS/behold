@@ -24,6 +24,20 @@ npx behold export ../my-project --env prod --out ./behold-export
 
 Freezes the drift colours as they were when you exported. Useful for an incident write-up, or for showing someone an estate they have no credentials for.
 
+## The view it opens on
+
+A bundle opens on the source graph (`env: (source)`) at the zoom behold would pick for the estate. `--open-env` and `--open-zoom` choose something else:
+
+```sh
+npx behold export ../my-workspace --open-env frozen --open-zoom composites --out ./behold-export
+```
+
+`--open-env` takes one of the environments the export captures, which are the ones the estate declares. `--open-zoom` takes `components`, `logical`, `composites`, `resources` or `attributes`, and `ops` when the estate has emitted Ops. The export refuses any other value before it captures anything, and says which values it would take. The choice is written to the bundle's `manifest.json` as `opening`. A link with its own `?env=` or `?zoom=` still opens where the link points.
+
+## A declared workspace
+
+Exporting a directory that holds a `chant.workspace.json` names the bundle after the workspace, not after its first member. The generated `wrangler.jsonc` names the Worker `behold-<workspace name>` (`behold-three-cloud` for a workspace declared as `three-cloud`), and `manifest.json` carries `workspace` with the declared name and `projectDir` with the workspace root's directory name. `--name` still overrides the Worker name. A single project is named after its directory, as before.
+
 ## What it leaves out
 
 A bundle carries the picture and nothing about the machine that made it: no list of your recent projects, no user name, and every absolute path reduced to its directory's name.

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterAll } from "vitest";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,7 +13,7 @@ vi.mock("./chant.ts", async (importOriginal) => ({
   graphIr: vi.fn(),
 }));
 import { graphIr } from "./chant.ts";
-import { runExport } from "./export.ts";
+import { ExportRefusal, runExport } from "./export.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const fixture = (): GraphIR => JSON.parse(readFileSync(join(HERE, "__fixtures__", "terraform-ir-two-roots.json"), "utf8")) as GraphIR;
@@ -47,5 +47,39 @@ describe("runExport, end to end (#489)", () => {
     const manifest = JSON.parse(readFileSync(join(out, "manifest.json"), "utf8")) as { keyToFile: Record<string, string> };
     const graph = JSON.parse(readFileSync(join(out, manifest.keyToFile["/api/graph?detail=2"]!), "utf8")) as { ir: GraphIR };
     expect(graph.ir.nodes.length).toBeGreaterThan(0);
+  });
+
+  // #827: a single project is still named after its directory, and the view
+  // it opens on rides in the manifest only when the export chose one.
+  it("names a single project's bundle after its directory, and writes the opening view it was given", { timeout: 60_000 }, async () => {
+    vi.mocked(graphIr).mockImplementation((async () => fixture()) as never);
+    const parent = mkdtempSync(join(tmpdir(), "behold-export-src-"));
+    const project = join(parent, "my-estate");
+    mkdirSync(project);
+    const out = join(mkdtempSync(join(tmpdir(), "behold-export-out-")), "bundle");
+    const plain = join(dirname(out), "plain");
+    made.push(parent, dirname(out));
+    const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      await runExport({ projectDir: project, port: 0 }, plain);
+      await runExport({ projectDir: project, port: 0 }, out, { open: { zoom: "composites" } });
+    } finally {
+      write.mockRestore();
+    }
+    const read = (dir: string, f: string) => JSON.parse(readFileSync(join(dir, f), "utf8")) as Record<string, unknown>;
+    expect(read(plain, "wrangler.jsonc").name).toBe("behold-my-estate");
+    expect(read(plain, "manifest.json").projectDir).toBe("my-estate");
+    expect(read(plain, "manifest.json")).not.toHaveProperty("workspace");
+    expect(read(plain, "manifest.json")).not.toHaveProperty("opening");
+    expect(read(out, "manifest.json").opening).toEqual({ zoom: "composites" });
+  });
+
+  it("refuses an opening env the export doesn't capture, before it writes anything", { timeout: 60_000 }, async () => {
+    vi.mocked(graphIr).mockImplementation((async () => fixture()) as never);
+    const project = mkdtempSync(join(tmpdir(), "behold-export-src-"));
+    const out = join(mkdtempSync(join(tmpdir(), "behold-export-out-")), "bundle");
+    made.push(project, dirname(out));
+    await expect(runExport({ projectDir: project, port: 0 }, out, { open: { env: "prod" } })).rejects.toThrow(ExportRefusal);
+    expect(existsSync(out)).toBe(false);
   });
 });

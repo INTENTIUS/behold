@@ -11,7 +11,7 @@ import { startServer, beholdVersion } from "./server.ts";
 import { loadDemoRegistry, missingRequirements, demoTargetDir, loadDemo, type DemoCarve } from "./demos.ts";
 import { resolveChant, runChantRaw } from "./chant.ts";
 import { applyConversion, planConversion } from "./workspace-convert.ts";
-import { publishTarget, runExport } from "./export.ts";
+import { ExportRefusal, OPENING_ZOOMS, publishTarget, runExport } from "./export.ts";
 import { DEFAULT_KEEP, publishSnapshot, resolveCommit, SNAPSHOT_REPORTS_BASE } from "./publish-snapshots.ts";
 import { hasEnvCredentials, S3Object, s3FromEnv } from "./s3-object.ts";
 import { diagnose, formatReport } from "./doctor.ts";
@@ -46,7 +46,7 @@ Usage:
   behold preview [project-dir] [--port <n>] [--emulator]
   behold export [project-dir] [--out <dir>] [--env <name>] [--name <worker>] [--emulator]
                 [--terragucci <src> [--terragucci-project <p>] [--reports-base <rel>]] [--no-source]
-                [--yodel-report <file|dir>]
+                [--yodel-report <file|dir>] [--open-env <env>] [--open-zoom <zoom>]
                 [--publish s3://<bucket>/<prefix>/views/<name> [--commit <sha>] [--keep <n>]]
   behold serve <project-dir…> [--port <n>] [--host <addr>] [--allow-host <name,…>] [--hud <url>] [--env <name>] [--poll <secs>] [--local]
                 [--public] [--terragucci <src> [--terragucci-project <p>] [--terragucci-poll <secs>] [--terragucci-runs <src>]]
@@ -296,7 +296,13 @@ Options:
                       bundle at <prefix>/views/behold/; ../../../ with
                       --publish, whose bundle sits one commit deeper).
   --name <worker>     export only: Cloudflare Worker name in the generated
-                      wrangler.jsonc.
+                      wrangler.jsonc (default behold-<directory>, or
+                      behold-<workspace name> for a declared workspace).
+  --open-env <env>    export only: the environment the bundle opens on, one
+                      it captures (a declared one). Default: the source graph.
+  --open-zoom <zoom>  export only: the zoom the bundle opens on: components,
+                      logical, composites, resources or attributes, or ops
+                      when the estate has emitted Ops.
   -h, --help          This text.
   -v, --version       Print the behold version.
 `;
@@ -1107,9 +1113,13 @@ async function runExportCmd(rest: string[]): Promise<void> {
   let noSource = false;
   let yodelReport: string | undefined;
   let chantReportUrl: string | undefined;
+  let openEnv: string | undefined;
+  let openZoom: string | undefined;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a === "--out") outDir = resolve(rest[++i]);
+    else if (a === "--open-env") openEnv = rest[++i] ?? "";
+    else if (a === "--open-zoom") openZoom = rest[++i] ?? "";
     else if (a === "--yodel-report") yodelReport = rest[++i];
     else if (a === "--env") env = rest[++i];
     else if (a === "--name") name = rest[++i];
@@ -1126,6 +1136,16 @@ async function runExportCmd(rest: string[]): Promise<void> {
   }
   if (yodelReport !== undefined && !yodelReport) {
     process.stderr.write("behold export: --yodel-report needs the file `yodel report --json` wrote, or the directory holding it\n");
+    process.exit(2);
+  }
+  // #827: the zoom is checked here, before the project is read; the env needs
+  // the project's environments, so runExport checks it before it captures.
+  if (openEnv !== undefined && !openEnv) {
+    process.stderr.write("behold export: --open-env needs an environment the export captures\n");
+    process.exit(2);
+  }
+  if (openZoom !== undefined && !([...OPENING_ZOOMS, "ops"] as string[]).includes(openZoom)) {
+    process.stderr.write(`behold export: --open-zoom ${openZoom || "(nothing)"} isn't a zoom an export opens on: it takes ${[...OPENING_ZOOMS, "ops"].join(", ")}\n`);
     process.exit(2);
   }
   if ((terragucciProject || reportsBase !== undefined) && !terragucci) {
@@ -1175,6 +1195,7 @@ async function runExportCmd(rest: string[]): Promise<void> {
   // The same reading of the directory `serve` would make, so an export of a
   // declared workspace or a Terraform estate captures what serve draws.
   const target = await serveTarget([projectDir], "export");
+  const open = { ...(openEnv !== undefined ? { env: openEnv } : {}), ...(openZoom !== undefined ? { zoom: openZoom } : {}) };
   await runExport(
     {
       ...target,
@@ -1188,8 +1209,13 @@ async function runExportCmd(rest: string[]): Promise<void> {
       ...(name ? { name } : {}),
       ...(noSource ? { noSource } : {}),
       ...(reportsBase !== undefined ? { reportsBase } : destination ? { reportsBase: SNAPSHOT_REPORTS_BASE } : {}),
+      ...(Object.keys(open).length ? { open } : {}),
     },
-  );
+  ).catch((e: unknown) => {
+    if (!(e instanceof ExportRefusal)) throw e;
+    process.stderr.write(`behold export: ${e.message}\n`);
+    process.exit(2);
+  });
   if (destination && !("error" in destination) && commit && !("error" in commit)) {
     const done = await publishSnapshot(outDir, destination, commit, new S3Object(s3FromEnv(destination.bucket)), { keep });
     process.stdout.write(
