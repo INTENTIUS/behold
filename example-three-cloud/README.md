@@ -35,4 +35,4 @@ npx serve export
 
 `cd dns && npx chant run front-door` runs the same steps as an Op.
 
-Needs chant 0.124.35 or newer.
+Needs chant 0.124.36 or newer.

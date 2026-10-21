@@ -47,7 +47,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.0.5",
-    "@intentius/chant": "^0.124.35",
+    "@intentius/chant": "^0.124.36",
     "@intentius/chant-k8s-client": "^0.124.24",
     "@intentius/pinhole": "^0.5.0",
     "ajv": "^8.20.0",

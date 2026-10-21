@@ -17,11 +17,10 @@ import {
 // Balancer as production sets it up: a
 // static address and a forwarding rule, an HTTP proxy, a URL map, a backend
 // service, and a serverless network endpoint group that names the service.
-// The load balancer kinds apply with chant 0.124.35 or newer (chant#4233).
 //
-// Each reference is Config Connector's `{ name }`, spelled out: chant writes
-// an attribute reference's `.name` as the logical id rather than the
-// resource's metadata.name (reported to chant).
+// Each reference is Config Connector's `{ name }`, spelled out: chant 0.124.36
+// writes a `.name` reference correctly but its live read can't resolve one
+// (reported to chant), and behold joins these by name.
 const region = "asia-northeast1";
 
 export const runtime = new GCPServiceAccount({
@@ -30,9 +29,7 @@ export const runtime = new GCPServiceAccount({
 });
 
 // The network Cloud Run sends its egress into (Direct VPC egress), a custom
-// VPC with one subnet in the service's region. Chant applies these kinds from
-// INTENTIUS/chant#4248 and #4249; an older chant skips them, and the service
-// still runs.
+// VPC with one subnet in the service's region.
 export const vpc = new VPCNetwork({ metadata: { name: "three-cloud-vpc" }, autoCreateSubnetworks: false, routingMode: "REGIONAL" });
 
 export const subnet = new Subnetwork({
