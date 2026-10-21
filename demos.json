@@ -130,6 +130,21 @@
       }
     },
     {
+      "name": "three-cloud",
+      "description": "A website in three clouds behind Route 53: ECS on Fargate, Azure Container Apps and Cloud Run, each answering through a latency record guarded by a health check, as one chant workspace on the floci, floci-az and floci-gcp emulators. Turn Azure off and its record drops out of rotation; dns/ops/front-door.op.ts (or npm run front-door) applies it all, does that, and exports the page. Pulls three emulator images on first run.",
+      "source": "bundled",
+      "dir": "example-three-cloud",
+      "requires": [
+        "docker",
+        "curl"
+      ],
+      "setup": "bash scripts/emulators-up.sh",
+      "serve": {
+        "local": true,
+        "env": "local"
+      }
+    },
+    {
       "name": "fountain",
       "description": "The mature estate: self-hosted fountain (a real app) on a throwaway k3d cluster — tiers (try the ha tier picker), seams, drift, runtime Pods. Clones INTENTIUS/fountain-ops; ~5 minutes, mostly image pulls. `just down` in the clone removes the cluster.",
       "source": "git",

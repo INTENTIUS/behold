@@ -49,6 +49,18 @@ describe("the bundled estates' workspace declarations", () => {
     }
   });
 
+  // #824: four chant members, and each cloud publishes the output dns reads
+  // by the same name, which is the join the cross-member edge is drawn on.
+  it("example-three-cloud declares dns and three clouds, each cloud's output named like a dns parameter", () => {
+    expect(declaration("example-three-cloud").members).toEqual(["dns", "aws", "azure", "gcp"].map((n) => ({ name: n, dir: n, kind: "chant" })));
+    const dns = readFileSync(join(REPO, "example-three-cloud", "dns", "src", "route53.ts"), "utf8");
+    for (const cloud of ["aws", "azure", "gcp"]) {
+      const site = readFileSync(join(REPO, "example-three-cloud", cloud, "src", "site.ts"), "utf8");
+      expect(site, cloud).toContain(`"${cloud}Endpoint")`);
+      expect(dns, cloud).toContain(`export const ${cloud}Endpoint = new Parameter(`);
+    }
+  });
+
   const installed = installedVersion(TERRAFORM_LEXICON, REPO);
   it.skipIf(!installed && !REQUIRE_PEERS)("pins the terraform lexicon at the version installed beside behold", () => {
     for (const example of ["example-terraform-estate", "example-choudoufu-estate"]) {

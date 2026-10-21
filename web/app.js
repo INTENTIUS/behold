@@ -121,6 +121,7 @@ import { ehStore, ehStored } from "./event-help-store.js";
 // which commit, approved by whom — and, when the ledger's run id cannot be
 // followed, the reason in words rather than a guessed link.
 import { releaseRows } from "./release.js";
+import { renderExportNote } from "./export-note.js";
 import { danglingFor, danglingRows, danglingHeading, DANGLING_EXPLAINED } from "./dangling.js";
 import { comparisonRow, comparisonSummary } from "./cross-env.js";
 // The marker-vs-derived mark on a choudoufu card: how its identity was found.
@@ -376,6 +377,9 @@ if (staticMode) {
   } catch {
     /* no manifest → apiFetch falls back to a not-captured error */
   }
+  // #824: the line `behold export --note` put at the page's foot.
+  const noteEl = document.getElementById("export-note");
+  if (noteEl) renderExportNote(noteEl, document, manifest);
 }
 
 /** Canonical key for a read URL — path + the lens params (whitelisted, sorted)

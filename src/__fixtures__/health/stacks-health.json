@@ -1,0 +1,1 @@
+{"schema":"chant-health/v1","chantVersion":"0.124.33","environment":"local","observedAt":"2026-10-21T05:36:15.480Z","stacks":{"three-cloud-aws":{"aws":{"entities":{},"unobserved":{},"absent":["webService"]}}},"summary":{"healthy":0,"unhealthy":0,"unknown":0,"unobserved":0,"absent":1}}

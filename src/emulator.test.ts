@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { parseEmulators, mergedEnv, dockerHint, emulatorUp, emulatorDown } from "./emulator.ts";
+import { parseEmulators, mergedEnv, dockerHint, emulatorUp, emulatorDown, emulatorDirs, emulatorsUp } from "./emulator.ts";
+import { join } from "node:path";
 import { runChantRaw } from "./chant.ts";
 
 vi.mock("./chant.ts", () => ({ runChantRaw: vi.fn() }));
@@ -84,5 +85,29 @@ describe("emulatorUp / emulatorDown", () => {
     vi.mocked(runChantRaw).mockResolvedValue({ code: 0, stdout: "", stderr: "" });
     await emulatorDown("/proj");
     expect(runChantRaw).toHaveBeenCalledWith(["emulator", "down"], "/proj");
+  });
+});
+
+// #824: `--local` on a workspace boots every chant member's emulators.
+describe("emulators for a workspace", () => {
+  const EXAMPLE = join(import.meta.dirname, "..", "example-three-cloud");
+  const AZ = { lexicon: "azure", name: "chant-floci-az", endpoint: "http://localhost:4577", env: { AZURE_ENDPOINT_URL: "http://localhost:4577" } };
+
+  it("reads a chant project as itself, and a workspace as its chant members", () => {
+    expect(emulatorDirs("/proj")).toEqual(["/proj"]);
+    expect(emulatorDirs(EXAMPLE)).toEqual(["dns", "aws", "azure", "gcp"].map((m) => join(EXAMPLE, m)));
+    const ws = { members: [{ kind: "chant", abs: "/w/a" }, { kind: "terraform", abs: "/w/t" }, { kind: "chant", abs: "/w/b" }] };
+    expect(emulatorDirs("/w", ws)).toEqual(["/w/a", "/w/b"]);
+    expect(emulatorDirs("/w", { members: [] })).toEqual(["/w"]);
+  });
+
+  it("boots each member's emulators once, two members on one lexicon sharing theirs", async () => {
+    vi.mocked(runChantRaw).mockReset();
+    vi.mocked(runChantRaw)
+      .mockResolvedValueOnce({ code: 0, stdout: JSON.stringify({ emulators: [FLOCI] }), stderr: "" })
+      .mockResolvedValueOnce({ code: 0, stdout: JSON.stringify({ emulators: [FLOCI] }), stderr: "" })
+      .mockResolvedValueOnce({ code: 0, stdout: JSON.stringify({ emulators: [AZ] }), stderr: "" });
+    expect(await emulatorsUp(["/w/dns", "/w/aws", "/w/azure"])).toEqual([FLOCI, AZ]);
+    expect(vi.mocked(runChantRaw).mock.calls.map((c) => c[1])).toEqual(["/w/dns", "/w/aws", "/w/azure"]);
   });
 });

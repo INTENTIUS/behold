@@ -77,6 +77,22 @@ describe("demos.json — the committed catalog (#209)", () => {
     }
   });
 
+  // #824: the front door. Its setup boots the three emulators under chant's
+  // own names, so `--local` finds and reuses them for every member.
+  it("the three-cloud entry boots three emulators and serves the workspace on them", () => {
+    const t = registry.find((e) => e.name === "three-cloud");
+    expect(t, "no three-cloud entry in demos.json").toBeTruthy();
+    expect(t!.requires).toEqual(["docker", "curl"]);
+    expect(t!.setup).toBe("bash scripts/emulators-up.sh");
+    expect(t!.serve).toEqual({ local: true, env: "local" });
+    const dir = join(REPO, t!.dir!);
+    for (const f of ["chant.workspace.json", "scripts/emulators-up.sh", "scripts/front-door.ts", "dns/ops/front-door.op.ts", "dns/src/route53.ts", "aws/src/site.ts", "azure/src/site.ts", "gcp/src/site.ts"]) {
+      expect(existsSync(join(dir, f)), f).toBe(true);
+    }
+    const up = readFileSync(join(dir, "scripts/emulators-up.sh"), "utf8");
+    for (const name of ["chant-floci", "chant-floci-az", "chant-floci-gcp"]) expect(up).toContain(`:-${name}}`);
+  });
+
   it("the carve entry names four real paths inside the bundled estate", () => {
     const carve = registry.find((e) => e.name === "carve");
     expect(carve, "no carve entry in demos.json").toBeTruthy();
