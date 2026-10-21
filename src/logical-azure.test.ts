@@ -204,6 +204,28 @@ describe("projectAzureLogical (#102)", () => {
     expect(parentOf(out.byContainer, "src")).toBe("subnet 10.40.0.0/23");
   });
 
+  it("reads the subnet from concat(resourceId(vnet), '/subnets/<name>') too", () => {
+    const out = projectAzureLogical(
+      {
+        nodes: [
+          n("vnet", "Microsoft.Network/virtualNetworks", "src/site.ts", {
+            name: "vnet",
+            addressSpace: { addressPrefixes: ["10.40.0.0/16"] },
+            subnets: [{ name: "apps", properties: { addressPrefix: "10.40.0.0/23" } }],
+          }),
+          n("env", "Microsoft.App/managedEnvironments", "src/site.ts", {
+            name: "env",
+            vnetConfiguration: { infrastructureSubnetId: "[concat(resourceId('Microsoft.Network/virtualNetworks', 'vnet'), '/subnets/apps')]" },
+          }),
+        ],
+        edges: [],
+        groups: {},
+      } as unknown as GraphIR,
+      "prod",
+    );
+    expect(parentOf(out.byContainer, "src")).toBe("subnet 10.40.0.0/23");
+  });
+
   it("leaves a non-azure graph alone", () => {
     const aws = { nodes: [{ id: "vpc", kind: "AWS::EC2::VPC", lexicon: "aws", attrs: {} }], edges: [], groups: {} } as unknown as GraphIR;
     const out = projectAzureLogical(aws, "prod");

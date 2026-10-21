@@ -24,7 +24,10 @@ export const identity = new ManagedIdentity({ name: "three-cloud-web", location 
 export const env = new managedEnvironments({
   name: "three-cloud",
   location,
-  vnetConfiguration: { infrastructureSubnetId: "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'three-cloud-vnet', 'apps')]", internal: false },
+  // concat() rather than resourceId('.../virtualNetworks/subnets', vnet, subnet):
+  // chant 0.124.34's apply evaluates the latter to the wrong path (fixed by
+  // INTENTIUS/chant#4234, not yet released).
+  vnetConfiguration: { infrastructureSubnetId: "[concat(resourceId('Microsoft.Network/virtualNetworks', 'three-cloud-vnet'), '/subnets/apps')]", internal: false },
   appLogsConfiguration: {
     destination: "log-analytics",
     logAnalyticsConfiguration: {
