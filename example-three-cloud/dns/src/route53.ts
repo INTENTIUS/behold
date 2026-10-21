@@ -1,4 +1,5 @@
-import { HostedZone, HealthCheck, RecordSet, Parameter } from "@intentius/chant-lexicon-aws";
+import { HostedZone, Parameter } from "@intentius/chant-lexicon-aws";
+import { AddressEntry, HostnameEntry } from "../composites/latency-entry";
 
 // Route 53 in front of the three clouds: one latency record per cloud, each
 // guarded by a health check on that cloud's endpoint. A record whose check
@@ -22,41 +23,10 @@ export const awsEndpoint = new Parameter("String", { description: "The aws membe
 export const azureEndpoint = new Parameter("String", { description: "The azure member's Container App hostname" });
 export const gcpEndpoint = new Parameter("String", { description: "The gcp member's load balancer IP address" });
 
-function healthCheck(endpoint: Parameter) {
-  return new HealthCheck({
-    HealthCheckConfig: {
-      Type: "HTTP",
-      FullyQualifiedDomainName: endpoint,
-      ResourcePath: "/",
-      RequestInterval: 10,
-      FailureThreshold: 1,
-    },
-  });
-}
-
-function latencyRecord(id: string, region: string, endpoint: Parameter | string, check: HealthCheck) {
-  return new RecordSet({
-    HostedZoneId: zone.Id,
-    Name: NAME,
-    Type: "CNAME",
-    TTL: "60",
-    SetIdentifier: id,
-    Region: region,
-    ResourceRecords: [endpoint as unknown as string],
-    HealthCheckId: check.HealthCheckId,
-  });
-}
-
-export const awsCheck = healthCheck(awsEndpoint);
-export const azureCheck = healthCheck(azureEndpoint);
-// The check on GCP probes the load balancer's address directly.
-export const gcpCheck = new HealthCheck({
-  HealthCheckConfig: { Type: "HTTP", IPAddress: gcpEndpoint, Port: 80, ResourcePath: "/", RequestInterval: 10, FailureThreshold: 1 },
-});
-
-const GCP_ORIGIN = "gcp.three-cloud.example.";
-export const gcpOrigin = new RecordSet({ HostedZoneId: zone.Id, Name: GCP_ORIGIN, Type: "A", TTL: "60", ResourceRecords: [gcpEndpoint as unknown as string] });
-
-export const awsRecord = latencyRecord("aws", "us-east-1", awsEndpoint, awsCheck);
-export const azureRecord = latencyRecord("azure", "eu-west-1", azureEndpoint, azureCheck);
-export const gcpRecord = latencyRecord("gcp", "ap-northeast-1", GCP_ORIGIN, gcpCheck);
+// One entry per cloud, from this project's own composites
+// (../composites/latency-entry.ts). Azure (West Europe) answers as eu-west-1
+// and GCP (Tokyo) as ap-northeast-1, since latency records name AWS regions.
+const endpoint = (p: Parameter) => p as unknown as string;
+export const aws = HostnameEntry({ zoneId: zone.Id, name: NAME, id: "aws", region: "us-east-1", endpoint: endpoint(awsEndpoint) });
+export const azure = HostnameEntry({ zoneId: zone.Id, name: NAME, id: "azure", region: "eu-west-1", endpoint: endpoint(azureEndpoint) });
+export const gcp = AddressEntry({ zoneId: zone.Id, name: NAME, id: "gcp", region: "ap-northeast-1", endpoint: endpoint(gcpEndpoint), origin: "gcp.three-cloud.example.", port: 80 });
