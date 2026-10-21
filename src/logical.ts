@@ -690,6 +690,38 @@ export function projectLogical(ir: GraphIR): LogicalProjection {
   }
   const subnetScope = (id: string): string => (publicSubnets.has(id) || /public/i.test(id) ? "public" : /private/i.test(id) ? "private" : "subnet");
 
+  // behold#875: where a subnet's outbound traffic goes, said on its box. A route
+  // table sends it to the internet through a gateway, or out through a NAT; a
+  // subnet whose table has neither has no way out. A subnet with no table we
+  // can see says nothing, since the VPC's main table is not in the source.
+  const natIds = new Set(aws.filter((n) => n.kind === "AWS::EC2::NatGateway").map((n) => n.id));
+  const tableEgress = new Map<string, Set<string>>();
+  const egressTable = (rt: string) => tableEgress.get(rt) ?? tableEgress.set(rt, new Set()).get(rt)!;
+  for (const n of aws) {
+    if (n.kind !== "AWS::EC2::Route") continue;
+    const refs = [...(refOut.get(n.id) ?? new Set<string>())];
+    const rt = refs.find((r) => byId.get(r)?.kind === "AWS::EC2::RouteTable");
+    if (!rt) continue;
+    if (refs.some((r) => igwIds.has(r))) egressTable(rt).add("internet");
+    else if (refs.some((r) => natIds.has(r))) egressTable(rt).add("NAT");
+  }
+  for (const n of aws) if (n.kind === "AWS::EC2::RouteTable") egressTable(n.id);
+  const subnetEgress = new Map<string, string>();
+  for (const n of aws) {
+    if (n.kind !== "AWS::EC2::SubnetRouteTableAssociation") continue;
+    const refs = [...(refOut.get(n.id) ?? new Set<string>())];
+    const subnet = refs.find((r) => subnetIds.has(r));
+    const rt = refs.find((r) => byId.get(r)?.kind === "AWS::EC2::RouteTable");
+    if (!subnet || !rt) continue;
+    const out = tableEgress.get(rt) ?? new Set();
+    subnetEgress.set(subnet, out.has("internet") ? "out to the internet" : out.has("NAT") ? "out via NAT" : "no way out");
+  }
+  /** The egress words a set of subnets share, or nothing when they differ or are unknown. */
+  const egressOf = (ids: string[]): string | undefined => {
+    const words = new Set(ids.map((id) => subnetEgress.get(id)));
+    return words.size === 1 ? [...words][0] : undefined;
+  };
+
   // Region from an ARN somewhere in the estate — undefined in a pure source
   // graph (ids are all `$ref`s), resolved in the live overlay. Prefixed onto the
   // VPC box title only when known, so source reads "VPC 10.0.0.0/16" not the
@@ -702,7 +734,17 @@ export function projectLogical(ir: GraphIR): LogicalProjection {
     const region = regionForVpc(vpcId);
     return `${region ? region + " · " : ""}VPC ${strAttr(byId.get(vpcId)!, "CidrBlock") ?? vpcId}`;
   };
-  const subnetTitle = (subnetId: string) => `${subnetScope(subnetId)} subnet ${strAttr(byId.get(subnetId)!, "CidrBlock") ?? subnetId}`;
+  const withEgress = (title: string, ids: string[]) => {
+    const out = egressOf(ids);
+    return out ? `${title} · ${out}` : title;
+  };
+  // An unclassified subnet's scope word is "subnet" itself; don't say it twice.
+  const scopeWords = (id: string, plural: boolean) => {
+    const scope = subnetScope(id);
+    const noun = plural ? "subnets" : "subnet";
+    return scope === "subnet" ? noun : `${scope} ${noun}`;
+  };
+  const subnetTitle = (subnetId: string) => withEgress(`${scopeWords(subnetId, false)} ${strAttr(byId.get(subnetId)!, "CidrBlock") ?? subnetId}`, [subnetId]);
   const GLOBAL = "regional & global";
 
   // Placement per headline node: its subnet (if resolvable), else its VPC, else
@@ -763,7 +805,7 @@ export function projectLogical(ir: GraphIR): LogicalProjection {
   const tierOf = (id: string) => [...subnetIds].filter((s) => subnetVpc.get(s) === subnetVpc.get(id) && subnetScope(s) === subnetScope(id)).sort();
   const tierTitle = (ids: string[]) => {
     const tier = tierOf(ids[0]);
-    return tier.length === 1 ? subnetTitle(tier[0]) : `${subnetScope(tier[0])} subnets ${tier.map((id) => strAttr(byId.get(id)!, "CidrBlock") ?? id).join(", ")}`;
+    return tier.length === 1 ? subnetTitle(tier[0]) : withEgress(`${scopeWords(tier[0], true)} ${tier.map((id) => strAttr(byId.get(id)!, "CidrBlock") ?? id).join(", ")}`, tier);
   };
   const ensureSubnet = (ids: string[], vpcId?: string) => {
     const t = tierTitle(ids);
