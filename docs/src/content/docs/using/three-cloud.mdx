@@ -20,7 +20,7 @@ The estate is a chant workspace of four members, drawn as four boxes:
 | member | what it declares |
 |---|---|
 | `dns` | the hosted zone, three health checks, three latency CNAMEs, and an A record naming the GCP load balancer |
-| `aws` | the `FargateAlb` composite: the service, its task, the load balancer |
+| `aws` | a VPC (`VpcDefault`: public and private subnets in two zones, internet and NAT gateways) and the `FargateAlb` composite: the service, its task, the load balancer |
 | `azure` | a Log Analytics workspace, a VNet with a subnet for the Container Apps environment, the environment, a user-assigned identity, and the app with external ingress |
 | `gcp` | the Cloud Run service (public, running as its own service account) behind a global external Application Load Balancer: address, forwarding rule, HTTP proxy, URL map, backend service, serverless NEG |
 
