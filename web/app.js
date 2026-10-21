@@ -42,6 +42,7 @@ import { auditLines as yrAuditLines, cornerText as yrCorner, datedWords as yrDat
 import { cardProgress as tgCardProgress, progressLines as tgProgressLines, progressSection as tgProgressSection, stampProgress as tgStampProgress } from "./terragucci-progress.js";
 import { seconds, whyQuery, whyView } from "./why.js";
 import { edgeKey, edgeLabel, edgeLegend, edgeTitle, isCiKind, viaIndex } from "./edge-kind.js";
+import { edgeWeights, weightLegend } from "./edge-weight.js";
 import { readCostLine } from "./read-cost.js";
 import { mountHistoryPicker } from "./history-picker.js";
 import { applyMemberFrame, createMemberFrames, pendingLine, stillPending } from "./pending.js";
@@ -502,6 +503,28 @@ function renderGraphLegend() {
     bar.className = "gl-bar";
     bar.style.background = DRIFT_STATUS_VAR[k];
     line(bar, label, String(counts[k]));
+  }
+  const weights = weightLegend(lastEdgeWeights);
+  if (weights.length) {
+    const es = document.createElement("div");
+    es.className = "gl-sub";
+    es.textContent = "edges";
+    el.appendChild(es);
+    for (const r of weights) {
+      const sw = document.createElementNS(SVGNS, "svg");
+      sw.setAttribute("class", "edge-swatch gl-edge");
+      sw.setAttribute("viewBox", "0 0 22 10");
+      sw.setAttribute("width", "22");
+      sw.setAttribute("height", "10");
+      const g = document.createElementNS(SVGNS, "g");
+      g.setAttribute("data-edge-weight", r.weight);
+      const stroke = document.createElementNS(SVGNS, "path");
+      stroke.setAttribute("class", "pin-edge-line");
+      stroke.setAttribute("d", "M 1 5 L 21 5");
+      g.appendChild(stroke);
+      sw.appendChild(g);
+      line(sw, r.title, String(r.count));
+    }
   }
   const health = hmLegendRows(hmAnswer);
   if (health.length) {
@@ -3339,7 +3362,7 @@ function renderPanelModel() {
 // `#graph`), so the legend changes with the theme. Nothing on a graph that
 // holds only references.
 function renderEdgeLegend(host, ir) {
-  const rows = edgeLegend(ir.edges || []);
+  const rows = [...edgeLegend(ir.edges || []), ...weightLegend(lastEdgeWeights)];
   if (!rows.length) return;
   host.appendChild(panelHeading("edges"));
   for (const r of rows) {
@@ -3354,6 +3377,7 @@ function renderEdgeLegend(host, ir) {
     const g = document.createElementNS(SVGNS, "g");
     if (r.kind) g.setAttribute("data-edge-kind", r.kind);
     if (r.cross) g.setAttribute("data-edge-cross", "true");
+    if (r.weight) g.setAttribute("data-edge-weight", r.weight);
     const line = document.createElementNS(SVGNS, "path");
     line.setAttribute("class", "pin-edge-line");
     line.setAttribute("d", "M 1 5 L 27 5");
@@ -8074,6 +8098,7 @@ function relabelEdgeChip(chip, kind, via) {
 // for a CI edge (#553), its `kind` and `crossPipeline` (web/edge-kind.js says
 // them in words). Shown as a native SVG <title> tooltip on hover; the stamped
 // attributes also drive the dashed and per-kind styles (index.html).
+let lastEdgeWeights = new Map();
 function wireEdgeHighlight(svgEl, ir) {
   const edges = [...svgEl.querySelectorAll("g[data-edge-from]")];
   if (!edges.length) return;
@@ -8081,6 +8106,12 @@ function wireEdgeHighlight(svgEl, ir) {
   // two kinds on one pair keep their own reason. pinhole stamps data-edge-via
   // itself; this fills it in where it did not.
   const viaOf = viaIndex(ir.edges || []);
+  // #878: each reference weighed by how it was found (web/edge-weight.js).
+  lastEdgeWeights = edgeWeights(ir.edges || [], new Map((ir.nodes || []).map((n) => [n.id, n.kind])));
+  for (const g of edges) {
+    const w = lastEdgeWeights.get(`${g.getAttribute("data-edge-from")}→${g.getAttribute("data-edge-to")}`);
+    if (w) g.setAttribute("data-edge-weight", w);
+  }
   for (const g of edges) {
     const from = g.getAttribute("data-edge-from");
     const to = g.getAttribute("data-edge-to");
