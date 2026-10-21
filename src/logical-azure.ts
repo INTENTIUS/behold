@@ -261,7 +261,9 @@ export function projectAzureLogical(ir: GraphIR, env?: string): LogicalProjectio
   // as the AWS lens's account box holds its VPCs (behold#824). Its id comes
   // from a resource id in the live overlay.
   const subscription = azure.map((n) => JSON.stringify(n).match(/\/subscriptions\/([0-9a-f-]{36})\//i)?.[1]).find(Boolean);
-  const SUBSCRIPTION_TITLE = subscription ? `Azure subscription ${subscription}` : "Azure subscription";
+  // The GUID's first block, as the portal's breadcrumbs shorten it: the whole
+  // id is wider than the box that has to hold it.
+  const SUBSCRIPTION_TITLE = subscription ? `Azure subscription ${subscription.split("-")[0]}…` : "Azure subscription";
   const vnetTitle = (v: IRNode) => `VNet ${vnetCidr(v) ?? resourceName(v) ?? v.id}`;
   const subnetTitle = (s: IRNode) => `subnet ${strAttr(s, "addressPrefix") ?? subnetShortName(s) ?? s.id}`;
 
