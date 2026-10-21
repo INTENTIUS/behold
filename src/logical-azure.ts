@@ -175,6 +175,8 @@ function subnetShortName(node: IRNode): string | undefined {
   return name?.includes("/") ? name.split("/").slice(1).join("/") : name;
 }
 
+const CONCAT_SUBNET_RE = /resourceId\(\s*'Microsoft\.Network\/virtualNetworks'\s*,\s*'([^']+)'\s*\)\s*,\s*'\/subnets\/([^']+)'/gi;
+
 /** `resourceId('Microsoft.Network/virtualNetworks/subnets', 'vnet', 'apps')`
  * anywhere under `value`, as `vnet/apps`. ARM names a subnet declared inside
  * its VNet's `subnets` array this way, since it has no resource of its own to
@@ -185,6 +187,9 @@ export function subnetRefs(value: unknown, out: Set<string> = new Set()): Set<st
       const args = [...call[1].matchAll(QUOTED_RE)].map((m) => m[1]);
       if (args.length === 3 && /^Microsoft\.Network\/virtualNetworks[/_]subnets$/i.test(args[0])) out.add(`${args[1]}/${args[2]}`);
     }
+    // concat(resourceId('Microsoft.Network/virtualNetworks', vnet), '/subnets/<subnet>'),
+    // the same id spelled the other way ARM templates write it.
+    for (const m of value.matchAll(CONCAT_SUBNET_RE)) out.add(`${m[1]}/${m[2]}`);
   } else if (value && typeof value === "object") {
     for (const v of Object.values(value as Record<string, unknown>)) subnetRefs(v, out);
   }
