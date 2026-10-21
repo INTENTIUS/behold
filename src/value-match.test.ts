@@ -239,3 +239,20 @@ describe("addValueMatchEdges over nested attrs (#166)", () => {
     ]);
   });
 });
+
+describe("addValueMatchEdges across clouds", () => {
+  // The three-cloud demo names its GCP project and its Azure Container Apps
+  // environment both `three-cloud`. A Cloud Run service's projectRef is not a
+  // reference to an Azure resource, however equal the strings are.
+  it("does not join a name in one cloud to a resource in another", () => {
+    const ir = {
+      nodes: [
+        { id: "azure/env", kind: "Microsoft.App/managedEnvironments", attrs: { name: "three-cloud" } },
+        { id: "gcp/webService", kind: "GCP::Run::Service", attrs: { spec: { projectRef: { external: "three-cloud" } } } },
+      ],
+      edges: [],
+      groups: {},
+    } as unknown as GraphIR;
+    expect(addValueMatchEdges(ir).edges).toEqual([]);
+  });
+});

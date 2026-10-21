@@ -114,6 +114,19 @@ const SKIP_KEYS = new Set([
   "finalizers",
 ]);
 
+/** The cloud a kind belongs to, for the three whose kinds say so. A resource
+ * in one cloud cannot name a resource in another by its literal name: a GCP
+ * project id that happens to equal an Azure environment's name (the
+ * three-cloud demo names both `three-cloud`) is coincidence, not wiring. A
+ * kind outside the three (Kubernetes, a Terraform block) can still name a
+ * cloud resource, as a Deployment names a bucket (#166). */
+function cloudOf(kind: string): string | undefined {
+  if (kind.startsWith("AWS::")) return "aws";
+  if (kind.startsWith("Microsoft.")) return "azure";
+  if (kind.startsWith("GCP::")) return "gcp";
+  return undefined;
+}
+
 /** Is this string one a bare equality may be read as a reference? Applied to
  * both halves, so an owner whose name is a paragraph is not indexed either. A
  * name has no whitespace: anything that does is prose, a command line or a
@@ -186,12 +199,16 @@ export function addValueMatchEdges(ir: GraphIR): GraphIR {
   // 3. Scan every node's string attr values — at any depth (#166) — for a match
   //    to some other node's own name → inferred edge (consumer → named
   //    resource). One edge per pair: the first path that matched names it.
+  const kindOf = new Map(nodes.map((n) => [n.id, n.kind]));
   const added = new Set<string>();
   for (const a of nodes) {
+    const from = cloudOf(a.kind);
     for (const { path, value } of stringLeaves(a.attrs)) {
       if (!joinable(value)) continue;
       const b = owner.get(value);
       if (!b || b === a.id) continue; // unknown, ambiguous, or self
+      const to = cloudOf(kindOf.get(b) ?? "");
+      if (from && to && from !== to) continue; // two clouds: coincidence
       const key = `${a.id}\0${b}`;
       if (declared.has(key) || added.has(key)) continue;
       added.add(key);

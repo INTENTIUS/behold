@@ -562,3 +562,45 @@ describe("projectTopology — cross-lens edges (#321, #166)", () => {
     expect(projectTopology(awsOnly, "local").ir.edges).toEqual([]);
   });
 });
+
+// behold#824: Route 53 in front of three clouds. Each record names its endpoint
+// through a Parameter that imports another member's output, so the record and
+// the Azure or GCP card it fronts are joined only through a node no lens draws,
+// and the three records share one hosted zone.
+describe("projectTopology — a DNS member fronting other clouds (#824)", () => {
+  function frontDoor(): GraphIR {
+    const n = (id: string, kind: string, lexicon: string, attrs: Record<string, unknown> = {}) => ({ id, kind, lexicon, attrs, sourceLoc: { file: `src/${id.split("/")[0]}.ts` } });
+    const nodes = [
+      n("dns/zone", "AWS::Route53::HostedZone", "aws", { Name: "three-cloud.test" }),
+      n("azure/env", "Microsoft.App/managedEnvironments", "azure", { name: "three-cloud", location: "eastus" }),
+      n("azure/app", "Microsoft.App/containerApps", "azure", { name: "web", location: "eastus" }),
+      n("gcp/webService", "GCP::Run::Service", "gcp", { metadata: { name: "web" }, spec: { location: "us-central1" } }),
+    ];
+    const edges: { from: string; to: string; kind: string; viaAttr?: string }[] = [{ from: "azure/app", to: "azure/env", kind: "ref" }];
+    for (const cloud of ["azure", "gcp"]) {
+      nodes.push(
+        n(`dns/${cloud}Endpoint`, "AWS::CloudFormation::Parameter", "aws"),
+        n(`dns/${cloud}Check`, "AWS::Route53::HealthCheck", "aws"),
+        n(`dns/${cloud}Record`, "AWS::Route53::RecordSet", "aws", { SetIdentifier: cloud }),
+      );
+      edges.push(
+        { from: `dns/${cloud}Endpoint`, to: cloud === "azure" ? "azure/app" : "gcp/webService", kind: "ref", viaAttr: "import" },
+        { from: `dns/${cloud}Check`, to: `dns/${cloud}Endpoint`, kind: "ref", viaAttr: "HealthCheckConfig" },
+        { from: `dns/${cloud}Record`, to: `dns/${cloud}Check`, kind: "ref", viaAttr: "HealthCheckId" },
+        { from: `dns/${cloud}Record`, to: `dns/${cloud}Endpoint`, kind: "ref", viaAttr: "ResourceRecords" },
+        { from: `dns/${cloud}Record`, to: "dns/zone", kind: "ref", viaAttr: "HostedZoneId" },
+      );
+    }
+    return { nodes, edges, groups: {} } as unknown as GraphIR;
+  }
+
+  it("joins each record to the card its endpoint imports, and not the records to each other", () => {
+    const { ir: out } = projectTopology(frontDoor(), "local");
+    const pairs = out.edges.map((e) => `${e.from}→${e.to}`);
+    expect(pairs).toContain("dns/azureRecord→azure/app");
+    expect(pairs).toContain("dns/gcpRecord→gcp/webService");
+    expect(pairs).not.toContain("dns/azureRecord→dns/gcpRecord");
+    expect(pairs).not.toContain("dns/gcpRecord→dns/azureRecord");
+    expect(pairs).not.toContain("dns/azureRecord→gcp/webService");
+  });
+});
