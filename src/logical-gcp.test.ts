@@ -63,6 +63,27 @@ describe("projectGcpLogical (#101)", () => {
     expect(parentOf(byContainer, "subnet 10.0.0.0/20")).toBe("location us-central1");
   });
 
+  it("places Cloud Run in a subnetwork its egress references rather than names", () => {
+    const out = projectGcpLogical(
+      {
+        nodes: [
+          { id: "subnet", kind: "GCP::Compute::Subnetwork", lexicon: "gcp", attrs: { metadata: { name: "apps" }, ipCidrRange: "10.30.0.0/24", region: "asia-northeast1" }, sourceLoc: { file: "src/site.ts" } },
+          {
+            id: "web",
+            kind: "GCP::Run::Service",
+            lexicon: "gcp",
+            attrs: { location: "asia-northeast1", template: { vpcAccess: { networkInterfaces: [{ subnetworkRef: { name: { $ref: "subnet.name" } } }] } } },
+            sourceLoc: { file: "src/site.ts" },
+          },
+        ],
+        edges: [],
+        groups: {},
+      } as unknown as GraphIR,
+      "p",
+    );
+    expect(parentOf(out.byContainer, "src")).toBe("subnet 10.30.0.0/24");
+  });
+
   it("places Cloud Run in the subnetwork its Direct VPC egress names", () => {
     const out = projectGcpLogical(
       {

@@ -347,7 +347,7 @@ function markCloudBoxes() {
   if (!svg) return;
   // A project box (the composites and resources zooms draw one per workspace
   // member) takes its cloud from its resources' lexicon when they share one:
-  // `dns`, all Route 53, is an AWS box.
+  // `dns`, Route 53 and an Op, is an AWS box.
   const lexiconsOf = new Map();
   for (const n of (lastGraphIr && lastGraphIr.nodes) || []) {
     const slash = n.id.indexOf("/");
@@ -355,9 +355,11 @@ function markCloudBoxes() {
     const m = n.id.slice(0, slash);
     (lexiconsOf.get(m) ?? lexiconsOf.set(m, new Set()).get(m)).add(n.lexicon);
   }
+  // Only the cloud lexicons count: a member that also holds an Op or other
+  // non-cloud cards (dns, with its front-door Op) is still that cloud's.
   const memberCloud = (id) => {
-    const lx = lexiconsOf.get(id);
-    return lx && lx.size === 1 && ["aws", "azure", "gcp"].includes([...lx][0]) ? [...lx][0] : null;
+    const clouds = [...(lexiconsOf.get(id) ?? [])].filter((l) => ["aws", "azure", "gcp"].includes(l));
+    return clouds.length === 1 ? clouds[0] : null;
   };
   const titles = new Map();
   for (const rect of svg.querySelectorAll("rect[data-group-id]")) {
@@ -387,6 +389,7 @@ function markCloudBoxes() {
     t.parentNode.insertBefore(mark, t);
     t.setAttribute("x", String(x + size + 6));
   }
+  declutterBoxHeads(boxLabelsOf(svg)); // the marks moved titles right
 }
 /** The vendored mark each cloud box wears (src/cloud-icons.ts vendors them). */
 const CLOUD_MARK = { aws: "aws/cloud", azure: "azure/subscription", gcp: "gcp/project" };
@@ -9047,6 +9050,39 @@ function scaleBoxLabels() {
     const cap = Math.max(l.base, Math.min(l.box.h / BOX_LABEL_MAX_H, l.box.w / (chars * BOX_LABEL_EM)));
     const size = Math.max(l.base, Math.min(l.base / scale, cap));
     l.el.setAttribute("font-size", String(Math.round(size * 10) / 10));
+  }
+  declutterBoxHeads(labels);
+}
+
+/**
+ * A narrow box can't hold its title and its count badge on one row: the two
+ * ran into each other ("awscards · all managed"). The title is the box's
+ * name, so it keeps the row; the badge steps aside and becomes the box's
+ * tooltip instead, and comes back once the zoom leaves it room (behold#824).
+ */
+function declutterBoxHeads(labels) {
+  const byBox = new Map();
+  for (const l of labels) (byBox.get(l.box) ?? byBox.set(l.box, []).get(l.box)).push(l.el);
+  for (const els of byBox.values()) {
+    const badge = els.find((t) => t.getAttribute("text-anchor") === "end");
+    const title = els.find((t) => t !== badge);
+    if (!badge || !title) continue;
+    badge.style.display = "";
+    let clash = false;
+    try {
+      const a = title.getBBox();
+      const b = badge.getBBox();
+      clash = a.x + a.width + 6 > b.x;
+    } catch {
+      continue;
+    }
+    badge.style.display = clash ? "none" : "";
+    const rect = title.parentNode && title.parentNode.querySelector(":scope > rect[data-group-id]");
+    if (rect && clash && !rect.querySelector(":scope > title")) {
+      const tip = document.createElementNS(SVGNS, "title");
+      tip.textContent = `${rect.getAttribute("data-group-id")}: ${badge.textContent}`;
+      rect.appendChild(tip);
+    }
   }
 }
 

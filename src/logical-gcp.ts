@@ -104,6 +104,10 @@ export function subnetsNamed(value: unknown, out: string[] = []): string[] {
     if (k === "subnetworkRef" && v && typeof v === "object") {
       const name = (v as { name?: unknown; external?: unknown }).name ?? (v as { external?: unknown }).external;
       if (typeof name === "string") out.push(name.split("/").pop()!);
+      // A reference to the subnetwork's own name (`subnet.name`), which the IR
+      // keeps as `{ $ref: "<id>.name" }`: the id stands in for the name.
+      const ref = name && typeof name === "object" ? (name as { $ref?: unknown }).$ref : undefined;
+      if (typeof ref === "string") out.push(ref.split(".")[0]);
     } else if (k === "subnetwork" && typeof v === "string") out.push(v.split("/").pop()!);
     else subnetsNamed(v, out);
   }
@@ -219,6 +223,7 @@ export function projectGcpLogical(ir: GraphIR, env?: string): LogicalProjection 
     const region = strAttr(n, "region") ?? strAttr(n, "location");
     child(region ? locationTitle(region) : PROJECT_TITLE, title);
     subnetBox.set(name, title);
+    subnetBox.set(n.id, title); // referenced by id when the source refers to the resource
     if (region) regionOfBox.set(title, region);
   }
 
