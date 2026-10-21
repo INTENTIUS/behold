@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { GraphIR } from "@intentius/chant";
-import { projectLogical, projectTopology } from "./logical.ts";
+import { distinctTitles, projectLogical, projectTopology } from "./logical.ts";
 
 const ref = (target: string) => ({ $ref: target });
 
@@ -705,5 +705,32 @@ describe("projectLogical, a subnet's way out (#875)", () => {
     expect(keys).toContain("public subnet 10.0.1.0/24 · out to the internet");
     expect(keys).toContain("private subnet 10.0.2.0/24 · out via NAT");
     expect(keys, JSON.stringify(keys)).toContain("subnet 10.0.3.0/24 · no way out");
+  });
+});
+
+// behold#879: siblings that would share a title are told apart, not merged.
+describe("distinctTitles (#879)", () => {
+  it("leaves a unique title alone and separates shared ones by the words their names don't share", () => {
+    const items = ["billing/vpc", "orders/vpc", "edge/vpc"];
+    const base = (id: string) => (id === "edge/vpc" ? "VPC 10.9.0.0/16" : "VPC 10.0.0.0/16");
+    const t = distinctTitles(items, base, (id) => id);
+    expect(t("edge/vpc")).toBe("VPC 10.9.0.0/16");
+    expect(t("billing/vpc")).toBe("VPC 10.0.0.0/16 · billing");
+    expect(t("orders/vpc")).toBe("VPC 10.0.0.0/16 · orders");
+  });
+
+  it("keeps two VPCs with one CIDR as two boxes", () => {
+    const n = (id: string, kind: string, attrs: Record<string, unknown> = {}) => ({ id, kind, lexicon: "aws", attrs, sourceLoc: { file: "src/site.ts" } });
+    const { byContainer } = projectLogical({
+      nodes: [
+        n("billing/vpc", "AWS::EC2::VPC", { CidrBlock: "10.0.0.0/16" }),
+        n("orders/vpc", "AWS::EC2::VPC", { CidrBlock: "10.0.0.0/16" }),
+        n("billing/db", "AWS::RDS::DBInstance", { VpcId: ref("billing/vpc.VpcId") }),
+        n("orders/db", "AWS::RDS::DBInstance", { VpcId: ref("orders/vpc.VpcId") }),
+      ],
+      edges: [],
+      groups: { byStack: { billing: ["billing/vpc", "billing/db"], orders: ["orders/vpc", "orders/db"] } },
+    } as unknown as GraphIR);
+    expect(Object.keys(byContainer)).toEqual(expect.arrayContaining(["VPC 10.0.0.0/16 · billing", "VPC 10.0.0.0/16 · orders"]));
   });
 });

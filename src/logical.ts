@@ -206,6 +206,33 @@ function dirSegments(node: IRNode): string[] {
  * in ONE directory has nothing below the prefix to distinguish them; that
  * directory's own name is the honest answer, and a single box is correct.
  */
+/**
+ * Titles that tell siblings apart (behold#879). A box's key is its title, so
+ * two VPCs with the same CIDR (in two members, say) would merge into one box.
+ * Where several items would share a title, each gets the words of its own
+ * name that the others' names don't have ("VPC 10.0.0.0/16 · billing",
+ * "VPC 10.0.0.0/16 · orders"), else its whole name. Pure.
+ */
+export function distinctTitles<T>(items: readonly T[], base: (t: T) => string, nameOf: (t: T) => string): (t: T) => string {
+  const words = (n: string) => n.split(/[^A-Za-z0-9]+|(?<=[a-z])(?=[A-Z])/).filter(Boolean).map((w) => w.toLowerCase());
+  const groups = new Map<string, T[]>();
+  for (const t of items) (groups.get(base(t)) ?? groups.set(base(t), []).get(base(t))!).push(t);
+  const out = new Map<T, string>();
+  for (const [title, members] of groups) {
+    if (members.length < 2) {
+      for (const m of members) out.set(m, title);
+      continue;
+    }
+    const all = members.map((m) => words(nameOf(m)));
+    members.forEach((m, i) => {
+      const others = new Set(all.filter((_, j) => j !== i).flat());
+      const own = all[i].filter((w) => !others.has(w));
+      out.set(m, `${title} · ${own.length ? own.join(" ") : nameOf(m)}`);
+    });
+  }
+  return (t) => out.get(t) ?? base(t);
+}
+
 export function componentNamer(nodes: IRNode[], groups?: GraphIR["groups"]): (node: IRNode) => string {
   const memberOf = memberNamer(groups);
   const segments = (node: IRNode): string[] => {
@@ -730,10 +757,11 @@ export function projectLogical(ir: GraphIR): LogicalProjection {
   const regionForVpc = (vpcId: string) => (byId.has(vpcId) ? regionOf(byId.get(vpcId)!) ?? defaultRegion : defaultRegion);
 
   // Network place box titles (synthetic ids that double as titles).
-  const vpcTitle = (vpcId: string) => {
+  const vpcBaseTitle = (vpcId: string) => {
     const region = regionForVpc(vpcId);
     return `${region ? region + " · " : ""}VPC ${strAttr(byId.get(vpcId)!, "CidrBlock") ?? vpcId}`;
   };
+  const vpcTitle = distinctTitles([...vpcIds], vpcBaseTitle, (id) => id);
   const withEgress = (title: string, ids: string[]) => {
     const out = egressOf(ids);
     return out ? `${title} · ${out}` : title;
@@ -803,10 +831,12 @@ export function projectLogical(ir: GraphIR): LogicalProjection {
   // one subnet keeps that subnet's own title.
   const subnetVpc = new Map([...subnetIds].map((id) => [id, nearestByRef(id, vpcIds, ownRefs)]));
   const tierOf = (id: string) => [...subnetIds].filter((s) => subnetVpc.get(s) === subnetVpc.get(id) && subnetScope(s) === subnetScope(id)).sort();
-  const tierTitle = (ids: string[]) => {
-    const tier = tierOf(ids[0]);
-    return tier.length === 1 ? subnetTitle(tier[0]) : withEgress(`${scopeWords(tier[0], true)} ${tier.map((id) => strAttr(byId.get(id)!, "CidrBlock") ?? id).join(", ")}`, tier);
-  };
+  const tierBaseTitle = (tier: string[]) =>
+    tier.length === 1 ? subnetTitle(tier[0]) : withEgress(`${scopeWords(tier[0], true)} ${tier.map((id) => strAttr(byId.get(id)!, "CidrBlock") ?? id).join(", ")}`, tier);
+  // behold#879: the same CIDRs in two VPCs are two tiers, told apart by their VPC.
+  const tierKeys = [...new Set([...subnetIds].map((id) => tierOf(id).join("|")))];
+  const tierTitleOf = distinctTitles(tierKeys, (k) => tierBaseTitle(k.split("|")), (k) => subnetVpc.get(k.split("|")[0]) ?? k);
+  const tierTitle = (ids: string[]) => tierTitleOf(tierOf(ids[0]).join("|"));
   const ensureSubnet = (ids: string[], vpcId?: string) => {
     const t = tierTitle(ids);
     if (vpcId) child(vpcTitle(vpcId), t); // subnet ⊂ VPC
