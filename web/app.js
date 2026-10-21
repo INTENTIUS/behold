@@ -10,6 +10,7 @@
 // renderPanelView never rewrites, so the select mounts once and survives re-renders).
 import "./view-repo.js"; // behold#571: first, so every read carries the page's ?repo=
 import { createRefreshQueue } from "./refresh-queue.js";
+import { indexCompositeMembers } from "./composite-members.js";
 import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine, withOpening, defaultEnv } from "./view-url.js";
 import { quietCardLines, readEmbed, selectMessage, viewFromMessage, wheelPx, wheelZoomsBare } from "./embed.js";
 import { WORDS as POP_WORDS, cardRoot as popCardRoot, placePopover, popReduce, popState, resourcePopover, rootPopover } from "./kiosk-popover.js";
@@ -7222,6 +7223,7 @@ function resetDialCaches() {
 
 // Composite → member list, for the inspect pane. Derived once from the base
 // (attribute-tier) source graph, where every node carries its `compositeInstance`
+// (indexed by web/composite-members.js, #828)
 // — then a detail-1 composite node lists what it expands to. Cached per lens
 // (reset in resetDialCaches); structural, so no live/env call needed.
 let compositeMembersCache = null;
@@ -7231,9 +7233,7 @@ async function getCompositeMembers(instanceId) {
     try {
       const q = lensParams(new URLSearchParams({ detail: "3" }));
       const j = await apiFetch(`/api/graph?${q}`).then((r) => r.json());
-      for (const n of (j.ir && j.ir.nodes) || []) {
-        if (n.compositeInstance) (compositeMembersCache[n.compositeInstance] ||= []).push({ id: n.id, kind: n.kind });
-      }
+      compositeMembersCache = indexCompositeMembers(j.ir && j.ir.nodes);
     } catch {
       /* leave the cache empty — the members section shows "(no members found)" */
     }
