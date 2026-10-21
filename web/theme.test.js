@@ -6,7 +6,7 @@
 // sweeps all 552 palettes for the same assertion; this pins the exact
 // palette the issue was filed against, with no browser involved.
 import { describe, it, expect } from "vitest";
-import { BAR_FLOOR, BAR_STATES, FRAME_STATES, INK2_FLOOR, KIOSK_THEME, MIN_STEP, MUTED_FLOOR, SURFACE_CHROMA, barGrounds, barInks, barVars, SOFT_CEILING, ZEBRA, contrast, desaturate, frameGrounds, frameInks, hexToOklch, ink2Grounds, mix, PAINT_KEY, paintFor, pinTokensFor, themeStep, tokensFor } from "./theme.js";
+import { BAR_FLOOR, BAR_STATES, EDGE_FLOOR, FRAME_STATES, INK2_FLOOR, KIOSK_THEME, MIN_STEP, MUTED_FLOOR, SURFACE_CHROMA, barGrounds, barInks, barVars, SOFT_CEILING, ZEBRA, contrast, desaturate, frameGrounds, frameInks, hexToOklch, ink2Grounds, mix, PAINT_KEY, paintFor, pinTokensFor, themeStep, tokensFor } from "./theme.js";
 import { THEMES } from "./themes.js";
 
 describe("themeStep — the kiosk's < and > (behold#755)", () => {
@@ -275,5 +275,17 @@ describe("paintFor — the theme before first paint (behold#725)", () => {
     expect(p.vars["--frame-focus"]).toBe(frameInks(th).box.focus);
     expect(Object.keys(p.vars).every((k) => k.startsWith("--"))).toBe(true);
     expect(JSON.parse(JSON.stringify(p))).toEqual(p);
+  });
+});
+
+describe("edges (behold#824)", () => {
+  it("draws an edge at 3:1 or better on the background, on every theme", () => {
+    const weak = [];
+    for (const th of Object.values(THEMES)) {
+      const pin = pinTokensFor(th);
+      const css = tokensFor(th);
+      if (contrast(pin.edge, th.bg) < EDGE_FLOOR || contrast(css.edge, th.bg) < EDGE_FLOOR) weak.push(th.name);
+    }
+    expect(weak).toEqual([]);
   });
 });

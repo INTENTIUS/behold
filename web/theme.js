@@ -150,6 +150,8 @@ function pushForContrast(hex, against, floor, dark) {
 // all 552 palettes have to come out of here legible.
 /** behold#725: the least contrast --muted and --muted-ink keep on the grounds they sit on (WCAG AA). */
 export const MUTED_FLOOR = 4.5;
+/** behold#824: the contrast an edge line keeps on the graph's background. */
+export const EDGE_FLOOR = 3;
 /** behold#725: the least contrast --ink2, the secondary prose ink, keeps on every ground (WCAG AAA). */
 export const INK2_FLOOR = 7;
 /** behold#725: how far --ink2 starts from --fg toward --bg before the floor holds it. */
@@ -189,7 +191,10 @@ export function tokensFor(th) {
     // Push its OKLCH L away from --panel's until it clears MUTED_FLOOR
     // (behold#725: 4.5:1, WCAG AA for body text; it was 3:1).
     muted: pushForContrast(desaturate(fgMix(0.5), 0.75), panel, MUTED_FLOOR, th.dark),
-    edge: fgMix(0.32),
+    // behold#824: an edge is how two cards read as connected, and at a 0.32 mix
+    // it all but vanished on most themes. 0.55, held to 3:1 on the background
+    // (WCAG's floor for a graphic), the floor the card outlines already keep.
+    edge: pushForContrast(fgMix(0.55), th.bg, EDGE_FLOOR, th.dark),
     // The structural border — the panel shell, the pane edge, the footer rule.
     // Tinted by the palette's OWN bright-black slot instead of being one more
     // fg/bg mix, but anchored to a guaranteed-visible mix so a theme whose
@@ -406,7 +411,7 @@ export function pinTokensFor(th) {
   const stroke = (c) => line(mix(th.bg, c, 0.62));
   return {
     bg0: th.bg, bg1: fgMix(0.045), dots: fgMix(0.12),
-    text: th.fg, textMuted: fgMix(0.5), textFaint: fgMix(0.38), edge: fgMix(0.3),
+    text: th.fg, textMuted: fgMix(0.5), textFaint: fgMix(0.38), edge: lightnessFor(fgMix(0.55), [th.bg, fgMix(0.045)], EDGE_FLOOR, up),
     neutralFill: panel, neutralStroke: fgMix(0.3), neutralBar: fgMix(0.5),
     accentFill: fill(accent), accentStroke: stroke(accent), accentBar: accent,
     goodFill: fill(good), goodStroke: stroke(good), goodBar: good,

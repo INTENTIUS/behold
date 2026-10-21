@@ -137,6 +137,11 @@
          visible line. The hovered edge is also raised to the top in JS so it isn't
          buried under the bundle. */
       #graph g[data-edge-from] .pin-edge-line { transition: stroke .08s ease, stroke-width .08s ease; }
+      /* behold#824: an edge's label is read text, not a hint, so it takes the
+         full text colour, and its pill is outlined in the edge's own colour so
+         the label reads as part of its line. */
+      #graph g[data-edge-via] > text { fill: var(--pin-text); }
+      #graph g[data-edge-via] > rect { stroke: var(--pin-edge); }
       /* ---- Motion (#229) ---------------------------------------------------
          behold spends motion exactly twice, and never for decoration:
          1. the graph fades through on every re-render, so a refresh reads as a
