@@ -42,7 +42,7 @@ import { componentNamer, type ByContainer, type LogicalProjection } from "./logi
 
 /**
  * Resources a GCP architecture diagram shows. #101 names the first four; the
- * last two are here because a VM and a managed DNS zone are headline resources
+ * next two are here because a VM and a managed DNS zone are headline resources
  * on any substrate, and leaving them out would drop them from the picture
  * entirely rather than nest them somewhere.
  */
@@ -53,6 +53,10 @@ export const GCP_HEADLINE_KINDS = new Set([
   "GCP::Storage::Bucket",
   "GCP::Compute::Instance",
   "GCP::Dns::ManagedZone",
+  // A load balancer's front end, the card the AWS lens draws for an ALB
+  // (behold#824); its proxy, URL map, backend service and NEG are contracted
+  // through, so the card joins the service they route to.
+  "GCP::Compute::ForwardingRule",
 ]);
 
 /**
@@ -186,13 +190,32 @@ export function projectGcpLogical(ir: GraphIR, env?: string): LogicalProjection 
   }
   for (const [component, members] of byComponent) {
     const places = new Set(members.map((m) => placeOf.get(m.id)!));
-    // A component spanning regions belongs to neither, so it sits at the
-    // project — the same rule the AWS lens uses for a component spanning
+    // A component spanning two regions belongs to neither, so it sits at the
+    // project, the same rule the AWS lens uses for a component spanning
     // subnets.
-    const parent = places.size === 1 ? [...places][0] : PROJECT_TITLE;
-    if (parent === GLOBAL) child(PROJECT_TITLE, GLOBAL);
-    child(parent, component);
-    for (const m of members) child(component, m.id);
+    const regional = [...places].filter((p) => p !== "location global");
+    if (places.size > 1 && regional.length > 1) {
+      child(PROJECT_TITLE, component);
+      for (const m of members) child(component, m.id);
+      continue;
+    }
+    if (places.size === 1) {
+      const parent = [...places][0];
+      if (parent === GLOBAL) child(PROJECT_TITLE, GLOBAL);
+      child(parent, component);
+      for (const m of members) child(component, m.id);
+      continue;
+    }
+    // A global front end and the one region it serves (a load balancer in
+    // front of a Cloud Run service, behold#824) get a box in each, so every card still
+    // sits in the location it states. Box keys are titles, so each part is
+    // named for its place.
+    for (const place of places) {
+      if (place === GLOBAL) child(PROJECT_TITLE, GLOBAL);
+      const part = `${component} · ${place.replace(/^location /, "")}`;
+      child(place, part);
+      for (const m of members) if (placeOf.get(m.id) === place) child(part, m.id);
+    }
   }
 
   // Contracted connectivity between cards, bridged only through dropped

@@ -135,3 +135,28 @@ describe("projectGcpLogical (#101)", () => {
     expect(ir.nodes.some((x) => x.kind.startsWith("GCP::Compute::"))).toBe(false);
   });
 });
+
+describe("projectGcpLogical, a global load balancer in front of a regional service (#824)", () => {
+  it("puts the forwarding rule in the global location and the service in its region", () => {
+    const out = projectGcpLogical(
+      {
+        nodes: [
+          { id: "rule", kind: "GCP::Compute::ForwardingRule", lexicon: "gcp", attrs: { location: "global" }, sourceLoc: { file: "src/site.ts" } },
+          { id: "proxy", kind: "GCP::Compute::TargetHTTPProxy", lexicon: "gcp", attrs: { location: "global" }, sourceLoc: { file: "src/site.ts" } },
+          { id: "web", kind: "GCP::Run::Service", lexicon: "gcp", attrs: { location: "asia-northeast1" }, sourceLoc: { file: "src/site.ts" } },
+        ],
+        edges: [
+          { from: "rule", to: "proxy", kind: "ref" },
+          { from: "proxy", to: "web", kind: "ref" },
+        ],
+        groups: {},
+      } as unknown as GraphIR,
+      "p",
+    );
+    const parent = (id: string) => Object.entries(out.byContainer).find(([, ids]) => ids.includes(id))?.[0];
+    expect(parent("rule")).toBe("src · global");
+    expect(parent("src · global")).toBe("location global");
+    expect(parent("web")).toBe("src · asia-northeast1");
+    expect(out.ir.edges.map((e) => [e.from, e.to].sort().join("|"))).toContain("rule|web");
+  });
+});
