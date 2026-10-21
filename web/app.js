@@ -325,8 +325,120 @@ function recolorNodesByCategory(ir) {
     const bar = g.querySelector('rect[width="4"]');
     if (bar) bar.setAttribute("fill", "var(--runtime)");
   }
+  renderGraphLegend();
 }
 onThemeChange(() => (recolorNodesByCategory(), drawTgReads())); // behold#571: drawTgReads redraws the marks in the theme's colours
+// behold#824: the legend on the graph itself. In drift mode a card's fill is
+// its resource kind (one hue per kind, nothing more) and its state is the bar
+// down its left side and its outline, but the only legend was in the Model
+// tab, so the biggest colours on the canvas read as a code with no key. This
+// corner says what each one is, with the counts the Model tab keeps, and the
+// health marks when there are any. Closed once, it stays closed for this
+// viewer (a "legend" button brings it back).
+const LEGEND_KEY = "behold.graph.legend.hidden";
+function legendHidden() {
+  try {
+    return localStorage.getItem(LEGEND_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+function renderGraphLegend() {
+  const host = document.getElementById("graph");
+  if (!host) return;
+  let el = document.getElementById("graph-legend");
+  const ir = lastGraphIr;
+  const onOverlay = !!(lastMeta && lastMeta.env);
+  if (!ir || !onOverlay || activeColourMode() !== "drift" || embedOpts.bare) {
+    if (el) el.remove();
+    return;
+  }
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "graph-legend";
+    host.appendChild(el);
+  }
+  el.innerHTML = "";
+  if (legendHidden()) {
+    el.className = "closed";
+    el.appendChild(button("legend", "act", () => {
+      try {
+        localStorage.removeItem(LEGEND_KEY);
+      } catch {}
+      renderGraphLegend();
+    }));
+    return;
+  }
+  el.className = "";
+  const head = document.createElement("div");
+  head.className = "gl-head";
+  head.textContent = "legend";
+  const close = button("×", "gl-close", () => {
+    try {
+      localStorage.setItem(LEGEND_KEY, "1");
+    } catch {}
+    renderGraphLegend();
+  });
+  close.title = "Hide the legend (the Model tab keeps it)";
+  head.appendChild(close);
+  el.appendChild(head);
+  const line = (swatch, text, count, cls) => {
+    const row = document.createElement("div");
+    row.className = "gl-row" + (cls ? " " + cls : "");
+    row.appendChild(swatch);
+    const t = document.createElement("span");
+    t.className = "grow";
+    t.textContent = text;
+    row.appendChild(t);
+    if (count) {
+      const c = document.createElement("span");
+      c.className = "gl-count";
+      c.textContent = count;
+      row.appendChild(c);
+    }
+    el.appendChild(row);
+  };
+  const kinds = [...new Set(ir.nodes.map((n) => n.kind || n.lexicon || "node"))].slice(0, 3);
+  const fills = document.createElement("span");
+  fills.className = "gl-fills";
+  for (const k of kinds) {
+    const f = document.createElement("i");
+    f.style.background = colorForCategory(k);
+    fills.appendChild(f);
+  }
+  line(fills, "card colour: resource kind");
+  const sub = document.createElement("div");
+  sub.className = "gl-sub";
+  sub.textContent = "bar and outline: state";
+  el.appendChild(sub);
+  const words = statusLabels();
+  const counts = {};
+  for (const n of ir.nodes) {
+    const st = n.attrs && n.attrs._status;
+    if (st in words) counts[st] = (counts[st] || 0) + 1;
+  }
+  for (const [k, label] of Object.entries(words)) {
+    if (!counts[k]) continue;
+    const bar = document.createElement("span");
+    bar.className = "gl-bar";
+    bar.style.background = DRIFT_STATUS_VAR[k];
+    line(bar, label, String(counts[k]));
+  }
+  const health = hmLegendRows(hmAnswer);
+  if (health.length) {
+    const hs = document.createElement("div");
+    hs.className = "gl-sub";
+    hs.textContent = "health";
+    el.appendChild(hs);
+    for (const r of health) {
+      const dot = document.createElement("span");
+      dot.className = "gl-dot" + (r.dashed ? " dashed" : "");
+      dot.style.background = r.color;
+      line(dot, r.text, r.count);
+    }
+  }
+}
+
 
 // #229, the one motion signature behold spends on data: a node whose drift
 // `_status` CHANGED between two renders pulses once in the colour it just
@@ -1947,12 +2059,22 @@ function renderPanelView() {
   // phase boxes).
   if (!view.components && !view.logical && !view.ops) {
     zoom.appendChild(panelHeading("layout"));
-    zoom.appendChild(
-      panelOpt("radial", view.radial, () => {
+    // behold#824: an estate of several projects is laid out one box per
+    // project, and the radial layout has no boxes, so the server draws the
+    // same picture either way. Greyed out with the reason, like a colour mode
+    // that can't apply.
+    const estate = !!(lastMeta && lastMeta.estate > 1);
+    const radial = panelOpt(
+      "radial",
+      view.radial && !estate,
+      () => {
         view.radial = !view.radial;
         load();
-      }, "Curl the wide DAG onto concentric rings"),
+      },
+      estate ? "Radial lays out one project; this is an estate of several, drawn one box per project" : "Curl the wide DAG onto concentric rings",
     );
+    if (estate) radial.disabled = true;
+    zoom.appendChild(radial);
   }
   const tools = document.getElementById("panel-viewtools");
   tools.innerHTML = "";
@@ -6531,6 +6653,7 @@ async function loadHealth(env, fresh) {
   if (view.env === env) {
     markHealthCards(hmAnswer);
     renderPanel();
+    renderGraphLegend();
   }
 }
 function markHealthCards(a) {
@@ -8655,6 +8778,7 @@ function applyVB() {
   const s = currentSvg();
   if (s && vb) s.setAttribute("viewBox", vb.join(" "));
   scaleBoxLabels(); // #396 item 7b: box titles/badges keep a legible size at every zoom
+  scaleEdgeLabels(); // behold#824: an edge's label keeps a legible size too
   dotsCamera(); // #712: a no-op unless the dots preview is mounted
   kioskTellBoxes(); // behold#571: the kiosk's overlays ride the boxes they describe
 }
@@ -8846,6 +8970,37 @@ function scaleBoxLabels() {
     const cap = Math.max(l.base, Math.min(l.box.h / BOX_LABEL_MAX_H, l.box.w / (chars * BOX_LABEL_EM)));
     const size = Math.max(l.base, Math.min(l.base / scale, cap));
     l.el.setAttribute("font-size", String(Math.round(size * 10) / 10));
+  }
+}
+
+// behold#824: an edge's label (`import`, `HealthCheckId`) is drawn at 10.5
+// units, which on a graph fitted at a quarter scale is under 3px — present but
+// unreadable. Each label's pill and text are scaled about the pill's own centre
+// until the text renders at EDGE_LABEL_MIN_PX on screen, up to EDGE_LABEL_MAX_K
+// times its drawn size, so it stays on its line and never swamps the cards.
+// Zoomed in far enough, the label is left exactly as pinhole drew it.
+const EDGE_LABEL_MIN_PX = 9;
+const EDGE_LABEL_MAX_K = 3;
+let edgeLabelState = { svg: null, scale: null };
+
+function scaleEdgeLabels() {
+  const svg = currentSvg();
+  if (!svg || !vb) return;
+  const pane = svg.getBoundingClientRect();
+  if (!(pane.width > 0 && pane.height > 0)) return;
+  const scale = Math.min(pane.width / vb[2], pane.height / vb[3]);
+  if (!(scale > 0) || (edgeLabelState.svg === svg && edgeLabelState.scale === scale)) return;
+  edgeLabelState = { svg, scale };
+  for (const g of svg.querySelectorAll("g[data-edge-via]")) {
+    const text = g.querySelector(":scope > text");
+    const rect = g.querySelector(":scope > rect");
+    if (!text || !rect) continue;
+    const size = parseFloat(text.getAttribute("font-size")) || 10.5;
+    const k = Math.min(EDGE_LABEL_MAX_K, Math.max(1, EDGE_LABEL_MIN_PX / (size * scale)));
+    const cx = Number(rect.getAttribute("x")) + Number(rect.getAttribute("width")) / 2;
+    const cy = Number(rect.getAttribute("y")) + Number(rect.getAttribute("height")) / 2;
+    const t = k === 1 ? null : `translate(${cx} ${cy}) scale(${Math.round(k * 100) / 100}) translate(${-cx} ${-cy})`;
+    for (const el of [rect, text]) t ? el.setAttribute("transform", t) : el.removeAttribute("transform");
   }
 }
 
@@ -10844,7 +10999,7 @@ function paletteCommands() {
   // Radial toggle — entity zooms only, same gate the removed checkbox had
   // (components/logical/ops all lay themselves out: waves / nested arch boxes /
   // phase boxes).
-  if (!view.components && !view.logical && !view.ops) {
+  if (!view.components && !view.logical && !view.ops && !(lastMeta && lastMeta.estate > 1)) {
     c.push([(view.radial ? "Disable" : "Enable") + " radial layout", () => { view.radial = !view.radial; load(); }]);
   }
   // #393: 301 cards in one box read as a strip at any zoom. This shuts every
