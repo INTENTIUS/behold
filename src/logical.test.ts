@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { GraphIR } from "@intentius/chant";
-import { distinctTitles, projectLogical, projectTopology } from "./logical.ts";
+import { cardWordsForKind, distinctTitles, projectLogical, projectTopology } from "./logical.ts";
 
 const ref = (target: string) => ({ $ref: target });
 
@@ -732,5 +732,100 @@ describe("distinctTitles (#879)", () => {
       groups: { byStack: { billing: ["billing/vpc", "billing/db"], orders: ["orders/vpc", "orders/db"] } },
     } as unknown as GraphIR);
     expect(Object.keys(byContainer)).toEqual(expect.arrayContaining(["VPC 10.0.0.0/16 · billing", "VPC 10.0.0.0/16 · orders"]));
+  });
+});
+
+// behold#876: where the outside world comes in.
+describe("projectTopology, entry points (#876)", () => {
+  const n = (id: string, kind: string, lexicon: string, attrs: Record<string, unknown> = {}) => ({ id, kind, lexicon, attrs, sourceLoc: { file: "src/site.ts" } });
+  it("points one outside card at the outermost public hop of each chain", () => {
+    const { ir } = projectTopology(
+      {
+        nodes: [
+          n("dns/zone", "AWS::Route53::HostedZone", "aws", { Name: "example.com." }),
+          n("dns/www", "AWS::Route53::RecordSet", "aws", { Name: "www.example.com.", Type: "CNAME", ResourceRecords: ["lb.example.net"], HostedZoneId: ref("dns/zone.Id") }),
+          n("dns/gcpRecord", "AWS::Route53::RecordSet", "aws", { Name: "www.example.com.", Type: "CNAME", ResourceRecords: ["gcp.example.com."] }),
+          n("dns/gcpOrigin", "AWS::Route53::RecordSet", "aws", { Name: "gcp.example.com.", Type: "A", ResourceRecords: ["203.0.113.1"] }),
+          n("aws/alb", "AWS::ElasticLoadBalancingV2::LoadBalancer", "aws", { Scheme: "internet-facing" }),
+          n("aws/internal", "AWS::ElasticLoadBalancingV2::LoadBalancer", "aws", { Scheme: "internal" }),
+        ],
+        edges: [{ from: "dns/www", to: "aws/alb", kind: "ref" }],
+        groups: {},
+      } as unknown as GraphIR,
+      "local",
+    );
+    const from = ir.edges.filter((e) => e.from === "outside").map((e) => e.to).sort();
+    expect(from).toEqual(["dns/gcpRecord", "dns/www"]);
+    expect(ir.nodes.map((x) => x.id)).toContain("outside");
+  });
+
+  it("draws no outside card for an estate with nothing public", () => {
+    const { ir } = projectTopology({ nodes: [n("aws/internal", "AWS::ElasticLoadBalancingV2::LoadBalancer", "aws", { Scheme: "internal" })], edges: [], groups: {} } as unknown as GraphIR, "local");
+    expect(ir.nodes.map((x) => x.id)).not.toContain("outside");
+  });
+});
+
+// behold#873, #874: what a card absorbs, and what its security groups let in.
+describe("projectLogical, card lines (#873, #874)", () => {
+  const n = (id: string, kind: string, attrs: Record<string, unknown> = {}) => ({ id, kind, lexicon: "aws", attrs, sourceLoc: { file: "src/site.ts" } });
+  const ir = (): GraphIR =>
+    ({
+      nodes: [
+        n("albSg", "AWS::EC2::SecurityGroup", { GroupName: "alb", SecurityGroupIngress: [{ IpProtocol: "tcp", FromPort: 80, ToPort: 80, CidrIp: "0.0.0.0/0" }] }),
+        n("taskSg", "AWS::EC2::SecurityGroup", { GroupName: "task" }),
+        n("taskIn", "AWS::EC2::SecurityGroupIngress", { GroupId: ref("taskSg.GroupId"), SourceSecurityGroupId: ref("albSg.GroupId"), FromPort: 80, ToPort: 80 }),
+        n("alb", "AWS::ElasticLoadBalancingV2::LoadBalancer", { SecurityGroups: [ref("albSg.GroupId")] }),
+        n("tg", "AWS::ElasticLoadBalancingV2::TargetGroup", { Port: 80 }),
+        n("listener", "AWS::ElasticLoadBalancingV2::Listener", { LoadBalancerArn: ref("alb.LoadBalancerArn"), DefaultActions: [{ TargetGroupArn: ref("tg.TargetGroupArn") }] }),
+        n("role", "AWS::IAM::Role", {}),
+        n("taskDef", "AWS::ECS::TaskDefinition", { ExecutionRoleArn: ref("role.Arn") }),
+        n("svc", "AWS::ECS::Service", {
+          TaskDefinition: ref("taskDef.TaskDefinitionArn"),
+          LoadBalancers: [{ TargetGroupArn: ref("tg.TargetGroupArn") }],
+          NetworkConfiguration: { AwsvpcConfiguration: { SecurityGroups: [ref("taskSg.GroupId")] } },
+        }),
+      ],
+      edges: [],
+      groups: {},
+    }) as unknown as GraphIR;
+  const card = (id: string) => projectLogical(ir()).ir.nodes.find((x) => x.id === id)!.attrs as Record<string, unknown>;
+
+  it("lists on each card the resources it absorbs", () => {
+    expect(card("alb")._with).toBe("Listener");
+    expect(card("svc")._with).toBe("IAM Role, Target Group, Task Definition");
+  });
+
+  it("says what each card's security groups let in", () => {
+    expect(card("alb")._in).toBe("80 from anyone");
+    expect(card("svc")._in).toBe("80 from albSg");
+  });
+
+  it("puts a resource shared equally by several cards on none of them", () => {
+    const { ir: out } = projectLogical({
+      nodes: [
+        n("zone", "AWS::Route53::HostedZone", { Name: "example.com." }),
+        n("a", "AWS::Route53::RecordSet", { HostedZoneId: ref("zone.Id") }),
+        n("b", "AWS::Route53::RecordSet", { HostedZoneId: ref("zone.Id") }),
+      ],
+      edges: [],
+      groups: {},
+    } as unknown as GraphIR);
+    for (const id of ["a", "b"]) expect(out.nodes.find((x) => x.id === id)!.attrs).not.toHaveProperty("_with");
+  });
+
+  it("leaves the input graph untouched", () => {
+    const g = ir();
+    projectLogical(g);
+    expect(g.nodes.find((x) => x.id === "alb")!.attrs).not.toHaveProperty("_with");
+  });
+});
+
+describe("cardWordsForKind (#873)", () => {
+  it("names a kind in words, singular, keeping acronyms whole", () => {
+    expect(cardWordsForKind("GCP::Compute::TargetHTTPProxy")).toBe("Target HTTP Proxy");
+    expect(cardWordsForKind("Microsoft.Network/publicIPAddresses")).toBe("Public IP Address");
+    expect(cardWordsForKind("GCP::Compute::Address")).toBe("Address");
+    expect(cardWordsForKind("AWS::IAM::Role")).toBe("IAM Role");
+    expect(cardWordsForKind("Microsoft.ManagedIdentity/userAssignedIdentities")).toBe("Managed Identity");
   });
 });
