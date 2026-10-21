@@ -165,6 +165,8 @@ const NO_CONTRACT_KINDS = new Set([
 ]);
 
 const REGION_RE = /\b([a-z]{2}-[a-z]+-\d)\b/;
+/** The account in an ARN: `arn:aws:service:region:<account>:…`. */
+const ACCOUNT_RE = /arn:aws[a-z-]*:[a-z0-9-]*:[a-z0-9-]*:(\d{12}):/;
 const WORD_RE = /[A-Za-z][A-Za-z0-9]*/g;
 
 /** A node declared under `examples/…` (byo scaffolding) — excluded from the
@@ -927,5 +929,14 @@ export function projectLogical(ir: GraphIR): LogicalProjection {
     }
   }
 
+  // The account holds everything this lens drew, the global lane included: a
+  // Route 53 record is as much the account's as the VPC is, the way Azure's
+  // resource group and GCP's project hold theirs (behold#824). Its number
+  // comes from an ARN in the live overlay, and the box is untitled by number
+  // in a source graph.
+  const accountId = aws.map((n) => JSON.stringify(n).match(ACCOUNT_RE)?.[1]).find(Boolean);
+  const ACCOUNT = accountId ? `AWS account ${accountId}` : "AWS account";
+  const nested = new Set(Object.values(byContainer).flat());
+  for (const key of Object.keys(byContainer)) if (!nested.has(key)) child(ACCOUNT, key);
   return { ir: { nodes: headline, edges, groups: {} }, byContainer };
 }
