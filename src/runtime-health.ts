@@ -116,21 +116,29 @@ export function healthProblems(doc: unknown): string[] {
   return (validator.errors ?? []).map((e) => `${e.instancePath || "the document"} ${e.message ?? "does not match"}`);
 }
 
-/** The lexicon results of a document, single-stack or multi-stack alike. */
-function results(doc: HealthDocument): HealthLexiconResult[] {
-  if (doc.lexicons) return Object.values(doc.lexicons);
-  return Object.values(doc.stacks ?? {}).flatMap((byLexicon) => Object.values(byLexicon));
+/**
+ * The lexicon results of a document, single-stack or multi-stack alike, each
+ * with the stack it came from. #824: a project that declares `stacks` has its
+ * live overlay drawn with ids `<stack>::<name>` (chant's multi-stack form),
+ * so its health is keyed the same way, or no card would match it.
+ */
+function results(doc: HealthDocument): Array<{ stack?: string; result: HealthLexiconResult }> {
+  if (doc.lexicons) return Object.values(doc.lexicons).map((result) => ({ result }));
+  return Object.entries(doc.stacks ?? {}).flatMap(([stack, byLexicon]) => Object.values(byLexicon).map((result) => ({ stack, result })));
 }
 
 /**
  * Per node id, what the document says. `prefix` is the member name in a
  * workspace or an estate, so ids become `<member>/<id>` like every other
- * composed id.
+ * composed id; in a multi-stack document the id is `<stack>::<name>`.
  */
 export function nodeHealthOf(doc: HealthDocument, prefix?: string): Record<string, NodeHealth> {
-  const id = (name: string) => (prefix ? `${prefix}/${name}` : name);
   const out: Record<string, NodeHealth> = {};
-  for (const r of results(doc)) {
+  for (const { stack, result: r } of results(doc)) {
+    const id = (name: string) => {
+      const local = stack ? `${stack}::${name}` : name;
+      return prefix ? `${prefix}/${local}` : local;
+    };
     for (const [name, e] of Object.entries(r.entities)) out[id(name)] = { ...e };
     for (const [name, h] of Object.entries(r.unobserved)) out[id(name)] = { state: "unobserved", reason: h.reason, ...(h.type ? { type: h.type } : {}), ...(h.detail ? { detail: h.detail } : {}) };
     for (const name of r.absent) out[id(name)] = { state: "absent" };

@@ -1,0 +1,69 @@
+---
+title: The three-cloud demo
+description: A website in AWS, Azure and GCP behind Route 53, on local emulators. Turn Azure off and see where the traffic goes.
+---
+
+One small website runs in three clouds: ECS on Fargate behind a load balancer in AWS, a Container App in Azure, and a Cloud Run service in GCP. Route 53 sits in front with one latency record per cloud, and each record is guarded by a health check on that cloud's endpoint. All of it runs on the [floci](https://github.com/lex00/floci) emulators in Docker, so no cloud account is involved.
+
+The demo answers one question: turn Azure off, and where does traffic go?
+
+```sh
+npx @intentius/behold demo three-cloud
+```
+
+That copies `example-three-cloud` to `./behold-demos/three-cloud`, boots floci, floci-az and floci-gcp, and serves the workspace with the `local` environment picked. It needs Docker and pulls three emulator images the first time.
+
+## What you are looking at
+
+The estate is a chant workspace of four members, drawn as four boxes:
+
+| member | what it declares |
+|---|---|
+| `dns` | the hosted zone, three health checks, three latency CNAMEs |
+| `aws` | the `FargateAlb` composite: the service, its task, the load balancer |
+| `azure` | a Container Apps environment and the app, with external ingress |
+| `gcp` | the `CloudRunServiceComposite`: the service and its public access |
+
+Each cloud publishes its endpoint with `output()` (`awsEndpoint`, `azureEndpoint`, `gcpEndpoint`), and `dns` declares a parameter of the same name. That shared name is the edge behold draws from each record's endpoint to the cloud that answers it. Config Connector YAML has no outputs, so `chant build` warns that the gcp member's output is not written; the edge is still drawn, and the Op below reads the Cloud Run URI from the emulator and hands it to `dns`.
+
+## Turning Azure off
+
+The `front-door` Op, in `dns/ops/front-door.op.ts`, rebuilds the whole picture:
+
+1. Apply gcp, azure, aws and dns to the emulators, then wait until the Azure health check reads healthy.
+2. Deactivate the Azure app's active revision, so its endpoint answers 503.
+3. Wait until `chant lifecycle health` reads the Azure check unhealthy.
+4. Export the page.
+
+Run it from the Deploy tab, or from the copy:
+
+```sh
+cd behold-demos/three-cloud/dns && npx chant run front-door
+# or, the same steps without chant's runner, from the workspace root
+npm run front-door
+```
+
+Afterwards the Azure check is unhealthy, the Azure record is dimmed and reads `out of rotation: azureCheck unhealthy`, and the GCP record stays in rotation. Route 53 answers with what is left. The marks are the ones [Health and rotation](/behold/using/reading-the-graph/#health-and-rotation) describes.
+
+The emulators' checkers run inside floci's container, where a floci-az or floci-gcp hostname resolves to nothing. The Op therefore gives each deployed health check the emulator container's address and port, and the checkers send the endpoint as the `Host` header, as Route 53 does for a check with an `IPAddress`. The source declares the checks as they would be on AWS, without either field.
+
+The `aws` member does not deploy on floci yet: floci's CloudFormation refuses the Fargate service's network configuration ([lex00/floci#261](https://github.com/lex00/floci/issues/261)). The Op says so and carries on, and the page shows the AWS service not deployed and the AWS check failing as well.
+
+## The exported page
+
+The Op's last step is a [static export](/behold/using/export/) into `export/`:
+
+```sh
+behold export . --open-env local --open-zoom composites \
+  --note 'Run this yourself: `npx @intentius/behold demo three-cloud`' --out export
+```
+
+It opens on the `local` environment at the composites zoom, where the whole estate fits one screen, and ends with the line that brings a reader back here. To rebuild the page from nothing, boot the emulators and run the Op:
+
+```sh
+npm run emulators && npm run front-door
+```
+
+## Cleaning up
+
+Stopping `behold demo` stops the three emulators. floci-gcp leaves the Cloud Run container it started behind; `docker ps -a --filter name=floci-gcp-cloudrun` lists it.

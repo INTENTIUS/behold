@@ -36,6 +36,16 @@ npx behold export ../my-workspace --open-env frozen --open-zoom composites --out
 
 `--open-env` takes one of the environments the export captures, which are the ones the estate declares. `--open-zoom` takes `components`, `logical`, `composites`, `resources` or `attributes`, and `ops` when the estate has emitted Ops. The export refuses any other value before it captures anything, and says which values it would take. The choice is written to the bundle's `manifest.json` as `opening`. A link with its own `?env=` or `?zoom=` still opens where the link points.
 
+## A line at the foot of the page
+
+`--note` puts one line of text under the graph, such as how to run the estate yourself. A span in backticks is drawn as code, and nothing else is markup:
+
+```sh
+npx behold export . --note 'Run this yourself: `npx @intentius/behold demo three-cloud`' --out ./behold-export
+```
+
+The note is at most 200 characters on one line, and the export refuses anything else before it captures. It is written to `manifest.json` as `note`. [The three-cloud demo](/behold/using/three-cloud/) ends its page this way.
+
 ## A declared workspace
 
 Exporting a directory that holds a `chant.workspace.json` names the bundle after the workspace, not after its first member. The generated `wrangler.jsonc` names the Worker `behold-<workspace name>` (`behold-three-cloud` for a workspace declared as `three-cloud`), and `manifest.json` carries `workspace` with the declared name and `projectDir` with the workspace root's directory name. `--name` still overrides the Worker name. A single project is named after its directory, as before.

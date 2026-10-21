@@ -190,7 +190,7 @@ import {
   MAX_BODY_BYTES,
   unwritableReason,
 } from "./layout.ts";
-import { emulatorUp, emulatorDown, mergedEnv, type EmulatorInfo } from "./emulator.ts";
+import { emulatorDirs, emulatorsDown, emulatorsUp, mergedEnv, type EmulatorInfo } from "./emulator.ts";
 import { productRefusal, refusedWrite, servedProductRepo, terragucciRefusal } from "./terragucci-repo.ts";
 import { repoBase, servedChoudoufu, terragucciRoutes, type TerragucciOptions } from "./terragucci-view.ts";
 import { terragucciSource } from "./terragucci-source.ts";
@@ -2232,7 +2232,7 @@ export function createApp(
       // `serve --local` — otherwise the demo's Deploy would aim at a real
       // cloud instead of the emulator it was written for.
       if (entry.serve.local) {
-        if (cfg.emulators?.length) await emulatorDown(cfg.projectDir).catch(() => {});
+        if (cfg.emulators?.length) await emulatorsDown(emulatorDirs(cfg.workspace?.root ?? cfg.projectDir, cfg.workspace));
         cfg.local = true;
         cfg.emulators = await bootLocalEmulators(dirs[0], `behold demo ${entry.name} --local`);
       }
@@ -4344,9 +4344,10 @@ export function createApp(
  *
  * Shared by `serve --local` at startup and by the demo catalog's loader (#268),
  * which boots the emulators a demo declares when it's loaded from the panel. */
-async function bootLocalEmulators(dir: string, who: string): Promise<EmulatorInfo[]> {
+async function bootLocalEmulators(dir: string, who: string, workspace?: Workspace): Promise<EmulatorInfo[]> {
   try {
-    const emulators = await emulatorUp(dir);
+    // #824: a workspace boots every chant member's emulators, not its first member's.
+    const emulators = await emulatorsUp(emulatorDirs(dir, workspace));
     if (emulators.length === 0) {
       process.stderr.write(`${who}: no configured lexicon has a local emulator — serving without one.\n`);
       return [];
@@ -4368,7 +4369,7 @@ async function bootLocalEmulators(dir: string, who: string): Promise<EmulatorInf
 export async function startServer(cfg: ServerOptions): Promise<void> {
   // Boot the emulators before the baseline capture, so the first overlay
   // already sees local state.
-  if (cfg.local) cfg.emulators = await bootLocalEmulators(cfg.projectDir, "behold serve --local");
+  if (cfg.local) cfg.emulators = await bootLocalEmulators(cfg.workspace?.root ?? cfg.projectDir, "behold serve --local", cfg.workspace);
 
   // #209: every served chant project registers as a recent at boot — the
   // panel's switcher (and the demo catalog's "switch between loaded demos"
@@ -4572,10 +4573,8 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
     // process that outlives the boot, so the server owns the teardown.
     const downs: Array<Promise<unknown>> = [];
     if (cfg.local && cfg.emulators && cfg.emulators.length) {
-      downs.push(
-        emulatorDown(cfg.projectDir).catch((err) =>
-          process.stderr.write(`emulator down: ${err instanceof Error ? err.message : String(err)}\n`)),
-      );
+      // emulatorsDown never throws: each directory's teardown is best-effort.
+      downs.push(emulatorsDown(emulatorDirs(cfg.workspace?.root ?? cfg.projectDir, cfg.workspace)));
     }
     if (cfg.carveDemo?.live) downs.push(teardownScratchFloci().catch(() => undefined));
     void Promise.all(downs).finally(() => process.exit(0));

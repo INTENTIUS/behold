@@ -11,7 +11,7 @@ import { startServer, beholdVersion } from "./server.ts";
 import { loadDemoRegistry, missingRequirements, demoTargetDir, loadDemo, type DemoCarve } from "./demos.ts";
 import { resolveChant, runChantRaw } from "./chant.ts";
 import { applyConversion, planConversion } from "./workspace-convert.ts";
-import { ExportRefusal, OPENING_ZOOMS, publishTarget, runExport } from "./export.ts";
+import { ExportRefusal, OPENING_ZOOMS, publishTarget, runExport, settleNote } from "./export.ts";
 import { DEFAULT_KEEP, publishSnapshot, resolveCommit, SNAPSHOT_REPORTS_BASE } from "./publish-snapshots.ts";
 import { hasEnvCredentials, S3Object, s3FromEnv } from "./s3-object.ts";
 import { diagnose, formatReport } from "./doctor.ts";
@@ -46,7 +46,7 @@ Usage:
   behold preview [project-dir] [--port <n>] [--emulator]
   behold export [project-dir] [--out <dir>] [--env <name>] [--name <worker>] [--emulator]
                 [--terragucci <src> [--terragucci-project <p>] [--reports-base <rel>]] [--no-source]
-                [--yodel-report <file|dir>] [--open-env <env>] [--open-zoom <zoom>]
+                [--yodel-report <file|dir>] [--open-env <env>] [--open-zoom <zoom>] [--note <text>]
                 [--publish s3://<bucket>/<prefix>/views/<name> [--commit <sha>] [--keep <n>]]
   behold serve <project-dir…> [--port <n>] [--host <addr>] [--allow-host <name,…>] [--hud <url>] [--env <name>] [--poll <secs>] [--local]
                 [--public] [--terragucci <src> [--terragucci-project <p>] [--terragucci-poll <secs>] [--terragucci-runs <src>]]
@@ -303,6 +303,9 @@ Options:
   --open-zoom <zoom>  export only: the zoom the bundle opens on: components,
                       logical, composites, resources or attributes, or ops
                       when the estate has emitted Ops.
+  --note <text>       export only: one line the page shows at its foot, such
+                      as how to run the estate yourself; a span in backticks
+                      is drawn as code. At most 200 characters.
   -h, --help          This text.
   -v, --version       Print the behold version.
 `;
@@ -1115,9 +1118,11 @@ async function runExportCmd(rest: string[]): Promise<void> {
   let chantReportUrl: string | undefined;
   let openEnv: string | undefined;
   let openZoom: string | undefined;
+  let note: string | undefined;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a === "--out") outDir = resolve(rest[++i]);
+    else if (a === "--note") note = rest[++i] ?? "";
     else if (a === "--open-env") openEnv = rest[++i] ?? "";
     else if (a === "--open-zoom") openZoom = rest[++i] ?? "";
     else if (a === "--yodel-report") yodelReport = rest[++i];
@@ -1146,6 +1151,12 @@ async function runExportCmd(rest: string[]): Promise<void> {
   }
   if (openZoom !== undefined && !([...OPENING_ZOOMS, "ops"] as string[]).includes(openZoom)) {
     process.stderr.write(`behold export: --open-zoom ${openZoom || "(nothing)"} isn't a zoom an export opens on: it takes ${[...OPENING_ZOOMS, "ops"].join(", ")}\n`);
+    process.exit(2);
+  }
+  // #824: checked before the project is read, like the zoom.
+  const settledNote = settleNote(note);
+  if ("error" in settledNote) {
+    process.stderr.write(`behold export: ${settledNote.error}\n`);
     process.exit(2);
   }
   if ((terragucciProject || reportsBase !== undefined) && !terragucci) {
@@ -1210,6 +1221,7 @@ async function runExportCmd(rest: string[]): Promise<void> {
       ...(noSource ? { noSource } : {}),
       ...(reportsBase !== undefined ? { reportsBase } : destination ? { reportsBase: SNAPSHOT_REPORTS_BASE } : {}),
       ...(Object.keys(open).length ? { open } : {}),
+      ...(settledNote.note ? { note: settledNote.note } : {}),
     },
   ).catch((e: unknown) => {
     if (!(e instanceof ExportRefusal)) throw e;

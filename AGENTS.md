@@ -1307,7 +1307,25 @@ of rotation with its edges, counts the states in the Model tab and shows the
 detail in the inspect pane. It never changes a card's fill.
 `src/__fixtures__/health/` was recorded from chant main at cd9a90716 against
 a floci whose health checks probe (lex00/floci#259); src/runtime-health.test.ts
-names each file's provenance.
+names each file's provenance. A multi-stack document (a project that declares
+`stacks`) is keyed `<member>/<stack>::<name>` (#824), the ids chant's live
+overlay gives that project's nodes.
+
+## The three-cloud demo (#824)
+
+`example-three-cloud` is a chant workspace (`dns`, `aws`, `azure`, `gcp`) on
+floci, floci-az and floci-gcp; docs/src/content/docs/using/three-cloud.mdx is
+its page. `behold demo three-cloud` runs `scripts/emulators-up.sh` (the
+emulators under chant's own container names, with the Docker socket, floci-az
+running Container Apps unmocked), then serves with `--local --env local`.
+`--local` on a workspace boots every chant member's emulators
+(`emulatorDirs`/`emulatorsUp` in src/emulator.ts), not the first member's, and
+tears down the same set. The `front-door` Op (`dns/ops/front-door.op.ts`)
+runs `scripts/front-door.ts`: apply all four, deactivate the Azure revision,
+wait for `azureCheck` to read unhealthy, then `behold export --open-env local
+--open-zoom composites --note …`. `--note` (`settleNote` in src/export.ts) is
+one line under 200 characters, written to the manifest as `note` and drawn at
+the foot of a static page by web/export-note.js, backticked spans as code.
 
 ## Invariant
 

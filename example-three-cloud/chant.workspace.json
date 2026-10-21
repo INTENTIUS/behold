@@ -1,0 +1,10 @@
+{
+  "name": "three-cloud",
+  "schema": 1,
+  "members": [
+    { "name": "dns", "dir": "dns", "kind": "chant" },
+    { "name": "aws", "dir": "aws", "kind": "chant" },
+    { "name": "azure", "dir": "azure", "kind": "chant" },
+    { "name": "gcp", "dir": "gcp", "kind": "chant" }
+  ]
+}

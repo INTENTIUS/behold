@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { bundleIdentity, canonicalKey, captureKeys, copyNotices, OPENING_ZOOMS, settleOpening, workerName } from "./export.ts";
+import { bundleIdentity, canonicalKey, captureKeys, copyNotices, OPENING_ZOOMS, settleOpening, workerName, settleNote, NOTE_MAX } from "./export.ts";
 
 describe("canonicalKey", () => {
   it("is independent of param order (sorted by the lens whitelist)", () => {
@@ -189,5 +189,20 @@ describe("copyNotices — the export carries the grants it redistributes (#394)"
     const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { license?: string; files: string[] };
     expect(pkg.license).toBe("Apache-2.0");
     for (const f of ["LICENSE", "THIRD_PARTY.md", "licenses"]) expect(pkg.files).toContain(f);
+  });
+});
+
+// #824: `--note`, the line a page shows at its foot.
+describe("settleNote", () => {
+  it("takes one trimmed line, and nothing when none is given", () => {
+    expect(settleNote(undefined)).toEqual({});
+    expect(settleNote("  Run this yourself: `npx @intentius/behold demo three-cloud`  ")).toEqual({ note: "Run this yourself: `npx @intentius/behold demo three-cloud`" });
+  });
+
+  it("refuses an empty note, a second line and a note past the limit", () => {
+    expect(settleNote("   ")).toEqual({ error: "--note needs the line the page shows at its foot" });
+    expect(settleNote("a\nb")).toEqual({ error: "--note takes one line" });
+    expect(settleNote("x".repeat(NOTE_MAX + 1))).toEqual({ error: `--note takes at most ${NOTE_MAX} characters, not ${NOTE_MAX + 1}` });
+    expect(settleNote("x".repeat(NOTE_MAX))).toEqual({ note: "x".repeat(NOTE_MAX) });
   });
 });

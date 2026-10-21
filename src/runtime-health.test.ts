@@ -15,8 +15,12 @@
 //   emulator behind them (read-failed, no-binding).
 // - dns-graph-ir.json: `chant graph src --format ir --detail 2` of the `dns`
 //   member, the edges rotation reads.
+// - stacks-health.json (#824): the three-cloud example's `aws` member, which
+//   declares `stacks`, recorded from chant main at b25ce7d0d against
+//   ghcr.io/lex00/floci:1564bbe with its stack rolled back (lex00/floci#261),
+//   so the service is absent.
 //
-// The multi-stack and malformed documents below are hand-built, in the shape
+// The other multi-stack and malformed documents below are hand-built, in the shape
 // chant's schema (src/health-schema/health.schema.json) states.
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -107,6 +111,14 @@ describe("node health and rotation (#825)", () => {
     expect(nodes["dns/awsCheck"].state).toBe("healthy");
     expect(nodes["azure/app"]).toEqual({ state: "unobserved", reason: "read-failed", type: "Microsoft.App/containerApps", detail: "fetch failed" });
     expect(nodeHealthOf(fixture("ecs-health.json")).idle.state).toBe("unknown");
+  });
+
+  // #824: stacks-health.json is the three-cloud aws member, which declares
+  // `stacks`, read against floci with its stack rolled back. Its live overlay
+  // names the service `aws/three-cloud-aws::webService`, so its health does too.
+  it("keys a multi-stack document's nodes by stack, the way the live overlay names them", () => {
+    expect(nodeHealthOf(fixture("stacks-health.json"), "aws")).toEqual({ "aws/three-cloud-aws::webService": { state: "absent" } });
+    expect(nodeHealthOf(fixture("stacks-health.json"))).toEqual({ "three-cloud-aws::webService": { state: "absent" } });
   });
 
   it("finds each record's check from the HealthCheckId edge, and from the attribute when there is no edge", () => {

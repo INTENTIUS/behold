@@ -6,6 +6,8 @@
  * (deploy) — inherits it and hits the same emulator. No cloud creds: a local
  * Docker emulator holds none, and the apply still goes through a committed Op.
  */
+import { existsSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { runChantRaw } from "./chant.ts";
 
 /** One booted emulator, as reported by `chant emulator … --json`. */
@@ -75,4 +77,42 @@ export async function emulatorUp(projectDir: string): Promise<EmulatorInfo[]> {
  * failure on shutdown is logged by the caller, never thrown. */
 export async function emulatorDown(projectDir: string): Promise<void> {
   await runChantRaw(["emulator", "down"], projectDir);
+}
+
+/**
+ * #824: the directories whose emulators `--local` boots. A chant project is
+ * its own; a declared workspace is every chant member's, because `chant
+ * emulator up` reads one project's lexicons and the three-cloud workspace's
+ * first member (dns) would boot floci alone, leaving the azure and gcp reads
+ * pointed at the real clouds. The members come from the served workspace when
+ * there is one, else from a `chant.workspace.json` in `dir` (the demo route
+ * boots before it serves). A declaration that can't be read is `[dir]`.
+ */
+export function emulatorDirs(dir: string, workspace?: { members: Array<{ kind: string; abs: string }> }): string[] {
+  if (workspace) {
+    const dirs = workspace.members.filter((m) => m.kind === "chant").map((m) => m.abs);
+    return dirs.length ? dirs : [dir];
+  }
+  const file = join(dir, "chant.workspace.json");
+  if (!existsSync(file)) return [dir];
+  try {
+    const doc = JSON.parse(readFileSync(file, "utf8")) as { members?: Array<{ dir?: unknown; kind?: unknown }> };
+    const dirs = (doc.members ?? []).filter((m) => (m.kind ?? "chant") === "chant" && typeof m.dir === "string").map((m) => resolve(dir, m.dir as string));
+    return dirs.length ? dirs : [dir];
+  } catch {
+    return [dir];
+  }
+}
+
+/** Boot every directory's emulators, one directory at a time, keeping one
+ * entry per container: two members on the same lexicon share its emulator. */
+export async function emulatorsUp(dirs: string[]): Promise<EmulatorInfo[]> {
+  const seen = new Map<string, EmulatorInfo>();
+  for (const d of dirs) for (const e of await emulatorUp(d)) if (!seen.has(e.name)) seen.set(e.name, e);
+  return [...seen.values()];
+}
+
+/** Tear down every directory's emulators, best-effort. */
+export async function emulatorsDown(dirs: string[]): Promise<void> {
+  for (const d of dirs) await emulatorDown(d).catch(() => undefined);
 }

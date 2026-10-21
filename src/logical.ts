@@ -147,6 +147,9 @@ const NO_CONTRACT_KINDS = new Set([
   "AWS::Logs::LogGroup",
   "AWS::SecretsManager::Secret",
   "AWS::SSM::Parameter",
+  // every record in a zone references it, so records in one zone are not
+  // thereby connected (three latency records for one name, say)
+  "AWS::Route53::HostedZone",
   // containment fabric
   "AWS::EC2::VPC",
   "AWS::EC2::Subnet",
@@ -501,14 +504,44 @@ function retainCrossLensEdges(
     return false;
   };
 
-  for (const e of ir.edges) {
-    if (e.from === e.to || !cards.has(e.from) || !cards.has(e.to)) continue;
-    if (perLens.some((ids) => ids.has(e.from) && ids.has(e.to))) continue; // one lens's call to make
+  const retain = (e: IREdge): void => {
+    if (e.from === e.to || !cards.has(e.from) || !cards.has(e.to)) return;
+    if (perLens.some((ids) => ids.has(e.from) && ids.has(e.to))) return; // one lens's call to make
     const key = pairKey(e.from, e.to);
-    if (drawn.has(key)) continue;
-    if (nests(e.from, e.to) || nests(e.to, e.from)) continue; // the boxes already say it
+    if (drawn.has(key)) return;
+    if (nests(e.from, e.to) || nests(e.to, e.from)) return; // the boxes already say it
     drawn.add(key);
     edges.push(e);
+  };
+  for (const e of ir.edges) retain(e);
+
+  // A card can reach another lens's card only through nodes no lens drew: a
+  // Route 53 record names its endpoint through a Parameter, and the Parameter
+  // is what imports the Azure or GCP app. Follow references outward from each
+  // card through such dropped nodes, as the AWS lens contracts through its own
+  // (`projectLogical`), and keep the first card reached in another lens. Hubs
+  // are not walked through, for the reason NO_CONTRACT_KINDS gives.
+  const kindOf = new Map(ir.nodes.map((n) => [n.id, n.kind]));
+  const out = new Map<string, IREdge[]>();
+  for (const e of ir.edges) (out.get(e.from) ?? out.set(e.from, []).get(e.from)!).push(e);
+  for (const start of cards) {
+    const lens = perLens.filter((ids) => ids.has(start));
+    const seen = new Set([start]);
+    let frontier = [...(out.get(start) ?? [])];
+    for (let depth = 0; depth < 4 && frontier.length; depth++) {
+      const next: IREdge[] = [];
+      for (const e of frontier) {
+        if (seen.has(e.to)) continue;
+        seen.add(e.to);
+        if (cards.has(e.to)) {
+          if (depth > 0 && !lens.some((ids) => ids.has(e.to))) retain({ from: start, to: e.to, kind: "ref", ...(e.viaAttr ? { viaAttr: e.viaAttr } : {}) });
+          continue;
+        }
+        if (NO_CONTRACT_KINDS.has(kindOf.get(e.to) ?? "")) continue;
+        next.push(...(out.get(e.to) ?? []));
+      }
+      frontier = next;
+    }
   }
 }
 

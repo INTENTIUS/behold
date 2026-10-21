@@ -62,7 +62,7 @@ describe("runExport, end to end (#489)", () => {
     const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     try {
       await runExport({ projectDir: project, port: 0 }, plain);
-      await runExport({ projectDir: project, port: 0 }, out, { open: { zoom: "composites" } });
+      await runExport({ projectDir: project, port: 0 }, out, { open: { zoom: "composites" }, note: " Run this yourself: `npx @intentius/behold demo three-cloud` " });
     } finally {
       write.mockRestore();
     }
@@ -72,6 +72,20 @@ describe("runExport, end to end (#489)", () => {
     expect(read(plain, "manifest.json")).not.toHaveProperty("workspace");
     expect(read(plain, "manifest.json")).not.toHaveProperty("opening");
     expect(read(out, "manifest.json").opening).toEqual({ zoom: "composites" });
+    // #824: the note rides in the manifest, trimmed, only when one was given.
+    expect(read(plain, "manifest.json")).not.toHaveProperty("note");
+    expect(read(out, "manifest.json").note).toBe("Run this yourself: `npx @intentius/behold demo three-cloud`");
+    expect(readFileSync(join(out, "index.html"), "utf8")).toContain('id="export-note"');
+    expect(existsSync(join(out, "export-note.js"))).toBe(true);
+  });
+
+  it("refuses a note of more than one line, before it writes anything (#824)", { timeout: 60_000 }, async () => {
+    vi.mocked(graphIr).mockImplementation((async () => fixture()) as never);
+    const project = mkdtempSync(join(tmpdir(), "behold-export-src-"));
+    const out = join(mkdtempSync(join(tmpdir(), "behold-export-out-")), "bundle");
+    made.push(project, dirname(out));
+    await expect(runExport({ projectDir: project, port: 0 }, out, { note: "one\ntwo" })).rejects.toThrow("--note takes one line");
+    expect(existsSync(out)).toBe(false);
   });
 
   it("refuses an opening env the export doesn't capture, before it writes anything", { timeout: 60_000 }, async () => {

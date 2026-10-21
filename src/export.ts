@@ -233,6 +233,25 @@ export interface ExportOptions {
   reportsBase?: string;
   /** #827: `--open-env` / `--open-zoom`, the view the bundle opens on. Checked by `settleOpening` before anything is captured. */
   open?: Opening;
+  /** #824: `--note`, one line the page shows at its foot. Checked by `settleNote` before anything is captured. */
+  note?: string;
+}
+
+/** The longest `--note` an export takes: a line under the graph, not a page of prose. */
+export const NOTE_MAX = 200;
+
+/**
+ * #824: check `--note`. It is one line of plain text, where a span in
+ * backticks is drawn as code (web/export-note.js), at most NOTE_MAX
+ * characters once trimmed.
+ */
+export function settleNote(note: string | undefined): { note?: string } | { error: string } {
+  if (note === undefined) return {};
+  const text = note.trim();
+  if (!text) return { error: "--note needs the line the page shows at its foot" };
+  if (/[\r\n]/.test(text)) return { error: "--note takes one line" };
+  if (text.length > NOTE_MAX) return { error: `--note takes at most ${NOTE_MAX} characters, not ${text.length}` };
+  return { note: text };
 }
 
 /** Export's default for a report key's base: the bundle sits at `<prefix>/views/behold/`, so `../../` is the prefix. */
@@ -259,6 +278,8 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
   const settled = settleOpening(opts.open ?? {}, axes);
   if ("error" in settled) throw new ExportRefusal(settled.error);
   const opening = settled.opening;
+  const settledNote = settleNote(opts.note);
+  if ("error" in settledNote) throw new ExportRefusal(settledNote.error);
   const scrub = exportScrubber(cfg);
 
   const snapDir = join(outDir, "snapshots");
@@ -301,6 +322,7 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
     projectDir: identity.projectDir,
     ...(identity.workspace ? { workspace: identity.workspace } : {}),
     ...(Object.keys(opening).length ? { opening } : {}),
+    ...(settledNote.note ? { note: settledNote.note } : {}),
     axes,
     keyToFile,
   };
