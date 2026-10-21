@@ -2162,6 +2162,7 @@ function renderPanelView() {
   row.className = "prow";
   row.appendChild(actButton("⤢ fit", () => fitGraph(), "Reset zoom/pan to fit. Pinch or ⌘/Ctrl+scroll zooms at the cursor; drag pans."));
   row.appendChild(actButton("↓ SVG", () => exportSvg(), "Export the current graph as a standalone SVG file"));
+  row.appendChild(actButton("↓ PNG", () => exportPng(), "Save the view as a picture, with the options below"));
   const collapsed = document.getElementById("app").classList.contains("inspect-collapsed");
   row.appendChild(
     actButton(collapsed ? "show inspect" : "hide inspect", () => {
@@ -2177,6 +2178,24 @@ function renderPanelView() {
   lanes.style.cssText = "color:var(--pending);text-decoration:none;font-size:var(--t-body)";
   row.appendChild(lanes);
   tools.appendChild(row);
+  // #882: the picture's options: its scale, and whether a heading and the key go in.
+  const png = document.createElement("div");
+  png.className = "prow png-opts";
+  const scaleSel = document.createElement("select");
+  for (const k of [1, 2, 3, 4]) scaleSel.add(new Option(`${k}×`, String(k), false, pngOpts.scale === k));
+  scaleSel.title = "Pixels per point of the picture";
+  scaleSel.addEventListener("change", () => (pngOpts.scale = Number(scaleSel.value)));
+  const check = (label, prop) => {
+    const l = document.createElement("label");
+    const c = document.createElement("input");
+    c.type = "checkbox";
+    c.checked = pngOpts[prop];
+    c.addEventListener("change", () => (pngOpts[prop] = c.checked));
+    l.append(c, ` ${label}`);
+    return l;
+  };
+  png.append("PNG ", scaleSel, check("heading", "heading"), check("key", "key"));
+  tools.appendChild(png);
 }
 
 // Scope tab: which world the graph reads — env (source vs live overlay),
@@ -11047,6 +11066,140 @@ function exportSvg() {
   a.remove();
   URL.revokeObjectURL(url);
   nowline(`↓ exported ${a.download}`);
+}
+
+// behold#882: the graph as a picture, for a document or a slide. The SVG on
+// the page leans on the stylesheet (theme variables, the cloud tints, edge
+// styles) and on linked vendor marks, none of which a bare copy carries, so
+// the copy gets every element's computed paint written onto it and each mark
+// inlined. It is the view as it stands (zoomed in, it is the zoomed view),
+// at 1-4x, optionally under a heading and with the graph's key drawn in.
+const PNG_PAINT = ["fill", "stroke", "stroke-width", "stroke-dasharray", "stroke-linecap", "opacity", "fill-opacity", "stroke-opacity", "font-size", "font-family", "font-weight", "display", "visibility"];
+const PNG_HEAD = 44;
+let pngOpts = { scale: 2, heading: true, key: true };
+
+async function inlineMarks(clone) {
+  for (const img of clone.querySelectorAll("image")) {
+    const href = img.getAttribute("href") || img.getAttribute("xlink:href") || "";
+    if (!href || href.startsWith("data:")) continue;
+    try {
+      const text = await (await fetch(href)).text();
+      img.setAttribute("href", `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(text)))}`);
+    } catch {
+      img.remove();
+    }
+  }
+}
+
+function keyRows() {
+  const legend = document.getElementById("graph-legend");
+  if (!legend || legend.classList.contains("closed")) return [];
+  const rows = [];
+  for (const el of legend.children) {
+    if (el.classList.contains("gl-head")) continue;
+    if (el.classList.contains("gl-sub")) {
+      rows.push({ sub: el.textContent });
+      continue;
+    }
+    const swatch = el.firstElementChild;
+    const colours = swatch && swatch.children.length ? [...swatch.children].map((c) => getComputedStyle(c).backgroundColor) : swatch ? [getComputedStyle(swatch).backgroundColor] : [];
+    const text = el.querySelector(".grow")?.textContent ?? "";
+    const count = el.querySelector(".gl-count")?.textContent ?? "";
+    rows.push({ colours, text, count });
+  }
+  return rows;
+}
+
+async function exportPng() {
+  const svg = currentSvg();
+  if (!svg || !vb) {
+    nowline("✗ export: no graph loaded yet");
+    return;
+  }
+  const { scale, heading, key } = pngOpts;
+  // At the fit the view leaves room for the floating panel; the picture takes
+  // the graph's own bounds instead, with a margin. Zoomed or panned, it takes
+  // the view as it stands.
+  const pad = vbInit ? Math.max(vbInit[2], vbInit[3]) * 0.02 : 0;
+  const area = vbAtFit && vbInit ? [vbInit[0] - pad, vbInit[1] - pad, vbInit[2] + 2 * pad, vbInit[3] + 2 * pad] : vb;
+  const box = svg.getBoundingClientRect();
+  const w = Math.round(box.width);
+  const h = Math.round((w * area[3]) / area[2]);
+  const head = heading ? PNG_HEAD : 0;
+  // The key gets a band of its own under the graph, never drawn over it.
+  const rowsForKey = key ? keyRows() : [];
+  const keyLine = 17;
+  const keyBand = rowsForKey.length ? rowsForKey.length * keyLine + 28 : 0;
+  const clone = svg.cloneNode(true);
+  const from = [svg, ...svg.querySelectorAll("*")];
+  const to = [clone, ...clone.querySelectorAll("*")];
+  for (let i = 0; i < from.length && i < to.length; i++) {
+    const cs = getComputedStyle(from[i]);
+    to[i].setAttribute("style", PNG_PAINT.map((p) => `${p}:${cs.getPropertyValue(p)}`).join(";"));
+  }
+  await inlineMarks(clone);
+  clone.setAttribute("x", "0");
+  clone.setAttribute("y", String(head));
+  clone.setAttribute("width", String(w));
+  clone.setAttribute("height", String(h));
+  clone.setAttribute("viewBox", area.join(" "));
+  const root = getComputedStyle(document.documentElement);
+  const bg = root.getPropertyValue("--bg").trim() || "#ffffff";
+  const fg = root.getPropertyValue("--fg").trim() || "#000000";
+  const muted = root.getPropertyValue("--muted").trim() || fg;
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const title = esc(document.title || "behold");
+  const sub = esc(document.getElementById("meta")?.textContent?.trim() ?? "");
+  const total = h + head + keyBand;
+  const parts = [`<rect width="${w}" height="${total}" fill="${bg}"/>`];
+  if (heading) {
+    parts.push(`<text x="16" y="22" fill="${fg}" font-family="system-ui, sans-serif" font-size="16" font-weight="700">${title}</text>`);
+    parts.push(`<text x="16" y="38" fill="${muted}" font-family="system-ui, sans-serif" font-size="11">${sub}</text>`);
+  }
+  parts.push(new XMLSerializer().serializeToString(clone));
+  if (rowsForKey.length) {
+    const kx = 16;
+    const ky = head + h + 14;
+    rowsForKey.forEach((r, i) => {
+      const y = ky + i * keyLine + 9;
+      if (r.sub) {
+        parts.push(`<text x="${kx}" y="${y + 3}" fill="${muted}" font-family="system-ui, sans-serif" font-size="10.5">${esc(r.sub)}</text>`);
+        return;
+      }
+      r.colours.forEach((c, j) => parts.push(`<rect x="${kx + j * 9}" y="${y - 6}" width="7" height="11" rx="1.5" fill="${c}"/>`));
+      parts.push(`<text x="${kx + 32}" y="${y + 3}" fill="${fg}" font-family="system-ui, sans-serif" font-size="11.5">${esc(r.text)}${r.count ? ` <tspan fill="${muted}">${esc(r.count)}</tspan>` : ""}</text>`);
+    });
+  }
+  const doc = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${w}" height="${total}" viewBox="0 0 ${w} ${total}">${parts.join("")}</svg>`;
+  const url = URL.createObjectURL(new Blob([doc], { type: "image/svg+xml" }));
+  try {
+    const img = new Image();
+    await new Promise((ok, fail) => {
+      img.onload = ok;
+      img.onerror = () => fail(new Error("the picture did not render"));
+      img.src = url;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = w * scale;
+    canvas.height = total * scale;
+    const ctx = canvas.getContext("2d");
+    ctx.scale(scale, scale);
+    ctx.drawImage(img, 0, 0);
+    const blob = await new Promise((ok) => canvas.toBlob(ok, "image/png"));
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `behold-${zoomValue()}${view.env ? "-" + view.env : ""}@${scale}x.png`;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    nowline(`↓ exported ${a.download}`);
+  } catch (e) {
+    nowline(`✗ export: ${e.message}`);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 // --- Command palette (⌘K / Ctrl+K, #73) -----------------------------------
