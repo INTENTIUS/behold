@@ -54,11 +54,11 @@ floci runs each load balancer listener on the listener's own port in its contain
 The Op's last step is a [static export](/behold/using/export/) into `export/`:
 
 ```sh
-behold export . --open-env local --open-zoom composites \
+behold export . --open-env local --open-zoom logical \
   --note 'Run this yourself: `npx @intentius/behold demo three-cloud`' --out export
 ```
 
-It opens on the `local` environment at the composites zoom, where the whole estate fits one screen, and ends with the line that brings a reader back here. To rebuild the page from nothing, boot the emulators and run the Op:
+It opens on the `local` environment at the logical zoom, which draws each record, the service it fronts and whether it is in rotation, and ends with the line that brings a reader back here. To rebuild the page from nothing, boot the emulators and run the Op:
 
 ```sh
 npm run emulators && npm run front-door

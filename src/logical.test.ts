@@ -423,6 +423,19 @@ describe("projectTopology, a mixed-cloud workspace keeps each member's containme
     expect(Object.keys(byContainer)).not.toContain("other");
   });
 
+  // behold#824: the shipped example keeps each member's source in `src/`, so
+  // the azure and gcp lenses both named their one box "src", and the merged
+  // nesting drew the Azure cards inside GCP's location.
+  it("keeps members apart when each keeps its source under the same directory", () => {
+    const ir = workspace();
+    for (const n of ir.nodes) (n as { sourceLoc: { file: string } }).sourceLoc.file = `src/${(n as { sourceLoc: { file: string } }).sourceLoc.file}`;
+    const { byContainer } = projectTopology(ir, "prod");
+    expect(parentsOf(byContainer, "azure/app")).toEqual(["azure"]);
+    expect(parentsOf(byContainer, "gcp/web")).toEqual(["gcp"]);
+    expect(parentsOf(byContainer, "azure")).toEqual(["resource group prod"]);
+    expect(Object.keys(byContainer)).not.toContain("src");
+  });
+
   it("draws the Azure member's Container App", () => {
     const { ir: out } = projectTopology(workspace(), "prod");
     expect(out.nodes.map((n) => n.id)).toEqual(expect.arrayContaining(["azure/app", "azure/env"]));

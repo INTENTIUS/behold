@@ -222,9 +222,23 @@ export function componentNamer(nodes: IRNode[], groups?: GraphIR["groups"]): (no
       }
     }
   }
-  return (node) => {
+  const component = (node: IRNode): string => {
     const dirs = segments(node);
     return dirs[shared] ?? dirs[dirs.length - 1] ?? "other";
+  };
+  // A member whose nodes all land in one component is that component: the
+  // azure and gcp members of the three-cloud demo both keep their source in
+  // `src/`, so each lens named its one box "src", and since a box key is its
+  // title the two merged and the Azure cards were drawn inside GCP's
+  // location box (behold#824). The member's name is the honest title.
+  const seen = new Map<string, Set<string>>();
+  for (const n of nodes) {
+    const m = memberOf(n);
+    if (m) (seen.get(m) ?? seen.set(m, new Set()).get(m)!).add(component(n));
+  }
+  return (node) => {
+    const m = memberOf(node);
+    return m && seen.get(m)?.size === 1 ? m : component(node);
   };
 }
 
