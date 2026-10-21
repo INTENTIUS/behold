@@ -62,6 +62,7 @@ import { applyHelmArtifacts } from "./helm-artifacts.ts";
 import { applyHelmRenderDrift, readHelmRenderDrift } from "./helm-drift.ts";
 import { addClusterAnchorEdges } from "./cluster-anchor.ts";
 import { projectTopology } from "./logical.ts";
+import { memberPrefixes, simplifyNesting } from "./logical-simplify.ts";
 import { addCompositeDepsCounted } from "./composite-deps.ts";
 import { notesFor, danglingNote, tierMismatchNote, namespaceMismatchNote, namespaceJoinNote, unchangedZoomNote, type Zoom } from "./zoom-notes.ts";
 import { resourcesByComponent, resourcesByRoot, nonResourceEntities } from "./resources.ts";
@@ -132,6 +133,7 @@ import { chantConfigPath, detectProject, loadBeholdConfig, executorDesignation, 
 /** What `/api/project` says about a designated env (#165): whether Deploy can
  * dispatch it right now, and if not, why — the SPA renders the reason on a
  * disabled control rather than a control that fails. */
+
 export interface ExecutorStatus {
   forge?: string;
   workflow?: string;
@@ -2791,7 +2793,8 @@ export function createApp(
         // them (the app projects), and only the composed picture has both.
         if (logical) {
           const logicalBefore = ir.nodes.length;
-          const { ir: projected, byContainer, namespaceBoxes } = projectTopology(ir, metaEnv ?? undefined, estateContext, await estateSourceRoots(opts));
+          const { ir: projected, byContainer: joined, namespaceBoxes } = projectTopology(ir, metaEnv ?? undefined, estateContext, await estateSourceRoots(opts));
+          const byContainer = simplifiedEstateNesting(joined, ir, namespaceBoxes);
           // #234's free rider, the logical lens's half (pinhole#119): the same
           // detector as `markOperatorHome` above, run again against the box
           // KEYS the projection just minted — see src/operator.ts's
@@ -3601,7 +3604,8 @@ export function createApp(
         // safe here and estateSourceRoots for the env/binding choice.
         if (logical) {
           const logicalBefore = ir.nodes.length;
-          const { ir: projected, byContainer, namespaceBoxes } = projectTopology(ir, env, boundContext, await estateSourceRoots(query));
+          const { ir: projected, byContainer: joined, namespaceBoxes } = projectTopology(ir, env, boundContext, await estateSourceRoots(query));
+          const byContainer = simplifiedEstateNesting(joined, ir, namespaceBoxes);
           // #234's free rider, the logical lens's half (pinhole#119) — see
           // /api/graph's estate branch.
           const { svg } = renderArchitecture(projected, byContainer, { groupMarks: operatorHomeBoxMarks(ir, namespaceBoxes ?? {}), groupBadges: operatorHomeBoxBadges(ir, namespaceBoxes ?? {}), ...(cardPrefixesOf(ir) ? { cardPrefixes: cardPrefixesOf(ir)! } : {}) });
@@ -4644,4 +4648,13 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
     }
     process.exit(1);
   });
+}
+
+/** The logical nesting a multi-member estate draws, with the boxes that only
+ * repeat a member or wrap a single box taken away (src/logical-simplify.ts).
+ * A single project's nesting is left as its lens made it. */
+function simplifiedEstateNesting(byContainer: Record<string, string[]>, ir: GraphIR, namespaceBoxes: Record<string, string> | undefined): Record<string, string[]> {
+  const members = memberPrefixes(ir.nodes);
+  if (members.size < 2) return byContainer;
+  return simplifyNesting(byContainer, members, new Set(Object.values(namespaceBoxes ?? {})));
 }
