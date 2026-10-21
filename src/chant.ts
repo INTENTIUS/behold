@@ -340,7 +340,7 @@ export interface ChantRun {
 export function isScheduledRead(args: string[]): boolean {
   return args[0] === "graph" ||
     (args[0] === "components" && args[1] === "status") ||
-    (args[0] === "lifecycle" && ["diff", "plan"].includes(args[1])) ||
+    (args[0] === "lifecycle" && ["diff", "plan", "health"].includes(args[1])) ||
     (args[0] === "helm" && ["renders", "diff"].includes(args[1])) ||
     (args[0] === "run" && args[1] === "status") ||
     (args[0] === "operator" && ["status", "log"].includes(args[1])) ||

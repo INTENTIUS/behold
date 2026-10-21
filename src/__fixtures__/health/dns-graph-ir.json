@@ -1,0 +1,278 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "awsCheck",
+      "kind": "AWS::Route53::HealthCheck",
+      "lexicon": "aws",
+      "attrs": {
+        "HealthCheckId": {
+          "$ref": "awsCheck.HealthCheckId"
+        }
+      },
+      "sourceLoc": {
+        "file": "route53.ts"
+      }
+    },
+    {
+      "id": "awsEndpoint",
+      "kind": "AWS::CloudFormation::Parameter",
+      "lexicon": "aws",
+      "attrs": {
+        "parameterType": "String",
+        "description": "AWS ALB hostname (aws member)"
+      },
+      "sourceLoc": {
+        "file": "route53.ts"
+      }
+    },
+    {
+      "id": "awsRecord",
+      "kind": "AWS::Route53::RecordSet",
+      "lexicon": "aws",
+      "attrs": {
+        "HostedZoneId": {
+          "$ref": "zone.Id"
+        },
+        "Name": "www.three-cloud.example.",
+        "Type": "CNAME",
+        "TTL": "60",
+        "SetIdentifier": "aws-us-east-1",
+        "Region": "us-east-1",
+        "HealthCheckId": {
+          "$ref": "awsCheck.HealthCheckId"
+        }
+      },
+      "sourceLoc": {
+        "file": "route53.ts"
+      }
+    },
+    {
+      "id": "azureCheck",
+      "kind": "AWS::Route53::HealthCheck",
+      "lexicon": "aws",
+      "attrs": {
+        "HealthCheckId": {
+          "$ref": "azureCheck.HealthCheckId"
+        }
+      },
+      "sourceLoc": {
+        "file": "route53.ts"
+      }
+    },
+    {
+      "id": "azureEndpoint",
+      "kind": "AWS::CloudFormation::Parameter",
+      "lexicon": "aws",
+      "attrs": {
+        "parameterType": "String",
+        "description": "Container App FQDN (azure member)"
+      },
+      "sourceLoc": {
+        "file": "route53.ts"
+      }
+    },
+    {
+      "id": "azureRecord",
+      "kind": "AWS::Route53::RecordSet",
+      "lexicon": "aws",
+      "attrs": {
+        "HostedZoneId": {
+          "$ref": "zone.Id"
+        },
+        "Name": "www.three-cloud.example.",
+        "Type": "CNAME",
+        "TTL": "60",
+        "SetIdentifier": "azure-westeurope",
+        "Region": "eu-west-1",
+        "HealthCheckId": {
+          "$ref": "azureCheck.HealthCheckId"
+        }
+      },
+      "sourceLoc": {
+        "file": "route53.ts"
+      }
+    },
+    {
+      "id": "gcpCheck",
+      "kind": "AWS::Route53::HealthCheck",
+      "lexicon": "aws",
+      "attrs": {
+        "HealthCheckId": {
+          "$ref": "gcpCheck.HealthCheckId"
+        }
+      },
+      "sourceLoc": {
+        "file": "route53.ts"
+      }
+    },
+    {
+      "id": "gcpEndpoint",
+      "kind": "AWS::CloudFormation::Parameter",
+      "lexicon": "aws",
+      "attrs": {
+        "parameterType": "String",
+        "description": "Cloud Run hostname (gcp member)"
+      },
+      "sourceLoc": {
+        "file": "route53.ts"
+      }
+    },
+    {
+      "id": "gcpRecord",
+      "kind": "AWS::Route53::RecordSet",
+      "lexicon": "aws",
+      "attrs": {
+        "HostedZoneId": {
+          "$ref": "zone.Id"
+        },
+        "Name": "www.three-cloud.example.",
+        "Type": "CNAME",
+        "TTL": "60",
+        "SetIdentifier": "gcp-asia-northeast1",
+        "Region": "ap-northeast-1",
+        "HealthCheckId": {
+          "$ref": "gcpCheck.HealthCheckId"
+        }
+      },
+      "sourceLoc": {
+        "file": "route53.ts"
+      }
+    },
+    {
+      "id": "zone",
+      "kind": "AWS::Route53::HostedZone",
+      "lexicon": "aws",
+      "attrs": {
+        "Id": {
+          "$ref": "zone.Id"
+        },
+        "NameServers": {
+          "$ref": "zone.NameServers"
+        },
+        "Name": "three-cloud.example."
+      },
+      "sourceLoc": {
+        "file": "route53.ts"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "awsCheck",
+      "to": "awsEndpoint",
+      "kind": "ref",
+      "viaAttr": "HealthCheckConfig"
+    },
+    {
+      "from": "awsRecord",
+      "to": "awsCheck",
+      "kind": "ref",
+      "viaAttr": "HealthCheckId"
+    },
+    {
+      "from": "awsRecord",
+      "to": "awsEndpoint",
+      "kind": "ref",
+      "viaAttr": "ResourceRecords"
+    },
+    {
+      "from": "awsRecord",
+      "to": "zone",
+      "kind": "ref",
+      "viaAttr": "HostedZoneId"
+    },
+    {
+      "from": "azureCheck",
+      "to": "azureEndpoint",
+      "kind": "ref",
+      "viaAttr": "HealthCheckConfig"
+    },
+    {
+      "from": "azureRecord",
+      "to": "azureCheck",
+      "kind": "ref",
+      "viaAttr": "HealthCheckId"
+    },
+    {
+      "from": "azureRecord",
+      "to": "azureEndpoint",
+      "kind": "ref",
+      "viaAttr": "ResourceRecords"
+    },
+    {
+      "from": "azureRecord",
+      "to": "zone",
+      "kind": "ref",
+      "viaAttr": "HostedZoneId"
+    },
+    {
+      "from": "gcpCheck",
+      "to": "gcpEndpoint",
+      "kind": "ref",
+      "viaAttr": "HealthCheckConfig"
+    },
+    {
+      "from": "gcpRecord",
+      "to": "gcpCheck",
+      "kind": "ref",
+      "viaAttr": "HealthCheckId"
+    },
+    {
+      "from": "gcpRecord",
+      "to": "gcpEndpoint",
+      "kind": "ref",
+      "viaAttr": "ResourceRecords"
+    },
+    {
+      "from": "gcpRecord",
+      "to": "zone",
+      "kind": "ref",
+      "viaAttr": "HostedZoneId"
+    }
+  ],
+  "groups": {
+    "byLexicon": {
+      "aws": [
+        "awsCheck",
+        "awsEndpoint",
+        "awsRecord",
+        "azureCheck",
+        "azureEndpoint",
+        "azureRecord",
+        "gcpCheck",
+        "gcpEndpoint",
+        "gcpRecord",
+        "zone"
+      ]
+    },
+    "byStack": {
+      "aws": [
+        "awsCheck",
+        "awsEndpoint",
+        "awsRecord",
+        "azureCheck",
+        "azureEndpoint",
+        "azureRecord",
+        "gcpCheck",
+        "gcpEndpoint",
+        "gcpRecord",
+        "zone"
+      ]
+    }
+  },
+  "imports": [
+    {
+      "name": "awsEndpoint",
+      "node": "awsEndpoint"
+    },
+    {
+      "name": "azureEndpoint",
+      "node": "azureEndpoint"
+    },
+    {
+      "name": "gcpEndpoint",
+      "node": "gcpEndpoint"
+    }
+  ]
+}

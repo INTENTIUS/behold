@@ -1,0 +1,42 @@
+{
+  "schema": "chant-health/v1",
+  "chantVersion": "0.124.33",
+  "environment": "prod",
+  "observedAt": "2026-10-21T04:48:58.371Z",
+  "lexicons": {
+    "aws": {
+      "entities": {
+        "awsCheck": {
+          "type": "AWS::Route53::HealthCheck",
+          "state": "healthy",
+          "detail": "8/8 checkers healthy; last: Success: HTTP Status Code 200, OK",
+          "observedAt": "2026-10-21T04:48:58.414Z",
+          "checkedAt": "2026-10-21T04:48:43.098798632Z"
+        },
+        "azureCheck": {
+          "type": "AWS::Route53::HealthCheck",
+          "state": "unhealthy",
+          "detail": "0/8 checkers healthy; last: Failure: DNS resolution failed for w825-nowhere.invalid.",
+          "observedAt": "2026-10-21T04:48:58.414Z",
+          "checkedAt": "2026-10-21T04:48:42.977269840Z"
+        },
+        "gcpCheck": {
+          "type": "AWS::Route53::HealthCheck",
+          "state": "healthy",
+          "detail": "8/8 checkers healthy; last: Success: HTTP Status Code 200, OK",
+          "observedAt": "2026-10-21T04:48:58.414Z",
+          "checkedAt": "2026-10-21T04:48:43.119635090Z"
+        }
+      },
+      "unobserved": {},
+      "absent": []
+    }
+  },
+  "summary": {
+    "healthy": 2,
+    "unhealthy": 1,
+    "unknown": 0,
+    "unobserved": 0,
+    "absent": 0
+  }
+}

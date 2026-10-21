@@ -26,6 +26,7 @@ import { renderTrunkLane } from "./trunk-lane.js";
 import { startLocalRuns } from "./local-run.js";
 import { entriesFor as csEntriesFor, gapLines as csGapLines, inspectHeading as csInspectHeading, nodeMarks as csNodeMarks, offGraph as csOffGraph, overlayHeader as csHeader, overlayLegend as csLegend, PREVIEW_NOTE as CS_PREVIEW_NOTE } from "./change-set-overlay.js";
 import { collisionFilter as coFilter, collisionHeader as coHeader, collisionMarks as coMarks, collisionsFor as coFor, COLLISION_NOTE as CO_NOTE, FILES_NOTE as CO_FILES_NOTE, FILTER_OFF as CO_FILTER_OFF, FILTER_ON as CO_FILTER_ON, gapLines as coGapLines, hideEdge as coHideEdge, itemRow as coItemRow, nodeRow as coNodeRow, sideLines as coSideLines } from "./collision-marks.js";
+import { dimEdge as hmDimEdge, HEALTH_NOTE as HM_NOTE, healthHeader as hmHeader, healthLegendRows as hmLegendRows, healthMarks as hmMarks, healthRows as hmRows, memberLines as hmMemberLines } from "./health-marks.js";
 import { flagMarks as flFlagMarks, flagRow as flFlagRow, flagsFor as flFlagsFor, flagsHeader as flHeader, gapLines as flGapLines, NODES_NOTE as FL_NODES_NOTE, pickEnv as flPickEnv, STALE_COLOR as FL_STALE_COLOR, TURN_ON_NOTE as FL_TURN_ON_NOTE } from "./feature-flags.js";
 import { renderYodelLane } from "./sql-yodeler-lane.js";
 import { initTerragucciEstate } from "./terragucci-estate.js";
@@ -1053,6 +1054,12 @@ function inspect(node) {
       row.title = r.title;
       panel.appendChild(row);
     }
+  }
+  // #825: runtime health from chant lifecycle health, and a record's rotation.
+  const hmInspect = hmAnswer && hmAnswer.env === view.env ? hmRows(hmAnswer, node.id) : [];
+  if (hmInspect.length) {
+    const add = section(`runtime health · ${hmAnswer.env}`);
+    for (const [k, v] of hmInspect) add(k, v);
   }
   // #684: the in-flight work items colliding on this card.
   const coRows = coAnswer && coOn ? coFor(coAnswer, node.id) : [];
@@ -3071,6 +3078,7 @@ function renderPanelModel() {
     } else if (dm) {
       host.appendChild(panelMuted("attribute drift not read — the overlay is ownership only. ⌘K → “Re-check live with plan”."));
     }
+    renderHealthLegend(host); // #825: runtime health, beside drift and apart from it
     // The actionable nodes — foreign (adoptable) and pending (not applied yet).
     const attention = ir.nodes.filter((n) => {
       const s = n.attrs && n.attrs._status;
@@ -6476,6 +6484,117 @@ function renderCollisionsTab() {
 }
 initCollisions();
 
+// --- #825: runtime health and rotation ---------------------------------------
+// When the graph shows an environment, /api/health is read once for it (a
+// static export replays the captured snapshot): per card that has a health
+// read, healthy, unhealthy or unknown from `chant lifecycle health`, or a hole
+// with chant's reason when the read failed; and per Route 53 record whose
+// HealthCheckId names a declared check, its rotation. Health never touches a
+// card's fill, which stays the drift overlay's. A tag under the card says the
+// state, an unhealthy card gets a solid ring and a hole a dashed one, and a
+// record out of rotation is dimmed with its edges. "Re-check live" reads it
+// again with ?fresh=1.
+let hmAnswer = null;
+let hmLoading = null;
+function syncHealth(m) {
+  // `progressive` is the overlay while members are still reading (#422).
+  const drift = !!m && !!m.env && ["overlay", "progressive", "logical"].includes(m.mode);
+  if (!drift || publicMode) {
+    markHealthCards(null);
+    return;
+  }
+  if (hmAnswer && hmAnswer.env === m.env) {
+    markHealthCards(hmAnswer);
+    return;
+  }
+  loadHealth(m.env, false);
+}
+async function loadHealth(env, fresh) {
+  if (publicMode) return;
+  if (hmLoading === env && !fresh) return;
+  hmLoading = env;
+  const answer = await apiFetch(`/api/health?env=${encodeURIComponent(env)}${fresh ? "&fresh=1" : ""}`)
+    .then((r) => r.json())
+    .catch((e) => ({ error: String(e) }));
+  if (hmLoading !== env) return; // a newer env was asked for meanwhile
+  hmLoading = null;
+  hmAnswer = { ...answer, env };
+  if (view.env === env) {
+    markHealthCards(hmAnswer);
+    renderPanel();
+  }
+}
+function markHealthCards(a) {
+  const svg = document.querySelector("#graph svg");
+  if (!svg) return;
+  for (const old of svg.querySelectorAll("[data-hm-mark]")) old.remove();
+  for (const d of svg.querySelectorAll("[data-hm-dim]")) {
+    d.removeAttribute("data-hm-dim");
+    d.style.opacity = "";
+  }
+  if (!a) return;
+  const ids = [...svg.querySelectorAll("[data-node-id]")].map((g) => g.getAttribute("data-node-id"));
+  for (const [id, mk] of Object.entries(hmMarks(a, ids))) {
+    const g = svg.querySelector('[data-node-id="' + CSS.escape(id) + '"]');
+    if (!g) continue;
+    const rect = g.querySelector("rect");
+    const box = rect && rect.getBBox ? rect.getBBox() : { x: 0, y: 0, width: 150, height: 60 };
+    if (mk.ring) {
+      const ring = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      ring.setAttribute("data-hm-mark", "ring");
+      for (const [k, v] of Object.entries({ x: box.x - 3, y: box.y - 3, width: box.width + 6, height: box.height + 6, rx: 8, fill: "none", stroke: mk.color, "stroke-width": 2, "pointer-events": "none" })) ring.setAttribute(k, String(v));
+      if (mk.ring === "dashed") ring.setAttribute("stroke-dasharray", "4 4");
+      g.appendChild(ring);
+    }
+    const tag = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    tag.setAttribute("data-hm-mark", "tag");
+    tag.setAttribute("x", String(box.x));
+    // Under the card, where the flag tag sits (#683): above it, a card in a
+    // box's top row would run into the box's own header.
+    tag.setAttribute("y", String(box.y + box.height + 13));
+    tag.setAttribute("font-size", "11");
+    tag.setAttribute("font-weight", "700");
+    tag.setAttribute("fill", mk.color);
+    tag.textContent = `● ${mk.tag}`;
+    const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    title.textContent = mk.title;
+    tag.appendChild(title);
+    g.appendChild(tag);
+    if (mk.dim) {
+      // The card and its own text go faint; the tag under it stays legible.
+      for (const child of g.children) {
+        if (child.hasAttribute("data-hm-mark")) continue;
+        child.setAttribute("data-hm-dim", "1");
+        child.style.opacity = "0.35";
+      }
+    }
+  }
+  for (const e of svg.querySelectorAll("g[data-edge-from]")) {
+    if (!hmDimEdge(a, e.getAttribute("data-edge-from"), e.getAttribute("data-edge-to"))) continue;
+    e.setAttribute("data-hm-dim", "1");
+    e.style.opacity = "0.25";
+  }
+}
+/** The Model tab's health legend, under the drift legend. */
+function renderHealthLegend(host) {
+  if (!hmAnswer || hmAnswer.env !== view.env || publicMode) return;
+  const h = hmHeader(hmAnswer);
+  const heading = panelHeading(h.text);
+  heading.title = h.title || HM_NOTE;
+  if (h.tone === "refusal") heading.style.color = "var(--degraded)";
+  host.appendChild(heading);
+  for (const r of hmLegendRows(hmAnswer)) host.appendChild(panelDotRow(r.color, r.text, r.count));
+  for (const [id, r] of Object.entries(hmAnswer.rotation || {})) {
+    if (r.inRotation !== false) continue;
+    host.appendChild(panelDotRow("var(--degraded)", id, "out of rotation", () => selectNode(id)));
+  }
+  for (const l of hmMemberLines(hmAnswer)) {
+    const p = panelMuted(l.text);
+    p.title = l.title;
+    host.appendChild(p);
+  }
+}
+
 // --- #681: a waiting gate's change set, on the graph -------------------------
 // Opened from a gate card's "change set" link in the Trunk tab. The server
 // reads the gate from status and the stored change set from chant change-set
@@ -8408,6 +8527,7 @@ function render(ir, svg, m) {
   if (csAnswer) markChangeSetCards(); // #681: and the change set a gate binds, as a preview
   if (flAnswer) markFlagCards(); // #683: and the feature flags of each flagged member
   if (coAnswer) markCollisionCards(); // #684: and the nodes two in-flight work items touch
+  syncHealth(m); // #825: and runtime health, with the records out of rotation
   applyLayout(); // #228: last, so the hand-placed deltas ride on top of every other pass
   drawTgReads(); // #568: after the layout, so the reads lines meet the cards where they now sit
   renderDial();
@@ -9725,6 +9845,7 @@ async function refresh() {
     if (!res.ok) throw new Error((await res.json()).error || res.statusText);
     const { ir, svg, meta: m, captured } = await res.json();
     render(ir, svg, m);
+    if (view.env) loadHealth(view.env, true); // #825: health moves on its own; read it again too
     nowline(captured ? "↻ refreshed — new lanes frame" : "↻ refreshed — no change");
   } catch (err) {
     meta.textContent = prev;

@@ -24,6 +24,8 @@ npx behold export ../my-project --env prod --out ./behold-export
 
 Freezes the drift colours as they were when you exported. Useful for an incident write-up, or for showing someone an estate they have no credentials for.
 
+Each captured environment also carries its [health and rotation](/behold/using/reading-the-graph/#health-and-rotation), read once with `chant lifecycle health` when the export runs: the health marks on the cards and the Route 53 records out of rotation are drawn as they were then. The read uses the export's own credentials and endpoints (`AWS_ENDPOINT_URL` and the like, or the environment's declared endpoint), the same as the drift overlay. A chant older than 0.124.33 captures the refusal, and the bundle draws no health marks.
+
 ## The view it opens on
 
 A bundle opens on the source graph (`env: (source)`) at the zoom behold would pick for the estate. `--open-env` and `--open-zoom` choose something else:

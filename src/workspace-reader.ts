@@ -24,6 +24,7 @@
  */
 import { resolve } from "node:path";
 import { runChantRaw } from "./chant.ts";
+import { healthProblems, HEALTH_SCHEMA, type HealthDocument } from "./runtime-health.ts";
 
 /** The read contract version behold reads (chant's `reference/workspace-read-contract`). */
 export const WORKSPACE_CONTRACT = 1;
@@ -117,6 +118,18 @@ export const POINTS_READ = "points --open";
  */
 export const CI_RUNS_READ = "ci runs";
 
+/**
+ * #825: runtime health, `chant lifecycle health <env> --json` (chant#4177),
+ * run in a project's directory or a member's, since chant has no workspace
+ * form of it. Its document is `chant-health/v1`, not a contract 1 document,
+ * so it is checked by {@link healthProblems} instead of the contract check,
+ * and its floor is in src/chant-floors.ts (`HEALTH_CHANT_FLOOR`).
+ */
+export const HEALTH_READ = "lifecycle health";
+
+/** chant's words when no configured lexicon has a health read: it prints no document and exits 1. */
+const NO_HEALTH_READ = /no configured lexicon has a health read|no health read in this lexicon/i;
+
 /** The reads named outside `chant workspace`, for a refusal's wording. */
 const OUTSIDE_WORKSPACE: readonly string[] = [...TRUNK_READS, CHANGE_SET_READ, CI_RUNS_READ];
 
@@ -129,6 +142,8 @@ export interface WorkspaceReader {
   readChangeSet(digest: string, member: string): Promise<WorkspaceDocument>;
   /** #472: the workspace's open decision points and their questions, as chant printed them. */
   readPoints(): Promise<WorkspaceDocument>;
+  /** #825: runtime health in `env`, in directory `dir` when given (a member's), as chant printed it once it passes {@link healthProblems}. */
+  readHealth(env: string, dir?: string): Promise<HealthDocument>;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -171,6 +186,46 @@ export function changeSetArgv(digest: string, member: string): string[] {
 /** The argv the points read runs: `workspace points --open --json`. */
 export function pointsArgv(): string[] {
   return ["workspace", ...POINTS_READ.split(" "), "--json"];
+}
+
+/** The argv the health read runs: `lifecycle health <env> --json`. */
+export function healthArgv(env: string): string[] {
+  return [...HEALTH_READ.split(" "), env, "--json"];
+}
+
+/**
+ * Check what the health read printed: a `chant-health/v1` document with the
+ * fields behold reads. A project with no lexicon that reads health prints
+ * nothing and says so, which is `health-none`, not a failure. A document
+ * printed alongside a nonzero exit means chant could not build the project.
+ */
+export function healthDocumentOf(run: TransportRun, shown: string): HealthDocument {
+  const remedy = `Run \`${shown}\` to see what it says.`;
+  const said = run.stderr.trim().split("\n").slice(-3).join(" ");
+  if (!run.stdout.trim()) {
+    if (NO_HEALTH_READ.test(run.stderr)) throw new WorkspaceReadError({ error: `${shown} found no lexicon with a health read.`, code: "health-none", remedy: "aws, azure and gcp have one (chant#4177)." });
+    throw new WorkspaceReadError({ error: `${shown} printed nothing (exit ${run.status ?? "killed"})${said ? `: ${said}` : ""}`, code: "lifecycle-health", remedy });
+  }
+  let doc: unknown;
+  try {
+    doc = JSON.parse(run.stdout);
+  } catch {
+    throw new WorkspaceReadError({ error: `${shown} printed something that is not JSON.`, code: "lifecycle-health", remedy });
+  }
+  if (isRecord(doc) && doc.schema !== HEALTH_SCHEMA) {
+    throw new WorkspaceReadError({
+      error: `${shown} wrote ${doc.schema === undefined ? "a document with no schema" : `a ${JSON.stringify(doc.schema)} document`}; behold reads ${HEALTH_SCHEMA}.`,
+      code: "health-schema",
+      remedy: doc.schema === undefined ? "Upgrade the project's chant." : "Upgrade behold: this chant writes a health document it does not know.",
+    });
+  }
+  const problems = healthProblems(doc);
+  if (problems.length) {
+    const more = problems.length > 3 ? ` (and ${problems.length - 3} more)` : "";
+    throw new WorkspaceReadError({ error: `${shown} wrote a health document behold cannot read: ${problems.slice(0, 3).join("; ")}${more}.`, code: "health-schema", remedy });
+  }
+  if (run.status !== 0) throw new WorkspaceReadError({ error: `${shown} could not build the project (exit ${run.status ?? "killed"})${said ? `: ${said}` : ""}`, code: "lifecycle-health", remedy });
+  return doc as HealthDocument;
 }
 
 /** Check what one run printed: a JSON object written to the contract behold reads. */
@@ -225,6 +280,11 @@ export function workspaceReader(chant: ChantTransport): WorkspaceReader {
     async readPoints() {
       const argv = pointsArgv();
       return documentOf(await chant.run(argv), `chant ${argv.join(" ")}`, "workspace-points", POINTS_READ);
+    },
+    async readHealth(env, dir) {
+      const argv = healthArgv(env);
+      const run = await chant.run(argv, dir !== undefined ? { dir } : undefined);
+      return healthDocumentOf(run, `chant ${argv.join(" ")}${dir !== undefined ? ` (in ${dir})` : ""}`);
     },
   };
 }

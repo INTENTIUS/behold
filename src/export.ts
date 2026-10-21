@@ -99,6 +99,11 @@ export function captureKeys(axes: ExportAxes): string[] {
   if (axes.yodelReport) add("/api/yodel-report", {});
   if (axes.sqlYodeler) add("/api/sql-yodeler/lifecycle", {});
 
+  // #825: runtime health and rotation, one read per environment whatever the
+  // tier or zoom, as the SPA asks it, so a bundle draws the health marks and
+  // the records out of rotation as they were when it was exported.
+  for (const env of axes.environments) add("/api/health", { env });
+
   const tiers = axes.tiers && axes.tiers.length ? axes.tiers : [""];
   const envs = ["", ...axes.environments]; // "" = the declared-source view
   for (const env of envs) {

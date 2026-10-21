@@ -1275,6 +1275,40 @@ and the strip says which chant adds points. A public view refuses the route.
 `BEHOLD_TEST_CHANT_BIN` names one; src/__fixtures__/decision-points/ is
 chant 0.124.31's output for it.
 
+## Runtime health and rotation (#825)
+
+`GET /api/health?env=<env>` (src/health-overlay.ts) reads `chant lifecycle
+health <env> --json` (chant#4177, floor `HEALTH_CHANT_FLOOR`, 0.124.33, read
+"runtime health") once per chant project: the served project, or each chant
+member of a workspace or an estate in its own directory with its own chant,
+ids composed `<member>/<id>`. The read is the reader's `readHealth`
+(src/workspace-reader.ts). Its document is `chant-health/v1`, not a contract 1
+document, so it is checked against chant's schema, vendored unchanged in
+src/health-schema/ (chant PR #4193 at d727944c4) and validated with ajv, with
+a hole's `reason` loosened to any string; a document the schema refuses is
+refused whole. A project with no lexicon that reads health is `none`, not a
+failure. A member below the floor is refused before anything is spawned; when
+every member is, the answer carries the refusal and `degraded`.
+
+The answer is `nodes` (per id: `healthy`, `unhealthy` or `unknown` with
+chant's `detail`, `observedAt` and `checkedAt`; `unobserved` with chant's
+`reason`; or `absent`), `rotation`, `members` and `counts`. Rotation is
+behold's (src/runtime-health.ts, `rotationOf`): a Route 53 record whose
+`HealthCheckId` edge (or `$ref` attribute) names a declared check is out of
+rotation only when that check is unhealthy, in rotation when it is healthy,
+and `inRotation: null` with the reason in words otherwise. The edges come
+from each member's cached source graph (`memberIr` at detail 2). The answer
+is cached per environment for 30 s, `?fresh=1` reads again, and `POST
+/api/refresh` drops it. A public view refuses the route (it reads the live
+estate with behold's credentials), and `behold export` captures it once per
+environment. The page (web/health-marks.js) draws a tag under each card, a
+solid ring on an unhealthy one and a dashed ring on a hole, dims a record out
+of rotation with its edges, counts the states in the Model tab and shows the
+detail in the inspect pane. It never changes a card's fill.
+`src/__fixtures__/health/` was recorded from chant main at cd9a90716 against
+a floci whose health checks probe (lex00/floci#259); src/runtime-health.test.ts
+names each file's provenance.
+
 ## Invariant
 
 If a request would have behold write to a cloud or to source directly, it's wrong.

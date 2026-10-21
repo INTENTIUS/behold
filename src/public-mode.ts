@@ -86,6 +86,8 @@ const REFUSED_READS: Array<[RegExp, string]> = [
   [/^\/api\/overlay$/, "it reads the live estate with behold's own credentials"],
   [/^\/api\/reconcile$/, "it plans against the live estate with behold's own credentials"],
   [/^\/api\/diff(\/|$)/, "it reads the live estate with behold's own credentials"],
+  [/^\/api\/health$/, "it reads the live estate with behold's own credentials"],
+  [/^\/api\/health$/, "it reads the live estate with behold's own credentials"],
   [/^\/api\/components\/compare$/, "it reads the live estate with behold's own credentials"],
   [/^\/api\/resources$/, "it runs chant against the project"],
   [/^\/api\/ci(\/|$)/, "it reads the pipeline and the forge run"],

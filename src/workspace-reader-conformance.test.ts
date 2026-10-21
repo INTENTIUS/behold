@@ -73,6 +73,8 @@ describe("every workspace read goes through the reader (#468)", () => {
       if (/\[\s*"change-set"\s*,\s*"show"/.test(text)) offenders.push(f);
       // #472: and the open decision points (a fixture asks its questions with `points ask`, a write).
       if (/\[\s*"workspace"\s*,\s*"points"\s*,\s*"--open"/.test(text)) offenders.push(f);
+      // #825: and the runtime health read.
+      if (/\[\s*"lifecycle"\s*,\s*"health"/.test(text)) offenders.push(f);
     }
     expect(offenders).toEqual([]);
   });
