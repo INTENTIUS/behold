@@ -43,6 +43,7 @@ import { cardProgress as tgCardProgress, progressLines as tgProgressLines, progr
 import { seconds, whyQuery, whyView } from "./why.js";
 import { edgeKey, edgeLabel, edgeLegend, edgeTitle, isCiKind, viaIndex } from "./edge-kind.js";
 import { edgeWeights, weightLegend } from "./edge-weight.js";
+import { networkFindings, OUTSIDE, traceRoute } from "./net-trace.js";
 import { readCostLine } from "./read-cost.js";
 import { mountHistoryPicker } from "./history-picker.js";
 import { applyMemberFrame, createMemberFrames, pendingLine, stillPending } from "./pending.js";
@@ -1389,6 +1390,10 @@ function inspect(node) {
     });
   }
 
+  // #881: trace the way in to a network card, or a workload behind one.
+  if (!view.components && /^(AWS::(ECS|EC2|ElasticLoadBalancingV2|Lambda|RDS)::|GCP::(Run|Compute)::|Microsoft\.App\/)/.test(node.kind || "")) {
+    panel.appendChild(actButton("trace from outside to here", () => traceTo(node.id), "Follow traffic from the internet to this card, hop by hop"));
+  }
   // #877: a stack opens here: the cards it holds, each with its state.
   if (Array.isArray(node.attrs && node.attrs._stackOf)) {
     const h = document.createElement("h3");
@@ -3394,8 +3399,177 @@ function renderPanelModel() {
     }
   }
   renderEdgeLegend(host, ir);
+  renderNetworkSection(host, ir);
   renderBehaviourRefusal(host);
   renderBehaviourDiagnostics(host);
+}
+
+// #881: the network section. The trace reads the rules on each card, which
+// only the attributes zoom (detail 3) carries, so the section reads that graph
+// once per env and tier, through apiFetch (a static export captures it). The
+// trace and the findings are computed here, from that graph (web/net-trace.js).
+const NETWORK_KIND = /^(AWS::(EC2|ElasticLoadBalancingV2)::|GCP::(Compute|Run)::|Microsoft\.(Network|App)\/)/;
+const net = { key: null, ir: null, error: null, from: OUTSIDE, to: null, port: 80, result: null };
+
+function netKey() {
+  return `${view.env || ""}|${view.tier || ""}`;
+}
+
+function loadNetworkGraph() {
+  const key = netKey();
+  if (net.key === key) return;
+  Object.assign(net, { key, ir: null, error: null, result: null });
+  const q = new URLSearchParams({ detail: "3" });
+  if (view.env) q.set("env", view.env);
+  if (view.tier) q.set("tier", view.tier);
+  apiFetch(`${view.env ? "/api/overlay" : "/api/graph"}?${q}`)
+    .then((r) => r.json())
+    .then((d) => {
+      if (net.key !== key) return;
+      if (!d.ir) throw new Error(d.error || "no graph");
+      net.ir = d.ir;
+      if (net.to) runTrace();
+      renderPanelModel();
+    })
+    .catch((err) => {
+      if (net.key !== key) return;
+      net.error = String(err.message || err);
+      renderPanelModel();
+    });
+}
+
+function runTrace() {
+  if (!net.ir || !net.to) return;
+  net.result = traceRoute(net.ir, { from: net.from, to: net.to, port: net.port });
+  markTrace();
+}
+
+/** Trace from outside to a card, from the inspect pane. */
+function traceTo(id) {
+  Object.assign(net, { from: OUTSIDE, to: id });
+  loadNetworkGraph();
+  runTrace();
+  setPanelTab("model");
+  renderPanelModel();
+}
+
+/** Each hop's card marked open or closed on the canvas; the rest fade. */
+function markTrace() {
+  const svg = document.querySelector("#graph svg");
+  if (!svg) return;
+  svg.querySelectorAll(".trace-open, .trace-closed").forEach((n) => n.classList.remove("trace-open", "trace-closed"));
+  const hops = (net.result && net.result.hops) || [];
+  svg.classList.toggle("tracing", hops.length > 0);
+  for (const h of hops) {
+    const g = h.id && svg.querySelector(`g[data-node-id="${CSS.escape(h.id)}"]`);
+    // A card two hops share stays closed if either is.
+    if (g && !g.classList.contains("trace-closed")) g.classList.add(h.open ? "trace-open" : "trace-closed");
+    if (g && !h.open) g.classList.replace("trace-open", "trace-closed");
+  }
+}
+
+/** A stack-qualified id (`aws/<stack>::alb`) reads as its member and name. */
+function shortIds(text) {
+  return text.replace(/([^\s/]+\/)[^\s/:]*::/g, "$1");
+}
+
+/** A row whose text wraps: a dot, what it is, the sentence, and a tag. */
+function netRow(color, what, text, tag, onClick) {
+  const row = document.createElement("div");
+  row.className = "net-row" + (onClick ? " clickable" : "");
+  const dot = document.createElement("span");
+  dot.className = "dot";
+  dot.style.background = color;
+  const body = document.createElement("span");
+  const w = document.createElement("b");
+  w.textContent = what;
+  // A stack-qualified id (`aws/<stack>::alb`) reads as its member and name.
+  body.append(w, " " + shortIds(text));
+  if (tag) {
+    const t = document.createElement("span");
+    t.className = "tag";
+    t.textContent = tag;
+    body.appendChild(t);
+  }
+  row.append(dot, body);
+  if (onClick) row.addEventListener("click", onClick);
+  return row;
+}
+
+function renderNetworkSection(host, ir) {
+  if (view.components || view.ops || !(ir.nodes || []).some((n) => NETWORK_KIND.test(n.kind || ""))) return;
+  loadNetworkGraph();
+  host.appendChild(panelHeading("network"));
+  if (net.error) {
+    host.appendChild(panelMuted(`the network couldn't be read: ${net.error}`));
+    return;
+  }
+  if (!net.ir) {
+    host.appendChild(panelMuted("reading the network…"));
+    return;
+  }
+  const findings = networkFindings(net.ir);
+  if (!findings.length) host.appendChild(panelMuted("no findings: no ranges overlap, every public subnet has a way out, no load balancer sits in one zone, and no admin port is open to anyone."));
+  for (const f of findings) host.appendChild(netRow("var(--degraded)", f.finding, f.text, "", () => selectNode(f.ids[0])));
+
+  // The trace: from, to, port.
+  const cards = net.ir.nodes.filter((n) => NETWORK_KIND.test(n.kind || "") || /^(AWS::(ECS|EC2|Lambda|RDS)::|GCP::Run::|Microsoft\.App\/)/.test(n.kind || "")).map((n) => n.id).sort();
+  const pick = (label, value, options, onChange) => {
+    const row = document.createElement("label");
+    row.className = "net-pick";
+    row.append(label + " ");
+    const sel = document.createElement("select");
+    for (const [v, text] of options) {
+      const o = document.createElement("option");
+      o.value = v;
+      o.textContent = text;
+      if (v === value) o.selected = true;
+      sel.appendChild(o);
+    }
+    sel.addEventListener("change", () => onChange(sel.value));
+    row.appendChild(sel);
+    return row;
+  };
+  const form = document.createElement("div");
+  form.className = "net-trace";
+  form.appendChild(pick("from", net.from, [[OUTSIDE, "outside (the internet)"], ...cards.map((c) => [c, c])], (v) => (net.from = v)));
+  form.appendChild(pick("to", net.to || "", [["", "pick a card"], ...cards.map((c) => [c, c])], (v) => (net.to = v || null)));
+  const portRow = document.createElement("label");
+  portRow.className = "net-pick";
+  portRow.append("port ");
+  const port = document.createElement("input");
+  port.type = "number";
+  port.min = "1";
+  port.max = "65535";
+  port.value = String(net.port);
+  port.addEventListener("change", () => (net.port = Number(port.value)));
+  portRow.appendChild(port);
+  form.appendChild(portRow);
+  const row = document.createElement("div");
+  row.className = "prow";
+  row.appendChild(
+    actButton("trace", () => {
+      net.port = Number(port.value);
+      runTrace();
+      renderPanelModel();
+    }, "Follow the traffic hop by hop and mark where it stops"),
+  );
+  if (net.result) row.appendChild(actButton("clear", () => { net.result = null; markTrace(); renderPanelModel(); }));
+  form.appendChild(row);
+  host.appendChild(form);
+
+  const r = net.result;
+  if (!r) return;
+  if (r.unread) {
+    host.appendChild(panelMuted(r.unread));
+    return;
+  }
+  host.appendChild(panelMuted(shortIds(r.reached ? `${r.port} arrives at ${r.to}.` : `${r.port} stops at ${r.stop}.`)));
+  for (const h of r.hops) {
+    const row = netRow(h.open ? "var(--managed)" : "var(--degraded)", h.step, h.why, h.basis === "live" ? "live" : h.seen ? "source · card live" : "source", h.id ? () => selectNode(h.id) : undefined);
+    row.title = h.basis === "live" ? "Judged from the rule as the live estate holds it" : h.seen ? "Judged from the rule in the source; the card itself was read live" : "Judged from the source alone";
+    host.appendChild(row);
+  }
 }
 
 // #553: the CI edge kinds this graph draws, each with a stroke drawn by the
@@ -8809,6 +8983,7 @@ function render(ir, svg, m) {
     if (embedOpts.bare) quietCardLines(svgEl);
     setupGraphViewBox(svgEl);
     wireEdgeHighlight(svgEl, ir);
+    markTrace(); // #881: a trace stays marked across a redraw
   }
   // #712: only the dots preview's meta carries `dots`. #715: a live carve, when the gate opened.
   if (svgEl && m && m.dots) {
