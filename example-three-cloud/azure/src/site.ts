@@ -31,7 +31,7 @@ export const env = new managedEnvironments({
   appLogsConfiguration: {
     destination: "log-analytics",
     logAnalyticsConfiguration: {
-      customerId: "[reference(resourceId('Microsoft.OperationalInsights/workspaces', 'three-cloud-logs')).customerId]",
+      customerId: "[reference('three-cloud-logs').customerId]",
       sharedKey: "[listKeys(resourceId('Microsoft.OperationalInsights/workspaces', 'three-cloud-logs'), '2023-09-01').primarySharedKey]",
     },
   },

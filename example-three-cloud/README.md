@@ -35,5 +35,4 @@ npx serve export
 
 `cd dns && npx chant run front-door` runs the same steps as an Op.
 
-Needs chant 0.124.34 or newer, and 0.124.35 for the GCP load balancer: an older
-chant skips its kinds, and the GCP record is left with nothing behind it.
+Needs chant 0.124.35 or newer.
