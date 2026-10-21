@@ -128,9 +128,30 @@ export function cardLabel(node: Pick<IRNode, "id" | "kind" | "lexicon" | "attrs"
   const choudoufu = node.lexicon === CHOUDOUFU_LEXICON;
   const terraform = isTerraformCard(node);
   if (!choudoufu && !terraform) return undefined;
-  if (box && node.id.startsWith(`${box}/`) && node.id.length > box.length + 1) return node.id.slice(box.length + 1);
-  if (terraform && typeof node.attrs.address === "string" && node.attrs.address && node.attrs.address !== node.id) return node.attrs.address;
-  return undefined;
+  let label: string | undefined;
+  if (box && node.id.startsWith(`${box}/`) && node.id.length > box.length + 1) label = node.id.slice(box.length + 1);
+  else if (terraform && typeof node.attrs.address === "string" && node.attrs.address && node.attrs.address !== node.id) label = node.attrs.address;
+  return label === undefined ? undefined : (moduleTitle(label) ?? label);
+}
+
+/** The names a module gives the one resource it exists to make. */
+const GENERIC_NAMES = new Set(["this", "main", "default", "self", "primary", "that", "example", "resource"]);
+
+/**
+ * behold#880: a resource a module made, under a name that says nothing
+ * (`module.ecs_service_billing.aws_ecs_service.this`), is titled after the
+ * module call instead, without the words the call shares with the resource
+ * type: "billing". The instance key stays (`billing["eu"]`). Undefined for an
+ * address that isn't one: a resource at the root, or one named for itself.
+ */
+export function moduleTitle(address: string): string | undefined {
+  const m = /module\.([A-Za-z0-9_-]+)(\[[^\]]*\])?\.(?:data\.)?([a-z0-9_]+)\.([A-Za-z0-9_-]+)(\[[^\]]*\])?$/.exec(address);
+  if (!m) return undefined;
+  const [, call, key = "", type, name, index = ""] = m;
+  if (!GENERIC_NAMES.has(name!)) return undefined;
+  const typeWords = new Set(type!.split(/[_-]/));
+  const own = call!.split(/[_-]/).filter((w) => w && !typeWords.has(w));
+  return `${own.length ? own.join("_") : call}${key}${index}`;
 }
 
 export interface CardFaces {
