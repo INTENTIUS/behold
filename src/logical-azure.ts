@@ -64,7 +64,7 @@
  * thing the AWS lens is careful never to do.
  */
 import type { GraphIR, IRNode, IREdge } from "@intentius/chant";
-import { componentNamer, type ByContainer, type LogicalProjection } from "./logical.ts";
+import { componentNamer, distinctTitles, type ByContainer, type LogicalProjection } from "./logical.ts";
 
 /** Resources an Azure architecture diagram actually shows. Deliberately a tight
  * allowlist, like the AWS lens's — the fabric (VNet, subnet, NSG, route table)
@@ -264,7 +264,8 @@ export function projectAzureLogical(ir: GraphIR, env?: string): LogicalProjectio
   // The GUID's first block, as the portal's breadcrumbs shorten it: the whole
   // id is wider than the box that has to hold it.
   const SUBSCRIPTION_TITLE = subscription ? `Azure subscription ${subscription.split("-")[0]}…` : "Azure subscription";
-  const vnetTitle = (v: IRNode) => `VNet ${vnetCidr(v) ?? resourceName(v) ?? v.id}`;
+  // behold#879: two VNets with one address space stay two boxes.
+  const vnetTitle = distinctTitles(vnets, (v: IRNode) => `VNet ${vnetCidr(v) ?? resourceName(v) ?? v.id}`, (v) => resourceName(v) ?? v.id);
   const subnetTitle = (s: IRNode) => `subnet ${strAttr(s, "addressPrefix") ?? subnetShortName(s) ?? s.id}`;
 
   // Which subnets an NSG guards — the honest form of #102's "security overlay"
