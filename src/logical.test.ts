@@ -670,3 +670,40 @@ describe("projectLogical, subnet tiers and member-scoped placement (#824)", () =
     expect(Object.values(byContainer).flat()).not.toContain("AWS account 000000000000");
   });
 });
+
+// behold#875: a subnet box says where its outbound traffic goes.
+describe("projectLogical, a subnet's way out (#875)", () => {
+  const n = (id: string, kind: string, attrs: Record<string, unknown> = {}) => ({ id, kind, lexicon: "aws", attrs, sourceLoc: { file: "src/site.ts" } });
+  const ir = (): GraphIR =>
+    ({
+      nodes: [
+        n("vpc", "AWS::EC2::VPC", { CidrBlock: "10.0.0.0/16" }),
+        n("igw", "AWS::EC2::InternetGateway"),
+        n("attach", "AWS::EC2::VPCGatewayAttachment", { VpcId: ref("vpc.VpcId"), InternetGatewayId: ref("igw.InternetGatewayId") }),
+        n("publicSubnet", "AWS::EC2::Subnet", { CidrBlock: "10.0.1.0/24", VpcId: ref("vpc.VpcId") }),
+        n("privateSubnet", "AWS::EC2::Subnet", { CidrBlock: "10.0.2.0/24", VpcId: ref("vpc.VpcId") }),
+        n("dataSubnet", "AWS::EC2::Subnet", { CidrBlock: "10.0.3.0/24", VpcId: ref("vpc.VpcId") }),
+        n("nat", "AWS::EC2::NatGateway", { SubnetId: ref("publicSubnet.SubnetId") }),
+        n("publicRt", "AWS::EC2::RouteTable", { VpcId: ref("vpc.VpcId") }),
+        n("privateRt", "AWS::EC2::RouteTable", { VpcId: ref("vpc.VpcId") }),
+        n("dataRt", "AWS::EC2::RouteTable", { VpcId: ref("vpc.VpcId") }),
+        n("publicRoute", "AWS::EC2::Route", { RouteTableId: ref("publicRt.RouteTableId"), GatewayId: ref("igw.InternetGatewayId"), DestinationCidrBlock: "0.0.0.0/0" }),
+        n("privateRoute", "AWS::EC2::Route", { RouteTableId: ref("privateRt.RouteTableId"), NatGatewayId: ref("nat.NatGatewayId"), DestinationCidrBlock: "0.0.0.0/0" }),
+        n("publicAssoc", "AWS::EC2::SubnetRouteTableAssociation", { SubnetId: ref("publicSubnet.SubnetId"), RouteTableId: ref("publicRt.RouteTableId") }),
+        n("privateAssoc", "AWS::EC2::SubnetRouteTableAssociation", { SubnetId: ref("privateSubnet.SubnetId"), RouteTableId: ref("privateRt.RouteTableId") }),
+        n("dataAssoc", "AWS::EC2::SubnetRouteTableAssociation", { SubnetId: ref("dataSubnet.SubnetId"), RouteTableId: ref("dataRt.RouteTableId") }),
+        n("web", "AWS::EC2::Instance", { SubnetId: ref("privateSubnet.SubnetId") }),
+        n("db", "AWS::RDS::DBInstance", { DBSubnetGroupName: ref("dataSubnet.SubnetId") }),
+        n("lb", "AWS::ElasticLoadBalancingV2::LoadBalancer", { Subnets: [ref("publicSubnet.SubnetId")] }),
+      ],
+      edges: [],
+      groups: {},
+    }) as unknown as GraphIR;
+
+  it("titles each subnet box with where its traffic leaves", () => {
+    const keys = Object.keys(projectLogical(ir()).byContainer).concat(Object.values(projectLogical(ir()).byContainer).flat());
+    expect(keys).toContain("public subnet 10.0.1.0/24 · out to the internet");
+    expect(keys).toContain("private subnet 10.0.2.0/24 · out via NAT");
+    expect(keys, JSON.stringify(keys)).toContain("subnet 10.0.3.0/24 · no way out");
+  });
+});
