@@ -174,6 +174,12 @@
       #graph-legend .gl-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin: 0 6px 0 1px; }
       #graph-legend .gl-dot.dashed { border-radius: 2px; }
       #graph g[data-edge-via] > text { fill: var(--pin-text); }
+      /* behold#878: an edge weighed by how it was found (web/edge-weight.js). */
+      :is(#graph, .edge-swatch) g[data-edge-weight="wired"] .pin-edge-line { stroke-width: 2.4px; }
+      :is(#graph, .edge-swatch) g[data-edge-weight="inferred"] .pin-edge-line { stroke-dasharray: 1.5 4; stroke-linecap: round; }
+      :is(#graph, .edge-swatch) g[data-edge-weight="plumbing"] .pin-edge-line { stroke-width: 1px; stroke-dasharray: 4 3; stroke: var(--muted); }
+      #graph g[data-edge-weight="hidden"] { display: none; }
+      #graph-legend .gl-edge { flex: none; overflow: visible; width: 22px; height: 10px; }
       /* Too small to read at this zoom: hidden until its edge is lit or pointed at. */
       #graph g[data-label-small]:not(.edge-hi):not(.label-peek) > rect,
       #graph g[data-label-small]:not(.edge-hi):not(.label-peek) > text { display: none; }
