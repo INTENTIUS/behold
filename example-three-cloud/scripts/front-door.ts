@@ -115,10 +115,21 @@ async function applyGcp(): Promise<string> {
   // is not written (chant warns). The URI is read from the service instead.
   // The service's location is the manifest's, or us-central1 where gcpApply
   // puts a service that names none.
-  const location = /^\s+location:\s*['"]?([a-z0-9-]+)/m.exec(readFileSync(manifest, "utf8"))?.[1] ?? "us-central1";
-  const svc = (await getJson(`${GCP}/v2/projects/${GCP_PROJECT}/locations/${location}/services/web`)) as { uri?: string };
-  if (!svc.uri) throw new Refusal(`gcp: the Cloud Run service web has no uri yet (${JSON.stringify(svc).slice(0, 300)})`);
-  return new URL(svc.uri).hostname;
+  // The RunService's own location: the load balancer's kinds say `global`.
+  const location = /kind:\s*RunService[\s\S]*?^\s+location:\s*['"]?([a-z0-9-]+)/m.exec(readFileSync(manifest, "utf8"))?.[1] ?? "us-central1";
+  const svc = (await getJson(`${GCP}/v2/projects/${GCP_PROJECT}/locations/${location}/services/three-cloud-site`)) as { uri?: string };
+  if (!svc.uri) throw new Refusal(`gcp: the Cloud Run service three-cloud-site has no uri yet (${JSON.stringify(svc).slice(0, 300)})`);
+  say(`gcp: Cloud Run answers as ${new URL(svc.uri).hostname}`);
+  // Route 53 points at the load balancer's address. A chant older than
+  // 0.124.35 skips the load balancer kinds ("no mapper"), and then there is
+  // no address: the record gets one nothing answers on (192.0.2.1, kept for
+  // documentation by RFC 5737), and the page shows GCP failing its check.
+  const addr = (await fetch(`${GCP}/compute/v1/projects/${GCP_PROJECT}/global/addresses/three-cloud-ip`).then((r) => (r.ok ? r.json() : {}))) as { address?: string };
+  if (!addr.address) {
+    say("gcp: the load balancer was NOT APPLIED (it needs chant 0.124.35 or newer), so the gcp record has nothing behind it");
+    return "192.0.2.1";
+  }
+  return addr.address;
 }
 
 async function applyAzure(): Promise<string> {
@@ -201,7 +212,7 @@ async function applyDns(endpoints: Record<string, string>, probes: Record<string
 
 export async function apply(): Promise<void> {
   const gcp = await applyGcp();
-  say(`gcp: web answers as ${gcp}`);
+  say(`gcp: the load balancer answers on ${gcp}`);
   const azure = await applyAzure();
   say(`azure: web answers as ${azure}`);
   const aws = await applyAws();
@@ -223,8 +234,8 @@ export async function apply(): Promise<void> {
       awsCheck: { address: "endpoint" in aws ? containerAddress(CONTAINERS.aws) : "192.0.2.1", port: 80 },
       // floci-az serves every app on its own port, by Host header.
       azureCheck: { address: containerAddress(CONTAINERS.azure), port: 4577 },
-      // floci-gcp's front door serves Cloud Run services by Host header too.
-      gcpCheck: { address: containerAddress(CONTAINERS.gcp), port: 4588 },
+      // floci-gcp opens a forwarding rule's port (80) in its container.
+      gcpCheck: { address: gcp === "192.0.2.1" ? gcp : containerAddress(CONTAINERS.gcp), port: 80 },
     },
   );
   say("dns: applied");

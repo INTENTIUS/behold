@@ -7,7 +7,9 @@ import { HostedZone, HealthCheck, RecordSet, Parameter } from "@intentius/chant-
 // Latency records name an AWS region, so Azure (West Europe) answers as
 // eu-west-1 and GCP (Tokyo) as ap-northeast-1. All three are CNAMEs, since an
 // alias can only point at an AWS target and records sharing a name must share
-// a type.
+// a type. GCP's load balancer has an IP address rather than a hostname, so
+// it gets a name of its own (an A record) and the latency record points at
+// that, as a GCP load balancer is usually published.
 //
 // Each endpoint arrives as a parameter named like the output the cloud's
 // member publishes, which is the join behold draws the cross-member edge on.
@@ -18,7 +20,7 @@ export const zone = new HostedZone({ Name: "three-cloud.example." });
 
 export const awsEndpoint = new Parameter("String", { description: "The aws member's load balancer hostname" });
 export const azureEndpoint = new Parameter("String", { description: "The azure member's Container App hostname" });
-export const gcpEndpoint = new Parameter("String", { description: "The gcp member's Cloud Run hostname" });
+export const gcpEndpoint = new Parameter("String", { description: "The gcp member's load balancer IP address" });
 
 function healthCheck(endpoint: Parameter) {
   return new HealthCheck({
@@ -32,7 +34,7 @@ function healthCheck(endpoint: Parameter) {
   });
 }
 
-function latencyRecord(id: string, region: string, endpoint: Parameter, check: HealthCheck) {
+function latencyRecord(id: string, region: string, endpoint: Parameter | string, check: HealthCheck) {
   return new RecordSet({
     HostedZoneId: zone.Id,
     Name: NAME,
@@ -47,8 +49,14 @@ function latencyRecord(id: string, region: string, endpoint: Parameter, check: H
 
 export const awsCheck = healthCheck(awsEndpoint);
 export const azureCheck = healthCheck(azureEndpoint);
-export const gcpCheck = healthCheck(gcpEndpoint);
+// The check on GCP probes the load balancer's address directly.
+export const gcpCheck = new HealthCheck({
+  HealthCheckConfig: { Type: "HTTP", IPAddress: gcpEndpoint, Port: 80, ResourcePath: "/", RequestInterval: 10, FailureThreshold: 1 },
+});
+
+const GCP_ORIGIN = "gcp.three-cloud.example.";
+export const gcpOrigin = new RecordSet({ HostedZoneId: zone.Id, Name: GCP_ORIGIN, Type: "A", TTL: "60", ResourceRecords: [gcpEndpoint as unknown as string] });
 
 export const awsRecord = latencyRecord("aws", "us-east-1", awsEndpoint, awsCheck);
 export const azureRecord = latencyRecord("azure", "eu-west-1", azureEndpoint, azureCheck);
-export const gcpRecord = latencyRecord("gcp", "ap-northeast-1", gcpEndpoint, gcpCheck);
+export const gcpRecord = latencyRecord("gcp", "ap-northeast-1", GCP_ORIGIN, gcpCheck);
