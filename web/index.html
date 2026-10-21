@@ -154,6 +154,8 @@
       #graph text[data-cloud="aws"] { fill: color-mix(in srgb, var(--cloud-aws) 80%, var(--fg)); }
       #graph text[data-cloud="azure"] { fill: color-mix(in srgb, var(--cloud-azure) 80%, var(--fg)); }
       #graph text[data-cloud="gcp"] { fill: color-mix(in srgb, var(--cloud-gcp) 80%, var(--fg)); }
+      #panel .png-opts { display: flex; gap: 10px; align-items: center; font: var(--t-caption)/1.4 var(--font-ui); color: var(--muted); margin-top: 4px; }
+      #panel .png-opts select { font: inherit; }
       /* behold#824: the legend on the graph — what a card's colour and its bar mean. */
       #graph-legend { position: absolute; right: 12px; bottom: 12px; z-index: 5; min-width: 190px; max-width: 260px;
         background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: var(--r-ctl);
