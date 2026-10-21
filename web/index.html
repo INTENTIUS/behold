@@ -172,6 +172,9 @@
       #graph-legend .gl-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin: 0 6px 0 1px; }
       #graph-legend .gl-dot.dashed { border-radius: 2px; }
       #graph g[data-edge-via] > text { fill: var(--pin-text); }
+      /* Too small to read at this zoom: hidden until its edge is lit or pointed at. */
+      #graph g[data-label-small]:not(.edge-hi):not(.label-peek) > rect,
+      #graph g[data-label-small]:not(.edge-hi):not(.label-peek) > text { display: none; }
       #graph g[data-edge-via] > rect { stroke: var(--pin-edge); }
       /* ---- Motion (#229) ---------------------------------------------------
          behold spends motion exactly twice, and never for decoration:

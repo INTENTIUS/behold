@@ -8056,6 +8056,7 @@ function wireEdgeHighlight(svgEl, ir) {
   }
   // behold#744: raised under the terragucci reads' layer, whose lines and pills stay over every edge.
   const raise = (g) => g.parentNode && g.parentNode.insertBefore(g, g.parentNode.querySelector(":scope > [data-tg-reads]"));
+  wireEdgeLabelPeek(svgEl);
   // Delegated: raise whichever edge the pointer is over (its hit-path catches it).
   svgEl.addEventListener("mouseover", (e) => {
     const g = e.target.closest && e.target.closest("g[data-edge-from]");
@@ -9033,13 +9034,15 @@ function scaleBoxLabels() {
 }
 
 // behold#824: an edge's label (`import`, `HealthCheckId`) is drawn at 10.5
-// units, which on a graph fitted at a quarter scale is under 3px — present but
-// unreadable. Each label's pill and text are scaled about the pill's own centre
-// until the text renders at EDGE_LABEL_MIN_PX on screen, up to EDGE_LABEL_MAX_K
-// times its drawn size, so it stays on its line and never swamps the cards.
-// Zoomed in far enough, the label is left exactly as pinhole drew it.
-const EDGE_LABEL_MIN_PX = 9;
-const EDGE_LABEL_MAX_K = 3;
+// units, which on a graph fitted at a quarter scale is under 3px, and enlarged
+// to be readable there it piles onto the cards around it. So a label shows at
+// its own size once the zoom makes it readable (EDGE_LABEL_MIN_PX on screen),
+// and below that it is hidden unless its edge is lit: hovering a card lights
+// every edge on it (`.edge-hi`), and hovering an edge peeks its own labels.
+// A lit small label is drawn up to EDGE_LABEL_MAX_K times larger, so it can be
+// read; only a card's few edges light at once, so they don't pile up.
+const EDGE_LABEL_MIN_PX = 8;
+const EDGE_LABEL_MAX_K = 4;
 let edgeLabelState = { svg: null, scale: null };
 
 function scaleEdgeLabels() {
@@ -9053,14 +9056,33 @@ function scaleEdgeLabels() {
   for (const g of svg.querySelectorAll("g[data-edge-via]")) {
     const text = g.querySelector(":scope > text");
     const rect = g.querySelector(":scope > rect");
-    if (!text || !rect) continue;
+    if (!text) continue;
     const size = parseFloat(text.getAttribute("font-size")) || 10.5;
-    const k = Math.min(EDGE_LABEL_MAX_K, Math.max(1, EDGE_LABEL_MIN_PX / (size * scale)));
-    const cx = Number(rect.getAttribute("x")) + Number(rect.getAttribute("width")) / 2;
-    const cy = Number(rect.getAttribute("y")) + Number(rect.getAttribute("height")) / 2;
+    const small = size * scale < EDGE_LABEL_MIN_PX;
+    g.toggleAttribute("data-label-small", small);
+    // A small label shows only while its edge is lit, a few at a time, so it
+    // is drawn big enough to read then, scaled about its pill's centre.
+    const k = small ? Math.min(EDGE_LABEL_MAX_K, EDGE_LABEL_MIN_PX / (size * scale)) : 1;
+    const cx = rect ? Number(rect.getAttribute("x")) + Number(rect.getAttribute("width")) / 2 : Number(text.getAttribute("x"));
+    const cy = rect ? Number(rect.getAttribute("y")) + Number(rect.getAttribute("height")) / 2 : Number(text.getAttribute("y"));
     const t = k === 1 ? null : `translate(${cx} ${cy}) scale(${Math.round(k * 100) / 100}) translate(${-cx} ${-cy})`;
-    for (const el of [rect, text]) t ? el.setAttribute("transform", t) : el.removeAttribute("transform");
+    for (const el of rect ? [rect, text] : [text]) t ? el.setAttribute("transform", t) : el.removeAttribute("transform");
   }
+}
+
+/** Hovering an edge shows the labels that belong to it, however far out the zoom. */
+function wireEdgeLabelPeek(svgEl) {
+  const labelsOf = (from, to) => svgEl.querySelectorAll(`g[data-edge-from="${CSS.escape(from)}"][data-edge-to="${CSS.escape(to)}"][data-edge-via]`);
+  svgEl.addEventListener("mouseover", (e) => {
+    const g = e.target.closest && e.target.closest("g[data-edge-from]");
+    if (!g) return;
+    for (const l of labelsOf(g.getAttribute("data-edge-from"), g.getAttribute("data-edge-to"))) l.classList.add("label-peek");
+  });
+  svgEl.addEventListener("mouseout", (e) => {
+    const g = e.target.closest && e.target.closest("g[data-edge-from]");
+    if (!g) return;
+    for (const l of labelsOf(g.getAttribute("data-edge-from"), g.getAttribute("data-edge-to"))) l.classList.remove("label-peek");
+  });
 }
 
 // How much of the viewBox one card should take when ⌘K lands on it (#393): the
