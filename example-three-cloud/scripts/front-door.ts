@@ -302,7 +302,8 @@ export async function waitFor(want: "healthy" | "unhealthy", timeoutMs = 180_000
 // ---------------------------------------------------------------------------
 // Export
 
-export const NOTE = "Run this yourself: `npx @intentius/behold demo three-cloud`";
+export const NOTE =
+  "Azure was switched off: its app answers 503, Route 53's check on it fails, and AWS and GCP take the traffic. Run this yourself: `npx @intentius/behold demo three-cloud`";
 
 export function exportPage(out: string): void {
   // BEHOLD names the behold to run (a checkout's `tsx src/cli.ts`, say);

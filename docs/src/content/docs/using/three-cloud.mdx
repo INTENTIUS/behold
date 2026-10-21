@@ -55,7 +55,7 @@ The Op's last step is a [static export](/behold/using/export/) into `export/`:
 
 ```sh
 behold export . --open-env local --open-zoom logical \
-  --note 'Run this yourself: `npx @intentius/behold demo three-cloud`' --out export
+  --note "Azure was switched off: its app answers 503, Route 53's check on it fails, and AWS and GCP take the traffic. Run this yourself: \`npx @intentius/behold demo three-cloud\`" --out export
 ```
 
 It opens on the `local` environment at the logical zoom, which draws each record, the service it fronts and whether it is in rotation, and ends with the line that brings a reader back here. To rebuild the page from nothing, boot the emulators and run the Op:

@@ -40,7 +40,7 @@
          and fails if the two drift apart. */
       :root {
         --bg: #1e1e2e; --panel: #2e2f40; --line: #3b3c4a; --fg: #cdd6f4; --muted: #9598aa; --ink2: #c4cbe4;
-        --edge: #56596d; --managed: #a6e3a1; --foreign: #f9e2af; --pending: #89b4fa;
+        --edge: #7e839b; --managed: #a6e3a1; --foreign: #f9e2af; --pending: #89b4fa;
         --degraded: #f38ba8; --neutral: #6d7187; --runtime: #94e2d5;
         --rule: #4e4f64; --focus: #a3b4d0; --active: #3d4660; --well: #11101f; --shadow: #050507;
         --bar-managed: #a6e3a1; --bar-foreign: #f9e2af; --bar-pending: #89b4fa; --bar-degraded: #f38ba8; --bar-runtime: #94e2d5; --bar-neutral: #9b9fb7;
@@ -137,6 +137,11 @@
          visible line. The hovered edge is also raised to the top in JS so it isn't
          buried under the bundle. */
       #graph g[data-edge-from] .pin-edge-line { transition: stroke .08s ease, stroke-width .08s ease; }
+      /* behold#824: an edge's label is read text, not a hint, so it takes the
+         full text colour, and its pill is outlined in the edge's own colour so
+         the label reads as part of its line. */
+      #graph g[data-edge-via] > text { fill: var(--pin-text); }
+      #graph g[data-edge-via] > rect { stroke: var(--pin-edge); }
       /* ---- Motion (#229) ---------------------------------------------------
          behold spends motion exactly twice, and never for decoration:
          1. the graph fades through on every re-render, so a refresh reads as a
