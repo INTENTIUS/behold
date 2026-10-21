@@ -355,8 +355,8 @@ describe("projectTopology — GCP dispatch (#101)", () => {
 
   it("uses the GCP lens for a gcp graph, naming the project from the env", () => {
     const { byContainer } = projectTopology(gcpIr, "my-project");
-    expect(Object.keys(byContainer)).toContain("project my-project");
-    expect(byContainer["project my-project"]).toContain("location us-central1");
+    expect(Object.keys(byContainer)).toContain("GCP project my-project");
+    expect(byContainer["GCP project my-project"]).toContain("location us-central1");
   });
 
   it("draws no network boxes for GCP, unlike the other two lenses", () => {

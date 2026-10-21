@@ -5,13 +5,16 @@ import {
   ForwardingRule,
   GCPServiceAccount,
   RegionNetworkEndpointGroup,
+  Subnetwork,
   TargetHTTPProxy,
   URLMap,
+  VPCNetwork,
   output,
 } from "@intentius/chant-lexicon-gcp";
 
-// The website on Cloud Run in Tokyo, running as its own service account, behind
-// a global external Application Load Balancer as production sets it up: a
+// The website on Cloud Run in Tokyo, running as its own service account with
+// its egress in a VPC subnet, behind a global external Application Load
+// Balancer as production sets it up: a
 // static address and a forwarding rule, an HTTP proxy, a URL map, a backend
 // service, and a serverless network endpoint group that names the service.
 // The load balancer kinds apply with chant 0.124.35 or newer (chant#4233).
@@ -26,6 +29,19 @@ export const runtime = new GCPServiceAccount({
   displayName: "three-cloud website runtime",
 });
 
+// The network Cloud Run sends its egress into (Direct VPC egress), a custom
+// VPC with one subnet in the service's region. Chant applies these kinds from
+// INTENTIUS/chant#4248 and #4249; an older chant skips them, and the service
+// still runs.
+export const vpc = new VPCNetwork({ metadata: { name: "three-cloud-vpc" }, autoCreateSubnetworks: false, routingMode: "REGIONAL" });
+
+export const subnet = new Subnetwork({
+  metadata: { name: "three-cloud-apps" },
+  region,
+  ipCidrRange: "10.30.0.0/24",
+  networkRef: { name: "three-cloud-vpc" },
+});
+
 export const web = CloudRunServiceComposite({
   name: "three-cloud-site",
   image: "traefik/whoami:v1.10",
@@ -36,6 +52,16 @@ export const web = CloudRunServiceComposite({
   maxInstanceCount: 1,
   publicAccess: true,
   serviceAccount: "three-cloud-run",
+  defaults: {
+    service: {
+      template: {
+        vpcAccess: {
+          egress: "PRIVATE_RANGES_ONLY",
+          networkInterfaces: [{ networkRef: { name: "three-cloud-vpc" }, subnetworkRef: { name: "three-cloud-apps" } }],
+        },
+      },
+    },
+  },
 });
 
 export const neg = new RegionNetworkEndpointGroup({

@@ -22,7 +22,7 @@ The estate is a chant workspace of four members, drawn as four boxes:
 | `dns` | the hosted zone, three health checks, three latency CNAMEs, and an A record naming the GCP load balancer |
 | `aws` | a VPC (`VpcDefault`: public and private subnets in two zones, internet and NAT gateways) and the `FargateAlb` composite: the service, its task, the load balancer |
 | `azure` | a Log Analytics workspace, a VNet with a subnet for the Container Apps environment, the environment, a user-assigned identity, and the app with external ingress |
-| `gcp` | the Cloud Run service (public, running as its own service account) behind a global external Application Load Balancer: address, forwarding rule, HTTP proxy, URL map, backend service, serverless NEG |
+| `gcp` | a custom VPC and a subnet for Cloud Run's egress, and the Cloud Run service (public, running as its own service account) behind a global external Application Load Balancer: address, forwarding rule, HTTP proxy, URL map, backend service, serverless NEG |
 
 Each cloud publishes its endpoint with `output()` (`awsEndpoint`, `azureEndpoint`, `gcpEndpoint`), and `dns` declares a parameter of the same name. That shared name is the edge behold draws from each record's endpoint to the cloud that answers it. Config Connector YAML has no outputs, so `chant build` warns that the gcp member's output is not written; the edge is still drawn, and the Op below reads the load balancer's IP from the emulator and hands it to `dns`. The GCP load balancer's kinds apply with chant 0.124.35 or newer.
 
