@@ -94,6 +94,15 @@ describe("projectAzureLogical (#102)", () => {
     expect(parentOf(byContainer, "subnet 10.0.2.0/24")).toBe("VNet 10.0.0.0/16");
   });
 
+  // chant#4230 writes ARM's own child type into templates; a graph that
+  // carries it nests the same.
+  it("nests a subnet spelled with ARM's child type the same way", () => {
+    const g = JSON.parse(JSON.stringify(fixture()).replaceAll("virtualNetworks_subnets", "virtualNetworks/subnets")) as GraphIR;
+    const out = projectAzureLogical(g, "prod");
+    expect(parentOf(out.byContainer, "subnet 10.0.1.0/24")).toBe("VNet 10.0.0.0/16");
+    expect(out.ir.nodes.map((x) => x.id).sort()).toEqual(["db", "registry", "vm"]);
+  });
+
   it("places a card in the subnet it references through an ARM expression", () => {
     // The association is a `[resourceId(...)]` string, not a `$ref` — the AWS
     // lens's collectRefs would see nothing here at all.

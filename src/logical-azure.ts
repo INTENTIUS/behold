@@ -104,6 +104,7 @@ export const AZURE_HEADLINE_KINDS = new Set([
 const AZURE_FABRIC_KINDS = new Set([
   "Microsoft.Network/virtualNetworks",
   "Microsoft.Network/virtualNetworks_subnets",
+  "Microsoft.Network/virtualNetworks/subnets",
   "Microsoft.Network/networkSecurityGroups",
   "Microsoft.Network/routeTables",
   "Microsoft.Network/networkInterfaces",
@@ -116,7 +117,9 @@ const AZURE_FABRIC_KINDS = new Set([
 ]);
 
 const VNET_KIND = "Microsoft.Network/virtualNetworks";
-const SUBNET_KIND = "Microsoft.Network/virtualNetworks_subnets";
+// chant's generated kind, and ARM's own spelling, which chant writes into
+// templates since chant#4230 and may carry into the graph.
+const SUBNET_KINDS = new Set(["Microsoft.Network/virtualNetworks_subnets", "Microsoft.Network/virtualNetworks/subnets"]);
 const NSG_KIND = "Microsoft.Network/networkSecurityGroups";
 
 /** `[resourceId('Microsoft.Network/networkSecurityGroups', 'my-nsg')]` → the
@@ -227,7 +230,7 @@ export function projectAzureLogical(ir: GraphIR, env?: string): LogicalProjectio
   }
 
   const vnets = azure.filter((n) => n.kind === VNET_KIND);
-  const subnets = azure.filter((n) => n.kind === SUBNET_KIND);
+  const subnets = azure.filter((n) => SUBNET_KINDS.has(n.kind));
   const vnetByName = new Map(vnets.map((v) => [resourceName(v) ?? v.id, v]));
 
   // Outward adjacency: `$ref`s plus ARM `resourceId(...)` names, resolved to ids.
