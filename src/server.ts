@@ -77,6 +77,7 @@ import { hasTerragruntUnits } from "./terragrunt-units.ts";
 import { summarizePlan } from "./reconcile.ts";
 import { renderGraph, renderArchitecture, renderBanded, renderCarveEstate, renderCarveMorph, renderMoveMorph } from "./render.ts";
 import { boxBadges, collapseBoxes, collapseNote } from "./collapse-lens.ts";
+import { stackAlike, stackNote } from "./stack-lens.ts";
 import { readCarveReport, carveReportToIr, carveNote } from "./carve-lens.ts";
 import {
   bandGraduated,
@@ -3028,6 +3029,13 @@ export function createApp(
         ir = shut.ir;
         collapsedNote = collapseNote(shut.collapsed);
       }
+      // #877: `?alike=1` — cards of one kind in a box stack into one, and a
+      // card many merely refer to carries the count instead of the lines.
+      if (multi && !components && new URL(c.req.url).searchParams.get("alike") === "1") {
+        const stacked = stackAlike(ir);
+        ir = stacked.ir;
+        collapsedNote = [collapsedNote, stackNote(stacked)].filter(Boolean).join(" · ") || undefined;
+      }
       // The count badges (#393 C) ride on every estate render, collapsed or
       // not: a box of 301 cards has to be able to say so at "fit".
       // behold#631: a chant repo's pull-request loop lays a fan-out wave out as one block per parent.
@@ -3680,6 +3688,9 @@ export function createApp(
         // the tier both.
         const expanded = ir;
         if (collapsed) ir = collapsed.ir;
+        // #877: the same stacking the source graph does.
+        const stacked = new URL(c.req.url).searchParams.get("alike") === "1" && !runtime ? stackAlike(ir) : undefined;
+        if (stacked) ir = stacked.ir;
         const { svg } = renderGraph(ir, runtime ? { boxes: "byContainer" } : { boxes: "byStack", groupBadges: boxBadges(ir) });
         // #221: the join line says which members were read where the ESTATE
         // says they run; #192's note then speaks only for the members the join
@@ -3710,6 +3721,7 @@ export function createApp(
           // #396 finding 3 — the same clause the source graph carries.
           unchangedZoomNote(zoom, estateMembers(cfg.projectDirs).map((m) => m.kind)),
           collapsed ? collapseNote(collapsed.collapsed) : undefined,
+          stacked ? stackNote(stacked) : undefined,
         ]
           .filter(Boolean)
           .join(" · ");

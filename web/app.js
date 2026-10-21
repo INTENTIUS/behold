@@ -602,7 +602,7 @@ if (staticMode) {
 
 /** Canonical key for a read URL — path + the lens params (whitelisted, sorted)
  * that select a distinct snapshot. MUST match src/export.ts `canonicalKey`. */
-const LENS_PARAMS = ["collapse", "components", "detail", "env", "logical", "ops", "radial", "runtime", "stacks", "tier"];
+const LENS_PARAMS = ["alike", "collapse", "components", "detail", "env", "logical", "ops", "radial", "runtime", "stacks", "tier"];
 function canonicalKey(path, params) {
   // Components + logical + ops views ignore detail/radial — drop them so they
   // match the single captured snapshot (MUST match src/export.ts).
@@ -1389,8 +1389,32 @@ function inspect(node) {
     });
   }
 
-  // #471: why this card is the way it is, read from chant when asked.
-  renderWhySection(panel, { node: node.id });
+  // #877: a stack opens here: the cards it holds, each with its state.
+  if (Array.isArray(node.attrs && node.attrs._stackOf)) {
+    const h = document.createElement("h3");
+    h.textContent = `stacked · ${node.attrs._stackOf.length}`;
+    panel.appendChild(h);
+    const dl = document.createElement("dl");
+    for (const m of node.attrs._stackOf) {
+      const dt = document.createElement("dt");
+      dt.textContent = m.status ? STATUS_LABEL[m.status] || m.status : "card";
+      const dd = document.createElement("dd");
+      dd.textContent = m.id;
+      dl.append(dt, dd);
+    }
+    panel.appendChild(dl);
+    panel.appendChild(actButton("draw them all", () => { view.alike = false; load(); }, "Turn stacking off and draw every card"));
+  }
+  if (typeof (node.attrs && node.attrs._usedBy) === "number") {
+    const p = document.createElement("p");
+    p.style.color = "var(--muted)";
+    p.textContent = `${node.attrs._usedBy} cards refer to this one; their lines are left out while alike cards are stacked.`;
+    panel.appendChild(p);
+  }
+
+  // #471: why this card is the way it is, read from chant when asked. A
+  // stack (#877) is behold's, not chant's, so it has no why of its own.
+  if (!Array.isArray(node.attrs && node.attrs._stackOf)) renderWhySection(panel, { node: node.id });
 
   // #401: the behaviour block, field by field, with a badge on every figure.
   // The colour on the card carries one number at a time (whichever mode is
@@ -1962,7 +1986,7 @@ function wire(ir) {
 // member (#475) is the estate member the view is on: a host opens behold with
 // ?member=, and picking a card or a member box moves it. It changes no fetch;
 // the graph is the whole estate, framed on that member's box.
-const view = { member: null, env: null, gates: null, focus: null, run: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false, collapse: false, compareTo: null };
+const view = { member: null, env: null, gates: null, focus: null, run: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false, collapse: false, alike: false, compareTo: null };
 
 // #182: `components` is the boot default, but a project that declares no
 // components renders it as ZERO nodes — the first screen was a blank graph
@@ -2177,6 +2201,21 @@ function renderPanelView() {
     );
     if (estate) radial.disabled = true;
     zoom.appendChild(radial);
+    // #877: cards of one kind in a box stack into one with a count. An estate
+    // lens, like collapse: the server stacks within each project's box.
+    if (estate) {
+      zoom.appendChild(
+        panelOpt(
+          "stack alike",
+          view.alike,
+          () => {
+            view.alike = !view.alike;
+            load();
+          },
+          "Three or more cards of one kind in a box draw as one card with a count; a card many others refer to carries the number instead of the lines",
+        ),
+      );
+    }
   }
   const tools = document.getElementById("panel-viewtools");
   tools.innerHTML = "";
@@ -2894,6 +2933,7 @@ function applyWantedView(want) {
   }
   if (apply.lens) colourMode = apply.lens; // not written to localStorage: the link's pick, not yours
   if ("radial" in apply) view.radial = apply.radial;
+  if ("alike" in apply) view.alike = apply.alike;
   if ("gates" in apply) view.gates = apply.gates;
   if ("focus" in apply) view.focus = apply.focus; // #569: drawn by drawTgReads, no new read
   if ("run" in apply) view.run = apply.run; // #569: which run the view draws; read in the message handler
@@ -2911,7 +2951,7 @@ function applyWantedView(want) {
   return fetchKey() !== before;
 }
 function fetchKey() {
-  return [view.env, zoomValue(), view.tier, view.radial].join("|");
+  return [view.env, zoomValue(), view.tier, view.radial, view.alike].join("|");
 }
 
 // #476: the host moves the view with a `behold:view` message carrying the same
@@ -3213,6 +3253,7 @@ function syncViewUrl() {
     lens: colourMode,
     node: place.node || selectedNodeId,
     radial: view.radial && !view.components && !view.logical && !view.ops,
+    alike: view.alike && !view.components && !view.logical && !view.ops,
     gates: view.gates,
     focus: view.focus,
     run: view.run,
@@ -10066,6 +10107,8 @@ async function loadOnce(opts = {}, isCurrent = () => true) {
     // and the ops view have no member boxes to shut — and it rides both the
     // source graph and the overlay, so picking an env doesn't undo it.
     if (view.collapse && !view.components && !view.ops) q.set("collapse", "1");
+    // #877: stack alike cards, the same estate-box lens on both routes.
+    if (view.alike && !view.components && !view.logical && !view.ops) q.set("alike", "1");
     // The CI + resources facets are component-DAG-mode-only details. Load
     // both whenever components mode is on, env picked or not — #59 unifies
     // the CI facet (#58), the live-status join (#57), and resources (#59) so
@@ -11331,6 +11374,9 @@ function paletteCommands() {
   // both, the two keys are already distinct.
   if (!staticMode && !view.components && !view.ops) {
     c.push([view.collapse ? "Expand all" : "Collapse large boxes", () => { view.collapse = !view.collapse; load(); }]);
+  }
+  if (!view.components && !view.logical && !view.ops && lastMeta && lastMeta.estate > 1) {
+    c.push([view.alike ? "Unstack alike cards" : "Stack alike cards", () => { view.alike = !view.alike; load(); }]);
   }
 
   // Env/stack/tier/target selection — replaces the old header pickers.

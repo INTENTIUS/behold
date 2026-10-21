@@ -26,6 +26,11 @@ const PLUMBING_KIND = /(::IAM::|::Iam::|::KMS::|::Kms::|::Logs::|::SecretsManage
 /** Attributes whose references are the traffic path, as declared. */
 const WIRED_VIA = /^(import|TargetGroupArn|DefaultActions|LoadBalancers|ResourceRecords|AliasTarget|EventSourceArn|FunctionName|Endpoint|TopicArn|QueueUrl|target|defaultService|backend|urlMapRef|serviceRef|networkEndpointGroupRef|ingress|managedEnvironmentId|from outside)$/;
 
+/** Whether a reference edge is the traffic path, as declared. */
+export function isWired(e) {
+  return WIRED_VIA.test(String(e.viaAttr || "").split(".").pop());
+}
+
 /**
  * The weight of each reference edge, keyed `from→to`. `kindOf` maps a node id
  * to its kind. A CI edge gets no entry.
@@ -48,7 +53,7 @@ export function edgeWeights(edges = [], kindOf = new Map()) {
       const hub = PLUMBING_KIND.test(kindOf.get(e.to) || "") ? e.to : e.from;
       w = (sharers.get(hub)?.size ?? 0) > 2 ? "hidden" : "plumbing";
     } else if (e.inferred) w = "inferred";
-    else if (WIRED_VIA.test(String(e.viaAttr || "").split(".").pop())) w = "wired";
+    else if (isWired(e)) w = "wired";
     else w = "reference";
     out.set(`${e.from}→${e.to}`, w);
   }
