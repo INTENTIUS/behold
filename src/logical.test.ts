@@ -660,4 +660,13 @@ describe("projectLogical, subnet tiers and member-scoped placement (#824)", () =
     const { byContainer } = projectLogical(ir());
     expect(parentOf(byContainer, "dns")).toBe("regional & global");
   });
+
+  it("puts the VPC and the global lane in one account box, numbered from an ARN", () => {
+    const g = ir();
+    (g.nodes.find((x) => x.id === "aws/alb") as { physicalId?: string }).physicalId = "arn:aws:elasticloadbalancing:us-east-1:000000000000:loadbalancer/app/web/1";
+    const { byContainer } = projectLogical(g);
+    expect(parentOf(byContainer, "regional & global")).toBe("AWS account 000000000000");
+    expect(parentOf(byContainer, "VPC 10.20.0.0/16")).toBe("AWS account 000000000000");
+    expect(Object.values(byContainer).flat()).not.toContain("AWS account 000000000000");
+  });
 });
