@@ -22,6 +22,7 @@ import {
 import type { GraphIR, IRGroups, IRNode, Layout } from "@intentius/chant";
 import type { ByContainer } from "./logical.ts";
 import { k8sIconFor, helmIconFor } from "./icon-packs.ts";
+import { awsIconFor, azureIconFor, gcpIconFor, terraformIconFor } from "./cloud-icons.ts";
 import { SQL_LEXICON, sqlCardFields, sqlIconFor } from "./sql-kinds.ts";
 import { carveCardFields } from "./carve-lens.ts";
 import { cardFaces } from "./card-face.ts";
@@ -58,6 +59,10 @@ function renderSvg(...args: Parameters<typeof pinholeRenderSvg>): string {
 
 registerPack({ lexicon: "k8s", iconFor: k8sIconFor });
 registerPack({ lexicon: "helm", iconFor: helmIconFor });
+// #872: the cloud vendors' own architecture icons, by kind then by service.
+registerPack({ lexicon: "aws", iconFor: awsIconFor });
+registerPack({ lexicon: "azure", iconFor: azureIconFor });
+registerPack({ lexicon: "gcp", iconFor: gcpIconFor });
 // #524: a SQL Yodeler project's schema (chant-lexicon-sql): a line glyph per
 // Postgres and ClickHouse kind, and cards that lead with the kind in words and
 // the qualified name instead of two alphabetical attrs.
@@ -67,21 +72,19 @@ registerPack({ lexicon: SQL_LEXICON, iconFor: sqlIconFor, fields: sqlCardFields 
 // two fields a peelability card shows — the score and the verdict. Without it
 // pinhole's default template picks the first two short scalar attrs in
 // ALPHABETICAL order, which on a carve node is "band" then "dynamic": true, and
-// the number the whole report exists to communicate never reaches the card. No
-// `iconFor` opinion: the keyword heuristic already resolves aws_s3_bucket,
-// aws_vpc, aws_subnet and aws_lambda_function to sensible glyphs, and guessing
-// per Terraform type here would be a worse picture than the one it produces.
+// the number the whole report exists to communicate never reaches the card.
+// Icons (#872): a resource type with a vendor icon wears it (aws_s3_bucket
+// takes the S3 bucket icon); any other keeps pinhole's keyword glyph.
 // Two producers share the `terraform` lexicon and must not disagree about what
 // lexicon they are: the carve report's scored resources (#252) and the blocks
 // chant's terraform lexicon reads out of an estate's own HCL (#379). One pack,
 // dispatching on what the node carries — a carve node has a `score`, a read
 // block has an `attrs.block` — so a card is titled by its resource type either
-// way and the keyword icon heuristic resolves aws_s3_bucket, aws_vpc and
-// friends for both. `normalizeTerraformNodes` (src/terraform-lens.ts) is what
+// way and wears the same icon for both. `normalizeTerraformNodes` (src/terraform-lens.ts) is what
 // puts the type in `kind` for the second producer; the first has always had it.
 registerPack({
   lexicon: "terraform",
-  iconFor: () => undefined,
+  iconFor: terraformIconFor, // #872: a resource type's vendor icon, else the keyword glyph
   fields: (node) => carveCardFields(node) ?? terraformCardFields(node),
 });
 
@@ -95,10 +98,10 @@ registerPack({ lexicon: "op", iconFor: () => undefined, fields: opCardFields });
 
 // The choudoufu member (#369) registers its lexicon so a card leads with the
 // rung and the estate (an instance) or the producer it reads (a data source),
-// rather than the alphabetically first two short attrs. No `iconFor` opinion:
-// a node's kind is the Terraform type (`aws_subnet`, `aws_iam_role`), which
-// the keyword heuristic already resolves the way it does for the carve lens.
-registerPack({ lexicon: CHOUDOUFU_LEXICON, iconFor: () => undefined, fields: choudoufuCardFields });
+// rather than the alphabetically first two short attrs. A node's kind is the
+// Terraform type (`aws_subnet`, `aws_iam_role`), so it takes the same vendor
+// icons the terraform lexicon does (#872).
+registerPack({ lexicon: CHOUDOUFU_LEXICON, iconFor: terraformIconFor, fields: choudoufuCardFields });
 
 // The apply-order lens (#426) registers behold's own lexicon for the same
 // reason the ops lens does: a stack card must lead with the wave it applies in

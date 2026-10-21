@@ -370,9 +370,26 @@ function markCloudBoxes() {
   if (!titles.size) return;
   for (const t of svg.querySelectorAll("text")) {
     const cloud = titles.get((t.textContent || "").trim());
-    if (cloud) t.setAttribute("data-cloud", cloud);
+    if (!cloud || t.getAttribute("data-cloud")) continue;
+    t.setAttribute("data-cloud", cloud);
+    // #872: the vendor's own mark before the title, drawn as published. The
+    // title moves right by the mark's width, once (data-cloud guards it).
+    const size = 20;
+    const x = Number(t.getAttribute("x"));
+    const y = Number(t.getAttribute("y"));
+    const mark = document.createElementNS(SVGNS, "image");
+    mark.setAttribute("href", `icons/${CLOUD_MARK[cloud]}.svg`);
+    mark.setAttribute("x", String(x));
+    mark.setAttribute("y", String(y - size + 4));
+    mark.setAttribute("width", String(size));
+    mark.setAttribute("height", String(size));
+    mark.setAttribute("data-cloud-mark", cloud);
+    t.parentNode.insertBefore(mark, t);
+    t.setAttribute("x", String(x + size + 6));
   }
 }
+/** The vendored mark each cloud box wears (src/cloud-icons.ts vendors them). */
+const CLOUD_MARK = { aws: "aws/cloud", azure: "azure/subscription", gcp: "gcp/project" };
 onThemeChange(() => (recolorNodesByCategory(), drawTgReads())); // behold#571: drawTgReads redraws the marks in the theme's colours
 // behold#824: the legend on the graph itself. In drift mode a card's fill is
 // its resource kind (one hue per kind, nothing more) and its state is the bar

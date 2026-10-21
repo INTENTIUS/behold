@@ -138,7 +138,7 @@ function plate(glyph: PackGlyph): PackGlyph {
 }
 
 /** Read a vendored SVG and split it into its viewBox and its inner markup. */
-function loadIcon(rel: string): PackGlyph {
+export function loadIcon(rel: string): PackGlyph {
   const hit = cache.get(rel);
   if (hit) return hit;
 

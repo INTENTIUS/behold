@@ -109,3 +109,24 @@ module comments quote the rule each decision rests on.
 Each name and mark belongs to its owner and is used only to say which forge runs a pipeline
 or which tool a job runs. Its appearance here implies no affiliation with, sponsorship by, or
 endorsement from its owner.
+
+## Cloud architecture icons (`web/icons/aws/`, `web/icons/azure/`, `web/icons/gcp/`)
+
+The AWS, Azure and Google Cloud icons on cards and cloud boxes (#872) are the
+vendors' own architecture icons, copied from their published packs by
+[`scripts/vendor-cloud-icons.mts`](./scripts/vendor-cloud-icons.mts), which takes
+only the files [`src/cloud-icons.ts`](./src/cloud-icons.ts) maps a kind to
+(152 of the packs' ~4,500) and runs each through the same sanitizer as the
+Kubernetes and CNCF icons: ids and classes namespaced per file, comments and
+editor state dropped, no geometry changed. They are drawn as published, never
+recoloured, cropped or reshaped, and each stands only for the service or
+resource it was published for.
+
+| Pack | Release | Terms |
+|---|---|---|
+| AWS Architecture Icons, `Icon-package_07312026.zip` from [aws.amazon.com/architecture/icons](https://aws.amazon.com/architecture/icons/) | 2026-07-31 | [`licenses/aws-architecture-icons-TERMS.md`](./licenses/aws-architecture-icons-TERMS.md) |
+| Azure architecture icons, `Azure_Public_Service_Icons_V24.zip` from [learn.microsoft.com/azure/architecture/icons](https://learn.microsoft.com/azure/architecture/icons/) | V24 | [`licenses/azure-architecture-icons-TERMS.md`](./licenses/azure-architecture-icons-TERMS.md), and the pack's own [`Microsoft_Terms_of_Use.pdf`](./licenses/azure-architecture-icons-Microsoft_Terms_of_Use.pdf) |
+| Google Cloud icons, `google-cloud-icons.zip` from [cloud.google.com/icons](https://cloud.google.com/icons) | retrieved 2026-10-21 | [`licenses/google-cloud-icons-TERMS.md`](./licenses/google-cloud-icons-TERMS.md) |
+
+AWS, Azure and Google Cloud, and their service names, are trademarks of their
+owners; behold uses them only to identify those vendors' own services.
