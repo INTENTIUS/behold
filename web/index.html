@@ -143,6 +143,17 @@
       /* An edge is drawn the same width on screen at every zoom: in viewBox
          units a fitted estate scaled its 1.4 down to a third of a pixel. */
       #graph .pin-edge-line { vector-effect: non-scaling-stroke; stroke-width: 1.6px; }
+      /* behold#824: each cloud's boundary box in its vendor's colour, mixed into
+         the theme so it holds on light and dark palettes alike. */
+      :root { --cloud-aws: #ff9900; --cloud-azure: #0078d4; --cloud-gcp: #34a853; }
+      #graph rect[data-cloud] { fill-opacity: 1; stroke-width: 2.5; }
+      #graph rect[data-cloud="aws"] { fill: color-mix(in srgb, var(--cloud-aws) 13%, var(--bg)); stroke: color-mix(in srgb, var(--cloud-aws) 75%, var(--bg)); }
+      #graph rect[data-cloud="azure"] { fill: color-mix(in srgb, var(--cloud-azure) 13%, var(--bg)); stroke: color-mix(in srgb, var(--cloud-azure) 75%, var(--bg)); }
+      #graph rect[data-cloud="gcp"] { fill: color-mix(in srgb, var(--cloud-gcp) 13%, var(--bg)); stroke: color-mix(in srgb, var(--cloud-gcp) 75%, var(--bg)); }
+      #graph text[data-cloud] { font-weight: 700; }
+      #graph text[data-cloud="aws"] { fill: color-mix(in srgb, var(--cloud-aws) 80%, var(--fg)); }
+      #graph text[data-cloud="azure"] { fill: color-mix(in srgb, var(--cloud-azure) 80%, var(--fg)); }
+      #graph text[data-cloud="gcp"] { fill: color-mix(in srgb, var(--cloud-gcp) 80%, var(--fg)); }
       /* behold#824: the legend on the graph — what a card's colour and its bar mean. */
       #graph-legend { position: absolute; right: 12px; bottom: 12px; z-index: 5; min-width: 190px; max-width: 260px;
         background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: var(--r-ctl);

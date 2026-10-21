@@ -325,7 +325,53 @@ function recolorNodesByCategory(ir) {
     const bar = g.querySelector('rect[width="4"]');
     if (bar) bar.setAttribute("fill", "var(--runtime)");
   }
+  markCloudBoxes();
   renderGraphLegend();
+}
+
+// behold#824: an estate across clouds draws one boundary box per cloud (AWS
+// account, Azure subscription, GCP project). Each is marked with its cloud so
+// the stylesheet can give it that vendor's colour, box and title together, and
+// three clouds read as three clouds at a glance rather than three grey boxes.
+const CLOUD_OF_BOX = [
+  [/^AWS account\b/, "aws"],
+  [/^Azure subscription\b/, "azure"],
+  [/^GCP project\b/, "gcp"],
+];
+function cloudOfBox(title) {
+  for (const [re, cloud] of CLOUD_OF_BOX) if (re.test(title)) return cloud;
+  return null;
+}
+function markCloudBoxes() {
+  const svg = document.querySelector("#graph svg");
+  if (!svg) return;
+  // A project box (the composites and resources zooms draw one per workspace
+  // member) takes its cloud from its resources' lexicon when they share one:
+  // `dns`, all Route 53, is an AWS box.
+  const lexiconsOf = new Map();
+  for (const n of (lastGraphIr && lastGraphIr.nodes) || []) {
+    const slash = n.id.indexOf("/");
+    if (slash < 1 || !n.lexicon) continue;
+    const m = n.id.slice(0, slash);
+    (lexiconsOf.get(m) ?? lexiconsOf.set(m, new Set()).get(m)).add(n.lexicon);
+  }
+  const memberCloud = (id) => {
+    const lx = lexiconsOf.get(id);
+    return lx && lx.size === 1 && ["aws", "azure", "gcp"].includes([...lx][0]) ? [...lx][0] : null;
+  };
+  const titles = new Map();
+  for (const rect of svg.querySelectorAll("rect[data-group-id]")) {
+    const id = rect.getAttribute("data-group-id") || "";
+    const cloud = cloudOfBox(id) || memberCloud(id);
+    if (!cloud) continue;
+    rect.setAttribute("data-cloud", cloud);
+    titles.set(rect.getAttribute("data-group-id"), cloud);
+  }
+  if (!titles.size) return;
+  for (const t of svg.querySelectorAll("text")) {
+    const cloud = titles.get((t.textContent || "").trim());
+    if (cloud) t.setAttribute("data-cloud", cloud);
+  }
 }
 onThemeChange(() => (recolorNodesByCategory(), drawTgReads())); // behold#571: drawTgReads redraws the marks in the theme's colours
 // behold#824: the legend on the graph itself. In drift mode a card's fill is
@@ -405,6 +451,19 @@ function renderGraphLegend() {
     const f = document.createElement("i");
     f.style.background = colorForCategory(k);
     fills.appendChild(f);
+  }
+  const clouds = [...new Set([...document.querySelectorAll("#graph rect[data-cloud]")].map((r) => r.getAttribute("data-cloud")))];
+  if (clouds.length) {
+    const sw = document.createElement("span");
+    sw.className = "gl-fills";
+    const names = { aws: "AWS", azure: "Azure", gcp: "GCP" };
+    for (const c of ["aws", "azure", "gcp"].filter((c) => clouds.includes(c))) {
+      const f = document.createElement("i");
+      f.style.background = `var(--cloud-${c})`;
+      f.title = names[c];
+      sw.appendChild(f);
+    }
+    line(sw, `box colour: cloud (${["aws", "azure", "gcp"].filter((c) => clouds.includes(c)).map((c) => names[c]).join(", ")})`);
   }
   line(fills, "card colour: resource kind");
   const sub = document.createElement("div");

@@ -240,7 +240,7 @@ describe("projectAzureLogical (#102)", () => {
       } as unknown as GraphIR,
       "prod",
     );
-    expect(parentOf(out.byContainer, "resource group prod")).toBe("Azure subscription 00000000-0000-0000-0000-000000000001");
+    expect(parentOf(out.byContainer, "resource group prod")).toBe("Azure subscription 00000000…");
   });
 
   it("leaves a non-azure graph alone", () => {
