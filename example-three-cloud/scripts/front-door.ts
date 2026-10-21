@@ -157,9 +157,7 @@ async function azureOn(): Promise<void> {
 
 /** The aws member, or why it could not be applied. */
 async function applyAws(): Promise<{ endpoint: string } | { refused: string }> {
-  const template = build("aws");
-  const subnets = await defaultSubnets();
-  const params = withDefaults(template, { vpcId: subnets.vpc, subnetIds: subnets.ids.join(",") });
+  const params = build("aws");
   // A stack that rolled back on its first create can't be updated; start it again.
   if ((await stackStatus("three-cloud-aws")) === "ROLLBACK_COMPLETE") {
     await awsDelete({ templatePath: params, stackName: "three-cloud-aws", endpoint: AWS, timeoutMs: 180_000 });
@@ -338,16 +336,6 @@ async function awsQuery(service: string, form: Record<string, string>): Promise<
   const text = await res.text();
   if (!res.ok) throw new Refusal(`${service} ${form.Action} answered ${res.status}: ${text.slice(0, 300)}`);
   return text;
-}
-
-async function defaultSubnets(): Promise<{ vpc: string; ids: string[] }> {
-  const vpcs = await awsQuery("ec2", { Action: "DescribeVpcs", Version: "2016-11-15", "Filter.1.Name": "isDefault", "Filter.1.Value.1": "true" });
-  const vpc = /<vpcId>([^<]+)<\/vpcId>/.exec(vpcs)?.[1];
-  if (!vpc) throw new Refusal("aws: the emulator has no default VPC");
-  const subnets = await awsQuery("ec2", { Action: "DescribeSubnets", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpc });
-  const ids = [...subnets.matchAll(/<subnetId>([^<]+)<\/subnetId>/g)].map((m) => m[1]!).slice(0, 2);
-  if (ids.length < 2) throw new Refusal(`aws: the default VPC ${vpc} has fewer than two subnets`);
-  return { vpc, ids };
 }
 
 async function stackStatus(stack: string): Promise<string | undefined> {

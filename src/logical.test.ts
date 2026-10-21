@@ -89,7 +89,11 @@ describe("projectLogical", () => {
   });
 
   it("groups resources into a box per component", () => {
-    expect(parentOf(byContainer, "alb")).toBe("shared-foundation");
+    // The ALB sits in its public subnet and the IGW at the VPC, so the
+    // component has a part in each (behold#824): every card stays in the
+    // network place it runs in.
+    expect(parentOf(byContainer, "alb")).toBe("shared-foundation · public");
+    expect(parentOf(byContainer, "shared-foundation · public")).toMatch(/^public subnet /);
     expect(parentOf(byContainer, "igw")).toBe("shared-foundation");
     expect(parentOf(byContainer, "svc")).toBe("backend");
     expect(parentOf(byContainer, "bucket")).toBe("assets");
@@ -615,5 +619,45 @@ describe("projectTopology — a DNS member fronting other clouds (#824)", () => 
     expect(pairs).not.toContain("dns/azureRecord→dns/gcpRecord");
     expect(pairs).not.toContain("dns/gcpRecord→dns/azureRecord");
     expect(pairs).not.toContain("dns/azureRecord→gcp/webService");
+  });
+});
+
+// behold#824: the three-cloud aws member declares its VPC, two public and two
+// private subnets; the dns member reaches its ALB through an import.
+describe("projectLogical, subnet tiers and member-scoped placement (#824)", () => {
+  const n = (id: string, kind: string, attrs: Record<string, unknown> = {}) => ({ id, kind, lexicon: "aws", attrs, sourceLoc: { file: "src/site.ts" } });
+  const ir = (): GraphIR =>
+    ({
+      nodes: [
+        n("aws/vpc", "AWS::EC2::VPC", { CidrBlock: "10.20.0.0/16" }),
+        n("aws/publicSubnet1", "AWS::EC2::Subnet", { CidrBlock: "10.20.0.0/24", VpcId: ref("aws/vpc.VpcId") }),
+        n("aws/publicSubnet2", "AWS::EC2::Subnet", { CidrBlock: "10.20.1.0/24", VpcId: ref("aws/vpc.VpcId") }),
+        n("aws/privateSubnet1", "AWS::EC2::Subnet", { CidrBlock: "10.20.10.0/24", VpcId: ref("aws/vpc.VpcId") }),
+        n("aws/privateSubnet2", "AWS::EC2::Subnet", { CidrBlock: "10.20.11.0/24", VpcId: ref("aws/vpc.VpcId") }),
+        n("aws/alb", "AWS::ElasticLoadBalancingV2::LoadBalancer", { Subnets: [ref("aws/publicSubnet1.SubnetId"), ref("aws/publicSubnet2.SubnetId")] }),
+        n("aws/svc", "AWS::ECS::Service", { NetworkConfiguration: { AwsvpcConfiguration: { Subnets: [ref("aws/privateSubnet1.SubnetId"), ref("aws/privateSubnet2.SubnetId")] } } }),
+        n("aws/nat", "AWS::EC2::NatGateway", { SubnetId: ref("aws/publicSubnet1.SubnetId") }),
+        n("dns/endpoint", "AWS::CloudFormation::Parameter"),
+        n("dns/record", "AWS::Route53::RecordSet", { ResourceRecords: [ref("dns/endpoint")] }),
+      ],
+      edges: [{ from: "dns/endpoint", to: "aws/alb", kind: "ref", viaAttr: "import" }],
+      groups: { byStack: { aws: ["aws/vpc", "aws/publicSubnet1", "aws/publicSubnet2", "aws/privateSubnet1", "aws/privateSubnet2", "aws/alb", "aws/svc", "aws/nat"], dns: ["dns/endpoint", "dns/record"] } },
+    }) as unknown as GraphIR;
+  const parentOf = (bc: Record<string, string[]>, id: string) => Object.entries(bc).find(([, ids]) => ids.includes(id))?.[0];
+
+  it("puts a load balancer spanning two public subnets in one box naming both", () => {
+    const { byContainer } = projectLogical(ir());
+    expect(parentOf(byContainer, "aws · public")).toBe("public subnets 10.20.0.0/24, 10.20.1.0/24");
+    expect(parentOf(byContainer, "aws/alb")).toBe("aws · public");
+    // A NAT gateway in one public subnet shares the tier with the ALB.
+    expect(parentOf(byContainer, "aws/nat")).toBe("aws · public");
+    expect(Object.keys(byContainer).filter((k) => k.startsWith("public subnet"))).toHaveLength(1);
+    expect(parentOf(byContainer, "aws/svc")).toBe("aws · private");
+    expect(parentOf(byContainer, "private subnets 10.20.10.0/24, 10.20.11.0/24")).toBe("VPC 10.20.0.0/16");
+  });
+
+  it("keeps another member's record out of the VPC its import reaches", () => {
+    const { byContainer } = projectLogical(ir());
+    expect(parentOf(byContainer, "dns")).toBe("regional & global");
   });
 });

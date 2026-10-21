@@ -704,15 +704,44 @@ export function projectLogical(ir: GraphIR): LogicalProjection {
   const GLOBAL = "regional & global";
 
   // Placement per headline node: its subnet (if resolvable), else its VPC, else
-  // the global lane.
+  // the global lane. The walk stays inside the node's own workspace member: a
+  // Route 53 record reaches another member's load balancer through an import,
+  // and that load balancer's VPC is not where the record lives (behold#824).
+  const memberOf = memberNamer(ir.groups);
+  const ownRefs = new Map<string, Set<string>>();
+  for (const [from, tos] of refOut) {
+    const m = memberOf(byId.get(from)!);
+    ownRefs.set(from, new Set([...tos].filter((t) => memberOf(byId.get(t)!) === m)));
+  }
+  // Every subnet at the depth the first one turns up: an ALB or a service names
+  // the subnets of every zone it spans, all at once.
+  const subnetsOf = (start: string): string[] => {
+    const seen = new Set([start]);
+    let frontier = [...(ownRefs.get(start) ?? [])];
+    for (let depth = 0; depth < 8 && frontier.length; depth++) {
+      const hit = [...new Set(frontier.filter((id) => subnetIds.has(id)))];
+      if (hit.length) return hit.sort();
+      const next: string[] = [];
+      for (const id of frontier) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+        for (const r of ownRefs.get(id) ?? []) if (!seen.has(r)) next.push(r);
+      }
+      frontier = next;
+    }
+    return [];
+  };
   const headline = aws.filter((n) => HEADLINE_KINDS.has(n.kind));
-  type Place = { kind: "subnet"; subnet: string; vpc?: string } | { kind: "vpc"; vpc: string } | { kind: "global" };
+  type Place = { kind: "subnet"; subnets: string[]; vpc?: string } | { kind: "vpc"; vpc: string } | { kind: "global" };
   const placeOf = new Map<string, Place>();
   for (const n of headline) {
-    const subnet = nearestByRef(n.id, subnetIds, refOut);
-    if (subnet) placeOf.set(n.id, { kind: "subnet", subnet, vpc: nearestByRef(subnet, vpcIds, refOut) });
+    const subnets = subnetsOf(n.id);
+    // Subnets of one tier stay together; a node naming several tiers belongs
+    // to none of them and sits in the VPC.
+    const scopes = new Set(subnets.map(subnetScope));
+    if (subnets.length && scopes.size === 1) placeOf.set(n.id, { kind: "subnet", subnets, vpc: nearestByRef(subnets[0], vpcIds, ownRefs) });
     else {
-      const vpc = nearestByRef(n.id, vpcIds, refOut) ?? igwToVpc.get(n.id);
+      const vpc = (subnets.length ? nearestByRef(subnets[0], vpcIds, ownRefs) : undefined) ?? nearestByRef(n.id, vpcIds, ownRefs) ?? igwToVpc.get(n.id);
       placeOf.set(n.id, vpc ? { kind: "vpc", vpc } : { kind: "global" });
     }
   }
@@ -725,11 +754,22 @@ export function projectLogical(ir: GraphIR): LogicalProjection {
     const arr = byContainer[parent] ?? (byContainer[parent] = []);
     if (!arr.includes(c)) arr.push(c);
   };
-  const ensureSubnet = (subnetId: string, vpcId?: string) => {
-    const t = subnetTitle(subnetId);
+  // A tier is every subnet of one scope in one VPC: a NAT gateway in one public
+  // subnet and a load balancer across both share the public tier. A tier of
+  // one subnet keeps that subnet's own title.
+  const subnetVpc = new Map([...subnetIds].map((id) => [id, nearestByRef(id, vpcIds, ownRefs)]));
+  const tierOf = (id: string) => [...subnetIds].filter((s) => subnetVpc.get(s) === subnetVpc.get(id) && subnetScope(s) === subnetScope(id)).sort();
+  const tierTitle = (ids: string[]) => {
+    const tier = tierOf(ids[0]);
+    return tier.length === 1 ? subnetTitle(tier[0]) : `${subnetScope(tier[0])} subnets ${tier.map((id) => strAttr(byId.get(id)!, "CidrBlock") ?? id).join(", ")}`;
+  };
+  const ensureSubnet = (ids: string[], vpcId?: string) => {
+    const t = tierTitle(ids);
     if (vpcId) child(vpcTitle(vpcId), t); // subnet ⊂ VPC
     return t;
   };
+  const placeTitle = (p: Place): string => (p.kind === "subnet" ? ensureSubnet(p.subnets, p.vpc) : p.kind === "vpc" ? vpcTitle(p.vpc) : GLOBAL);
+  const placeKey = (p: Place): string => (p.kind === "subnet" ? `s:${tierOf(p.subnets[0]).join(",")}` : p.kind === "vpc" ? `v:${p.vpc}` : "g");
 
   const byComponent = new Map<string, IRNode[]>();
   for (const n of headline) (byComponent.get(componentOf(n)) ?? byComponent.set(componentOf(n), []).get(componentOf(n))!).push(n);
@@ -738,17 +778,28 @@ export function projectLogical(ir: GraphIR): LogicalProjection {
     const places = members.map((m) => placeOf.get(m.id)!);
     // The component box's home: a shared subnet if every member sits in the same
     // one, else a shared/any VPC, else the global lane.
-    const subnets = new Set(places.map((p) => (p.kind === "subnet" ? p.subnet : "")));
+    const keys = new Set(places.map(placeKey));
     const vpcs = new Set(places.map((p) => (p.kind === "subnet" ? p.vpc : p.kind === "vpc" ? p.vpc : undefined)).filter((v): v is string => !!v));
-    let parent: string;
-    if (subnets.size === 1 && !subnets.has("")) {
-      const p = places[0] as Extract<Place, { kind: "subnet" }>;
-      parent = ensureSubnet(p.subnet, p.vpc);
-    } else if (vpcs.size >= 1) {
-      parent = vpcTitle([...vpcs][0]);
-    } else {
-      parent = GLOBAL;
+    if (keys.size === 1) {
+      child(placeTitle(places[0]), component);
+      for (const m of members) child(component, m.id);
+      continue;
     }
+    // A component whose cards sit in different tiers of one VPC (a load
+    // balancer in the public subnets, its service in the private ones) gets a
+    // box in each, so every card stays in the subnets it runs in. Box keys are
+    // titles, so each part is named for its tier.
+    if (vpcs.size === 1 && places.every((p) => p.kind !== "global")) {
+      for (const [i, m] of members.entries()) {
+        const p = places[i];
+        const title = placeTitle(p);
+        const part = p.kind === "subnet" ? `${component} · ${subnetScope(p.subnets[0])}` : component;
+        child(title, part);
+        child(part, m.id);
+      }
+      continue;
+    }
+    const parent = vpcs.size >= 1 ? vpcTitle([...vpcs][0]) : GLOBAL;
     child(parent, component);
     for (const m of members) child(component, m.id);
   }
