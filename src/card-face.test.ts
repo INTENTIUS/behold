@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { GraphIR } from "@intentius/chant";
-import { cardFaces, cardLabel } from "./card-face.ts";
+import { cardFaces, cardLabel, moduleTitle } from "./card-face.ts";
 import { renderGraph } from "./render.ts";
 
 /** The painted card titles, in document order: pinhole draws the title at
@@ -183,5 +183,19 @@ describe("renderGraph paints the short face and keeps the real ids (#393 item 9)
     const { svg } = renderGraph(ir, { boxes: "byStack" });
     expect(titles(svg)).toEqual(["aws_iam_policy.boundary"]);
     expect(svg).toContain('data-node-id="access/baseline/aws_iam_policy.boundary"');
+  });
+});
+
+describe("moduleTitle (#880)", () => {
+  it("titles a module's generically named resource after the call, without the type's words", () => {
+    expect(moduleTitle("module.ecs_service_billing.aws_ecs_service.this")).toBe("billing");
+    expect(moduleTitle("module.team_pod[\"pod-a\"].aws_iam_role.main")).toBe("team_pod[\"pod-a\"]");
+    expect(moduleTitle("module.net.module.vpc_core.aws_vpc.this")).toBe("core");
+    expect(moduleTitle("module.queue.aws_sqs_queue.this[0]")).toBe("queue[0]");
+  });
+
+  it("leaves a root resource and a properly named one alone", () => {
+    expect(moduleTitle("aws_s3_bucket.this")).toBeUndefined();
+    expect(moduleTitle("module.api.aws_lambda_function.handler")).toBeUndefined();
   });
 });
