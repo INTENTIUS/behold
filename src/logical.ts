@@ -201,8 +201,13 @@ function dirSegments(node: IRNode): string[] {
  * in ONE directory has nothing below the prefix to distinguish them; that
  * directory's own name is the honest answer, and a single box is correct.
  */
-export function componentNamer(nodes: IRNode[]): (node: IRNode) => string {
-  const all = nodes.map(dirSegments).filter((d) => d.length > 0);
+export function componentNamer(nodes: IRNode[], groups?: GraphIR["groups"]): (node: IRNode) => string {
+  const memberOf = memberNamer(groups);
+  const segments = (node: IRNode): string[] => {
+    const member = memberOf(node);
+    return member ? [member, ...dirSegments(node)] : dirSegments(node);
+  };
+  const all = nodes.map(segments).filter((d) => d.length > 0);
   let shared = 0;
   if (all.length > 0) {
     const first = all[0];
@@ -215,9 +220,38 @@ export function componentNamer(nodes: IRNode[]): (node: IRNode) => string {
     }
   }
   return (node) => {
-    const dirs = dirSegments(node);
+    const dirs = segments(node);
     return dirs[shared] ?? dirs[dirs.length - 1] ?? "other";
   };
+}
+
+/**
+ * The estate member a node belongs to, when the IR is a composed estate
+ * (behold#826).
+ *
+ * A member's `sourceLoc.file` is relative to that member, so two members that
+ * each keep their source in one file (`aws/site.ts`, `gcp/site.ts`) both read
+ * as having no directory, and both got the component "other". Every lens then
+ * minted a box called "other", and since a box key is its title, the merged
+ * nesting had one "other" box with two parents: GCP's `location` box won and
+ * drew the AWS and Route 53 cards inside it. The member is the directory the
+ * file sits under as far as the estate is concerned, so it goes in front of
+ * the file's own directories and `componentNamer`'s shared-prefix rule does
+ * the rest: one member per lens strips back to what it had before (or to
+ * the member's name, where it had no directory at all), and several members
+ * get a box each.
+ *
+ * Only an id spelled `<member>/<id>` counts. A single project's `byStack` is
+ * chant's lexicon partition over bare ids, and must change nothing.
+ */
+function memberNamer(groups: GraphIR["groups"] | undefined): (node: IRNode) => string | undefined {
+  const byStack = (groups as { byStack?: Record<string, string[]> } | undefined)?.byStack;
+  if (!byStack) return () => undefined;
+  const member = new Map<string, string>();
+  for (const [stack, ids] of Object.entries(byStack)) {
+    for (const id of ids) if (id.startsWith(`${stack}/`)) member.set(id, stack);
+  }
+  return (node) => member.get(node.id);
 }
 
 /** Deep-collect the node ids a value references via `{$ref:"node.attr"}`. */
@@ -571,7 +605,7 @@ export function projectLogical(ir: GraphIR): LogicalProjection {
   // Derived from every declared node, not just the surviving headline cards, so
   // the shared prefix reflects the project's real layout rather than wherever
   // this particular estate's handful of headline kinds happen to live.
-  const componentOf = componentNamer(aws);
+  const componentOf = componentNamer(aws, ir.groups);
   const byId = new Map(aws.map((n) => [n.id, n]));
   const refOut = enrichedRefs(ir, aws, byId);
 

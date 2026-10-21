@@ -151,6 +151,24 @@ describe("projectAzureLogical (#102)", () => {
     expect((registry.attrs as Record<string, unknown>)._nsg).toBeUndefined();
   });
 
+  it("draws a Container App and its managed environment as cards (#826)", () => {
+    const apps = projectAzureLogical(
+      {
+        nodes: [
+          n("env", "Microsoft.App/managedEnvironments", "src/site.ts", { name: "env", location: "westeurope" }),
+          n("app", "Microsoft.App/containerApps", "src/site.ts", { name: "app", managedEnvironmentId: { $ref: "env.id" } }),
+        ],
+        edges: [{ from: "app", to: "env", kind: "ref" }],
+        groups: {},
+      } as unknown as GraphIR,
+      "prod",
+    );
+    expect(apps.ir.nodes.map((x) => x.id).sort()).toEqual(["app", "env"]);
+    // Contracted edges are undirected; only the pair matters.
+    expect(apps.ir.edges.map((e) => [e.from, e.to].sort())).toEqual([["app", "env"]]);
+    expect(parentOf(apps.byContainer, "src")).toBe("resource group prod");
+  });
+
   it("leaves a non-azure graph alone", () => {
     const aws = { nodes: [{ id: "vpc", kind: "AWS::EC2::VPC", lexicon: "aws", attrs: {} }], edges: [], groups: {} } as unknown as GraphIR;
     const out = projectAzureLogical(aws, "prod");
