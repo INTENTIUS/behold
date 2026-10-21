@@ -59,9 +59,7 @@ export interface DemoServe {
    * Applied through `setChoudoufuSpawnEnv`, never `process.env`. */
   spawnEnv?: Record<string, string>;
   /** Environment the served process itself starts with, so every chant read
-   * it spawns inherits it (behold#824: the three-cloud demo's GCP project,
-   * which chant's live read takes only from the environment). A variable the
-   * user already set wins. */
+   * it spawns inherits it. A variable the user already set wins. */
   processEnv?: Record<string, string>;
 }
 

@@ -141,10 +141,7 @@
       "setup": "bash scripts/emulators-up.sh",
       "serve": {
         "local": true,
-        "env": "local",
-        "processEnv": {
-          "GCP_PROJECT_ID": "three-cloud"
-        }
+        "env": "local"
       }
     },
     {

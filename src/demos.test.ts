@@ -84,7 +84,7 @@ describe("demos.json — the committed catalog (#209)", () => {
     expect(t, "no three-cloud entry in demos.json").toBeTruthy();
     expect(t!.requires).toEqual(["docker", "curl"]);
     expect(t!.setup).toBe("bash scripts/emulators-up.sh");
-    expect(t!.serve).toEqual({ local: true, env: "local", processEnv: { GCP_PROJECT_ID: "three-cloud" } });
+    expect(t!.serve).toEqual({ local: true, env: "local" });
     const dir = join(REPO, t!.dir!);
     for (const f of ["chant.workspace.json", "scripts/emulators-up.sh", "scripts/front-door.ts", "dns/ops/front-door.op.ts", "dns/src/route53.ts", "aws/src/site.ts", "azure/src/site.ts", "gcp/src/site.ts"]) {
       expect(existsSync(join(dir, f)), f).toBe(true);
@@ -148,13 +148,11 @@ describe("loadDemoRegistry — malformed input degrades, never throws", () => {
 
   // #372: a demo's spawn environment is a flat string map, or nothing; the
   // committed choudoufu-estate entry names the scratch emulator through it.
-  it("a processEnv that is not a string map drops the entry; three-cloud ships its GCP project in one", () => {
+  it("a processEnv that is not a string map drops the entry", () => {
     const entry = (processEnv: unknown, name: string) => ({ name, description: "d", source: "bundled", dir: "x", requires: [], serve: { env: "local", processEnv } });
     const dir = tmpRoot(JSON.stringify({ demos: [entry({ GCP_PROJECT_ID: "p" }, "good"), entry({ N: 1 }, "number"), entry(undefined, "none")] }));
     expect(loadDemoRegistry(dir).map((e) => e.name)).toEqual(["good", "none"]);
     rmSync(dir, { recursive: true, force: true });
-    const shipped = loadDemoRegistry(REPO).find((e) => e.name === "three-cloud")!;
-    expect(shipped.serve.processEnv).toEqual({ GCP_PROJECT_ID: "three-cloud" });
   });
 
   it("a spawnEnv that is not a string map drops the entry; a well-formed one is carried", () => {
