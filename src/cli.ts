@@ -882,6 +882,7 @@ async function runDemo(rest: string[]): Promise<void> {
   // #372: the demo's scratch emulator reaches the estate's choudoufu spawns
   // through this seam, in this process, which `serve` below shares.
   setChoudoufuSpawnEnv(entry.serve.spawnEnv);
+  for (const [k, v] of Object.entries(entry.serve.processEnv ?? {})) process.env[k] ??= v;
   await run(serveArgs);
 }
 
