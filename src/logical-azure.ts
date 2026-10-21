@@ -172,6 +172,33 @@ function subnetShortName(node: IRNode): string | undefined {
   return name?.includes("/") ? name.split("/").slice(1).join("/") : name;
 }
 
+/** `resourceId('Microsoft.Network/virtualNetworks/subnets', 'vnet', 'apps')`
+ * anywhere under `value`, as `vnet/apps`. ARM names a subnet declared inside
+ * its VNet's `subnets` array this way, since it has no resource of its own to
+ * reference. Pure. */
+export function subnetRefs(value: unknown, out: Set<string> = new Set()): Set<string> {
+  if (typeof value === "string") {
+    for (const call of value.matchAll(RESOURCE_ID_RE)) {
+      const args = [...call[1].matchAll(QUOTED_RE)].map((m) => m[1]);
+      if (args.length === 3 && /^Microsoft\.Network\/virtualNetworks[/_]subnets$/i.test(args[0])) out.add(`${args[1]}/${args[2]}`);
+    }
+  } else if (value && typeof value === "object") {
+    for (const v of Object.values(value as Record<string, unknown>)) subnetRefs(v, out);
+  }
+  return out;
+}
+
+/** The subnets a VNet declares inline, as `[name, addressPrefix]`. */
+function inlineSubnets(vnet: IRNode): Array<[string, string | undefined]> {
+  const list = vnet.attrs?.subnets;
+  if (!Array.isArray(list)) return [];
+  return list.flatMap((s) => {
+    const name = (s as { name?: unknown })?.name;
+    const prefix = (s as { properties?: { addressPrefix?: unknown } })?.properties?.addressPrefix;
+    return typeof name === "string" ? [[name, typeof prefix === "string" ? prefix : undefined] as [string, string | undefined]] : [];
+  });
+}
+
 /** The VNet's address space, for the box label. */
 function vnetCidr(node: IRNode): string | undefined {
   const space = node.attrs?.addressSpace as { addressPrefixes?: unknown } | undefined;
@@ -275,9 +302,43 @@ export function projectAzureLogical(ir: GraphIR, env?: string): LogicalProjectio
     const v = parentVnet ? vnetByName.get(parentVnet) : undefined;
     child(v ? vnetTitle(v) : RG_TITLE, subnetTitle(s));
   }
+  // Subnets declared inside a VNet's `subnets` array have no node, so they
+  // are boxes by `<vnet>/<subnet>`, unless a Subnet resource already drew one.
+  const inlineBox = new Map<string, string>(); // "vnet/subnet" → box title
+  for (const v of vnets) {
+    for (const [name, prefix] of inlineSubnets(v)) {
+      const key = `${resourceName(v) ?? v.id}/${name}`;
+      if (subnets.some((s) => resourceName(s) === key)) continue;
+      const title = `subnet ${prefix ?? name}`;
+      inlineBox.set(key, title);
+      child(vnetTitle(v), title);
+    }
+  }
+  // A card that names an inline subnet, itself or through what it references
+  // (an app through its environment), sits in that subnet.
+  const inlinePlace = (start: string): string | undefined => {
+    const seen = new Set<string>();
+    let frontier = [start];
+    for (let depth = 0; depth < 6 && frontier.length; depth++) {
+      const next: string[] = [];
+      for (const id of frontier) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+        for (const key of subnetRefs(byId.get(id)?.attrs)) if (inlineBox.has(key)) return inlineBox.get(key);
+        for (const r of refOut.get(id) ?? []) if (!seen.has(r)) next.push(r);
+      }
+      frontier = next;
+    }
+    return undefined;
+  };
 
   const placeOf = new Map<string, string>(); // headline id → box title
   for (const n of headline) {
+    const inline = inlinePlace(n.id);
+    if (inline) {
+      placeOf.set(n.id, inline);
+      continue;
+    }
     const subnetId = nearest(n.id, subnetIds);
     if (subnetId) {
       placeOf.set(n.id, subnetTitle(byId.get(subnetId)!));

@@ -169,6 +169,32 @@ describe("projectAzureLogical (#102)", () => {
     expect(parentOf(apps.byContainer, "src")).toBe("resource group prod");
   });
 
+  // behold#824: the three-cloud demo declares its subnet inside the VNet, and
+  // the environment names it with resourceId('…/virtualNetworks/subnets', vnet, subnet).
+  it("boxes a subnet declared inside its VNet, and places the environment and its app in it", () => {
+    const out = projectAzureLogical(
+      {
+        nodes: [
+          n("vnet", "Microsoft.Network/virtualNetworks", "src/site.ts", {
+            name: "vnet",
+            addressSpace: { addressPrefixes: ["10.40.0.0/16"] },
+            subnets: [{ name: "apps", properties: { addressPrefix: "10.40.0.0/23" } }],
+          }),
+          n("env", "Microsoft.App/managedEnvironments", "src/site.ts", {
+            name: "env",
+            vnetConfiguration: { infrastructureSubnetId: "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'vnet', 'apps')]" },
+          }),
+          n("app", "Microsoft.App/containerApps", "src/site.ts", { name: "app", managedEnvironmentId: { $ref: "env.id" } }),
+        ],
+        edges: [{ from: "app", to: "env", kind: "ref" }],
+        groups: {},
+      } as unknown as GraphIR,
+      "prod",
+    );
+    expect(parentOf(out.byContainer, "subnet 10.40.0.0/23")).toBe("VNet 10.40.0.0/16");
+    expect(parentOf(out.byContainer, "src")).toBe("subnet 10.40.0.0/23");
+  });
+
   it("leaves a non-azure graph alone", () => {
     const aws = { nodes: [{ id: "vpc", kind: "AWS::EC2::VPC", lexicon: "aws", attrs: {} }], edges: [], groups: {} } as unknown as GraphIR;
     const out = projectAzureLogical(aws, "prod");
