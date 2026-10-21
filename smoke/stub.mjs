@@ -1133,6 +1133,13 @@ export function startStub(port, { carve = false, nonChant = false, choudoufu = f
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(JSON.stringify({ workspace: false, points: [] }));
     }
+    // #825: runtime health. None of the stub's estates declares a health check
+    // or a service with a health read, which the real route answers with no nodes.
+    if (path === "/api/health") {
+      res.writeHead(200, { "content-type": "application/json" });
+      const env = url.searchParams.get("env") || "local";
+      return res.end(JSON.stringify({ env, nodes: {}, rotation: {}, members: [], counts: { healthy: 0, unhealthy: 0, unknown: 0, unobserved: 0, absent: 0, outOfRotation: 0 }, readAt: "2026-10-21T00:00:00.000Z" }));
+    }
     if (path === "/api/operator/status") {
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(JSON.stringify({ ...operator, operator }));

@@ -121,6 +121,13 @@ export const CI_REPORT_URL_CHANT_FLOOR = "0.124.32";
  * and its events `runtime: "local"`. "Run this job locally" (#685). Below it
  * the button is not offered, and says which chant adds it. */
 export const CI_RUN_LOCAL_CHANT_FLOOR = "0.124.32";
+/** The first chant that answers `chant lifecycle health <env> --json`, a
+ * chant-health/v1 document: per declared resource with a health read (a
+ * Route 53 health check, an ECS service, a Container App, a Cloud Run
+ * service) a state of healthy, unhealthy or unknown, kept apart from the ones
+ * it could not read (INTENTIUS/chant#4177, chant PR #4188). Health and
+ * rotation on the graph (#825). Below it the graph draws no health marks. */
+export const HEALTH_CHANT_FLOOR = "0.124.33";
 
 export interface ChantFloor {
   /** The read, in words: `the why of a member or a card`. */
@@ -155,6 +162,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "CI run index", floor: CI_RUN_INDEX_CHANT_FLOOR, adds: "chant ci run --report-url keeps runs/index.json, read by chant ci runs (chant#4098, chant#4114)" },
   { read: "declared CI report URL", floor: CI_REPORT_URL_CHANT_FLOOR, adds: "workspace ls ci.reportUrl, the declaration's report URL (chant#4160)", degraded: "the runs pane reads chant's run index only when serve is given --ci-report-url" },
   { read: "local CI run", floor: CI_RUN_LOCAL_CHANT_FLOOR, adds: "chant ci run --local (chant#4161)" },
+  { read: "runtime health", floor: HEALTH_CHANT_FLOOR, adds: "chant lifecycle health --json, a chant-health/v1 document (chant#4177)", degraded: "the graph draws no health marks and no record out of rotation" },
   { read: "decision points", floor: DECISION_POINTS_CHANT_FLOOR, adds: "a gate that asks a decision point, read with chant workspace points --open (chant#3170)", degraded: "the gate strip draws no open decision points, and says which chant adds them" },
 ];
 

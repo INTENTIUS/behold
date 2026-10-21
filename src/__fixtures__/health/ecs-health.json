@@ -1,0 +1,33 @@
+{
+  "schema": "chant-health/v1",
+  "chantVersion": "0.124.33",
+  "environment": "rec",
+  "observedAt": "2026-10-21T04:50:08.852Z",
+  "lexicons": {
+    "aws": {
+      "entities": {
+        "idle": {
+          "type": "AWS::ECS::Service",
+          "state": "unknown",
+          "detail": "desired count is 0; 0/0 running, rollout COMPLETED",
+          "observedAt": "2026-10-21T04:50:08.930Z"
+        },
+        "web": {
+          "type": "AWS::ECS::Service",
+          "state": "healthy",
+          "detail": "1/1 running, rollout COMPLETED",
+          "observedAt": "2026-10-21T04:50:08.930Z"
+        }
+      },
+      "unobserved": {},
+      "absent": []
+    }
+  },
+  "summary": {
+    "healthy": 1,
+    "unhealthy": 0,
+    "unknown": 1,
+    "unobserved": 0,
+    "absent": 0
+  }
+}

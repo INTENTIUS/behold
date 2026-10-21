@@ -205,6 +205,8 @@ import { overlayFloorRefusal, readChangeSetOverlay } from "./change-set-overlay.
 import { flagsFloorRefusal, readFeatureFlags } from "./feature-flags.ts";
 import { COLLISION_READ, collisionsFloorRefusal, readCollisions } from "./collision-marks.ts";
 import { sqlYodelerLaneRoute } from "./sql-yodeler-lane.ts";
+import { cachedHealth, invalidateHealth, readHealthOverlay, rememberHealth, type HealthMember } from "./health-overlay.ts";
+import { rootReader } from "./workspace-reader.ts";
 import { controlRepoInfo, terragucciEstateRoutes } from "./terragucci-estate.ts";
 import { yodelReportRoute } from "./yodel-report.ts";
 import { loadDemoRegistry, missingRequirements, fetchesFromNetwork, demoTargetDir, loadDemo, type DemoEntry } from "./demos.ts";
@@ -563,6 +565,7 @@ async function captureFrame(
     // both mean the stored overlay documents are about a moment that has
     // passed. Dropped here, so neither caller has to remember to.
     invalidateOverlay();
+    invalidateHealth(); // #825: and the runtime health read with it
     const ir = await graphIr(projectDir, env ? { live: true, overlay: true, env } : {});
     const captured = frames.capture(ir) !== null;
     if (captured) broadcaster.emit("frames");
@@ -2399,6 +2402,7 @@ export function createApp(
         },
         { method: "GET", path: "/api/layout", desc: "hand-layout sidecar (.behold/layout.json): ?lens=<key> → {lens, deltas, writable}; no lens → every lens" },
         { method: "POST", path: "/api/layout", desc: "store one lens's deltas: JSON body {lens, deltas: {<node id>: {dx,dy,dw,dh}}} (the only file behold writes in your project)" },
+        { method: "GET", path: "/api/health", desc: "runtime health for ?env= from chant lifecycle health (chant 0.124.33+): {env, nodes: {<id>: {state: healthy|unhealthy|unknown|unobserved|absent, detail, observedAt, checkedAt?, reason?}}, rotation: {<record id>: {check, inRotation: true|false|null, line}}, members, counts}; cached 30 s, ?fresh=1 reads again (#825)" },
         { method: "GET", path: "/api/diff", desc: "per-node live diff for ?env= — {env, nodes: {<id>: {observed, diff, health, fieldDrift}}}" },
         { method: "GET", path: "/api/reconcile", desc: "pending-change summary for ?env=" },
         { method: "GET", path: "/api/resources", desc: "component → declared resources" },
@@ -3933,6 +3937,7 @@ export function createApp(
     if (url.searchParams.get("notify") === "1") {
       invalidateMember();
       invalidateOverlay();
+      invalidateHealth();
       broadcaster.emit("changed", "");
       return c.json({ notified: true });
     }
@@ -3990,6 +3995,40 @@ export function createApp(
   // per-node query. The SPA fetches this once (cached), and a static export
   // captures it once per env (vs one snapshot per node). Same slice functions as
   // the single-node route below.
+  // #825: runtime health and rotation in ?env=. One `chant lifecycle health
+  // <env> --json` per chant project (each chant member of a workspace or an
+  // estate, in its own directory, ids `<member>/<id>`), through the read
+  // contract, each refused below HEALTH_CHANT_FLOOR before anything is
+  // spawned. Rotation comes from each member's cached source graph. Cached per
+  // environment for 30 s; `?fresh=1` reads again, and "Re-check live" drops it.
+  // Read-only, and refused in a public view: it reads the live estate with
+  // behold's own credentials, as /api/overlay does. A static export captures it
+  // once per environment.
+  app.get("/api/health", async (c) => {
+    const url = new URL(c.req.url);
+    const env = optsFromQuery(url).env ?? cfg.env;
+    if (!env) return c.json({ error: "health needs an environment: pick one, or start with --env", code: "env" }, 400);
+    if (!isEnvName(env)) return c.json({ error: `${JSON.stringify(env)} isn't an env name`, code: "env" }, 400);
+    const ws = servedWorkspace();
+    const members: HealthMember[] = ws
+      ? ws.members.filter((m) => m.kind === "chant" && !m.reason).map((m) => ({ name: m.name, dir: m.abs }))
+      : cfg.projectDirs
+        ? estateMembers(cfg.projectDirs).filter((m) => m.kind === "chant").map((m) => ({ name: m.name, dir: m.dir }))
+        : (memberKindOf(cfg.projectDir) ?? "chant") === "chant"
+          ? [{ dir: cfg.projectDir }]
+          : [];
+    const key = `${ws?.root ?? cfg.projectDir}\0${env}`;
+    const hit = url.searchParams.get("fresh") === "1" ? undefined : cachedHealth(key);
+    if (hit) return c.json({ ...hit, cached: true });
+    const answer = await readHealthOverlay(members, env, {
+      chantVersion: (dir) => resolveChant(dir).version,
+      reader: (dir) => rootReader(dir),
+      graph: (dir) => memberIr(dir, { detail: 2 }),
+    });
+    rememberHealth(key, answer);
+    return c.json(answer);
+  });
+
   app.get("/api/diff", async (c) => {
     const env = optsFromQuery(new URL(c.req.url)).env ?? cfg.env;
     if (!env) return c.json({ error: "diff needs an environment — pick one, or start with --env" }, 400);

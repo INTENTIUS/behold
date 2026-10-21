@@ -16,6 +16,24 @@ import { Aside } from '@astrojs/starlight/components';
 
 A node behold could not read is **unobserved**, reported as a hole and never painted as absent. "I did not look" and "it is gone" are different claims, and conflating them is how a viewer talks someone into deleting something.
 
+## Health and rotation
+
+Drift says whether the account matches the source. Health says whether a declared thing is serving, and behold draws it apart from the colours above. With an environment picked and chant 0.124.33 or newer, behold reads `chant lifecycle health <env>` for each chant project (each member of a workspace) and marks every card that has a health read: a Route 53 health check, an ECS service, a Container App and a Cloud Run service.
+
+| mark under the card | means |
+|---|---|
+| green **healthy** | the provider says it is serving |
+| red **unhealthy**, with a solid red ring | the provider says it is not |
+| grey **health unknown** | the read worked and the answer decides neither way, such as a service scaled to zero or a rollout in progress |
+| **health not read: \<reason\>**, with a dashed grey ring | chant could not read it (`read-failed`, `no-credentials`, `no-binding`, `unsupported-kind`) |
+| grey **not deployed** | the provider says it is not there |
+
+A health check chant could not read is a hole, the same as an unobserved card, and is never drawn as unhealthy. The card's fill stays the drift colour, so a health check can be managed and unhealthy at once.
+
+Rotation is derived from the graph. A Route 53 record whose `HealthCheckId` names a declared health check is out of rotation while that check is unhealthy: the record and its edges are dimmed and its line reads `out of rotation: azureCheck unhealthy`. A healthy check puts the record in rotation. When the check is unknown, not read or not deployed, the record's line says its rotation is unknown and nothing is dimmed, since behold does not guess. Routing beyond that, such as failover pairs or alias targets, is not modelled.
+
+The Model tab counts each state under the drift legend and lists the records out of rotation. Clicking a card shows the provider's detail line, when it was checked and when chant read it, and for a health check, the records it guards. The health is read once per environment and kept for 30 seconds; "Re-check live" reads it again. Agents read the same answer from `GET /api/health?env=<env>`.
+
 ## The zoom dial
 
 From widest to narrowest:

@@ -1,0 +1,36 @@
+{
+  "schema": "chant-health/v1",
+  "chantVersion": "0.124.33",
+  "environment": "prod",
+  "observedAt": "2026-10-21T04:50:17.144Z",
+  "lexicons": {
+    "aws": {
+      "entities": {},
+      "unobserved": {
+        "awsCheck": {
+          "type": "AWS::Route53::HealthCheck",
+          "reason": "read-failed",
+          "detail": "DescribeStackResources failed for stack \"prod\": fetch failed"
+        },
+        "azureCheck": {
+          "type": "AWS::Route53::HealthCheck",
+          "reason": "read-failed",
+          "detail": "DescribeStackResources failed for stack \"prod\": fetch failed"
+        },
+        "gcpCheck": {
+          "type": "AWS::Route53::HealthCheck",
+          "reason": "read-failed",
+          "detail": "DescribeStackResources failed for stack \"prod\": fetch failed"
+        }
+      },
+      "absent": []
+    }
+  },
+  "summary": {
+    "healthy": 0,
+    "unhealthy": 0,
+    "unknown": 0,
+    "unobserved": 3,
+    "absent": 0
+  }
+}

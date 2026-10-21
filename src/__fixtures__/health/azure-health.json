@@ -1,0 +1,26 @@
+{
+  "schema": "chant-health/v1",
+  "chantVersion": "0.124.33",
+  "environment": "prod",
+  "observedAt": "2026-10-21T04:50:25.768Z",
+  "lexicons": {
+    "azure": {
+      "entities": {},
+      "unobserved": {
+        "app": {
+          "type": "Microsoft.App/containerApps",
+          "reason": "read-failed",
+          "detail": "fetch failed"
+        }
+      },
+      "absent": []
+    }
+  },
+  "summary": {
+    "healthy": 0,
+    "unhealthy": 0,
+    "unknown": 0,
+    "unobserved": 1,
+    "absent": 0
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "schema": "chant-health/v1",
+  "chantVersion": "0.124.33",
+  "environment": "prod",
+  "observedAt": "2026-10-21T04:50:29.283Z",
+  "lexicons": {
+    "gcp": {
+      "entities": {},
+      "unobserved": {
+        "gcpWebService": {
+          "type": "GCP::Run::Service",
+          "reason": "no-binding",
+          "detail": "no GCP project — set GOOGLE_CLOUD_PROJECT or the cnrm.cloud.google.com/project-id annotation"
+        }
+      },
+      "absent": []
+    }
+  },
+  "summary": {
+    "healthy": 0,
+    "unhealthy": 0,
+    "unknown": 0,
+    "unobserved": 1,
+    "absent": 0
+  }
+}
