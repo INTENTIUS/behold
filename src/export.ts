@@ -23,7 +23,7 @@ import { createApp, type ServerOptions } from "./server.ts";
  * frontend appends (target/lens/etc. don't vary a static bundle). Sorted, so
  * capture and replay agree regardless of param order. MUST stay identical to the
  * copy in web/app.js (`canonicalKey`). */
-const LENS_PARAMS = ["collapse", "components", "detail", "env", "logical", "ops", "radial", "stacks", "tier"];
+const LENS_PARAMS = ["alike", "collapse", "components", "detail", "env", "logical", "ops", "radial", "stacks", "tier"];
 export function canonicalKey(path: string, params: URLSearchParams): string {
   // The component-DAG, logical and ops views ignore detail/radial (they're
   // entity-graph knobs), but the frontend still appends the current detail —
@@ -68,6 +68,8 @@ export interface ExportAxes {
   yodelReport?: boolean;
   /** #537: the project is a SQL Yodeler repo, so its Pipeline lane (#524) is one more snapshot. */
   sqlYodeler?: boolean;
+  /** #877: the project is an estate of several, so the resource zooms are captured stacked as well. */
+  estate?: boolean;
 }
 
 /** The read URLs to capture for the given axes. */
@@ -130,6 +132,9 @@ export function captureKeys(axes: ExportAxes): string[] {
           if (radial === "1") p.radial = "1";
           add(env ? "/api/overlay" : "/api/graph", p);
         }
+        // #877: an estate's stacked view, at the zooms that draw every card.
+        // Not radial: an estate isn't laid out radially.
+        if (axes.estate && detail !== "1") add(env ? "/api/overlay" : "/api/graph", lens({ detail, alike: "1" }));
       }
     }
   }
@@ -273,6 +278,7 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
     ...(proj.releaseLedger ? { releases: true } : {}),
     ...(proj.yodelReport ? { yodelReport: true } : {}),
     ...(proj.sqlYodeler ? { sqlYodeler: true } : {}),
+    ...((cfg.projectDirs?.length ?? 0) > 1 ? { estate: true } : {}),
   };
   // #827: refused before anything is captured, so a wrong env or zoom costs nothing.
   const settled = settleOpening(opts.open ?? {}, axes);

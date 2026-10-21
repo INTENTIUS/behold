@@ -33,6 +33,7 @@ import { carveProgress, splitCarveState, type CarveState } from "./carve-manifes
 import { opCardFields } from "./ops-lens.ts";
 import { ROW_ASPECT, ROW_MIN_CARDS, rowColumns, withRowChains, type RowBand, type RowGrid } from "./edgeless.ts";
 import { SUMMARY_LEXICON, summaryCardFields } from "./collapse-lens.ts";
+import { STACK_OF, stackFields } from "./stack-lens.ts";
 import { STACK_LEXICON } from "./stack-order.ts";
 import { routeEdges } from "./edge-route.ts";
 
@@ -66,9 +67,11 @@ function renderSvg(...args: Parameters<typeof pinholeRenderSvg>): string {
 function logicalCardFields(node: { attrs: Record<string, unknown> }): Array<{ label: string; value: string }> | undefined {
   const w = node.attrs[CARD_WITH];
   const i = node.attrs[CARD_IN];
-  if (typeof w !== "string" && typeof i !== "string") return undefined;
-  const base = defaultFields(node as never).filter((f) => !f.label.startsWith("_")).slice(0, 2);
-  return [...base, ...(typeof i === "string" ? [{ label: "in", value: i }] : []), ...(typeof w === "string" ? [{ label: "with", value: w }] : [])];
+  // #877: a stack says how many it holds, a crowded card who refers to it.
+  const stack = stackFields(node.attrs);
+  if (typeof w !== "string" && typeof i !== "string" && !stack.length) return undefined;
+  const base = node.attrs[STACK_OF] ? [] : defaultFields(node as never).filter((f) => !f.label.startsWith("_")).slice(0, 2);
+  return [...base, ...stack, ...(typeof i === "string" ? [{ label: "in", value: i }] : []), ...(typeof w === "string" ? [{ label: "with", value: w }] : [])];
 }
 
 registerPack({ lexicon: "k8s", iconFor: k8sIconFor });

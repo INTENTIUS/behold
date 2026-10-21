@@ -17,7 +17,7 @@
  * `none` (no run view: the newest pull request's plan), `pull-<n>[-<sha>]`
  * (no run view, and only that pull request's plan, of that commit) or `base`
  * (nothing in flight); absent, the newest. */
-export const VIEW_KEYS = ["member", "zoom", "env", "tier", "lens", "node", "radial", "gates", "focus", "run", "pull"];
+export const VIEW_KEYS = ["member", "zoom", "env", "tier", "lens", "node", "radial", "alike", "gates", "focus", "run", "pull"];
 
 /** An env name as the server takes one (src/workspace-gates.ts isEnvName). */
 export function isEnvName(env) {
@@ -29,8 +29,8 @@ export function isEnvName(env) {
 export const LENSES = ["drift", "cost", "headroom"];
 
 /**
- * The view a query asks for. Only the keys present come back; `radial` is a
- * boolean (`1`/`true` on, `0`/`false` off). An empty value is the same as an
+ * The view a query asks for. Only the keys present come back; `radial` and
+ * `alike` are booleans (`1`/`true` on, `0`/`false` off). An empty value is the same as an
  * absent one, except `env=` which asks for the source graph (null).
  */
 export function readViewQuery(search) {
@@ -39,10 +39,10 @@ export function readViewQuery(search) {
   for (const k of VIEW_KEYS) {
     if (!q.has(k)) continue;
     const v = (q.get(k) || "").trim();
-    if (k === "radial") {
-      if (/^(1|true|on|yes)$/i.test(v)) want.radial = true;
-      else if (/^(0|false|off|no)$/i.test(v)) want.radial = false;
-      else want.radial = v; // left for settleView to name
+    if (k === "radial" || k === "alike") {
+      if (/^(1|true|on|yes)$/i.test(v)) want[k] = true;
+      else if (/^(0|false|off|no)$/i.test(v)) want[k] = false;
+      else want[k] = v; // left for settleView to name
       continue;
     }
     if (k === "env") {
@@ -80,6 +80,7 @@ export function writeViewQuery(search, state, defaults = {}) {
   if (s.lens && s.lens !== lensDefault) q.set("lens", s.lens);
   if (s.node) q.set("node", s.node);
   if (s.radial) q.set("radial", "1");
+  if (s.alike) q.set("alike", "1");
   if (s.gates) q.set("gates", s.gates);
   if (s.focus) q.set("focus", s.focus);
   if (s.run) q.set("run", s.run);
@@ -119,6 +120,10 @@ export function settleView(want, offer) {
   if ("radial" in want) {
     if (typeof want.radial === "boolean") apply.radial = want.radial;
     else refused.push({ key: "radial", value: want.radial, reason: "radial is 1 or 0" });
+  }
+  if ("alike" in want) {
+    if (typeof want.alike === "boolean") apply.alike = want.alike;
+    else refused.push({ key: "alike", value: want.alike, reason: "alike is 1 or 0" });
   }
   if ("gates" in want) {
     // null: the gate strip follows the graph's env again.
