@@ -205,12 +205,10 @@ export async function apply(): Promise<void> {
   const azure = await applyAzure();
   say(`azure: web answers as ${azure}`);
   const aws = await applyAws();
-  // TODO(lex00/floci#261): floci's CloudFormation refuses the FargateAlb
-  // stack's ECS service ("Network Configuration must be provided when
-  // networkMode 'awsvpc' is specified."). Until it is fixed the aws member is
-  // left undeployed, its record points at a name that doesn't resolve, and
-  // its check probes an address nothing answers on (192.0.2.1, kept for
-  // documentation by RFC 5737), so the page shows AWS failing as well.
+  // An aws stack that doesn't apply leaves its record pointing at a name that
+  // doesn't resolve and its check probing an address nothing answers on
+  // (192.0.2.1, kept for documentation by RFC 5737), so the page shows AWS
+  // failing and the rest still runs.
   if ("refused" in aws) say(`aws: NOT APPLIED, so the aws record has nothing behind it and its check fails: ${aws.refused}`);
   else say(`aws: web answers as ${aws.endpoint}`);
   await applyDns(
@@ -220,8 +218,9 @@ export async function apply(): Promise<void> {
       gcpEndpoint: gcp,
     },
     {
-      // floci serves a load balancer on its own port, by Host header.
-      awsCheck: { address: "endpoint" in aws ? containerAddress(CONTAINERS.aws) : "192.0.2.1", port: 4566 },
+      // floci runs a load balancer's listener on the listener's own port (80)
+      // in its container, not behind :4566.
+      awsCheck: { address: "endpoint" in aws ? containerAddress(CONTAINERS.aws) : "192.0.2.1", port: 80 },
       // floci-az serves every app on its own port, by Host header.
       azureCheck: { address: containerAddress(CONTAINERS.azure), port: 4577 },
       // floci-gcp's front door serves Cloud Run services by Host header too.

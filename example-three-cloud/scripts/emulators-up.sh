@@ -38,7 +38,7 @@ boot() {
 }
 
 boot "${FLOCI_CONTAINER:-chant-floci}" "${FLOCI_PORT:-4566}" 4566 \
-  "${FLOCI_IMAGE:-ghcr.io/lex00/floci:1564bbe}" /_floci/health
+  "${FLOCI_IMAGE:-ghcr.io/lex00/floci:e9ebdb3}" /_floci/health
 boot "${FLOCI_AZ_CONTAINER:-chant-floci-az}" "${FLOCI_AZ_PORT:-4577}" 4577 \
   "${FLOCI_AZ_IMAGE:-ghcr.io/lex00/floci-az:e1def56}" /_floci/health \
   -e FLOCI_AZ_SERVICES_CONTAINER_APPS_MOCKED=false

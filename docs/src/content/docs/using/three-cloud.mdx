@@ -43,11 +43,11 @@ cd behold-demos/three-cloud/dns && npx chant run front-door
 npm run front-door
 ```
 
-Afterwards the Azure check is unhealthy, the Azure record is dimmed and reads `out of rotation: azureCheck unhealthy`, and the GCP record stays in rotation. Route 53 answers with what is left. The marks are the ones [Health and rotation](/behold/using/reading-the-graph/#health-and-rotation) describes.
+Afterwards the Azure check is unhealthy, the Azure record is dimmed and reads `out of rotation: azureCheck unhealthy`, and the AWS and GCP records stay in rotation. Route 53 answers with what is left. The marks are the ones [Health and rotation](/behold/using/reading-the-graph/#health-and-rotation) describes.
 
 The emulators' checkers run inside floci's container, where a floci-az or floci-gcp hostname resolves to nothing. The Op therefore gives each deployed health check the emulator container's address and port, and the checkers send the endpoint as the `Host` header, as Route 53 does for a check with an `IPAddress`. The source declares the checks as they would be on AWS, without either field.
 
-The `aws` member does not deploy on floci yet: floci's CloudFormation refuses the Fargate service's network configuration ([lex00/floci#261](https://github.com/lex00/floci/issues/261)). The Op says so and carries on, and the page shows the AWS service not deployed and the AWS check failing as well.
+floci runs each load balancer listener on the listener's own port in its container, so the AWS check is given port 80 rather than floci's API port.
 
 ## The exported page
 
