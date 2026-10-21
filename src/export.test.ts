@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { canonicalKey, captureKeys, copyNotices } from "./export.ts";
+import { bundleIdentity, canonicalKey, captureKeys, copyNotices, OPENING_ZOOMS, settleOpening, workerName } from "./export.ts";
 
 describe("canonicalKey", () => {
   it("is independent of param order (sorted by the lens whitelist)", () => {
@@ -116,6 +116,57 @@ describe("the ops lens in a static bundle (#284)", () => {
     expect(keys).toContain("/api/yodel-report");
     expect(keys).toContain("/api/sql-yodeler/lifecycle");
     expect(keys).toContain("/api/lifecycle/history");
+  });
+});
+
+describe("what a bundle is called (#827)", () => {
+  const workspace = { name: "three-cloud", root: "/home/me/ws", file: "chant.workspace.json", chant: "0.124.32", members: [] };
+
+  it("names a declared workspace after itself, not after its first member", () => {
+    // serve's reading of a workspace puts its first drawn member in projectDir.
+    const id = bundleIdentity({ projectDir: "/home/me/ws/dns", workspace });
+    expect(id).toEqual({ projectDir: "ws", worker: "three-cloud", workspace: "three-cloud" });
+    expect(workerName(id.worker)).toBe("behold-three-cloud");
+  });
+
+  it("names a single project after its directory, as before", () => {
+    const id = bundleIdentity({ projectDir: "/home/me/my-project" });
+    expect(id).toEqual({ projectDir: "my-project", worker: "my-project" });
+    expect(workerName(id.worker)).toBe("behold-my-project");
+  });
+
+  it("takes --name over either, and keeps a Worker name lowercase alnum and hyphens", () => {
+    expect(workerName("three-cloud", "Front Door")).toBe("front-door");
+    expect(workerName("Three_Cloud")).toBe("behold-three-cloud");
+  });
+});
+
+describe("the view a bundle opens on (#827)", () => {
+  const axes = { environments: ["frozen", "prod"], tiers: [] };
+
+  it("takes a captured env and a known zoom", () => {
+    expect(settleOpening({ env: "frozen", zoom: "composites" }, axes)).toEqual({ opening: { env: "frozen", zoom: "composites" } });
+    expect(settleOpening({}, axes)).toEqual({ opening: {} });
+    for (const zoom of OPENING_ZOOMS) expect(settleOpening({ zoom }, axes)).toEqual({ opening: { zoom } });
+  });
+
+  it("refuses an env the export doesn't capture, naming the ones it does", () => {
+    expect(settleOpening({ env: "staging" }, axes)).toEqual({ error: "--open-env staging isn't an environment this export captures: it captures frozen, prod" });
+    expect(settleOpening({ env: "prod" }, { environments: [] })).toEqual({
+      error: "--open-env prod isn't an environment this export captures: it captures no environment, only the source graph",
+    });
+  });
+
+  it("refuses a zoom the bundle holds no snapshot for", () => {
+    expect(settleOpening({ zoom: "galaxy" }, axes)).toEqual({ error: "--open-zoom galaxy isn't a zoom this export captures: it takes components, logical, composites, resources, attributes" });
+    // runtime and the apply order have no snapshot of their own in a bundle.
+    expect("error" in settleOpening({ zoom: "runtime" }, axes)).toBe(true);
+    expect("error" in settleOpening({ zoom: "stacks" }, axes)).toBe(true);
+  });
+
+  it("takes ops only when the estate emitted Ops, as the capture does", () => {
+    expect("error" in settleOpening({ zoom: "ops" }, axes)).toBe(true);
+    expect(settleOpening({ zoom: "ops" }, { ...axes, ops: 2 })).toEqual({ opening: { zoom: "ops" } });
   });
 });
 

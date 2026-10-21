@@ -172,6 +172,31 @@ export function refusalLine(refused) {
   return "from the link: " + refused.map((r) => `${r.key}=${r.value} not opened, ${r.reason}`).join("; ");
 }
 
+/**
+ * #827: the view a static export opens on, `behold export --open-env` and
+ * `--open-zoom`, as its manifest's `opening` carries them. A link's own query
+ * wins over it, key by key, so a shared link still opens where it points.
+ * Only a string `env` and `zoom` are taken; settleView checks them as it
+ * checks a link's.
+ */
+export function withOpening(opening, want) {
+  const o = {};
+  if (opening && typeof opening === "object") {
+    if (typeof opening.env === "string" && opening.env) o.env = opening.env;
+    if (typeof opening.zoom === "string" && opening.zoom) o.zoom = opening.zoom;
+  }
+  return { ...o, ...(want || {}) };
+}
+
+/** #827: the env a load with no `env` parameter gives: the export's opening
+ * env when it names one, else the env behold was started with. writeViewQuery
+ * takes it as `defaults.env`, so picking the source graph in such a bundle
+ * writes `env=` and a reload keeps it. */
+export function defaultEnv(opening, currentEnv) {
+  if (opening && typeof opening.env === "string" && opening.env) return opening.env;
+  return currentEnv || null;
+}
+
 function listOr(xs) {
   const a = (xs || []).filter(Boolean);
   if (!a.length) return "nothing";

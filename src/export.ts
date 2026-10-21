@@ -165,10 +165,58 @@ export function copyNotices(outDir: string, root: string = pkgRoot()): string[] 
 }
 
 /** A Cloudflare Worker name: lowercase, alnum + hyphens, ≤ 63 chars. */
-function workerName(project: string, override?: string): string {
-  const raw = override ?? `behold-${basename(project)}`;
+export function workerName(project: string, override?: string): string {
+  const raw = override ?? `behold-${project}`;
   const name = raw.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63);
   return name || "behold-export";
+}
+
+/**
+ * #827: what a bundle is called. A declared workspace is named after itself
+ * (its declared name for the Worker, its root directory for `projectDir`),
+ * never after its first member, which is what `cfg.projectDir` holds for one.
+ * Anything else is named after the directory, as before.
+ */
+export function bundleIdentity(cfg: Pick<ServerOptions, "projectDir" | "workspace">): { projectDir: string; worker: string; workspace?: string } {
+  if (cfg.workspace) return { projectDir: basename(cfg.workspace.root), worker: cfg.workspace.name, workspace: cfg.workspace.name };
+  return { projectDir: basename(cfg.projectDir), worker: basename(cfg.projectDir) };
+}
+
+/** #827: the zooms an export can open on. The ops stop only when the estate
+ * emitted Ops (its one snapshot is captured then); `runtime` and `stacks`
+ * are left out, since an export captures no snapshot of its own for either. */
+export const OPENING_ZOOMS = ["components", "logical", "composites", "resources", "attributes"] as const;
+
+/** The view a bundle opens on (#827), written to the manifest as `opening`. */
+export interface Opening {
+  env?: string;
+  zoom?: string;
+}
+
+/** Raised for an export that cannot be made as asked; the CLI says it and exits 2. */
+export class ExportRefusal extends Error {}
+
+/**
+ * #827: check `--open-env` and `--open-zoom` against what the export
+ * captures. The env must be one of the captured environments (the declared
+ * ones; the source graph is what a bundle opens on without the flag), and the
+ * zoom a stop the bundle holds a snapshot for.
+ */
+export function settleOpening(want: Opening, axes: Pick<ExportAxes, "environments" | "ops">): { opening: Opening } | { error: string } {
+  const opening: Opening = {};
+  if (want.env !== undefined) {
+    if (!axes.environments.includes(want.env)) {
+      const has = axes.environments.length ? `it captures ${axes.environments.join(", ")}` : "it captures no environment, only the source graph";
+      return { error: `--open-env ${want.env} isn't an environment this export captures: ${has}` };
+    }
+    opening.env = want.env;
+  }
+  if (want.zoom !== undefined) {
+    const zooms: string[] = [...OPENING_ZOOMS, ...(axes.ops ? ["ops"] : [])];
+    if (!zooms.includes(want.zoom)) return { error: `--open-zoom ${want.zoom} isn't a zoom this export captures: it takes ${zooms.join(", ")}` };
+    opening.zoom = want.zoom;
+  }
+  return { opening };
 }
 
 /** Capture the estate `cfg` observes into a static bundle at `outDir`. */
@@ -178,6 +226,8 @@ export interface ExportOptions {
   noSource?: boolean;
   /** Where a terragucci report key opens from the bundle (#491): relative to it, `../../` by default, since the estate job uploads it to `<prefix>/views/behold/`. */
   reportsBase?: string;
+  /** #827: `--open-env` / `--open-zoom`, the view the bundle opens on. Checked by `settleOpening` before anything is captured. */
+  open?: Opening;
 }
 
 /** Export's default for a report key's base: the bundle sits at `<prefix>/views/behold/`, so `../../` is the prefix. */
@@ -200,6 +250,10 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
     ...(proj.yodelReport ? { yodelReport: true } : {}),
     ...(proj.sqlYodeler ? { sqlYodeler: true } : {}),
   };
+  // #827: refused before anything is captured, so a wrong env or zoom costs nothing.
+  const settled = settleOpening(opts.open ?? {}, axes);
+  if ("error" in settled) throw new ExportRefusal(settled.error);
+  const opening = settled.opening;
   const scrub = exportScrubber(cfg);
 
   const snapDir = join(outDir, "snapshots");
@@ -235,10 +289,13 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
     }
   }
 
+  const identity = bundleIdentity(cfg);
   const manifest = {
     static: true,
     capturedAt: new Date().toISOString(),
-    projectDir: basename(cfg.projectDir),
+    projectDir: identity.projectDir,
+    ...(identity.workspace ? { workspace: identity.workspace } : {}),
+    ...(Object.keys(opening).length ? { opening } : {}),
     axes,
     keyToFile,
   };
@@ -270,7 +327,7 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
   // Deploy-ready: an assets-only Cloudflare Worker config (no server code — the
   // bundle is pure static), so `cd <out> && wrangler deploy` hosts it on
   // <name>.workers.dev. Matches the blacklight Worker + Static Assets setup.
-  const name = workerName(cfg.projectDir, opts.name);
+  const name = workerName(identity.worker, opts.name);
   writeFileSync(
     join(outDir, "wrangler.jsonc"),
     JSON.stringify(

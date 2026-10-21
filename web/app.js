@@ -10,7 +10,7 @@
 // renderPanelView never rewrites, so the select mounts once and survives re-renders).
 import "./view-repo.js"; // behold#571: first, so every read carries the page's ?repo=
 import { createRefreshQueue } from "./refresh-queue.js";
-import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine } from "./view-url.js";
+import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine, withOpening, defaultEnv } from "./view-url.js";
 import { quietCardLines, readEmbed, selectMessage, viewFromMessage, wheelPx, wheelZoomsBare } from "./embed.js";
 import { WORDS as POP_WORDS, cardRoot as popCardRoot, placePopover, popReduce, popState, resourcePopover, rootPopover } from "./kiosk-popover.js";
 import { waveListKey, waveListOf } from "./kiosk-wave-list.js";
@@ -2604,7 +2604,8 @@ let selectedNodeId = null;
 let viewUrlReady = false; // nothing is written back until the link has been read
 function openFromQuery() {
   viewUrlReady = true;
-  applyWantedView(readViewQuery(location.search));
+  // #827: a static export can name the view it opens on; the link's own query wins.
+  applyWantedView(withOpening(manifest && manifest.opening, readViewQuery(location.search)));
 }
 
 /**
@@ -2956,7 +2957,7 @@ function syncViewUrl() {
     focus: view.focus,
     run: view.run,
   };
-  const defaults = { env: (projectInfo && projectInfo.currentEnv) || null, lens: savedColourMode };
+  const defaults = { env: defaultEnv(manifest && manifest.opening, projectInfo && projectInfo.currentEnv), lens: savedColourMode };
   const next = location.pathname + writeViewQuery(location.search, state, defaults) + location.hash;
   if (next === location.pathname + location.search + location.hash) return;
   try {
