@@ -58,6 +58,11 @@ export interface DemoServe {
    * emulator the demo's setup booted, and the dummy credentials it accepts.
    * Applied through `setChoudoufuSpawnEnv`, never `process.env`. */
   spawnEnv?: Record<string, string>;
+  /** Environment the served process itself starts with, so every chant read
+   * it spawns inherits it (behold#824: the three-cloud demo's GCP project,
+   * which chant's live read takes only from the environment). A variable the
+   * user already set wins. */
+  processEnv?: Record<string, string>;
 }
 
 /** Which catalog file an entry came from (#388): `demos.json`, shipped in the
@@ -143,6 +148,11 @@ function validEntry(e: unknown): e is DemoEntry {
   if (
     d.serve.spawnEnv !== undefined &&
     (typeof d.serve.spawnEnv !== "object" || d.serve.spawnEnv === null || Array.isArray(d.serve.spawnEnv) || Object.values(d.serve.spawnEnv).some((v) => typeof v !== "string"))
+  )
+    return false;
+  if (
+    d.serve.processEnv !== undefined &&
+    (typeof d.serve.processEnv !== "object" || d.serve.processEnv === null || Array.isArray(d.serve.processEnv) || Object.values(d.serve.processEnv).some((v) => typeof v !== "string"))
   )
     return false;
   if (d.serve.terralith !== undefined && typeof d.serve.terralith !== "boolean") return false;

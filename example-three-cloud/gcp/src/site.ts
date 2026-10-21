@@ -17,10 +17,6 @@ import {
 // Balancer as production sets it up: a
 // static address and a forwarding rule, an HTTP proxy, a URL map, a backend
 // service, and a serverless network endpoint group that names the service.
-//
-// Each reference is Config Connector's `{ name }`, spelled out: chant 0.124.36
-// writes a `.name` reference correctly but its live read can't resolve one
-// (reported to chant), and behold joins these by name.
 const region = "asia-northeast1";
 
 export const runtime = new GCPServiceAccount({
@@ -36,7 +32,7 @@ export const subnet = new Subnetwork({
   metadata: { name: "three-cloud-apps" },
   region,
   ipCidrRange: "10.30.0.0/24",
-  networkRef: { name: "three-cloud-vpc" },
+  networkRef: { name: vpc.name },
 });
 
 export const web = CloudRunServiceComposite({
@@ -54,7 +50,7 @@ export const web = CloudRunServiceComposite({
       template: {
         vpcAccess: {
           egress: "PRIVATE_RANGES_ONLY",
-          networkInterfaces: [{ networkRef: { name: "three-cloud-vpc" }, subnetworkRef: { name: "three-cloud-apps" } }],
+          networkInterfaces: [{ networkRef: { name: vpc.name }, subnetworkRef: { name: subnet.name } }],
         },
       },
     },
@@ -65,7 +61,7 @@ export const neg = new RegionNetworkEndpointGroup({
   metadata: { name: "three-cloud-neg" },
   region,
   networkEndpointType: "SERVERLESS",
-  cloudRun: { serviceRef: { name: "three-cloud-site" } },
+  cloudRun: { serviceRef: { name: web.service.name } },
 });
 
 // A backend service over a serverless NEG takes no health check: Cloud Run
@@ -75,19 +71,19 @@ export const backend = new BackendService({
   location: "global",
   loadBalancingScheme: "EXTERNAL_MANAGED",
   protocol: "HTTP",
-  backend: [{ group: { networkEndpointGroupRef: { name: "three-cloud-neg" } } }],
+  backend: [{ group: { networkEndpointGroupRef: { name: neg.name } } }],
 });
 
 export const urlMap = new URLMap({
   metadata: { name: "three-cloud-map" },
   location: "global",
-  defaultService: { backendServiceRef: { name: "three-cloud-backend" } },
+  defaultService: { backendServiceRef: { name: backend.name } },
 });
 
 export const proxy = new TargetHTTPProxy({
   metadata: { name: "three-cloud-proxy" },
   location: "global",
-  urlMapRef: { name: "three-cloud-map" },
+  urlMapRef: { name: urlMap.name },
 });
 
 export const address = new ComputeAddress({ metadata: { name: "three-cloud-ip" }, location: "global" });
@@ -97,8 +93,8 @@ export const rule = new ForwardingRule({
   location: "global",
   loadBalancingScheme: "EXTERNAL_MANAGED",
   portRange: "80",
-  ipAddress: { addressRef: { name: "three-cloud-ip" } },
-  target: { targetHTTPProxyRef: { name: "three-cloud-proxy" } },
+  ipAddress: { addressRef: { name: address.name } },
+  target: { targetHTTPProxyRef: { name: proxy.name } },
 });
 
 // The dns member reads this as its `gcpEndpoint` parameter: the load
