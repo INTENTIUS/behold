@@ -35,7 +35,6 @@ npx serve export
 
 `cd dns && npx chant run front-door` runs the same steps as an Op.
 
-The `aws` member does not apply on floci yet (lex00/floci#261); the Op says
-so and carries on. Needs chant 0.124.33 or newer; the edge from the aws record
+Needs chant 0.124.33 or newer; the edge from the aws record
 to its load balancer in the live view, and the Cloud Run service's health
 without GOOGLE_CLOUD_PROJECT set, need 0.124.34.

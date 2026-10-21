@@ -7,9 +7,6 @@ import { Op, phase, shell } from "@intentius/chant/op";
 //
 //   chant run front-door          (from this directory)
 //   npm run front-door            (from the workspace root, the same steps without chant)
-//
-// The aws member does not apply on floci yet (lex00/floci#261): the Apply
-// phase says so and carries on, and the page shows AWS failing its check too.
 const step = (args: string) => shell(`cd .. && ./node_modules/.bin/tsx scripts/front-door.ts ${args}`, { timeout: "15m" });
 
 export default Op({
