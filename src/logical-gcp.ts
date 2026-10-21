@@ -89,6 +89,27 @@ const GCP_FABRIC_KINDS = new Set([
   "chant:gcp:defaultAnnotations",
 ]);
 
+const SUBNETWORK_KIND = "GCP::Compute::Subnetwork";
+
+function metadataName(node: IRNode): string | undefined {
+  const name = (node.attrs?.metadata as { name?: unknown } | undefined)?.name;
+  return typeof name === "string" && name.length > 0 ? name : undefined;
+}
+
+/** Subnetwork names a resource refers to: a Config Connector `subnetworkRef`,
+ * or a `subnetwork` string (a name or a URL ending in one). Pure. */
+export function subnetsNamed(value: unknown, out: string[] = []): string[] {
+  if (!value || typeof value !== "object") return out;
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (k === "subnetworkRef" && v && typeof v === "object") {
+      const name = (v as { name?: unknown; external?: unknown }).name ?? (v as { external?: unknown }).external;
+      if (typeof name === "string") out.push(name.split("/").pop()!);
+    } else if (k === "subnetwork" && typeof v === "string") out.push(v.split("/").pop()!);
+    else subnetsNamed(v, out);
+  }
+  return out;
+}
+
 /** The CNRM annotation that names the project a resource deploys into. */
 const PROJECT_ID_ANNOTATION = "cnrm.cloud.google.com/project-id";
 
@@ -112,6 +133,12 @@ export function declaredProject(nodes: readonly IRNode[]): string | undefined {
       | undefined;
     const value = annotations?.[PROJECT_ID_ANNOTATION];
     if (typeof value === "string" && value.length > 0) return value;
+  }
+  // Config Connector's other way of naming it: `projectRef.external`, which
+  // CloudRunServiceComposite writes (behold#824).
+  for (const n of nodes) {
+    const ref = (n.attrs?.projectRef ?? (n.attrs?.spec as Record<string, unknown> | undefined)?.projectRef) as { external?: unknown } | undefined;
+    if (typeof ref?.external === "string" && ref.external.length > 0) return ref.external.replace(/^projects\//, "");
   }
   return undefined;
 }
@@ -138,7 +165,9 @@ export function projectGcpLogical(ir: GraphIR, env?: string): LogicalProjection 
   const byId = new Map(gcp.map((n) => [n.id, n]));
 
   const project = declaredProject(gcp) ?? env;
-  const PROJECT_TITLE = project ? `project ${project}` : "project";
+  // The project is GCP's account boundary, titled as the other clouds' are
+  // (AWS account, Azure subscription).
+  const PROJECT_TITLE = project ? `GCP project ${project}` : "GCP project";
   const GLOBAL = "global";
   const locationTitle = (loc: string) => `location ${loc}`;
 
@@ -169,17 +198,37 @@ export function projectGcpLogical(ir: GraphIR, env?: string): LogicalProjection 
   // estate.
   const locations = new Set<string>();
   for (const n of gcp) {
-    const loc = strAttr(n, "location");
+    const loc = strAttr(n, "location") ?? (n.kind === SUBNETWORK_KIND ? strAttr(n, "region") : undefined);
     if (loc) locations.add(loc);
   }
   for (const loc of [...locations].sort()) child(PROJECT_TITLE, locationTitle(loc));
 
-  // A card's home: its own location, else the global lane. There is no
-  // containment to resolve — GCP resources state their region directly.
+  // Subnetwork boxes, inside the region each one is in (behold#824). #101
+  // left them out while floci-gcp emulated no networking; it serves networks
+  // and subnetworks now. A GCP VPC is global and its subnets regional, so the
+  // subnet nests in its location and names its network, rather than a network
+  // box spanning regions.
+  const subnetBox = new Map<string, string>(); // subnetwork name -> box title
+  const regionOfBox = new Map<string, string>(); // box title -> its region, for part names
+  for (const n of gcp) {
+    if (n.kind !== SUBNETWORK_KIND) continue;
+    const name = metadataName(n) ?? n.id;
+    const cidr = strAttr(n, "ipCidrRange");
+    const network = (n.attrs?.networkRef as { name?: unknown } | undefined)?.name;
+    const title = `subnet ${cidr ?? name}${typeof network === "string" ? ` · ${network}` : ""}`;
+    const region = strAttr(n, "region") ?? strAttr(n, "location");
+    child(region ? locationTitle(region) : PROJECT_TITLE, title);
+    subnetBox.set(name, title);
+    if (region) regionOfBox.set(title, region);
+  }
+
+  // A card's home: the subnet it names (Cloud Run's Direct VPC egress), else
+  // its own location, else the global lane.
   const placeOf = new Map<string, string>();
   for (const n of headline) {
+    const subnet = subnetsNamed(n.attrs).map((name) => subnetBox.get(name)).find(Boolean);
     const loc = strAttr(n, "location");
-    placeOf.set(n.id, loc ? locationTitle(loc) : GLOBAL);
+    placeOf.set(n.id, subnet ?? (loc ? locationTitle(loc) : GLOBAL));
   }
 
   // Component boxes, nested in the place their members share.
@@ -212,7 +261,7 @@ export function projectGcpLogical(ir: GraphIR, env?: string): LogicalProjection 
     // named for its place.
     for (const place of places) {
       if (place === GLOBAL) child(PROJECT_TITLE, GLOBAL);
-      const part = `${component} · ${place.replace(/^location /, "")}`;
+      const part = `${component} · ${regionOfBox.get(place) ?? place.replace(/^location /, "")}`;
       child(place, part);
       for (const m of members) if (placeOf.get(m.id) === place) child(part, m.id);
     }

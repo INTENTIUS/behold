@@ -56,24 +56,46 @@ describe("projectGcpLogical (#101)", () => {
     expect(ir.nodes.map((x) => x.id).sort()).toEqual(["bucket", "cluster", "db", "dnsZone"]);
   });
 
-  it("nests project -> location, with no network containment at all", () => {
-    expect(parentOf(byContainer, "location us-central1")).toBe("project my-project");
-    // The estate declares a Subnetwork with a CIDR; #101 settles that GCP gets
-    // no subnet boxes, so it must not appear as one.
-    expect(Object.keys(byContainer).some((k) => /subnet|CIDR|10\.0\.0\.0/.test(k))).toBe(false);
+  it("nests project -> location, and a declared subnetwork's CIDR inside its location", () => {
+    expect(parentOf(byContainer, "location us-central1")).toBe("GCP project my-project");
+    // #101 left subnets out while floci-gcp emulated no networking; it serves
+    // them now (behold#824), so the declared subnetwork is a box in its region.
+    expect(parentOf(byContainer, "subnet 10.0.0.0/20")).toBe("location us-central1");
+  });
+
+  it("places Cloud Run in the subnetwork its Direct VPC egress names", () => {
+    const out = projectGcpLogical(
+      {
+        nodes: [
+          { id: "subnet", kind: "GCP::Compute::Subnetwork", lexicon: "gcp", attrs: { metadata: { name: "apps" }, ipCidrRange: "10.30.0.0/24", region: "asia-northeast1", networkRef: { name: "vpc" } }, sourceLoc: { file: "src/site.ts" } },
+          {
+            id: "web",
+            kind: "GCP::Run::Service",
+            lexicon: "gcp",
+            attrs: { location: "asia-northeast1", template: { vpcAccess: { networkInterfaces: [{ networkRef: { name: "vpc" }, subnetworkRef: { name: "apps" } }] } } },
+            sourceLoc: { file: "src/site.ts" },
+          },
+        ],
+        edges: [],
+        groups: {},
+      } as unknown as GraphIR,
+      "p",
+    );
+    expect(parentOf(out.byContainer, "subnet 10.30.0.0/24 · vpc")).toBe("location asia-northeast1");
+    expect(parentOf(out.byContainer, "src")).toBe("subnet 10.30.0.0/24 · vpc");
   });
 
   it("names the project from the environment when source pins none", () => {
     const { byContainer: noEnv } = projectGcpLogical(fixture());
-    expect(Object.keys(noEnv)).toContain("project");
-    expect(Object.keys(noEnv)).not.toContain("project my-project");
+    expect(Object.keys(noEnv)).toContain("GCP project");
+    expect(Object.keys(noEnv)).not.toContain("GCP project my-project");
   });
 
   it("prefers a project pinned in source over the environment", () => {
     const pinned = fixture();
     (pinned.nodes[0].attrs as Record<string, unknown>).annotations = { "cnrm.cloud.google.com/project-id": "pinned-proj" };
     const { byContainer: bc } = projectGcpLogical(pinned, "my-project");
-    expect(Object.keys(bc)).toContain("project pinned-proj");
+    expect(Object.keys(bc)).toContain("GCP project pinned-proj");
   });
 
   it("puts a component whose members share one region inside it", () => {
@@ -91,7 +113,7 @@ describe("projectGcpLogical (#101)", () => {
 
   it("lifts a component spanning regions to the project, as the AWS lens does across subnets", () => {
     // `app` holds a regional db/bucket and a global DNS zone.
-    expect(parentOf(byContainer, "app")).toBe("project my-project");
+    expect(parentOf(byContainer, "app")).toBe("GCP project my-project");
   });
 
   it("gives a resource with no location the global lane rather than a region it is not in", () => {
@@ -102,7 +124,7 @@ describe("projectGcpLogical (#101)", () => {
     } as unknown as GraphIR;
     const { byContainer: bc } = projectGcpLogical(globalOnly, "p");
     expect(parentOf(bc, "app")).toBe("global");
-    expect(parentOf(bc, "global")).toBe("project p");
+    expect(parentOf(bc, "global")).toBe("GCP project p");
   });
 
   it("draws no edge through a shared service account", () => {

@@ -226,6 +226,23 @@ describe("projectAzureLogical (#102)", () => {
     expect(parentOf(out.byContainer, "src")).toBe("subnet 10.40.0.0/23");
   });
 
+  it("wraps the resource group in its subscription, numbered from a resource id", () => {
+    const out = projectAzureLogical(
+      {
+        nodes: [
+          n("app", "Microsoft.App/containerApps", "src/site.ts", {
+            name: "app",
+            managedEnvironmentId: "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/prod/providers/Microsoft.App/managedEnvironments/env",
+          }),
+        ],
+        edges: [],
+        groups: {},
+      } as unknown as GraphIR,
+      "prod",
+    );
+    expect(parentOf(out.byContainer, "resource group prod")).toBe("Azure subscription 00000000-0000-0000-0000-000000000001");
+  });
+
   it("leaves a non-azure graph alone", () => {
     const aws = { nodes: [{ id: "vpc", kind: "AWS::EC2::VPC", lexicon: "aws", attrs: {} }], edges: [], groups: {} } as unknown as GraphIR;
     const out = projectAzureLogical(aws, "prod");

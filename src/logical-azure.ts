@@ -257,6 +257,11 @@ export function projectAzureLogical(ir: GraphIR, env?: string): LogicalProjectio
 
   // Box titles — synthetic ids that double as titles, as the AWS lens does.
   const RG_TITLE = env ? `resource group ${env}` : "resource group";
+  // The subscription is Azure's account boundary and holds the resource group,
+  // as the AWS lens's account box holds its VPCs (behold#824). Its id comes
+  // from a resource id in the live overlay.
+  const subscription = azure.map((n) => JSON.stringify(n).match(/\/subscriptions\/([0-9a-f-]{36})\//i)?.[1]).find(Boolean);
+  const SUBSCRIPTION_TITLE = subscription ? `Azure subscription ${subscription}` : "Azure subscription";
   const vnetTitle = (v: IRNode) => `VNet ${vnetCidr(v) ?? resourceName(v) ?? v.id}`;
   const subnetTitle = (s: IRNode) => `subnet ${strAttr(s, "addressPrefix") ?? subnetShortName(s) ?? s.id}`;
 
@@ -418,5 +423,6 @@ export function projectAzureLogical(ir: GraphIR, env?: string): LogicalProjectio
     return nsg ? { ...n, attrs: { ...n.attrs, _nsg: nsg } } : n;
   });
 
+  if (byContainer[RG_TITLE]) child(SUBSCRIPTION_TITLE, RG_TITLE);
   return { ir: { nodes, edges, groups: {} }, byContainer };
 }
