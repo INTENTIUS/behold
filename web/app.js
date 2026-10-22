@@ -8412,10 +8412,20 @@ function wireEdgeHighlight(svgEl, ir) {
   // behold#744: raised under the terragucci reads' layer, whose lines and pills stay over every edge.
   const raise = (g) => g.parentNode && g.parentNode.insertBefore(g, g.parentNode.querySelector(":scope > [data-tg-reads]"));
   wireEdgeLabelPeek(svgEl);
-  // Delegated: raise whichever edge the pointer is over (its hit-path catches it).
+  // Delegated: light and raise whichever edge the pointer is over (its hit-path
+  // catches it). Lit by a class, not `:hover`: raising re-inserts the element,
+  // and a re-inserted element loses `:hover` until the pointer moves again, so
+  // the line flickered rather than lit.
   svgEl.addEventListener("mouseover", (e) => {
     const g = e.target.closest && e.target.closest("g[data-edge-from]");
-    if (g) raise(g);
+    if (!g) return;
+    g.classList.add("edge-over");
+    const top = g.parentNode && g.parentNode.querySelector(":scope > [data-tg-reads]");
+    if (g.nextElementSibling !== top) raise(g);
+  });
+  svgEl.addEventListener("mouseout", (e) => {
+    const g = e.target.closest && e.target.closest("g[data-edge-from]");
+    if (g && !(e.relatedTarget && g.contains(e.relatedTarget))) g.classList.remove("edge-over");
   });
   // Hovering a node lights (and raises) every edge on it.
   for (const card of svgEl.querySelectorAll("[data-node-id]")) {
