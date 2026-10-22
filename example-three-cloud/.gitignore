@@ -1,3 +1,5 @@
 # What scripts/front-door.ts builds and exports.
 .front-door/
 export/
+# Each member component's build.
+*/dist/
