@@ -27,11 +27,11 @@
          route or an asset: no request, and the exported page keeps it. -->
     <link
       rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='none' stroke='%23a6adc8' stroke-width='1.6'/%3E%3Ccircle cx='8' cy='8' r='2.2' fill='%23a6adc8'/%3E%3C/svg%3E"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='none' stroke='%23696b6c' stroke-width='1.6'/%3E%3Ccircle cx='8' cy='8' r='2.2' fill='%23696b6c'/%3E%3C/svg%3E"
     />
     <style>
       /* Pre-paint fallback (#229). These are the DEFAULT theme's tokens —
-         Catppuccin Mocha run through theme.js's tokensFor() — not a palette of
+         GitHub Light Colorblind run through theme.js's tokensFor() — not a palette of
          their own, so the first frame is already the frame initTheme() lands
          on and there is no flash of a different app. (It used to be GitHub
          Primer dark, which is why behold's first paint read as every other
@@ -39,11 +39,11 @@
          live in this block; smoke/ui-smoke.mjs recomputes them from theme.js
          and fails if the two drift apart. */
       :root {
-        --bg: #1e1e2e; --panel: #2e2f40; --line: #3b3c4a; --fg: #cdd6f4; --muted: #9598aa; --ink2: #c4cbe4;
-        --edge: #7e839b; --managed: #a6e3a1; --foreign: #f9e2af; --pending: #89b4fa;
-        --degraded: #f38ba8; --neutral: #6d7187; --runtime: #94e2d5;
-        --rule: #4e4f64; --focus: #a3b4d0; --active: #3d4660; --well: #11101f; --shadow: #050507;
-        --bar-managed: #a6e3a1; --bar-foreign: #f9e2af; --bar-pending: #89b4fa; --bar-degraded: #f38ba8; --bar-runtime: #94e2d5; --bar-neutral: #9b9fb7;
+        --bg: #ffffff; --panel: #ebecec; --line: #dcddde; --fg: #24292f; --muted: #696b6c; --ink2: #41454a;
+        --edge: #87898d; --managed: #0550ae; --foreign: #4d2d00; --pending: #0969da;
+        --degraded: #b35900; --neutral: #9c9fa1; --runtime: #1b7c83;
+        --rule: #999ea3; --focus: #52709b; --active: #c5d6e9; --well: #ebebeb; --shadow: #666666;
+        --bar-managed: #0550ae; --bar-foreign: #4d2d00; --bar-pending: #0969da; --bar-degraded: #af5700; --bar-runtime: #167980; --bar-neutral: #6c6f71;
       }
       /* The non-colour half of the identity: type and radii. These can't derive
          from a colour theme, so they're the one static token block — but they
