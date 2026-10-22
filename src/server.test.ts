@@ -859,11 +859,10 @@ describe("GET /api/graph — estate composition runs the edge passes (#188)", ()
     expect(edge!.to.endsWith("/dep")).toBe(true);
   });
 
-  // #190: the multi branch wins the if/else chain, so ?components=1 /
-  // ?logical=1 on an estate returned the plain composed entity graph as a
-  // silent 200 — no mode, no note. The graph is still the honest fallback;
-  // the note now says the lens didn't apply.
-  it("?components=1 on an estate notes that the lens didn't apply (#190)", { timeout: 20_000 }, async () => {
+  // #190, then #897: ?components=1 on an estate draws each member's
+  // components, and an estate where no member declares one says so instead of
+  // drawing its resources.
+  it("?components=1 on an estate with no components says none is declared (#897)", { timeout: 20_000 }, async () => {
     const a = tmpProj("na");
     const b = tmpProj("nb");
     const EMPTY = JSON.stringify({ nodes: [], edges: [], groups: {} });
@@ -873,9 +872,10 @@ describe("GET /api/graph — estate composition runs the edge passes (#188)", ()
     const app = createApp({ projectDir: a, projectDirs: [a, b], port: 0 }, broadcaster, new FrameBuffer(), runner);
     const res = await app.request("/api/graph?components=1");
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { meta: { note?: string; mode?: string } };
-    expect(body.meta.mode).toBeUndefined();
-    expect(body.meta.note).toMatch(/components lens doesn't apply to a composed estate/);
+    const body = (await res.json()) as { ir: { nodes: unknown[] }; meta: { note?: string; components?: boolean } };
+    expect(body.ir.nodes).toEqual([]);
+    expect(body.meta.components).toBe(true);
+    expect(body.meta.note).toMatch(/no member declares a component/);
   });
 
   // #396 item 7a: an estate of one member is not composed, and the note that

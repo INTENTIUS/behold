@@ -11,7 +11,8 @@ dns/ops/front-door.op.ts    the Op that rebuilds the page
 aws/src/site.ts             ECS on Fargate behind a load balancer (FargateAlb)
 azure/src/site.ts           a Container Apps site and its network (ContainerAppSite, ContainerAppNetwork)
 gcp/src/site.ts             Cloud Run behind a global load balancer (PublicCloudRun, PrivateEgressNetwork)
-*/src/*.component.ts        one component per member: how it deploys
+*.component.ts              one component per member: how it deploys
+                            (aws/ at its root, beside its stacks; the others in src/)
 scripts/emulators-up.sh     boots floci, floci-az and floci-gcp
 scripts/front-door.ts       the Op's steps: apply, turn Azure off, wait, export
 ```

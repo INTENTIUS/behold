@@ -2015,8 +2015,10 @@ let autoZoomFallback = true;
 // #571: a terragucci repo that declares its roots as components
 // (`terragucci.components.json`, /api/project's `terragucciComponents`) does
 // have a components picture, so it opens there whatever its member kind.
-function bootZoom(memberKinds, terragucciComponents) {
+function bootZoom(memberKinds, terragucciComponents, componentsDeclared) {
   if (terragucciComponents) return "components";
+  // #897: an estate whose members declare no component has no components picture.
+  if (componentsDeclared === false) return "resources";
   return memberKinds && memberKinds.length && !memberKinds.includes("chant") ? "resources" : "components";
 }
 
@@ -2085,12 +2087,16 @@ let pendingTotal = 0;
  * `stacksCapable`, which is false for an estate and for a single-lexicon
  * project, where the answer could only ever be one box. */
 let stacksCapable = false;
+/** #897: false when an estate's members declare no component (/api/project); undefined for a single project. */
+let componentsDeclared;
 /** The zoom stops this project can actually offer — `runtime` needs an env AND
  * a member whose substrate has an owner chain, `ops` needs emitted op.json
  * files. Both the panel and ⌘K read this, so a stop never appears in one
  * surface and not the other. */
 function availableZooms() {
-  return ZOOM_OPTS.filter(([, z]) => (z === "runtime" ? Boolean(view.env) && runtimeCapable : z === "ops" ? opsAvailable > 0 : z === "stacks" ? stacksCapable : true));
+  return ZOOM_OPTS.filter(([, z]) =>
+    z === "runtime" ? Boolean(view.env) && runtimeCapable : z === "ops" ? opsAvailable > 0 : z === "stacks" ? stacksCapable : z === "components" ? componentsDeclared !== false : true,
+  );
 }
 /** Current zoom value from (components, logical, ops, detail). */
 function zoomValue() {
@@ -10513,7 +10519,8 @@ async function initPickers() {
   runtimeCapable = !!info.runtimeCapable;
   stacksCapable = !!info.stacksCapable;
   terragucciComponentsRepo = !!info.terragucciComponents;
-  const boot = bootZoom(info.memberKinds, terragucciComponentsRepo);
+  componentsDeclared = info.componentsDeclared;
+  const boot = bootZoom(info.memberKinds, terragucciComponentsRepo, componentsDeclared);
   if (boot !== "components") {
     applyZoom(boot);
     autoZoomFallback = false;
