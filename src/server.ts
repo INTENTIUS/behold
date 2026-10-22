@@ -3078,7 +3078,8 @@ export function createApp(
       // The count badges (#393 C) ride on every estate render, collapsed or
       // not: a box of 301 cards has to be able to say so at "fit".
       // behold#631: a chant repo's pull-request loop lays a fan-out wave out as one block per parent.
-      const { svg } = renderGraph(ir, multi ? { boxes: "byStack", groupBadges: boxBadges(ir) } : { radial, ...(components && prLoopOf(cfg.projectDir) ? { childBlocks: true } : {}) });
+      const attributes = !components && opts.detail === 3;
+      const { svg } = renderGraph(ir, multi ? { boxes: "byStack", groupBadges: boxBadges(ir), attributes } : { radial, attributes, ...(components && prLoopOf(cfg.projectDir) ? { childBlocks: true } : {}) });
       // #131: a level that renders empty, or as the level below, says which.
       // Multi-estate composition has its own shape and is left alone.
       const srcZoom: Zoom = components
@@ -3730,7 +3731,7 @@ export function createApp(
         // #877: the same stacking the source graph does, by default.
         const stacked = new URL(c.req.url).searchParams.get("alike") !== "0" && !runtime ? stackAlike(ir) : undefined;
         if (stacked) ir = stacked.ir;
-        const { svg } = renderGraph(ir, runtime ? { boxes: "byContainer" } : { boxes: "byStack", groupBadges: boxBadges(ir) });
+        const { svg } = renderGraph(ir, runtime ? { boxes: "byContainer" } : { boxes: "byStack", groupBadges: boxBadges(ir), attributes: detail === 3 });
         // #221: the join line says which members were read where the ESTATE
         // says they run; #192's note then speaks only for the members the join
         // did not reach — for the joined ones the read no longer looked in
@@ -3943,7 +3944,7 @@ export function createApp(
         : attached;
       // `boxes: "byContainer"` (#86) is a no-op unless attachRuntimeContainment
       // populated it above — same "harmless when absent" contract as byStack.
-      const { svg } = renderGraph(ir, { boxes: "byContainer", radial: new URL(c.req.url).searchParams.get("radial") === "1" });
+      const { svg } = renderGraph(ir, { boxes: "byContainer", radial: new URL(c.req.url).searchParams.get("radial") === "1", attributes: !runtime && query.detail === 3 });
       const zoom: Zoom = runtime
         ? "runtime"
         : query.detail === 1
