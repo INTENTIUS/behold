@@ -22,12 +22,12 @@ describe("release rows (#165)", () => {
     expect(releaseRows(r, NOW)[0]).toEqual(["run", "18234771902 · an unlinked run"]);
   });
 
-  it("a laptop run says there is nowhere to go — whether the record said local or the id's spelling did", () => {
+  it("a run outside CI says there is nowhere to go — whether the record said local or the id's spelling did", () => {
     const said = { ...base, runId: "local-1756726200000", forge: "local", originSource: "record" };
     const spelled = { ...base, runId: "local-1756726200000", forge: "local", originSource: "inferred" };
     expect(unlinkedReason(said)).toMatch(/the record says so/);
     expect(unlinkedReason(spelled)).toMatch(/a local- id/);
-    expect(runText(said)).toBe("local-1756726200000 · a laptop run");
+    expect(runText(said)).toBe("local-1756726200000 · a run outside CI");
   });
 
   it("an inferred origin never yields a link even if a url is somehow present", () => {

@@ -1189,7 +1189,9 @@ try {
         const el = [...document.querySelectorAll("#graph svg text")].find((e) => e.textContent === t);
         if (!el) return null;
         const r = el.getBoundingClientRect();
-        return { px: r.height, units: parseFloat(el.getAttribute("font-size")), x: el.getAttribute("x"), y: el.getAttribute("y") };
+        const box = el.closest("g[data-layout-box]")?.querySelector("rect[data-group-id]") ?? document.querySelector(`#graph svg rect[data-group-id="${CSS.escape(t)}"]`);
+        const top = box ? box.getBoundingClientRect().top : null;
+        return { px: r.height, units: parseFloat(el.getAttribute("font-size")), x: el.getAttribute("x"), y: el.getAttribute("y"), inside: top === null || r.top >= top - 1 };
       }, text);
     const boxTitle = await boxLabel(NON_CHANT_BOX.id);
     const boxBadge = await boxLabel(NON_CHANT_BADGE);
@@ -1197,9 +1199,10 @@ try {
     check("the count badge is too", !!boxBadge && boxBadge.px >= 9);
     check("…which took growing them in viewBox units", boxTitle.units > 12 && boxBadge.units > 11);
     check(
-      "…and neither moved: pinhole's anchor is still pinhole's",
-      boxTitle.x === String(NON_CHANT_BOX.x + 18) && boxTitle.y === String(NON_CHANT_BOX.y + 23) && boxBadge.x === String(NON_CHANT_BOX.x + NON_CHANT_BOX.w - 16),
+      "…and neither moved sideways: pinhole's x is still pinhole's",
+      boxTitle.x === String(NON_CHANT_BOX.x + 18) && boxBadge.x === String(NON_CHANT_BOX.x + NON_CHANT_BOX.w - 16),
     );
+    check("…and grown, the title stepped down to stay inside its box's top edge", Number(boxTitle.y) > NON_CHANT_BOX.y + 23 && boxTitle.inside);
 
     // Item 2: no runtime stop, on either surface — the palette and the View tab
     // read the same list, and a stop must not appear in one and not the other.
@@ -1457,7 +1460,7 @@ try {
       check("…while every priced card takes a colour off the scale", ["monolith/api", "monolith/db", "team-a/queue", "team-a/edge"].every((id) => fills[id] !== behNeutral));
       check("the cheapest and the dearest card are not the same colour", fills["team-a/queue"] !== fills["team-a/edge"]);
       check("the unpriced card is marked as such, not merely coloured", (await behPage.locator('#graph [data-unpriced="1"]').count()) === 1);
-      check("the status strip says which colour the graph is in", (await behPage.locator("#statusbar").innerText()).includes("colour: cost"));
+      check("the status strip says which colour the graph is in", (await behPage.locator("#statusbar").innerText()).includes("color: cost"));
 
       await behPage.click('#panel-tabs button[data-tab="model"]');
       await behPage.waitForTimeout(100);
@@ -1514,7 +1517,7 @@ try {
       const paneText = await pane.innerText();
       check("a priced card's inspect pane has a behaviour section", /behaviour/i.test(paneText));
       check("…with the cost in the engine's own currency", paneText.includes("0.0416 USD/h"));
-      check("…both headroom axes, and which one the colour reads", paneText.includes("cpu 62% free · latency 41% free") && paneText.includes("colours on 41% free"));
+      check("…both headroom axes, and which one the color reads", paneText.includes("cpu 62% free · latency 41% free") && paneText.includes("colors on 41% free"));
       check("…the error rate at the level the engine named", paneText.includes("0.10% of requests at 100 rps, p50"));
       check("…the resilience verdict, its named failure and its note", paneText.includes("survives — one zone lost") && paneText.includes("two of three zones carry the load"));
       check("…and the right-size suggestion", paneText.includes("t3.small"));
@@ -1540,20 +1543,20 @@ try {
       for (const m of ["cost", "headroom"]) check(`the ${m} mode is disabled on the source graph`, await modeBtn(behPage, m).isDisabled());
       check("…with the reason on it", (await modeBtn(behPage, "cost").getAttribute("title")).includes("pick an environment"));
       check("drift is never disabled", !(await modeBtn(behPage, "drift").isDisabled()));
-      check("…and the graph falls back to drift rather than painting an empty scale", !(await behPage.locator("#statusbar").innerText()).includes("colour:"));
+      check("…and the graph falls back to drift rather than painting an empty scale", !(await behPage.locator("#statusbar").innerText()).includes("color:"));
       await behPage.click('#panel-tabs button[data-tab="scope"]');
       await behPage.waitForTimeout(100);
       await behPage.locator('#tab-scope button:text-is("live")').click();
       await behPage.waitForSelector('#graph svg [data-node-id="monolith/api"]', { timeout: 20000 });
       await behPage.waitForTimeout(300);
-      check("…and the pick comes back the moment the overlay can serve it again", (await behPage.locator("#statusbar").innerText()).includes("colour: headroom"));
+      check("…and the pick comes back the moment the overlay can serve it again", (await behPage.locator("#statusbar").innerText()).includes("color: headroom"));
 
       // The pick survives a reload the way the theme does — and it is not a
       // lens param, so the fetch that comes back is the same one.
       await behPage.reload();
       await behPage.waitForSelector('#graph svg [data-node-id="monolith/api"]', { timeout: 20000 });
       await behPage.waitForTimeout(200);
-      check("the picked mode survives a reload", (await behPage.locator("#statusbar").innerText()).includes("colour: headroom"));
+      check("the picked mode survives a reload", (await behPage.locator("#statusbar").innerText()).includes("color: headroom"));
 
       await behPage.click('#panel-tabs button[data-tab="view"]');
       await behPage.waitForTimeout(50);
@@ -1600,11 +1603,11 @@ try {
       // ⌘K lists the blocked modes with their reason rather than hiding them.
       await refPage.keyboard.press("Meta+k");
       await refPage.waitForTimeout(100);
-      await refPage.fill("#pal-input", "colour by");
+      await refPage.fill("#pal-input", "color by");
       await refPage.waitForTimeout(100);
       const palRows = await refPage.locator("#pal-list > *").allInnerTexts();
       check("⌘K lists all three colour modes", palRows.length === 3);
-      check("…and says on the blocked ones why", palRows.some((r) => r.startsWith("colour by: cost") && r.includes(BEH_REFUSAL.reason)));
+      check("…and says on the blocked ones why", palRows.some((r) => r.startsWith("color by: cost") && r.includes(BEH_REFUSAL.reason)));
       await refPage.keyboard.press("Escape");
       await refPage.waitForTimeout(100);
 

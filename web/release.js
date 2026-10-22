@@ -7,9 +7,8 @@
 import { approvalLink } from "./operator.js";
 import { waitingFor } from "./run-playhead.js";
 
-/** How the pane names each id space. `laptop` for a local mint: "local" would
- * read as a place, and the point is that there is nowhere to go. */
-export const FORGE_LABEL = { github: "GitHub Actions", gitlab: "GitLab CI", op: "an Op run", local: "a laptop run", unknown: "an unlinked run" };
+/** How the pane names each id space. A local mint is a run outside CI: there is nowhere to go. */
+export const FORGE_LABEL = { github: "GitHub Actions", gitlab: "GitLab CI", op: "an Op run", local: "a run outside CI", unknown: "an unlinked run" };
 
 /** The one line that says why there is no link, or null when there is one.
  * Never a placeholder link, never a guessed forge: the three id spaces a

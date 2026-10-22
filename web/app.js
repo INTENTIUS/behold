@@ -186,9 +186,9 @@ try {
 let savedColourMode = colourMode;
 
 const COLOUR_MODE_TITLE = {
-  drift: "Colour each card by what chant observed live — the overlay behold has always drawn",
-  cost: "Colour each card by the engine's cost per hour, low to high across this estate. An entity nothing priced draws neutral, never the cheap end.",
-  headroom: "Colour each card by how far it is from saturation — the LOWER of the axes the engine reported. An entity nothing priced draws neutral.",
+  drift: "Color each card by what chant observed live — the overlay behold has always drawn",
+  cost: "Color each card by the engine's cost per hour, low to high across this estate. An entity nothing priced draws neutral, never the cheap end.",
+  headroom: "Color each card by how far it is from saturation — the LOWER of the axes the engine reported. An entity nothing priced draws neutral.",
 };
 
 /** `meta.behaviour` off the last render, or null. */
@@ -485,9 +485,9 @@ function renderGraphLegend() {
       f.title = names[c];
       sw.appendChild(f);
     }
-    line(sw, `box colour: cloud (${["aws", "azure", "gcp"].filter((c) => clouds.includes(c)).map((c) => names[c]).join(", ")})`);
+    line(sw, `box color: cloud (${["aws", "azure", "gcp"].filter((c) => clouds.includes(c)).map((c) => names[c]).join(", ")})`);
   }
-  line(fills, "card colour: resource kind");
+  line(fills, "card color: resource kind");
   const sub = document.createElement("div");
   sub.className = "gl-sub";
   sub.textContent = "bar and outline: state";
@@ -1147,7 +1147,7 @@ function renderBehaviourSection(section, b) {
   if (typeof b.headroom.cpu === "number") axes.push(`cpu ${fmtHeadroom(b.headroom.cpu)}`);
   if (typeof b.headroom.latency === "number") axes.push(`latency ${fmtHeadroom(b.headroom.latency)}`);
   const worst = headroomOf(b);
-  add("headroom", figureWithBadge(`${axes.join(" · ")} — colours on ${fmtHeadroom(worst)}`, one, meta));
+  add("headroom", figureWithBadge(`${axes.join(" · ")} — colors on ${fmtHeadroom(worst)}`, one, meta));
   add("error rate", figureWithBadge(`${(b.errorRate * 100).toFixed(2)}% of requests at ${b.at.traffic}`, one, meta));
   add("resilience", figureWithBadge(`${RESILIENCE_WORD[b.resilience.verdict] || b.resilience.verdict} — ${b.resilience.failure}`, one, meta));
   if (b.resilience.note) add("resilience note", b.resilience.note);
@@ -1501,7 +1501,7 @@ function inspect(node) {
     tick("at", tickStatus.at);
     if (tickStatus.tickId) tick("tick", tickStatus.tickId);
     if (tickStatus.stale) {
-      tick("", "older than the operator's own cadence allows for — this verdict is history, so no colour was taken from it");
+      tick("", "older than the operator's own cadence allows for — this verdict is history, so no color was taken from it");
     }
   }
 
@@ -1957,6 +1957,15 @@ function wire(ir) {
       // and the stepper picks up the same node.
       carvePick(node);
     });
+    // A double-click goes one zoom finer, at the fit.
+    g.addEventListener("dblclick", (e) => {
+      const next = DRILL[zoomValue()];
+      if (panMoved || !next || !availableZooms().some(([, z]) => z === next)) return;
+      e.preventDefault();
+      applyZoom(next);
+      renderStatusbar();
+      load();
+    });
   }
   // #475/#476: a member's box picks the member. Only boxes that are members
   // (a wave or a VPC box is not one), and only a click on the box itself, not
@@ -2104,6 +2113,8 @@ function availableZooms() {
     z === "runtime" ? Boolean(view.env) && runtimeCapable : z === "ops" ? opsAvailable > 0 : z === "stacks" ? stacksCapable : z === "components" ? componentsDeclared !== false : true,
   );
 }
+/** The zoom a double-clicked card goes to: the next finer one. */
+const DRILL = { components: "logical", logical: "composites", composites: "resources", resources: "attributes" };
 /** Current zoom value from (components, logical, ops, detail). */
 function zoomValue() {
   if (view.components) return "components";
@@ -2228,7 +2239,7 @@ function renderPanelView() {
   // this tab is for is "what am I looking at", and colour is half that answer.
   // Sits below the stops because it is not a granularity: every zoom paints in
   // whichever of the three you picked.
-  zoom.appendChild(panelHeading("colour by"));
+  zoom.appendChild(panelHeading("color by"));
   for (const mode of COLOUR_MODES) {
     const gate = mode === "drift" ? { available: true, reason: "" } : modeAvailability(lastMeta, mode);
     const b = panelOpt(
@@ -3228,14 +3239,16 @@ function afterPaint(ir) {
     if (place.apply.node) {
       selectNode(place.apply.node, { quiet: true });
       revealNode(place.apply.node);
-    }
+    } else if (view.member) revealMember(view.member);
     renderStatusbar();
   } else if (selectedNodeId && !ids.has(selectedNodeId)) {
-    // The pick isn't on this view any more; the URL stops naming it.
+    // The pick isn't on this view any more; the URL stops naming it. The view
+    // stays at the fit: a member a pick implied is no reason to zoom in on it.
     selectedNodeId = null;
     syncViewUrl();
+    const panel = document.getElementById("inspect-body");
+    if (panel) panel.innerHTML = '<h2>Inspect</h2><p style="color:var(--ink2)">Click a node</p>';
   }
-  if (view.member && !selectedNodeId) revealMember(view.member);
   const line = refusalLine(urlRefusals);
   urlRefusals = [];
   if (line) nowline(line);
@@ -4123,7 +4136,7 @@ function markDriftedCards(ir) {
     const count_ = mark.attributes.length;
     tag.textContent = `~ ${count_} attribute${count_ === 1 ? "" : "s"}`;
     const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
-    title.textContent = `The plan would ${(mark.actions || ["update"]).join("+")} this: ${mark.attributes.join(", ")}. Ownership is unchanged — the card's colour is still its ownership verdict.`;
+    title.textContent = `The plan would ${(mark.actions || ["update"]).join("+")} this: ${mark.attributes.join(", ")}. Ownership is unchanged — the card's color is still its ownership verdict.`;
     g.appendChild(title);
     g.appendChild(tag);
   }
@@ -7488,7 +7501,7 @@ function renderStatusbar() {
   // #399: which colour the graph is in is state, not a control, so it belongs
   // on the strip the same way the zoom and the env do. Only when it is not
   // drift — drift is what the strip has always implied.
-  if (activeColourMode() !== "drift") parts.push(`colour: ${activeColourMode()}`);
+  if (activeColourMode() !== "drift") parts.push(`color: ${activeColourMode()}`);
   if (view.stack) parts.push(`stack: ${view.stack}`);
   if (axes.tier) parts.push(`tier: ${axes.tier}`);
   if (view.radial && !view.components && !view.logical && !view.ops) parts.push("radial");
@@ -8399,10 +8412,20 @@ function wireEdgeHighlight(svgEl, ir) {
   // behold#744: raised under the terragucci reads' layer, whose lines and pills stay over every edge.
   const raise = (g) => g.parentNode && g.parentNode.insertBefore(g, g.parentNode.querySelector(":scope > [data-tg-reads]"));
   wireEdgeLabelPeek(svgEl);
-  // Delegated: raise whichever edge the pointer is over (its hit-path catches it).
+  // Delegated: light and raise whichever edge the pointer is over (its hit-path
+  // catches it). Lit by a class, not `:hover`: raising re-inserts the element,
+  // and a re-inserted element loses `:hover` until the pointer moves again, so
+  // the line flickered rather than lit.
   svgEl.addEventListener("mouseover", (e) => {
     const g = e.target.closest && e.target.closest("g[data-edge-from]");
-    if (g) raise(g);
+    if (!g) return;
+    g.classList.add("edge-over");
+    const top = g.parentNode && g.parentNode.querySelector(":scope > [data-tg-reads]");
+    if (g.nextElementSibling !== top) raise(g);
+  });
+  svgEl.addEventListener("mouseout", (e) => {
+    const g = e.target.closest && e.target.closest("g[data-edge-from]");
+    if (g && !(e.relatedTarget && g.contains(e.relatedTarget))) g.classList.remove("edge-over");
   });
   // Hovering a node lights (and raises) every edge on it.
   for (const card of svgEl.querySelectorAll("[data-node-id]")) {
@@ -9302,9 +9325,16 @@ function watchPaneForFit(host) {
 // every pan and zoom; only the type gets bigger.
 //
 // The floor yields to the box: a label may not grow past a fraction of the
-// box's height, nor past its width. A sub-box too small to hold readable type
-// at this zoom says so by staying small, rather than by writing across its
-// neighbours.
+// box's height, nor past its width. A sub-box too small to hold readable type at this zoom says
+// so by staying small, rather than by writing across its neighbours. A title
+// pinhole's own size can't fit across its box shrinks to fit.
+//
+// pinhole's baseline is set for its own size, so a title grown in place would
+// rise out through the box's top edge. As it grows its baseline steps down
+// by the same amount, keeping its top inside the box.
+const BOX_LABEL_PAD = 6; // units between a box's top edge and the top of its grown title
+const BOX_LABEL_ASCENT = 0.95; // the font's ascent above the baseline, as a fraction of the size
+const BOX_LABEL_MIN = 7; // the smallest a title shrinks to fit across its box
 const BOX_LABEL_GUTTER = 34; // units below a box's top edge that the title row occupies
 const BOX_LABEL_MAX_H = 8; // a label may be at most box height / this
 const BOX_LABEL_EM = 0.62; // rough advance width per char, as a fraction of the size
@@ -9347,7 +9377,7 @@ function boxLabelsOf(svg) {
       const box = boxes.find((b) => y > b.y && y <= b.y + BOX_LABEL_GUTTER && x >= b.x - 2 && x <= b.x + b.w + 2);
       if (!box) continue;
       t.dataset.pinFont = String(base);
-      labels.push({ el: t, box, base });
+      labels.push({ el: t, box, base, y, shift: 0 });
     }
   }
   boxLabelCache = { svg, labels };
@@ -9370,9 +9400,18 @@ function scaleBoxLabels() {
   boxLabelScale = scale;
   for (const l of labels) {
     const chars = Math.max(4, (l.el.textContent || "").length);
-    const cap = Math.max(l.base, Math.min(l.box.h / BOX_LABEL_MAX_H, l.box.w / (chars * BOX_LABEL_EM)));
-    const size = Math.max(l.base, Math.min(l.base / scale, cap));
-    l.el.setAttribute("font-size", String(Math.round(size * 10) / 10));
+    const across = (l.box.w - 2 * BOX_LABEL_PAD) / (chars * BOX_LABEL_EM);
+    const floor = Math.max(BOX_LABEL_MIN, Math.min(l.base, across));
+    const cap = Math.max(floor, Math.min(l.box.h / BOX_LABEL_MAX_H, across));
+    const size = Math.round(Math.max(floor, Math.min(l.base / scale, cap)) * 10) / 10;
+    l.el.setAttribute("font-size", String(size));
+    // Step the baseline down as far as the title grew; read y live, since a placement move shifts it.
+    const shift = Math.max(0, l.box.y + BOX_LABEL_PAD + size * BOX_LABEL_ASCENT - l.y);
+    if (shift !== l.shift) {
+      const y = parseFloat(l.el.getAttribute("y"));
+      if (Number.isFinite(y)) l.el.setAttribute("y", String(Math.round((y - l.shift + shift) * 10) / 10));
+      l.shift = shift;
+    }
   }
   declutterBoxHeads(labels);
 }
@@ -11584,7 +11623,7 @@ function paletteCommands() {
     const gate = mode === "drift" ? { available: true, reason: "" } : modeAvailability(lastMeta, mode);
     const why = gate.available ? "" : ` — ${gate.reason}`;
     c.push([
-      `colour by: ${mode}${mode === activeColourMode() ? " ✓" : ""}${why}`,
+      `color by: ${mode}${mode === activeColourMode() ? " ✓" : ""}${why}`,
       () => {
         if (!gate.available) return showToast(gate.reason, false);
         setColourMode(mode);

@@ -1573,7 +1573,7 @@ export function operatorNote(state: OperatorState, now: number = Date.now()): st
         ? `${painted} component verdict${painted === 1 ? "" : "s"} from that tick — joined onto the component DAG by component name, ` +
             `under the live read (never over it) and only while the tick is younger than ${Math.round(TICK_VERDICT_TTL_MS / 60_000)}m`
         : `${named} component verdict${named === 1 ? "" : "s"} from that tick, all older than ${Math.round(TICK_VERDICT_TTL_MS / 60_000)}m — ` +
-            `named on the node, not painted: a colour would read as the estate's state now`,
+            `named on the node, not painted: a color would read as the estate's state now`,
     );
   }
   const held = state.strip.rows.filter((r) => r.lease === "held").length;

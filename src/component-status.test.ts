@@ -610,15 +610,15 @@ describe("releaseOrigin / releaseStatus (#165, chant#2045)", () => {
 });
 
 describe("releaseChip — the card's 22 characters", () => {
-  it("is `<sha7> via <forge>`, and `laptop` for a local mint", () => {
+  it("is `<sha7> via <forge>` for a CI run, and the day for a run from no forge", () => {
     expect(releaseChip(releaseStatus(GH_RECORD)!)).toBe("a1b2c3d via github");
-    expect(releaseChip(releaseStatus(LOCAL_RECORD)!)).toBe("a1b2c3d via laptop");
-    expect(releaseChip(releaseStatus(BARE_RECORD)!)).toBe("a1b2c3d via ?");
+    expect(releaseChip(releaseStatus(LOCAL_RECORD)!)).toBe("a1b2c3d · 2026-09-01");
+    expect(releaseChip(releaseStatus(BARE_RECORD)!)).toBe("a1b2c3d · 2026-09-01");
   });
 
   it("never exceeds pinhole's MAX_VALUE_LEN (22) — past it the card silently drops the field", () => {
     for (const forge of ["github", "gitlab", "op", "local", "unknown"] as const) {
-      expect(releaseChip({ gitSha: GH_RECORD.gitSha, forge }).length).toBeLessThanOrEqual(22);
+      expect(releaseChip({ gitSha: GH_RECORD.gitSha, forge, timestamp: GH_RECORD.timestamp }).length).toBeLessThanOrEqual(22);
     }
   });
 });

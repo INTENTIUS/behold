@@ -211,6 +211,7 @@
         #graph [data-layout-resize] { transition: none; }
       }
       #graph g[data-edge-from]:hover .pin-edge-line,
+      #graph g[data-edge-from].edge-over .pin-edge-line,
       #graph g[data-edge-from].edge-hi .pin-edge-line { stroke: var(--pending); stroke-width: 3.2; }
       /* Edge kind by reason (logical view): a data dependency reads as a dashed
          "logical link", distinct from the solid network-traffic edges; hover

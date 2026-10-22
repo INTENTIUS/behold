@@ -84,7 +84,7 @@ export function caption(level) {
     case "cards-dots":
       return "cards shrinking to dots: each dot is a resource";
     case "dots":
-      return "each dot is a resource, in its estate's box and colour";
+      return "each dot is a resource, in its estate's box and color";
     case "dots-discs":
       return "each dot is a resource; each disc is an estate, sized by resources";
     case "discs":
