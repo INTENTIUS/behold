@@ -132,9 +132,9 @@ export function captureKeys(axes: ExportAxes): string[] {
           if (radial === "1") p.radial = "1";
           add(env ? "/api/overlay" : "/api/graph", p);
         }
-        // #877: an estate's stacked view, at the zooms that draw every card.
+        // #877: an estate's stacked view, at every zoom that stacks.
         // Not radial: an estate isn't laid out radially.
-        if (axes.estate && detail !== "1") add(env ? "/api/overlay" : "/api/graph", lens({ detail, alike: "1" }));
+        if (axes.estate) add(env ? "/api/overlay" : "/api/graph", lens({ detail, alike: "1" }));
       }
     }
   }

@@ -2111,6 +2111,55 @@ function applyZoom(z) {
   if (z !== "components" && z !== "logical" && z !== "ops" && z !== "stacks") view.detail = ZOOM_DETAIL[z] ?? 2;
 }
 
+/** An estate of several projects: the stacked view and its toggle apply. */
+function isEstate() {
+  return !!(lastMeta && lastMeta.estate > 1);
+}
+/** The zooms the server stacks alike cards on: the ones that draw every card. */
+function alikeZoom() {
+  return ["composites", "resources", "attributes"].includes(zoomValue());
+}
+const ALIKE_TITLE =
+  "Three or more cards of one kind in a box draw as one card with a count; a card many others refer to carries the number instead of the lines";
+/** Stack or unstack alike cards. From a zoom that doesn't stack, go to resources stacked. */
+function toggleAlike() {
+  if (!alikeZoom()) {
+    applyZoom("resources");
+    view.alike = true;
+    nowline("stack alike draws on the resources zoom, so the view moved there");
+  } else view.alike = !view.alike;
+  renderStatusbar();
+  load();
+}
+
+/** Toggles over the canvas's top edge: the view features one click away. */
+function ensureViewToggles(host) {
+  if (!host) return;
+  let bar = document.getElementById("view-toggles");
+  if (!bar || bar.parentElement !== host) {
+    bar = document.createElement("div");
+    bar.id = "view-toggles";
+    host.appendChild(bar);
+  }
+  bar.innerHTML = "";
+  if (isEstate()) {
+    const b = button("▦ stack alike", "vt" + (view.alike && alikeZoom() ? " active" : ""), toggleAlike);
+    b.title = ALIKE_TITLE;
+    bar.appendChild(b);
+  }
+  if (!view.components && !view.ops) {
+    const b = button("⇢ trace", "vt", () => {
+      setPanelTab("model");
+      renderPanelModel();
+      const sec = document.querySelector(".net-trace");
+      if (sec) sec.scrollIntoView({ block: "nearest" });
+    });
+    b.title = "Trace traffic hop by hop to a card, and see the network findings (Model tab)";
+    bar.appendChild(b);
+  }
+  bar.style.display = bar.children.length ? "" : "none";
+}
+
 // --- Floating control panel content ---------------------------------------
 // panel.js owns the chrome (drag, snap to edges/corners, collapse, tabs);
 // these functions own what's IN the tabs, re-rendered from renderStatusbar()
@@ -2206,21 +2255,13 @@ function renderPanelView() {
     );
     if (estate) radial.disabled = true;
     zoom.appendChild(radial);
-    // #877: cards of one kind in a box stack into one with a count. An estate
-    // lens, like collapse: the server stacks within each project's box.
-    if (estate) {
-      zoom.appendChild(
-        panelOpt(
-          "stack alike",
-          view.alike,
-          () => {
-            view.alike = !view.alike;
-            load();
-          },
-          "Three or more cards of one kind in a box draw as one card with a count; a card many others refer to carries the number instead of the lines",
-        ),
-      );
-    }
+  }
+  // #877: cards of one kind in a box stack into one with a count. An estate
+  // lens, like collapse: the server stacks within each project's box. Offered
+  // on every zoom: from one that doesn't stack, it moves to resources.
+  if (isEstate()) {
+    if (view.components || view.logical || view.ops) zoom.appendChild(panelHeading("layout"));
+    zoom.appendChild(panelOpt("stack alike", view.alike && alikeZoom(), toggleAlike, ALIKE_TITLE));
   }
   const tools = document.getElementById("panel-viewtools");
   tools.innerHTML = "";
@@ -3399,7 +3440,7 @@ function renderPanelModel() {
     }
   }
   renderEdgeLegend(host, ir);
-  renderNetworkSection(host, ir);
+  renderNetworkSection(host);
   renderBehaviourRefusal(host);
   renderBehaviourDiagnostics(host);
 }
@@ -3496,9 +3537,12 @@ function netRow(color, what, text, tag, onClick) {
   return row;
 }
 
-function renderNetworkSection(host, ir) {
-  if (view.components || view.ops || !(ir.nodes || []).some((n) => NETWORK_KIND.test(n.kind || ""))) return;
+function renderNetworkSection(host) {
+  if (view.components || view.ops) return;
+  // The section reads its own every-card graph, so a zoom that folds the
+  // network away (composites, logical) still traces it.
   loadNetworkGraph();
+  if (net.ir && !net.ir.nodes.some((n) => NETWORK_KIND.test(n.kind || ""))) return;
   host.appendChild(panelHeading("network"));
   if (net.error) {
     host.appendChild(panelMuted(`the network couldn't be read: ${net.error}`));
@@ -9947,6 +9991,7 @@ function applyLayout() {
   indexLayout(svgEl);
   reloadLayoutDeltas();
   ensureLayoutReset(host);
+  ensureViewToggles(host);
   ensureLayoutDrag(host);
   const lens = currentLensKey();
   if (currentLayoutKey() && layoutServer.lens !== lens) pullServerLayout(lens);
@@ -10090,17 +10135,17 @@ function ensureLayoutDrag(host) {
   });
 }
 
-/** The "↺ layout" control beside ⤢ fit — shown only while something is hand-placed. */
+/** The "↺ placement" control beside ⤢ fit — shown only while something is hand-placed. */
 function ensureLayoutReset(host) {
   if (!host) return;
   let btn = document.getElementById("layout-reset");
   if (!btn || btn.parentElement !== host) {
     btn = document.createElement("button");
     btn.id = "layout-reset";
-    btn.textContent = "↺ layout";
+    btn.textContent = "↺ placement";
     btn.title =
-      "Drop the hand-placed layout for this project + this lens and go back to dagre's. " +
-      "(A resized box never reflows what's inside it — only the next layout does that.)";
+      "Put every card and box you moved on this lens back where behold placed them. " +
+      "(A resized box never reflows what's inside it; only the next layout does that.)";
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       const key = currentLayoutKey();
@@ -10113,7 +10158,7 @@ function ensureLayoutReset(host) {
       layoutDeltas = {};
       renderLayout();
       ensureLayoutReset(host);
-      nowline("↺ layout reset — back to dagre's placement");
+      nowline("↺ placement reset: every card is back where behold placed it");
     });
     host.appendChild(btn);
   }
@@ -11550,9 +11595,7 @@ function paletteCommands() {
   if (!staticMode && !view.components && !view.ops) {
     c.push([view.collapse ? "Expand all" : "Collapse large boxes", () => { view.collapse = !view.collapse; load(); }]);
   }
-  if (!view.components && !view.logical && !view.ops && lastMeta && lastMeta.estate > 1) {
-    c.push([view.alike ? "Unstack alike cards" : "Stack alike cards", () => { view.alike = !view.alike; load(); }]);
-  }
+  if (isEstate()) c.push([view.alike && alikeZoom() ? "Unstack alike cards" : "Stack alike cards", toggleAlike]);
 
   // Env/stack/tier/target selection — replaces the old header pickers.
   if (view.member) c.push([`member: whole estate (leave ${view.member})`, () => { view.member = null; selectedNodeId = null; renderStatusbar(); fitGraph(); }]);
