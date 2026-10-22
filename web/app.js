@@ -73,7 +73,7 @@ import {
   totalsText,
   deltaRows,
 } from "./behaviour-scale.js";
-import { addPanelTab, initPanel, setPanelTab, togglePanelCollapsed, isPanelCollapsed } from "./panel.js";
+import { addPanelTab, initPanel, setPanelTab, togglePanelCollapsed, isPanelCollapsed, foldPanelOnPhone } from "./panel.js";
 // #254: the carve walkthrough's stepper — everything it DECIDES is a pure
 // function in there; this file owns the fetches, the graph selection, and the
 // "carved" marker the last step leaves on a card.
@@ -152,7 +152,7 @@ if (embedOpts.embed && embedOpts.bare) document.documentElement.classList.add("b
 // screen, so any scroll over the graph moved it and paused Watch.
 const kioskTouch = () => !!(embedOpts.embed && embedOpts.bare) && typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
 if (kioskTouch()) document.documentElement.classList.add("kiosk-touch");
-initPanel({ embed: embedOpts.embed, phone: typeof matchMedia === "function" && matchMedia(INSPECT_PHONE_QUERY).matches });
+initPanel({ embed: embedOpts.embed, phone: typeof matchMedia === "function" && matchMedia(INSPECT_PHONE_QUERY).matches, phoneQuery: INSPECT_PHONE_QUERY });
 mountThemePicker(document.getElementById("panel-theme"));
 
 // Colour node fills by category/kind using the theme's FULL palette (spicypath-style, so the
@@ -405,11 +405,15 @@ onThemeChange(() => (recolorNodesByCategory(), drawTgReads())); // behold#571: d
 // viewer (a "legend" button brings it back).
 const LEGEND_KEY = "behold.graph.legend.hidden";
 function legendHidden() {
+  let saved = null;
   try {
-    return localStorage.getItem(LEGEND_KEY) === "1";
-  } catch {
-    return false;
-  }
+    saved = localStorage.getItem(LEGEND_KEY);
+  } catch {}
+  // On a phone the legend starts folded to its button: open, it covers a third of the graph.
+  return saved === "1" || (saved === null && onPhone());
+}
+function onPhone() {
+  return typeof matchMedia === "function" && matchMedia(INSPECT_PHONE_QUERY).matches;
 }
 function renderGraphLegend() {
   const host = document.getElementById("graph");
@@ -431,7 +435,7 @@ function renderGraphLegend() {
     el.className = "closed";
     el.appendChild(button("legend", "act", () => {
       try {
-        localStorage.removeItem(LEGEND_KEY);
+        localStorage.setItem(LEGEND_KEY, "0");
       } catch {}
       renderGraphLegend();
     }));
@@ -1951,6 +1955,8 @@ function wire(ir) {
       host.querySelectorAll(".sel").forEach((n) => n.classList.remove("sel"));
       g.classList.add("sel");
       inspect(node);
+      // On a phone the pane is folded under the graph; a tap on a card is asking for it.
+      if (onPhone()) document.getElementById("app").classList.remove("inspect-collapsed");
       noteSelection(node.id);
       // #254: in carve mode a click is also the walkthrough's Pick step — the
       // inspect pane already shows the score arithmetic the lens spelled out,
@@ -2231,6 +2237,7 @@ function renderPanelView() {
       panelOpt(label.replace(/^zoom: /, ""), v === current, () => {
         applyZoom(v);
         renderStatusbar();
+        foldPanelOnPhone();
         load();
       }),
     );

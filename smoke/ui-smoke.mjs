@@ -1291,6 +1291,38 @@ try {
     // way to that first screen.
     check("no console errors on a non-chant estate's boot", wbErrors.length === 0);
     if (wbErrors.length) console.error("non-chant page errors:", wbErrors);
+
+    // ---- On a phone the panels give the graph back ----------------------
+    // Open, the panel covered nine tenths of a phone's screen and a corner
+    // chevron was the only way to fold it.
+    const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    try {
+      await phone.goto(`http://localhost:${PORT + 2}/`);
+      await phone.waitForSelector("#graph svg [data-node-id]", { timeout: 20000 });
+      const folded = () => phone.evaluate(() => document.getElementById("panel").classList.contains("collapsed"));
+      check("phone: the panel boots folded", await folded());
+      const legend = await phone.locator("#graph-legend").count();
+      check("phone: the legend, when there is one, boots folded to its button", !legend || (await phone.locator("#graph-legend.closed").count()) === 1);
+      await phone.tap('#panel-tabs button[data-tab="view"]');
+      check("phone: a tab opens it, with a Done button", !(await folded()) && (await phone.locator("#panel-done").isVisible()));
+      await phone.tap("#panel-done");
+      check("…which folds it", await folded());
+      await phone.tap('#panel-tabs button[data-tab="view"]');
+      await phone.tap('#panel-tabs button[data-tab="view"]');
+      check("…as does a tap on the tab that is open", await folded());
+      await phone.tap('#panel-tabs button[data-tab="view"]');
+      await phone.touchscreen.tap(370, 700);
+      check("…and a tap on the graph", await folded());
+      await phone.tap('#panel-tabs button[data-tab="view"]');
+      await phone.tap("#panel-zoom button:not(.active)");
+      check("…and a zoom pick, so its result is in view", await folded());
+      await phone.waitForSelector("#graph svg [data-node-id]", { timeout: 20000 });
+      check("phone: the inspect pane boots folded", await phone.evaluate(() => document.getElementById("app").classList.contains("inspect-collapsed")));
+      await phone.locator("#graph svg [data-node-id]").first().tap();
+      check("phone: a tap on a card opens it", !(await phone.evaluate(() => document.getElementById("app").classList.contains("inspect-collapsed"))));
+    } finally {
+      await phone.close();
+    }
   } finally {
     await wbPage.close();
     wbServer.close();
