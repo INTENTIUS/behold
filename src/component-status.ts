@@ -280,25 +280,27 @@ export function releaseOrigin(rec: ReleaseRecord): Pick<ReleaseStatus, "forge" |
   return { forge: rec.runId.startsWith("local-") ? "local" : "unknown", originSource: "inferred" };
 }
 
-/** The forge word the chip and the pane use — `laptop` for a local mint, so the
- * card never reads "via local" as if local were a place. */
+/** The forge word the chip uses for a run on a CI forge. A run from no forge
+ * (a local mint, or an id nothing names) has no word: its chip gives the day. */
 export const FORGE_WORD: Record<ReleaseStatus["forge"], string> = {
   github: "github",
   gitlab: "gitlab",
   op: "op",
-  local: "laptop",
+  local: "",
   chant: "chant",
-  unknown: "?",
+  unknown: "",
 };
 
 /**
- * The card chip: `<sha7> via <forge>`, at most 22 characters so pinhole's
+ * The card chip: `<sha7> via <forge>`, or `<sha7> · <day>` for a run from no forge, at most 22 characters so pinhole's
  * default card template prints it (`MAX_VALUE_LEN` in its labels.ts; the `ci`
  * attr's own precedent, src/gh-run.ts). Answers "which commit, through what"
  * in one glance; the run id and everything else are the pane's.
  */
-export function releaseChip(status: Pick<ReleaseStatus, "gitSha" | "forge">): string {
-  return `${status.gitSha.slice(0, 7)} via ${FORGE_WORD[status.forge]}`;
+export function releaseChip(status: Pick<ReleaseStatus, "gitSha" | "forge" | "timestamp">): string {
+  const sha = status.gitSha.slice(0, 7);
+  const word = FORGE_WORD[status.forge];
+  return word ? `${sha} via ${word}` : `${sha} · ${status.timestamp.slice(0, 10)}`;
 }
 
 /** The `_release` attr for a row that recorded a release, or undefined. */

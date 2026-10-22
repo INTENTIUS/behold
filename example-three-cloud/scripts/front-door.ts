@@ -9,7 +9,7 @@
  *                                                 reads azureCheck healthy
  *   tsx scripts/front-door.ts azure-off           deactivate the Azure app's active revision
  *   tsx scripts/front-door.ts wait                until azureCheck reads unhealthy
- *   tsx scripts/front-door.ts export --out <dir>  behold export, opening on env local at the logical zoom
+ *   tsx scripts/front-door.ts export --out <dir>  behold export, opening on env local at the components zoom
  *
  * dns/ops/front-door.op.ts runs the same steps as an Op's phases. The emulators
  * are the ones `behold demo three-cloud` boots (chant-floci, chant-floci-az,
@@ -375,7 +375,7 @@ export function exportPage(out: string): void {
   const behold = (process.env.BEHOLD ?? "npx --yes @intentius/behold").split(" ");
   // The copy the components ran in, when there is one: its remote holds their release records.
   const served = existsSync(join(RUN, "chant.workspace.json")) ? RUN : ROOT;
-  const args = [...behold.slice(1), "export", served, "--out", resolve(out), "--open-env", ENV, "--open-zoom", "logical", "--note", NOTE];
+  const args = [...behold.slice(1), "export", served, "--out", resolve(out), "--open-env", ENV, "--open-zoom", "components", "--note", NOTE];
   say(`export: ${behold[0]} ${args.join(" ")}`);
   const r = spawnSync(behold[0]!, args, { env: childEnv, stdio: "inherit" });
   if (r.status !== 0) throw new Refusal(`behold export exited ${r.status}`);

@@ -34,14 +34,14 @@ describe("component releases (#899)", () => {
     graph.nodes[2]!.attrs._release = { runId: "kept" };
     const r = await withReleases(graph, [{ name: "aws", dir: "/w/aws" }, { name: "gcp", dir: "/w/gcp" }, { name: "dns", dir: "/w/dns" }], "local", async (dir) => answers[dir] ?? { found: false, cells: [] });
     expect(r.released).toBe(2);
-    expect(r.ir.nodes[0]!.attrs.release).toBe("016d066 via laptop");
+    expect(r.ir.nodes[0]!.attrs.release).toBe("016d066 · 2026-10-22");
     expect(r.ir.nodes[1]!.attrs.release).toBeUndefined();
     expect((r.ir.nodes[2]!.attrs._release as { runId: string }).runId).toBe("kept");
   });
 
   it("reads a single project's components by their own names", async () => {
-    const r = await withReleases(ir("site"), [{ dir: "/p" }], undefined, async () => ({ found: true, cells: [cell("site", "local", "t")] }));
-    expect(r.ir.nodes[0]!.attrs.release).toBe("016d066 via laptop");
+    const r = await withReleases(ir("site"), [{ dir: "/p" }], undefined, async () => ({ found: true, cells: [cell("site", "local", "2026-10-21T09:00:00Z")] }));
+    expect(r.ir.nodes[0]!.attrs.release).toBe("016d066 · 2026-10-21");
   });
 
   it("marks a card with the newest run after its release that did not pass, for its member or the whole workspace", () => {
