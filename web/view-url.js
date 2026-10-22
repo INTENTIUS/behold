@@ -80,7 +80,7 @@ export function writeViewQuery(search, state, defaults = {}) {
   if (s.lens && s.lens !== lensDefault) q.set("lens", s.lens);
   if (s.node) q.set("node", s.node);
   if (s.radial) q.set("radial", "1");
-  if (s.alike) q.set("alike", "1");
+  if (s.alike === false) q.set("alike", "0"); // stacked is the default
   if (s.gates) q.set("gates", s.gates);
   if (s.focus) q.set("focus", s.focus);
   if (s.run) q.set("run", s.run);

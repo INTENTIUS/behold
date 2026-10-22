@@ -1991,7 +1991,7 @@ function wire(ir) {
 // member (#475) is the estate member the view is on: a host opens behold with
 // ?member=, and picking a card or a member box moves it. It changes no fetch;
 // the graph is the whole estate, framed on that member's box.
-const view = { member: null, env: null, gates: null, focus: null, run: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false, collapse: false, alike: false, compareTo: null };
+const view = { member: null, env: null, gates: null, focus: null, run: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false, collapse: false, alike: true, compareTo: null };
 
 // #182: `components` is the boot default, but a project that declares no
 // components renders it as ZERO nodes — the first screen was a blank graph
@@ -3299,7 +3299,8 @@ function syncViewUrl() {
     lens: colourMode,
     node: place.node || selectedNodeId,
     radial: view.radial && !view.components && !view.logical && !view.ops,
-    alike: view.alike && !view.components && !view.logical && !view.ops,
+    // Stacked is the default, so only an estate's every-card view is written.
+    alike: isEstate() && alikeZoom() ? view.alike : undefined,
     gates: view.gates,
     focus: view.focus,
     run: view.run,
@@ -10327,8 +10328,8 @@ async function loadOnce(opts = {}, isCurrent = () => true) {
     // and the ops view have no member boxes to shut — and it rides both the
     // source graph and the overlay, so picking an env doesn't undo it.
     if (view.collapse && !view.components && !view.ops) q.set("collapse", "1");
-    // #877: stack alike cards, the same estate-box lens on both routes.
-    if (view.alike && !view.components && !view.logical && !view.ops) q.set("alike", "1");
+    // #877: an estate stacks alike cards by default; `alike=0` draws every card.
+    if (!view.alike && !view.components && !view.logical && !view.ops) q.set("alike", "0");
     // The CI + resources facets are component-DAG-mode-only details. Load
     // both whenever components mode is on, env picked or not — #59 unifies
     // the CI facet (#58), the live-status join (#57), and resources (#59) so

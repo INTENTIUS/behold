@@ -51,7 +51,7 @@ describe("GET /api/overlay (M4: chant #821 adoption)", () => {
     vi.mocked(graphIr).mockResolvedValueOnce(OVERLAY_IR);
 
     const app = makeApp();
-    const res = await app.request("/api/overlay?env=local");
+    const res = await app.request("/api/overlay?alike=0&env=local");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { ir: GraphIR; svg: string; meta: { mode: string; env: string } };
 
@@ -77,7 +77,7 @@ describe("GET /api/overlay (M4: chant #821 adoption)", () => {
 
   it("400s with no environment available — same guard as before #821 shipped", async () => {
     const app = makeApp();
-    const res = await app.request("/api/overlay");
+    const res = await app.request("/api/overlay?alike=0");
     expect(res.status).toBe(400);
     expect(graphIr).not.toHaveBeenCalled();
   });
@@ -104,7 +104,7 @@ describe("GET /api/overlay — cross-substrate anchoring (#103)", () => {
   it("serves the cluster → namespace → Service chain live, so both substrates are one graph", async () => {
     vi.mocked(graphIr).mockResolvedValueOnce(structuredClone(MIXED_OVERLAY_IR));
 
-    const res = await makeApp().request("/api/overlay?env=local");
+    const res = await makeApp().request("/api/overlay?alike=0&env=local");
     const body = (await res.json()) as { ir: GraphIR };
     const lex = new Map(body.ir.nodes.map((n) => [n.id, n.lexicon]));
 
@@ -151,8 +151,8 @@ describe("the collapsed view carries the expanded view's note (#396 finding 6)",
 
   it("says nothing about edges when the estate has them, collapsed or not", async () => {
     const app = estate();
-    const expanded = (await (await app.request("/api/overlay?env=local")).json()) as { meta: { note?: string } };
-    const collapsed = (await (await app.request("/api/overlay?env=local&collapse=1")).json()) as { ir: GraphIR; meta: { note?: string } };
+    const expanded = (await (await app.request("/api/overlay?alike=0&env=local")).json()) as { meta: { note?: string } };
+    const collapsed = (await (await app.request("/api/overlay?alike=0&env=local&collapse=1")).json()) as { ir: GraphIR; meta: { note?: string } };
 
     // It really collapsed: the 41-card box is one card now.
     expect(collapsed.ir.nodes.length).toBeLessThan(41);

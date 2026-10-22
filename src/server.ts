@@ -3029,9 +3029,10 @@ export function createApp(
         ir = shut.ir;
         collapsedNote = collapseNote(shut.collapsed);
       }
-      // #877: `?alike=1` — cards of one kind in a box stack into one, and a
-      // card many merely refer to carries the count instead of the lines.
-      if (multi && !components && new URL(c.req.url).searchParams.get("alike") === "1") {
+      // #877: cards of one kind in a box stack into one, and a card many
+      // merely refer to carries the count instead of the lines. An estate's
+      // default; `?alike=0` draws every card.
+      if (multi && !components && new URL(c.req.url).searchParams.get("alike") !== "0") {
         const stacked = stackAlike(ir);
         ir = stacked.ir;
         collapsedNote = [collapsedNote, stackNote(stacked)].filter(Boolean).join(" · ") || undefined;
@@ -3688,8 +3689,8 @@ export function createApp(
         // the tier both.
         const expanded = ir;
         if (collapsed) ir = collapsed.ir;
-        // #877: the same stacking the source graph does.
-        const stacked = new URL(c.req.url).searchParams.get("alike") === "1" && !runtime ? stackAlike(ir) : undefined;
+        // #877: the same stacking the source graph does, by default.
+        const stacked = new URL(c.req.url).searchParams.get("alike") !== "0" && !runtime ? stackAlike(ir) : undefined;
         if (stacked) ir = stacked.ir;
         const { svg } = renderGraph(ir, runtime ? { boxes: "byContainer" } : { boxes: "byStack", groupBadges: boxBadges(ir) });
         // #221: the join line says which members were read where the ESTATE
