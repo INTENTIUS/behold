@@ -20,6 +20,11 @@ describe("readViewQuery (#475)", () => {
 });
 
 describe("writeViewQuery (#475)", () => {
+  it("writes alike only when an estate draws every card, since stacked is the default (#877)", () => {
+    expect(writeViewQuery("", { zoom: "resources", alike: true })).toBe("?zoom=resources");
+    expect(writeViewQuery("", { zoom: "resources", alike: false })).toBe("?zoom=resources&alike=0");
+    expect(writeViewQuery("", { zoom: "logical", alike: undefined })).toBe("?zoom=logical");
+  });
   it("keeps parameters that are not the view's, and leaves defaults out", () => {
     const q = writeViewQuery("?embed=1&host=http%3A%2F%2Fa&member=old", { member: "delivery", zoom: "resources", env: null, lens: "drift", radial: false, node: null });
     expect(q).toBe("?embed=1&host=http%3A%2F%2Fa&member=delivery&zoom=resources");

@@ -1,5 +1,4 @@
-import { HostedZone, Parameter } from "@intentius/chant-lexicon-aws";
-import { AddressEntry, HostnameEntry } from "../composites/latency-entry";
+import { AddressEntry, HostedZone, HostnameEntry, Parameter } from "@intentius/chant-lexicon-aws";
 
 // Route 53 in front of the three clouds: one latency record per cloud, each
 // guarded by a health check on that cloud's endpoint. A record whose check
@@ -23,9 +22,9 @@ export const awsEndpoint = new Parameter("String", { description: "The aws membe
 export const azureEndpoint = new Parameter("String", { description: "The azure member's Container App hostname" });
 export const gcpEndpoint = new Parameter("String", { description: "The gcp member's load balancer IP address" });
 
-// One entry per cloud, from this project's own composites
-// (../composites/latency-entry.ts). Azure (West Europe) answers as eu-west-1
-// and GCP (Tokyo) as ap-northeast-1, since latency records name AWS regions.
+// One entry per cloud, from the lexicon's composites. Azure (West Europe)
+// answers as eu-west-1 and GCP (Tokyo) as ap-northeast-1, since latency
+// records name AWS regions.
 const endpoint = (p: Parameter) => p as unknown as string;
 export const aws = HostnameEntry({ zoneId: zone.Id, name: NAME, id: "aws", region: "us-east-1", endpoint: endpoint(awsEndpoint) });
 export const azure = HostnameEntry({ zoneId: zone.Id, name: NAME, id: "azure", region: "eu-west-1", endpoint: endpoint(azureEndpoint) });

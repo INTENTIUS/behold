@@ -2,7 +2,7 @@
 // All Ghostty themes from mbadolato/iTerm2-Color-Schemes @ 982a5345.
 // Regenerate: node test/make-themes.ts
 export const THEMES_SOURCE = "https://raw.githubusercontent.com/mbadolato/iTerm2-Color-Schemes/982a5345c3ac4075320598100aa4155fdf8193fd/ghostty/";
-export const DEFAULT_THEME = "Catppuccin Mocha";
+export const DEFAULT_THEME = "GitHub Light Colorblind";
 export const THEMES = {
   "0x96f": { name: "0x96f", dark: true, bg: '#262427', fg: '#fcfcfa', cursor: '#fcfcfa', selection: '#fcfcfa', palette: ['#262427', '#ff666d', '#b3e03a', '#ffc739', '#00cde8', '#a392e8', '#9deaf6', '#fcfcfa', '#545452', '#ff7e83', '#bee55e', '#ffd05e', '#1bd5eb', '#b0a3eb', '#acedf8', '#fcfcfa'] },
   "12-bit Rainbow": { name: "12-bit Rainbow", dark: true, bg: '#040404', fg: '#feffff', cursor: '#e0d000', selection: '#606060', palette: ['#000000', '#a03050', '#40d080', '#e09040', '#3060b0', '#603090', '#0090c0', '#dbded8', '#685656', '#c06060', '#90d050', '#e0d000', '#00b0c0', '#801070', '#20b0c0', '#ffffff'] },

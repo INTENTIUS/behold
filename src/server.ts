@@ -77,6 +77,7 @@ import { hasTerragruntUnits } from "./terragrunt-units.ts";
 import { summarizePlan } from "./reconcile.ts";
 import { renderGraph, renderArchitecture, renderBanded, renderCarveEstate, renderCarveMorph, renderMoveMorph } from "./render.ts";
 import { boxBadges, collapseBoxes, collapseNote } from "./collapse-lens.ts";
+import { declaresComponents, estateComponents, estateComponentsNote, type MemberComponents } from "./estate-components.ts";
 import { stackAlike, stackNote } from "./stack-lens.ts";
 import { readCarveReport, carveReportToIr, carveNote } from "./carve-lens.ts";
 import {
@@ -2053,6 +2054,8 @@ export function createApp(
       // true is a flag the SPA can read as "absent means no".
       memberKinds,
       ...(runtimeCapable ? { runtimeCapable: true } : {}),
+      // #897: whether any member declares a component, so an estate without one opens elsewhere and offers no components zoom.
+      ...((cfg.projectDirs?.length ?? 0) > 1 ? { componentsDeclared: estateDirs().some((d) => declaresComponents(d)) } : {}),
       // #569: a public view offers no target: `?target=` is refused there.
       targets: cfg.public ? [] : deployTargets(lexicons, k8sTarget),
       // Where the k8s binding came from, so the SPA never implies behold chose
@@ -3024,14 +3027,50 @@ export function createApp(
           )
         : undefined;
       const expanded = ir;
+      // #897: an estate's components, each member's DAG in its box, with the
+      // lines between members read off the composed resources above.
+      if (multi && components && (cfg.projectDirs?.length ?? 0) > 1) {
+        const env = opts.env ?? cfg.env;
+        const members = await Promise.all(
+          estateMembers(cfg.projectDirs!).map(async (m): Promise<MemberComponents> => {
+            if (m.kind !== "chant") return { member: m.name, dag: { nodes: [], edges: [], groups: {} } as unknown as GraphIR };
+            try {
+              let dag = await componentGraphIr(m.dir, tierTargetOpts(opts));
+              // Each component's live status where the member can read it, as on a single project.
+              if (env && dag.nodes.length) dag = await componentStatus(m.dir, env, opts).then((rows) => joinComponentStatus(dag, rows)).catch(() => dag);
+              return { member: m.name, dag };
+            } catch (err) {
+              return { member: m.name, reason: err instanceof Error ? err.message.split("\n")[0]! : String(err) };
+            }
+          }),
+        );
+        const picture = estateComponents(members, ir);
+        const note = estateComponentsNote(picture, picture.ir.nodes.length);
+        const { svg } = renderGraph(picture.ir, { boxes: "byStack", groupBadges: boxBadges(picture.ir) });
+        return c.json({
+          ir: picture.ir,
+          svg,
+          meta: {
+            projectDir: cfg.projectDir,
+            env: env ?? null,
+            ...(note ? { note } : {}),
+            tier: opts.tier ?? null,
+            target: opts.target ?? null,
+            estate: cfg.projectDirs!.length,
+            components: true,
+            ...(env ? { mode: "component-status" } : {}),
+          },
+        });
+      }
       if (multi && collapse) {
         const shut = collapseBoxes(ir);
         ir = shut.ir;
         collapsedNote = collapseNote(shut.collapsed);
       }
-      // #877: `?alike=1` — cards of one kind in a box stack into one, and a
-      // card many merely refer to carries the count instead of the lines.
-      if (multi && !components && new URL(c.req.url).searchParams.get("alike") === "1") {
+      // #877: cards of one kind in a box stack into one, and a card many
+      // merely refer to carries the count instead of the lines. An estate's
+      // default; `?alike=0` draws every card.
+      if (multi && !components && new URL(c.req.url).searchParams.get("alike") !== "0") {
         const stacked = stackAlike(ir);
         ir = stacked.ir;
         collapsedNote = [collapsedNote, stackNote(stacked)].filter(Boolean).join(" · ") || undefined;
@@ -3688,8 +3727,8 @@ export function createApp(
         // the tier both.
         const expanded = ir;
         if (collapsed) ir = collapsed.ir;
-        // #877: the same stacking the source graph does.
-        const stacked = new URL(c.req.url).searchParams.get("alike") === "1" && !runtime ? stackAlike(ir) : undefined;
+        // #877: the same stacking the source graph does, by default.
+        const stacked = new URL(c.req.url).searchParams.get("alike") !== "0" && !runtime ? stackAlike(ir) : undefined;
         if (stacked) ir = stacked.ir;
         const { svg } = renderGraph(ir, runtime ? { boxes: "byContainer" } : { boxes: "byStack", groupBadges: boxBadges(ir) });
         // #221: the join line says which members were read where the ESTATE

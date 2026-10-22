@@ -214,6 +214,14 @@ export async function apply(): Promise<void> {
   const azure = await applyAzure();
   say(`azure: web answers as ${azure}`);
   const aws = await applyAws();
+  await applyFrontDoor(gcp, azure, aws);
+  // Before anything is turned off, the check on Azure has to pass: that is
+  // what shows the checkers reach floci-az at all.
+  await waitFor("healthy");
+}
+
+/** The dns member, with the three endpoints the other members published. */
+async function applyFrontDoor(gcp: string, azure: string, aws: { endpoint: string } | { refused: string }): Promise<void> {
   // An aws stack that doesn't apply leaves its record pointing at a name that
   // doesn't resolve and its check probing an address nothing answers on
   // (192.0.2.1, kept for documentation by RFC 5737), so the page shows AWS
@@ -237,9 +245,16 @@ export async function apply(): Promise<void> {
     },
   );
   say("dns: applied");
-  // Before anything is turned off, the check on Azure has to pass: that is
-  // what shows the checkers reach floci-az at all.
-  await waitFor("healthy");
+}
+
+/** The dns member alone, reading the three endpoints from what is already applied (its component's step). */
+async function applyFrontDoorFromLive(): Promise<void> {
+  const out = await stackOutputs("three-cloud-aws");
+  const app = await getJson(`${appUrl()}?api-version=2024-03-01`);
+  const azure = (app.properties as { configuration?: { ingress?: { fqdn?: string } } } | undefined)?.configuration?.ingress?.fqdn;
+  if (!azure) throw new Refusal("azure: the container app web has no ingress fqdn; apply the azure member first");
+  const addr = (await fetch(`${GCP}/compute/v1/projects/${GCP_PROJECT}/global/addresses/three-cloud-ip`).then((r) => (r.ok ? r.json() : {}))) as { address?: string };
+  await applyFrontDoor(addr.address ?? "192.0.2.1", azure, out.awsEndpoint ? { endpoint: out.awsEndpoint } : { refused: "the stack has no awsEndpoint output" });
 }
 
 // ---------------------------------------------------------------------------
@@ -380,6 +395,10 @@ async function main(argv: string[]): Promise<void> {
   const outAt = rest.indexOf("--out");
   const out = outAt >= 0 ? rest[outAt + 1] : undefined;
   if (step === "apply") return apply();
+  // One member at a time: the steps of each member's component (<member>/src/*.component.ts).
+  if (step === "apply-gcp") return void say(`gcp: the load balancer answers on ${await applyGcp()}`);
+  if (step === "apply-azure") return void say(`azure: web answers as ${await applyAzure()}`);
+  if (step === "apply-dns") return applyFrontDoorFromLive();
   if (step === "azure-off") return azureOff();
   if (step === "wait") return waitFor("unhealthy");
   if (step === "export" || step === "all") {
@@ -391,7 +410,7 @@ async function main(argv: string[]): Promise<void> {
     }
     return exportPage(out);
   }
-  throw new Refusal("usage: front-door.ts all|apply|azure-off|wait|export [--out <dir>]");
+  throw new Refusal("usage: front-door.ts all|apply|apply-gcp|apply-azure|apply-dns|azure-off|wait|export [--out <dir>]");
 }
 
 main(process.argv.slice(2)).catch((e: unknown) => {

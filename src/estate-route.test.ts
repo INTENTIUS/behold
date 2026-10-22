@@ -49,7 +49,7 @@ describe("GET /api/graph — multi-estate composition (#31/M4)", () => {
     vi.mocked(graphIr).mockResolvedValueOnce(loomsterIr).mockResolvedValueOnce(k8sGkeIr);
 
     const app = makeEstateApp();
-    const res = await app.request("/api/graph");
+    const res = await app.request("/api/graph?alike=0");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { ir: GraphIR; svg: string; meta: { estate?: number } };
 
@@ -81,7 +81,7 @@ const bigIr = (kind: string): GraphIR => ({
 describe("GET /api/graph — the box's counts and the collapse lens (#393 C)", () => {
   it("badges every member box with what it holds", async () => {
     vi.mocked(graphIr).mockResolvedValueOnce(bigIr("aws_iam_role")).mockResolvedValueOnce(k8sGkeIr);
-    const res = await makeEstateApp().request("/api/graph");
+    const res = await makeEstateApp().request("/api/graph?alike=0");
     const body = (await res.json()) as { svg: string };
     expect(body.svg).toContain("60 resources");
     expect(body.svg).toContain("1 card");
@@ -89,7 +89,7 @@ describe("GET /api/graph — the box's counts and the collapse lens (#393 C)", (
 
   it("?collapse=1 draws a box over the limit as one summary card, and says so", async () => {
     vi.mocked(graphIr).mockResolvedValueOnce(bigIr("aws_iam_role")).mockResolvedValueOnce(k8sGkeIr);
-    const res = await makeEstateApp().request("/api/graph?collapse=1");
+    const res = await makeEstateApp().request("/api/graph?alike=0&collapse=1");
     const body = (await res.json()) as { ir: GraphIR; svg: string; meta: { note?: string } };
     // The 60-card member became one card; the 1-card member is untouched.
     expect(body.ir.nodes.map((n) => n.id).sort()).toEqual(["box:loomster", "k8s-gke-microservice/appDeployment"]);
@@ -100,7 +100,7 @@ describe("GET /api/graph — the box's counts and the collapse lens (#393 C)", (
 
   it("without the flag nothing collapses, whatever the size", async () => {
     vi.mocked(graphIr).mockResolvedValueOnce(bigIr("aws_iam_role")).mockResolvedValueOnce(k8sGkeIr);
-    const res = await makeEstateApp().request("/api/graph");
+    const res = await makeEstateApp().request("/api/graph?alike=0");
     const body = (await res.json()) as { ir: GraphIR; meta: { note?: string } };
     expect(body.ir.nodes).toHaveLength(61);
     expect(body.meta.note ?? "").not.toContain("collapsed");
@@ -118,7 +118,7 @@ describe("GET /api/overlay?progressive=1 (#422)", () => {
     vi.mocked(graphIr).mockImplementation((async (_dir: string, opts: { live?: boolean }) =>
       opts?.live ? new Promise(() => {}) : loomsterIr) as never);
 
-    const res = await makeEstateApp().request("/api/overlay?env=prod&progressive=1");
+    const res = await makeEstateApp().request("/api/overlay?alike=0&env=prod&progressive=1");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { ir: GraphIR; meta: { mode: string; pending: string[] } };
 
@@ -152,7 +152,7 @@ describe("GET /api/overlay?progressive=1 (#422)", () => {
       new OpRunner({ projectDir: "/work/loomster", broadcaster, onDone: () => {} }),
     );
 
-    await app.request("/api/overlay?env=prod&progressive=1");
+    await app.request("/api/overlay?alike=0&env=prod&progressive=1");
     // The live pass outlives the response on purpose; let it settle.
     await new Promise((r) => setTimeout(r, 50));
 
@@ -166,7 +166,7 @@ describe("GET /api/overlay?progressive=1 (#422)", () => {
 
   it("leaves the blocking answer exactly as it was, for agents and for export", async () => {
     vi.mocked(graphIr).mockResolvedValue(loomsterIr as never);
-    const body = (await (await makeEstateApp().request("/api/overlay?env=prod")).json()) as { meta: { mode?: string } };
+    const body = (await (await makeEstateApp().request("/api/overlay?alike=0&env=prod")).json()) as { meta: { mode?: string } };
     // Still the ordinary overlay, with no pending members: untouched contract.
     expect(body.meta.mode).toBe("overlay");
     expect((body.meta as { pending?: unknown }).pending).toBeUndefined();

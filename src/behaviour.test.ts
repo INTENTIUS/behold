@@ -105,7 +105,7 @@ interface OverlayBody {
 }
 
 const overlay = async (app: { request: (p: string) => Promise<Response> | Response }): Promise<OverlayBody> =>
-  (await (await app.request("/api/overlay?env=live")).json()) as OverlayBody;
+  (await (await app.request("/api/overlay?alike=0&env=live")).json()) as OverlayBody;
 
 /** Every entity that carries a block, id → cost per hour. */
 const priced = (body: OverlayBody): Record<string, number> =>
@@ -498,7 +498,7 @@ describe("live versus declared on the routes (#402)", () => {
 
   it("carries both figures and the delta when the request names a level", async () => {
     asked.length = 0;
-    const body = await get(served({}, predictor).app, `/api/overlay?env=live&traffic=${encodeURIComponent(TRAFFIC)}`);
+    const body = await get(served({}, predictor).app, `/api/overlay?alike=0&env=live&traffic=${encodeURIComponent(TRAFFIC)}`);
     const b = body.meta.behaviour as Record<string, unknown>;
     expect(b.live).toEqual({ perHour: 0.01, currency: "USD", basis: "sum" });
     expect(b.declared).toEqual({ perHour: 0.02, currency: "USD", basis: "sum" });
@@ -521,14 +521,14 @@ describe("live versus declared on the routes (#402)", () => {
   it("takes the level from .behold.json, and the request's over it", async () => {
     asked.length = 0;
     const { app } = served({}, predictor, { members: [{ dir: ".", kind: "choudoufu" }], behaviour: { traffic: TRAFFIC } });
-    expect(((await get(app, "/api/overlay?env=live")).meta.behaviour as { delta?: unknown }).delta).toEqual({ perHour: -0.01, currency: "USD" });
-    await get(app, "/api/overlay?env=live&traffic=9%20rps");
+    expect(((await get(app, "/api/overlay?alike=0&env=live")).meta.behaviour as { delta?: unknown }).delta).toEqual({ perHour: -0.01, currency: "USD" });
+    await get(app, "/api/overlay?alike=0&env=live&traffic=9%20rps");
     expect(asked.some((a) => a.traffic === "9 rps")).toBe(true);
   });
 
   it("asks for nothing with no level anywhere, and the fixture documents still read as before", async () => {
     asked.length = 0;
-    const body = await get(served({ "mono/behaviour.live.json": raw("behaviour-report-choudoufu-monolith.json") }, predictor).app, "/api/overlay?env=live");
+    const body = await get(served({ "mono/behaviour.live.json": raw("behaviour-report-choudoufu-monolith.json") }, predictor).app, "/api/overlay?alike=0&env=live");
     expect(asked).toEqual([]);
     const b = body.meta.behaviour as Record<string, unknown>;
     expect(b.live).toBeUndefined();
@@ -549,23 +549,23 @@ describe("live versus declared on the routes (#402)", () => {
       },
     };
     const doc = JSON.stringify({ meta: levelMeta(9), entities: { "aws_iam_role.team_a": figure(9) } });
-    const level = await get(served({ "team-a/behaviour.live.json": doc }, failing).app, `/api/overlay?env=live&traffic=${encodeURIComponent(TRAFFIC)}`);
+    const level = await get(served({ "team-a/behaviour.live.json": doc }, failing).app, `/api/overlay?alike=0&env=live&traffic=${encodeURIComponent(TRAFFIC)}`);
     expect(level.ir.nodes.filter((n) => n.id.startsWith("team-a/") && n.attrs?._behaviour)).toEqual([]);
     expect((level.meta.behaviour as { diagnostics: string[] }).diagnostics.join()).toContain("team-a: live prediction unavailable: Chant read exceeded 180000ms");
     // The same estate with no level: the document is read, as it always was.
-    const none = await get(served({ "team-a/behaviour.live.json": doc }, failing).app, "/api/overlay?env=live");
+    const none = await get(served({ "team-a/behaviour.live.json": doc }, failing).app, "/api/overlay?alike=0&env=live");
     expect(none.ir.nodes.filter((n) => n.id.startsWith("team-a/") && n.attrs?._behaviour).map((n) => n.id)).toEqual(["team-a/aws_iam_role.team_a"]);
   });
 
   it("paints the declared side on the source graph, with no live half", async () => {
     asked.length = 0;
-    const body = await get(served({}, predictor).app, `/api/graph?traffic=${encodeURIComponent(TRAFFIC)}`);
+    const body = await get(served({}, predictor).app, `/api/graph?alike=0&traffic=${encodeURIComponent(TRAFFIC)}`);
     const b = body.meta.behaviour as Record<string, unknown>;
     expect(b.declared).toEqual({ perHour: 0.02, currency: "USD", basis: "sum" });
     expect(b.live).toBeUndefined();
     expect(b.delta).toBeUndefined();
     expect(body.ir.nodes.filter((n) => n.attrs?._behaviour).map((n) => n.id).sort()).toEqual(["mono/aws_iam_policy.team_a", "mono/aws_iam_role.team_a"]);
     expect(asked.every((a) => !a.live)).toBe(true);
-    expect((await get(served({}, predictor).app, "/api/graph")).meta.behaviour).toBeUndefined();
+    expect((await get(served({}, predictor).app, "/api/graph?alike=0")).meta.behaviour).toBeUndefined();
   });
 });

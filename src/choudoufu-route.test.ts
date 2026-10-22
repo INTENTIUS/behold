@@ -146,7 +146,7 @@ describe("GET /api/choudoufu/split (#371)", () => {
   // #393 item 8: the legend speaks the members' own words.
   it("carries choudoufu's vocabulary on the overlay meta", async () => {
     const { app } = served();
-    const body = (await (await app.request("/api/overlay?env=live")).json()) as { meta: { vocabulary: { of: string; labels: Record<string, string>; note?: string } } };
+    const body = (await (await app.request("/api/overlay?alike=0&env=live")).json()) as { meta: { vocabulary: { of: string; labels: Record<string, string>; note?: string } } };
     expect(body.meta.vocabulary.of).toBe("choudoufu");
     expect(body.meta.vocabulary.labels).toMatchObject({ good: "bound", warn: "unowned", accent: "pending", neutral: "not observed" });
     // Nothing to explain: every member speaks this vocabulary.
@@ -157,7 +157,7 @@ describe("GET /api/choudoufu/split (#371)", () => {
   // "nothing is drifted" answers a reader is looking at.
   describe("attribute drift from the plan (#404)", () => {
     type Overlay = { ir: { nodes: { id: string; attrs: Record<string, unknown> }[] }; meta: { drift?: { read: boolean; drifted?: number } } };
-    const overlay = async (app: ReturnType<typeof served>["app"], q = "") => (await (await app.request(`/api/overlay?env=live${q}`)).json()) as Overlay;
+    const overlay = async (app: ReturnType<typeof served>["app"], q = "") => (await (await app.request(`/api/overlay?alike=0&env=live${q}`)).json()) as Overlay;
 
     it("never plans on an ordinary overlay read, and says the question was not asked", async () => {
       const spawns: string[][] = [];
@@ -231,7 +231,7 @@ describe("GET /api/choudoufu/split (#371)", () => {
       new OpRunner({ projectDir: mono, broadcaster, onDone: () => {} }),
     );
     const started = Date.now();
-    const body = (await (await app.request("/api/graph")).json()) as { ir: { edges: Array<{ from: string; to: string }> } };
+    const body = (await (await app.request("/api/graph?alike=0")).json()) as { ir: { edges: Array<{ from: string; to: string }> } };
     expect(Date.now() - started).toBeLessThan(3000); // no chant spawned for the join
     // Joined on the member's own addresses, then composed under its short name.
     expect(body.ir.edges).toContainEqual({ from: "mono/aws_iam_role.team_a", to: "mono/aws_iam_policy.team_a", kind: "ref", viaAttr: "policy_arn", inferred: true });
@@ -320,12 +320,12 @@ describe("collapse and expand are re-renders, not second live reads (#396 findin
     const { app } = served(spawns);
     resetOverlayCache();
 
-    await app.request("/api/overlay?env=live");
+    await app.request("/api/overlay?alike=0&env=live");
     const once = observes(spawns);
     expect(once).toBe(4); // two choudoufu members, two documents each
 
-    await app.request("/api/overlay?env=live&collapse=1"); // "Collapse large boxes"
-    await app.request("/api/overlay?env=live"); // "Expand all"
+    await app.request("/api/overlay?alike=0&env=live&collapse=1"); // "Collapse large boxes"
+    await app.request("/api/overlay?alike=0&env=live"); // "Expand all"
 
     expect(observes(spawns)).toBe(once);
   });
@@ -335,11 +335,11 @@ describe("collapse and expand are re-renders, not second live reads (#396 findin
     const { app } = served(spawns);
     resetOverlayCache();
 
-    await app.request("/api/overlay?env=live");
+    await app.request("/api/overlay?alike=0&env=live");
     const once = observes(spawns);
     // "Re-check live with plan (attribute drift)" — the ownership read behind
     // the plan is fresh too, or the two halves would describe two moments.
-    await app.request("/api/overlay?env=live&plan=1");
+    await app.request("/api/overlay?alike=0&env=live&plan=1");
     expect(observes(spawns)).toBe(once * 2);
   });
 
@@ -348,10 +348,10 @@ describe("collapse and expand are re-renders, not second live reads (#396 findin
     const { app, mono } = served(spawns);
     resetOverlayCache();
 
-    await app.request("/api/overlay?env=live");
+    await app.request("/api/overlay?alike=0&env=live");
     const once = observes(spawns);
     writeFileSync(join(mono, "extra.tf"), '# a change to the configuration\n');
-    await app.request("/api/overlay?env=live");
+    await app.request("/api/overlay?alike=0&env=live");
 
     // The moved member is read again; the one that did not move is not.
     expect(observes(spawns)).toBe(once + 2);

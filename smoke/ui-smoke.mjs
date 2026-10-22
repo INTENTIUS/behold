@@ -470,7 +470,8 @@ try {
   };
   const helm = await helmPaint();
   check("the real Helm mark reaches the card slot", helm.found);
-  check("the boot theme is dark, so this is the dark-mode reading", THEMES[DEFAULT_THEME].dark === true);
+  // The reading below is in the boot theme's mode, light or dark.
+  const bootMode = THEMES[DEFAULT_THEME].dark ? "dark" : "light";
   check("the plate is opaque", helm.plateOpacity === "1");
   check(
     "the plate covers the ink — the card is not the mark's background any more",
@@ -479,7 +480,7 @@ try {
       helm.plateBox.y + helm.plateBox.h >= helm.inkBox.y + helm.inkBox.h,
   );
   const helmOnPlate = contrast(rgbHex(helm.ink), rgbHex(helm.plate));
-  check(`the Helm ink clears 7:1 on its own ground in dark mode (${helmOnPlate.toFixed(2)}:1)`, helmOnPlate >= 7);
+  check(`the Helm ink clears 7:1 on its own ground in ${bootMode} mode (${helmOnPlate.toFixed(2)}:1)`, helmOnPlate >= 7);
   check("the recolour pass leaves the plate alone, like every other authored paint", helm.plateRole === null);
   console.log(`    ink ${rgbHex(helm.ink)} on plate ${rgbHex(helm.plate)} = ${helmOnPlate.toFixed(2)}:1; the card it sits on is ${rgbHex(helm.card)}`);
 
