@@ -6,6 +6,7 @@
  * src/overlay.ts. behold owns the live data + the server + (later) the
  * temporal/action layers around this.
  */
+import { ATTRS_ZOOM, attributeFields } from "./attribute-fields.ts";
 import {
   layoutIr,
   layoutArchitecture,
@@ -69,6 +70,10 @@ function logicalCardFields(node: { attrs: Record<string, unknown> }): Array<{ la
   const i = node.attrs[CARD_IN];
   // #877: a stack says how many it holds, a crowded card who refers to it.
   const stack = stackFields(node.attrs);
+  // The attributes zoom: what the card's structured attributes hold, too.
+  if (node.attrs[ATTRS_ZOOM] && !node.attrs[STACK_OF]) {
+    return [...(typeof i === "string" ? [{ label: "in", value: i }] : []), ...attributeFields(node)];
+  }
   if (typeof w !== "string" && typeof i !== "string" && !stack.length) return undefined;
   const base = node.attrs[STACK_OF] ? [] : defaultFields(node as never).filter((f) => !f.label.startsWith("_")).slice(0, 2);
   return [...base, ...stack, ...(typeof i === "string" ? [{ label: "in", value: i }] : []), ...(typeof w === "string" ? [{ label: "with", value: w }] : [])];
@@ -410,8 +415,11 @@ export function renderGraph(
     childBlocks?: boolean;
     /** The ranks' direction (dagre's `rankdir`): the kiosk's held small stage lays a terragucci repo's waves in a row. Top to bottom unless told. */
     rankdir?: "TB" | "BT" | "LR" | "RL";
+    /** The attributes zoom: each card prints what its structured attributes hold (src/attribute-fields.ts). */
+    attributes?: boolean;
   } = {},
 ): RenderResult {
+  if (opts.attributes) irIn = { ...irIn, nodes: irIn.nodes.map((n) => ({ ...n, attrs: { ...n.attrs, [ATTRS_ZOOM]: true } })) };
   const groupsIn = irIn.groups as ExtraGroups;
   const pipelines = groupsIn.byPipeline && Object.keys(groupsIn.byPipeline).length ? groupsIn.byPipeline : undefined;
   const boxKey = groupsIn.byWave ? "byWave" : (opts.boxes ?? (pipelines ? "byPipeline" : undefined));
