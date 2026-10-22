@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { GraphIR } from "@intentius/chant";
-import { lastRelease, withReleases } from "./component-releases.ts";
+import { lastRelease, withReleases, withRunsSince } from "./component-releases.ts";
+import type { CiRunEntry } from "./ci-run-index.ts";
 import type { ReleaseCell } from "./lifecycle-releases.ts";
 
 const cell = (component: string, env: string, timestamp: string, extra: Partial<ReleaseCell> = {}): ReleaseCell =>
@@ -41,5 +42,23 @@ describe("component releases (#899)", () => {
   it("reads a single project's components by their own names", async () => {
     const r = await withReleases(ir("site"), [{ dir: "/p" }], undefined, async () => ({ found: true, cells: [cell("site", "local", "t")] }));
     expect(r.ir.nodes[0]!.attrs.release).toBe("016d066 via laptop");
+  });
+
+  it("marks a card with the newest run after its release that did not pass, for its member or the whole workspace", () => {
+    const run = (job: string, status: string, ended: string, member?: string): CiRunEntry =>
+      ({ job, status, ended, started: ended, commit: "8aa41eb3bbdc990783b98a4c252498ff461cfd10", runId: `chant-${ended}`, key: "1/x", pr: 1, runOrigin: { forge: "chant" }, ...(member ? { member } : {}) }) as CiRunEntry;
+    const graph = ir("aws/site", "gcp/site", "dns/records");
+    graph.nodes[0]!.attrs._release = { timestamp: "2026-10-22T05:00:00Z" };
+    graph.nodes[1]!.attrs._release = { timestamp: "2026-10-22T05:00:00Z" };
+    const r = withRunsSince(graph, [
+      run("apply", "fail", "2026-10-22T04:00:00Z"),
+      run("plan", "fail", "2026-10-22T05:10:00Z"),
+      run("apply", "ok", "2026-10-22T05:20:00Z", "gcp"),
+    ]);
+    expect(r.marked).toBe(1);
+    expect(r.ir.nodes[0]!.attrs.since).toBe("plan failed 8aa41eb");
+    expect(r.ir.nodes[0]!.attrs._runSince).toMatchObject({ job: "plan", status: "fail" });
+    expect(r.ir.nodes[1]!.attrs.since).toBeUndefined();
+    expect(r.ir.nodes[2]!.attrs.since).toBeUndefined();
   });
 });

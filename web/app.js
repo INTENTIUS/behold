@@ -1559,12 +1559,18 @@ function inspect(node) {
         rel(k, v);
       }
     }
+    // #899: a run that ended after this release and did not pass, from chant's run index.
+    const since = node.attrs._runSince;
+    if (since) {
+      rel("since", `${since.job} ${since.status === "fail" ? "failed" : since.status} at ${since.commit.slice(0, 12)}`);
+      rel("", `run ${since.runId}, ended ${since.ended}, ${since.member ? `for ${since.member}` : "for the whole workspace"}. A release records only a success, so this is what came after it.`);
+    }
   }
 
   // Declared attributes — the source-of-truth values / cross-resource refs.
   // The `release` chip is the card's abbreviation of the section above, not a
   // declared value, so it stays out of this list when the section rendered.
-  const attrKeys = Object.keys(node.attrs || {}).filter((k) => !k.startsWith("_") && !(k === "release" && release));
+  const attrKeys = Object.keys(node.attrs || {}).filter((k) => !k.startsWith("_") && !((k === "release" || k === "since") && release));
   if (attrKeys.length) {
     const decl = section("declared");
     // #393 item 10: a choudoufu card that can be adopted leads with the write

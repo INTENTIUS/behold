@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { bundleIdentity, canonicalKey, captureKeys, copyNotices, OPENING_ZOOMS, settleOpening, workerName, settleNote, NOTE_MAX } from "./export.ts";
+import { bundleIdentity, canonicalKey, captureKeys, copyNotices, OPENING_ZOOMS, settleOpening, workerName, settleNote, NOTE_MAX, exportScrubber } from "./export.ts";
 
 describe("canonicalKey", () => {
   it("is independent of param order (sorted by the lens whitelist)", () => {
@@ -204,5 +204,20 @@ describe("settleNote", () => {
     expect(settleNote("a\nb")).toEqual({ error: "--note takes one line" });
     expect(settleNote("x".repeat(NOTE_MAX + 1))).toEqual({ error: `--note takes at most ${NOTE_MAX} characters, not ${NOTE_MAX + 1}` });
     expect(settleNote("x".repeat(NOTE_MAX))).toEqual({ note: "x".repeat(NOTE_MAX) });
+  });
+});
+
+describe("the run index in an export (#900)", () => {
+  it("captures the index and each run it lists", () => {
+    const keys = captureKeys({ environments: [], ciRuns: ["chant-1", "a/b"] });
+    expect(keys).toContain(canonicalKey("/api/chant/ci/runs", new URLSearchParams()));
+    expect(keys).toContain(canonicalKey("/api/chant/ci/runs/chant-1", new URLSearchParams()));
+    expect(keys).toContain(canonicalKey("/api/chant/ci/runs/a%2Fb", new URLSearchParams()));
+  });
+
+  it("names a run index on this machine by its directory, not its path", () => {
+    const scrub = exportScrubber({ projectDir: "/w/three-cloud", ciReportUrlDeclared: "file:///tmp/x/tc-reports" }, "/home/me");
+    expect(scrub('{"reports":"file:///tmp/x/tc-reports/1/abc/"}')).toBe('{"reports":"file://tc-reports/1/abc/"}');
+    expect(exportScrubber({ projectDir: "/w", ciReportUrl: "s3://bucket/ci" }, "/home/me")("s3://bucket/ci")).toBe("s3://bucket/ci");
   });
 });

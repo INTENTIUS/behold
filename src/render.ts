@@ -158,7 +158,11 @@ registerPack({
   iconFor: () => undefined,
   fields: (node) =>
     typeof node.attrs.release === "string"
-      ? [...(typeof node.attrs.archetype === "string" ? [{ label: "archetype", value: node.attrs.archetype }] : []), { label: "release", value: node.attrs.release }]
+      ? [
+          ...(typeof node.attrs.archetype === "string" ? [{ label: "archetype", value: node.attrs.archetype }] : []),
+          { label: "release", value: node.attrs.release },
+          ...(typeof node.attrs.since === "string" ? [{ label: "since", value: node.attrs.since }] : []),
+        ]
       : undefined,
 });
 

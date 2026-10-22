@@ -15,6 +15,7 @@
 import type { GraphIR } from "@intentius/chant";
 import type { ReleaseRecord } from "@intentius/chant/lifecycle/release-ledger";
 import { releaseChip, releaseStatus, type ReleaseStatus } from "./component-status.ts";
+import type { CiRunEntry } from "./ci-run-index.ts";
 import { readReleases, RELEASES_READ_TTL_MS, type ReleaseCell, type ReleasesAnswer } from "./lifecycle-releases.ts";
 
 /** The newest release of `component` in `env`, or in any environment when `env` is not given. */
@@ -82,4 +83,45 @@ export async function withReleases(
     return { ...n, attrs: { ...n.attrs, release: releaseChip(r), _release: r } };
   });
   return { ir: { ...ir, nodes }, released };
+}
+
+/** The attr a component card carries a CI run under that ended after its last release and did not pass. */
+export const RUN_SINCE = "_runSince";
+
+/** What a card says about a run since its release. */
+export interface RunSince {
+  job: string;
+  status: string;
+  runId: string;
+  commit: string;
+  ended: string;
+  /** The member the run was for; absent for a run of the whole workspace. */
+  member?: string;
+}
+
+/** How the card says a run's status: `apply failed 57192f6`, short enough for a card line. */
+const SINCE_WORD: Record<string, string> = { fail: "failed", waiting: "waiting" };
+
+/**
+ * The run index beside each component's release: the newest run that ended
+ * after the release, for the component's member or the whole workspace, when
+ * it did not pass. A release only ever records a success, so this is where a
+ * failure after it shows. Pure.
+ */
+export function withRunsSince(ir: GraphIR, entries: readonly CiRunEntry[]): { ir: GraphIR; marked: number } {
+  let marked = 0;
+  const nodes = ir.nodes.map((n) => {
+    const rel = n.attrs._release as { timestamp?: string } | undefined;
+    if (!rel?.timestamp) return n;
+    const at = n.id.indexOf("/");
+    const member = at >= 0 ? n.id.slice(0, at) : undefined;
+    const since = entries
+      .filter((e) => e.ended > rel.timestamp! && (!e.member || e.member === member))
+      .sort((a, b) => b.ended.localeCompare(a.ended))[0];
+    if (!since || since.status === "ok") return n;
+    marked++;
+    const run: RunSince = { job: since.job, status: since.status, runId: since.runId, commit: since.commit, ended: since.ended, ...(since.member ? { member: since.member } : {}) };
+    return { ...n, attrs: { ...n.attrs, since: `${since.job} ${SINCE_WORD[since.status] ?? since.status} ${since.commit.slice(0, 7)}`, [RUN_SINCE]: run } };
+  });
+  return { ir: marked ? { ...ir, nodes } : ir, marked };
 }
