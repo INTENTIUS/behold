@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterAll } from "vitest";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { GraphIR } from "@intentius/chant";
@@ -284,5 +284,21 @@ describe("snapshot names carry their content hash (#500)", () => {
       const hash = createHash("sha256").update(readFileSync(join(out, f), "utf8")).digest("hex").slice(0, 16);
       expect(f.endsWith(`.${hash}.json`)).toBe(true);
     }
+  });
+
+  it("a re-export into the same folder leaves no old snapshot, and no deploy cache is part of the bundle", { timeout: 60_000 }, async () => {
+    const { bundleFiles } = await import("./export.ts");
+    vi.mocked(composeEstate).mockImplementation((async () => IR()) as never);
+    const dir = checkout();
+    const out = join(mkdtempSync(join(tmpdir(), "behold-tg-view-")), "bundle");
+    made.push(dirname(out));
+    mkdirSync(join(out, "snapshots"), { recursive: true });
+    writeFileSync(join(out, "snapshots", "api_graph.0000000000000000.json"), "{}");
+    mkdirSync(join(out, ".wrangler", "tmp"), { recursive: true });
+    writeFileSync(join(out, ".wrangler", "tmp", "worker.js.map"), "{}");
+    await quiet(() => runExport({ projectDir: dir, projectDirs: [dir], port: 0, terragucci: { source: BUCKET } }, out));
+    expect(existsSync(join(out, "snapshots", "api_graph.0000000000000000.json"))).toBe(false);
+    expect(bundleFiles(out).some((f) => f.startsWith(".wrangler/"))).toBe(false);
+    expect(readFileSync(join(out, ".assetsignore"), "utf8")).toContain(".wrangler");
   });
 });

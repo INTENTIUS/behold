@@ -10,7 +10,7 @@
  * (reclassify / prune / value-match / composite-deps / radial all included), no
  * logic duplicated.
  */
-import { mkdirSync, writeFileSync, copyFileSync, cpSync, readFileSync, readdirSync, existsSync, realpathSync } from "node:fs";
+import { mkdirSync, writeFileSync, copyFileSync, cpSync, readFileSync, readdirSync, existsSync, realpathSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname, basename, relative, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
@@ -310,7 +310,10 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
   if ("error" in settledNote) throw new ExportRefusal(settledNote.error);
   const scrub = exportScrubber(cfg);
 
+  // A snapshot's name is its body's hash, so a re-export into the same folder
+  // would leave every body that changed beside its replacement. Start clean.
   const snapDir = join(outDir, "snapshots");
+  rmSync(snapDir, { recursive: true, force: true });
   mkdirSync(snapDir, { recursive: true });
 
   const keyToFile: Record<string, string> = {};
@@ -391,6 +394,10 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
       2,
     ) + "\n",
   );
+  // `wrangler dev` and `wrangler deploy` keep a cache in `.wrangler/` beside
+  // the config, with paths from this machine in it. The assets directory is
+  // the whole folder, so without this the next deploy publishes it.
+  writeFileSync(join(outDir, ".assetsignore"), ".wrangler\n.assetsignore\nwrangler.jsonc\n");
   // #510: the manifest names every file of the bundle, so a published commit
   // can be removed file by file later without a list call.
   writeFileSync(join(outDir, "manifest.json"), JSON.stringify({ ...manifest, files: bundleFiles(outDir).filter((f) => f !== "manifest.json") }, null, 2));
@@ -554,6 +561,7 @@ export function bundleFiles(outDir: string): string[] {
   return (readdirSync(outDir, { recursive: true, withFileTypes: true }) as import("node:fs").Dirent[])
     .filter((d) => d.isFile())
     .map((d) => relative(outDir, join(d.parentPath, d.name)).split(sep).join("/"))
+    .filter((f) => !f.startsWith(".wrangler/") && f !== ".assetsignore")
     .sort();
 }
 
