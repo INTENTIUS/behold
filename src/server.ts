@@ -69,7 +69,7 @@ import { resourcesByComponent, resourcesByRoot, nonResourceEntities } from "./re
 import { configKeys, declaredRootTools, pipelineForge, repoTools, toolOfBinary } from "./pipeline-marks.ts";
 import { chantPrFacets, chantPrRoute, prLoopOf, reportSourceOf } from "./chant-pr.ts";
 import { ChantDemo, chantDemoRoutes } from "./chant-demo.ts";
-import { ciReportUrlOf, ciRunsRoutes } from "./ci-run-index.ts";
+import { ciReportUrlOf, ciRunsRoutes, readCiRunIndex, type CiRunEntry } from "./ci-run-index.ts";
 import { localRunRoutes } from "./ci-local-run.ts";
 import type { GitRun } from "./terragucci-lifecycle.ts";
 import { TERRAGUCCI_COMPONENTS_FILE, componentJobs, componentRootMap, readTerragucciComponents, waveTitles, type TerragucciComponents } from "./terragucci-components.ts";
@@ -77,6 +77,7 @@ import { hasTerragruntUnits } from "./terragrunt-units.ts";
 import { summarizePlan } from "./reconcile.ts";
 import { renderGraph, renderArchitecture, renderBanded, renderCarveEstate, renderCarveMorph, renderMoveMorph } from "./render.ts";
 import { boxBadges, collapseBoxes, collapseNote } from "./collapse-lens.ts";
+import { withReleases, withRunsSince } from "./component-releases.ts";
 import { declaresComponents, estateComponents, estateComponentsNote, type MemberComponents } from "./estate-components.ts";
 import { stackAlike, stackNote } from "./stack-lens.ts";
 import { readCarveReport, carveReportToIr, carveNote } from "./carve-lens.ts";
@@ -1104,6 +1105,9 @@ export function createApp(
   lifecycleHistoryRoute(app, () => repoBase(cfg.projectDirs ?? [cfg.projectDir]));
   // behold#815, #818: the run index's URL, the flag's or else the workspace declaration's.
   const ciRuns = ciReportUrlOf(cfg.ciReportUrl, cfg.ciReportUrlDeclared);
+  // #899: the run index's entries, for the runs since each component's release. None without a report URL.
+  const runIndexEntries = async (): Promise<CiRunEntry[]> =>
+    ciRuns ? ((await readCiRunIndex(reportSourceOf(ciRuns.url), ciRuns.url).catch(() => ({ entries: undefined }))).entries ?? []) : [];
   // behold#631: a chant project's pull-request loop (chant components pr-plan, pr-apply), from its reports, run logs and gate ledger.
   {
     const t = cfg.terragucci;
@@ -2839,6 +2843,8 @@ export function createApp(
         // needs params this environment doesn't have) is caught below and
         // turned into a `tierNote`, not a broken view.
         ir = await componentGraphIr(cfg.projectDir, opts);
+        // #899: each component's last release, from the project's ledger.
+        if (ir.nodes.length) ir = withRunsSince((await withReleases(ir, [{ dir: cfg.projectDir }], opts.env ?? cfg.env ?? undefined)).ir, await runIndexEntries()).ir;
         // M1.1 (#57), palette hardened M2 (#54): live per-component AWS
         // status, joined by component name onto the component-DAG nodes —
         // the epic's "observe" step. A distinct data path from the entity
@@ -3045,7 +3051,11 @@ export function createApp(
           }),
         );
         const picture = estateComponents(members, ir);
-        const note = estateComponentsNote(picture, picture.ir.nodes.length);
+        // #899: each component's last release, from its member's ledger.
+        const chantMembers = estateMembers(cfg.projectDirs!).filter((m) => m.kind === "chant");
+        const { ir: released, released: count } = await withReleases(picture.ir, chantMembers, env ?? undefined);
+        picture.ir = withRunsSince(released, await runIndexEntries()).ir;
+        const note = [estateComponentsNote(picture, picture.ir.nodes.length), count ? `${count} of ${picture.ir.nodes.length} components have a release${env ? ` in ${env}` : ""}` : undefined].filter(Boolean).join(" · ") || undefined;
         const { svg } = renderGraph(picture.ir, { boxes: "byStack", groupBadges: boxBadges(picture.ir) });
         return c.json({
           ir: picture.ir,

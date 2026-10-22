@@ -3,8 +3,10 @@
  * turn Azure off, wait for Route 53 to notice, and export the page.
  *
  *   tsx scripts/front-door.ts all --out <dir>     every step below, in order
- *   tsx scripts/front-door.ts apply               build and apply gcp, azure, aws, then dns, and wait
- *                                                 until `chant lifecycle health` reads azureCheck healthy
+ *   tsx scripts/front-door.ts apply               run each member's component (gcp, azure, aws, then dns)
+ *                                                 with `chant run --components`, in a copy of the
+ *                                                 workspace, and wait until `chant lifecycle health`
+ *                                                 reads azureCheck healthy
  *   tsx scripts/front-door.ts azure-off           deactivate the Azure app's active revision
  *   tsx scripts/front-door.ts wait                until azureCheck reads unhealthy
  *   tsx scripts/front-door.ts export --out <dir>  behold export, opening on env local at the logical zoom
@@ -14,10 +16,16 @@
  * chant-floci-gcp); FLOCI_CONTAINER, FLOCI_AZ_CONTAINER and FLOCI_GCP_CONTAINER
  * name others, and AWS_ENDPOINT_URL, AZURE_ENDPOINT_URL and GCP_ENDPOINT_URL
  * say where they answer.
+ *
+ * The components run in a copy of the workspace (.front-door/run) whose git
+ * remote is a bare repository beside it (.front-door/run-remote.git). chant
+ * records each component's release on that remote's chant/lifecycle branch, so
+ * the exported page shows a real last release on every component card, and
+ * nothing is pushed anywhere but this directory. The export reads the copy.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { awsApply, awsDelete } from "@intentius/chant-lexicon-aws/op/activities";
 import { azApply } from "@intentius/chant-lexicon-azure/op/activities";
@@ -26,6 +34,9 @@ import { gcpApply } from "@intentius/chant-lexicon-gcp/op/activities";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const WORK = join(ROOT, ".front-door");
 const CHANT = join(ROOT, "node_modules", ".bin", "chant");
+/** The copy the components run in, and the bare repository it pushes its release records to. */
+const RUN = join(WORK, "run");
+const REMOTE = join(WORK, "run-remote.git");
 
 const ENV = "local";
 // The Azure resource group and the GCP project, as chant's live reads find them:
@@ -209,15 +220,53 @@ async function applyDns(endpoints: Record<string, string>, probes: Record<string
 }
 
 export async function apply(): Promise<void> {
-  const gcp = await applyGcp();
-  say(`gcp: the load balancer answers on ${gcp}`);
-  const azure = await applyAzure();
-  say(`azure: web answers as ${azure}`);
-  const aws = await applyAws();
-  await applyFrontDoor(gcp, azure, aws);
+  workspaceCopy();
+  runComponent("gcp", "site");
+  runComponent("azure", "site");
+  // A run before this one turned Azure off, and applying the same app again leaves its revision inactive.
+  await azureOn();
+  runComponent("aws", "site");
+  runComponent("dns", "records");
   // Before anything is turned off, the check on Azure has to pass: that is
   // what shows the checkers reach floci-az at all.
   await waitFor("healthy");
+}
+
+/** A git, as the copy's commits and pushes need it, with a test identity. */
+function git(args: string[], cwd: string): void {
+  const r = spawnSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "three-cloud demo", GIT_AUTHOR_EMAIL: "demo@three-cloud.test", GIT_COMMITTER_NAME: "three-cloud demo", GIT_COMMITTER_EMAIL: "demo@three-cloud.test" } });
+  if (r.status !== 0) throw new Refusal(`git ${args.join(" ")} failed: ${r.stderr || r.stdout}`);
+}
+
+/** A fresh copy of the workspace, committed, with a bare repository beside it as its origin. */
+function workspaceCopy(): void {
+  rmSync(RUN, { recursive: true, force: true });
+  rmSync(REMOTE, { recursive: true, force: true });
+  const skip = /(^|[/\\])(node_modules|export|\.front-door|dist|\.git)([/\\]|$)/;
+  // Entry by entry: a directory can't be copied into its own .front-door.
+  mkdirSync(RUN, { recursive: true });
+  for (const e of readdirSync(ROOT)) {
+    if (!skip.test(e)) cpSync(join(ROOT, e), join(RUN, e), { recursive: true, filter: (src) => !skip.test(relative(ROOT, src)) });
+  }
+  symlinkSync(join(ROOT, "node_modules"), join(RUN, "node_modules"));
+  git(["init", "-q", "-b", "main"], RUN);
+  git(["add", "-A"], RUN);
+  git(["commit", "-q", "-m", "three-cloud"], RUN);
+  git(["init", "-q", "--bare", REMOTE], WORK);
+  git(["remote", "add", "origin", REMOTE], RUN);
+  git(["push", "-q", "origin", "main"], RUN);
+  say(`run: the workspace copied to ${relative(ROOT, RUN)}, its releases recorded on ${relative(ROOT, REMOTE)}`);
+}
+
+/** One member's component, through chant's own deploy steps, against the emulators. */
+function runComponent(member: string, component: string): void {
+  say(`${member}: chant run --components ${component} --env ${ENV}`);
+  const r = spawnSync(join(RUN, "node_modules", ".bin", "chant"), ["run", "--components", component, "--env", ENV], {
+    cwd: join(RUN, member),
+    env: { ...childEnv, USER: "three-cloud-demo", GIT_AUTHOR_NAME: "three-cloud demo", GIT_AUTHOR_EMAIL: "demo@three-cloud.test", GIT_COMMITTER_NAME: "three-cloud demo", GIT_COMMITTER_EMAIL: "demo@three-cloud.test" },
+    stdio: "inherit",
+  });
+  if (r.status !== 0) throw new Refusal(`${member}: the ${component} component did not apply (exit ${r.status})`);
 }
 
 /** The dns member, with the three endpoints the other members published. */
@@ -324,7 +373,9 @@ export function exportPage(out: string): void {
   // BEHOLD names the behold to run (a checkout's `tsx src/cli.ts`, say);
   // by default it is the published one.
   const behold = (process.env.BEHOLD ?? "npx --yes @intentius/behold").split(" ");
-  const args = [...behold.slice(1), "export", ROOT, "--out", resolve(out), "--open-env", ENV, "--open-zoom", "logical", "--note", NOTE];
+  // The copy the components ran in, when there is one: its remote holds their release records.
+  const served = existsSync(join(RUN, "chant.workspace.json")) ? RUN : ROOT;
+  const args = [...behold.slice(1), "export", served, "--out", resolve(out), "--open-env", ENV, "--open-zoom", "logical", "--note", NOTE];
   say(`export: ${behold[0]} ${args.join(" ")}`);
   const r = spawnSync(behold[0]!, args, { env: childEnv, stdio: "inherit" });
   if (r.status !== 0) throw new Refusal(`behold export exited ${r.status}`);
@@ -395,9 +446,13 @@ async function main(argv: string[]): Promise<void> {
   const outAt = rest.indexOf("--out");
   const out = outAt >= 0 ? rest[outAt + 1] : undefined;
   if (step === "apply") return apply();
-  // One member at a time: the steps of each member's component (<member>/src/*.component.ts).
+  // One member at a time, outside chant: apply-dns is the dns component's step; the others apply as before components ran them.
   if (step === "apply-gcp") return void say(`gcp: the load balancer answers on ${await applyGcp()}`);
   if (step === "apply-azure") return void say(`azure: web answers as ${await applyAzure()}`);
+  if (step === "apply-aws") {
+    const aws = await applyAws();
+    return void say("refused" in aws ? `aws: NOT APPLIED: ${aws.refused}` : `aws: web answers as ${aws.endpoint}`);
+  }
   if (step === "apply-dns") return applyFrontDoorFromLive();
   if (step === "azure-off") return azureOff();
   if (step === "wait") return waitFor("unhealthy");
@@ -410,7 +465,7 @@ async function main(argv: string[]): Promise<void> {
     }
     return exportPage(out);
   }
-  throw new Refusal("usage: front-door.ts all|apply|apply-gcp|apply-azure|apply-dns|azure-off|wait|export [--out <dir>]");
+  throw new Refusal("usage: front-door.ts all|apply|apply-gcp|apply-azure|apply-aws|apply-dns|azure-off|wait|export [--out <dir>]");
 }
 
 main(process.argv.slice(2)).catch((e: unknown) => {

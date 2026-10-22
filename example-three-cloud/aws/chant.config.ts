@@ -3,6 +3,6 @@
 export default {
   lexicons: ["aws"],
   sourceDir: "src",
-  environments: ["local"],
+  environments: [{ name: "local", endpoint: "http://localhost:4566" }],
   stacks: [{ name: "three-cloud-aws", src: "src" }],
 };

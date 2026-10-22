@@ -70,6 +70,21 @@ export interface ExportAxes {
   sqlYodeler?: boolean;
   /** #877: the project is an estate of several, so the resource zooms are captured stacked as well. */
   estate?: boolean;
+  /** #900: the run ids chant's run index lists, when a report URL is declared: the index and each run are captured. */
+  ciRuns?: string[];
+}
+
+/** #900: the run ids the served run index lists, or nothing when no report URL is declared or the index can't be read. */
+async function exportedRunIds(app: { request: (path: string) => Response | Promise<Response> }): Promise<{ ciRuns?: string[] }> {
+  try {
+    const res = await app.request("/api/chant/ci/runs");
+    if (!res.ok) return {};
+    const body = (await res.json()) as { doc?: { runs?: Array<{ id?: unknown }> } | null };
+    const ids = (body.doc?.runs ?? []).map((r) => r.id).filter((id): id is string => typeof id === "string");
+    return { ciRuns: ids };
+  } catch {
+    return {};
+  }
 }
 
 /** The read URLs to capture for the given axes. */
@@ -95,6 +110,11 @@ export function captureKeys(axes: ExportAxes): string[] {
   if (axes.terragucci) add("/api/terragucci/timeline", {});
   // #525: the Releases strip, as of the export: one read, whatever the lens.
   if (axes.releases) add("/api/lifecycle/releases", {});
+  // #900: chant's run index and each run it lists, as the runs pane asks for them.
+  if (axes.ciRuns) {
+    add("/api/chant/ci/runs", {});
+    for (const id of axes.ciRuns) add(`/api/chant/ci/runs/${encodeURIComponent(id)}`, {});
+  }
   // #522: and the gate ledgers' history on chant/lifecycle, as the SPA asks it.
   if (axes.terragucci || axes.sqlYodeler) add("/api/lifecycle/history", {});
   // #537: SQL Yodeler's report and drift, and its Pipeline lane, each one read as the SPA asks it.
@@ -280,6 +300,7 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
     ...(proj.yodelReport ? { yodelReport: true } : {}),
     ...(proj.sqlYodeler ? { sqlYodeler: true } : {}),
     ...((cfg.projectDirs?.length ?? 0) > 1 ? { estate: true } : {}),
+    ...(await exportedRunIds(app)),
   };
   // #827: refused before anything is captured, so a wrong env or zoom costs nothing.
   const settled = settleOpening(opts.open ?? {}, axes);
@@ -423,12 +444,21 @@ export function shapeSnapshot(key: string, body: string, opts: ExportOptions = {
  * (and a local reports directory) by its basename, then the home directory by
  * `~`. Longest first, so a member inside the root keeps its own name.
  */
-export function exportScrubber(cfg: Pick<ServerOptions, "projectDir" | "projectDirs" | "workspace" | "terragucci" | "yodelReport">, home: string = homedir()): (text: string) => string {
+export function exportScrubber(
+  cfg: Pick<ServerOptions, "projectDir" | "projectDirs" | "workspace" | "terragucci" | "yodelReport" | "ciReportUrl" | "ciReportUrlDeclared">,
+  home: string = homedir(),
+): (text: string) => string {
   const dirs = [cfg.projectDir, ...(cfg.projectDirs ?? []), ...(cfg.workspace ? [cfg.workspace.root] : [])];
   const tg = cfg.terragucci?.source;
   if (tg && !/^[a-z0-9]+:\/\//i.test(tg)) dirs.push(resolve(tg));
   // #537: the yodel report's files are local; name them by their directory's basename.
   if (cfg.yodelReport) dirs.push(resolve(cfg.yodelReport));
+  // #900: a run index on this machine (a file:// report URL, or a bare directory) is named by its basename too.
+  for (const u of [cfg.ciReportUrl, cfg.ciReportUrlDeclared]) {
+    if (!u) continue;
+    if (u.startsWith("file://")) dirs.push(fileURLToPath(u));
+    else if (!/^[a-z0-9]+:\/\//i.test(u)) dirs.push(resolve(u));
+  }
   const pairs = new Map<string, string>();
   for (const d of dirs) {
     for (const p of [resolve(d), safeRealpath(d)]) if (p && p !== "/") pairs.set(p, basename(p));
