@@ -77,6 +77,7 @@ import { hasTerragruntUnits } from "./terragrunt-units.ts";
 import { summarizePlan } from "./reconcile.ts";
 import { renderGraph, renderArchitecture, renderBanded, renderCarveEstate, renderCarveMorph, renderMoveMorph } from "./render.ts";
 import { boxBadges, collapseBoxes, collapseNote } from "./collapse-lens.ts";
+import { withReleases } from "./component-releases.ts";
 import { declaresComponents, estateComponents, estateComponentsNote, type MemberComponents } from "./estate-components.ts";
 import { stackAlike, stackNote } from "./stack-lens.ts";
 import { readCarveReport, carveReportToIr, carveNote } from "./carve-lens.ts";
@@ -2839,6 +2840,8 @@ export function createApp(
         // needs params this environment doesn't have) is caught below and
         // turned into a `tierNote`, not a broken view.
         ir = await componentGraphIr(cfg.projectDir, opts);
+        // #899: each component's last release, from the project's ledger.
+        if (ir.nodes.length) ir = (await withReleases(ir, [{ dir: cfg.projectDir }], opts.env ?? cfg.env ?? undefined)).ir;
         // M1.1 (#57), palette hardened M2 (#54): live per-component AWS
         // status, joined by component name onto the component-DAG nodes —
         // the epic's "observe" step. A distinct data path from the entity
@@ -3045,7 +3048,11 @@ export function createApp(
           }),
         );
         const picture = estateComponents(members, ir);
-        const note = estateComponentsNote(picture, picture.ir.nodes.length);
+        // #899: each component's last release, from its member's ledger.
+        const chantMembers = estateMembers(cfg.projectDirs!).filter((m) => m.kind === "chant");
+        const { ir: released, released: count } = await withReleases(picture.ir, chantMembers, env ?? undefined);
+        picture.ir = released;
+        const note = [estateComponentsNote(picture, picture.ir.nodes.length), count ? `${count} of ${picture.ir.nodes.length} components have a release${env ? ` in ${env}` : ""}` : undefined].filter(Boolean).join(" · ") || undefined;
         const { svg } = renderGraph(picture.ir, { boxes: "byStack", groupBadges: boxBadges(picture.ir) });
         return c.json({
           ir: picture.ir,

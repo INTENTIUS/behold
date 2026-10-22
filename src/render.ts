@@ -152,6 +152,16 @@ registerPack({
 // already says — because it picks them alphabetically.
 registerPack({ lexicon: SUMMARY_LEXICON, iconFor: () => undefined, fields: summaryCardFields });
 
+// #899: a component card leads with its archetype and its last release.
+registerPack({
+  lexicon: "chant",
+  iconFor: () => undefined,
+  fields: (node) =>
+    typeof node.attrs.release === "string"
+      ? [...(typeof node.attrs.archetype === "string" ? [{ label: "archetype", value: node.attrs.archetype }] : []), { label: "release", value: node.attrs.release }]
+      : undefined,
+});
+
 // behold#876: the card for everyone outside the estate. Its words say what it
 // is and how many ways in it has; pinhole's keyword glyph for "Internet" is
 // the picture.

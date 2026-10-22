@@ -1,12 +1,13 @@
 import { phase, type Component } from "@intentius/chant/components";
 
-// The azure member as one component. The lexicon has no component deploy step
-// yet (chant#4273), so the step is the emulator apply in scripts/front-door.ts.
+// The azure member as one component: build its ARM template, then deploy it
+// into the resource group named after the environment.
 export const site: Component = {
   name: "site",
   archetype: "infra",
   dependsOn: [],
   deploy: [
-    phase("Apply", [{ kind: "shell", cmd: "npx tsx ../scripts/front-door.ts apply-azure", reason: "no azure component deploy step yet (chant#4273)" }]),
+    phase("Build", [{ kind: "shell", cmd: "npx chant build src -o dist/site.json", reason: "the template arm-deploy applies is this member's own build" }]),
+    phase("Apply", [{ kind: "arm-deploy", template: "dist/site.json", resourceGroup: "local", location: "westeurope" }]),
   ],
 };

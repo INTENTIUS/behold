@@ -87,6 +87,8 @@ export interface ReleaseCell {
   gitSha: string;
   runId: string;
   runUrl?: string;
+  /** The record's own word on where `runId` lives (chant#2045), when it has one. */
+  runOrigin?: ReleaseRecord["runOrigin"];
   /** Set when the environment before this one holds a different digest for the component, or none. */
   differs?: {
     from: string;
@@ -160,6 +162,7 @@ export function releaseCells(ledgers: Map<string, ReleaseRecord[]>, order: strin
         gitSha: r.gitSha,
         runId: r.runId,
         ...(r.runOrigin?.url && /^https?:\/\//.test(r.runOrigin.url) ? { runUrl: r.runOrigin.url } : {}),
+        ...(r.runOrigin ? { runOrigin: r.runOrigin } : {}),
         ...(differs ? { differs } : {}),
         source: sources.get(env) ?? { branch: LIFECYCLE_BRANCH, path: `${env}/releases.jsonl` },
       });
