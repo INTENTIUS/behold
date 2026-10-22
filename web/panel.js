@@ -170,9 +170,23 @@ export function isPanelCollapsed() {
   return !!state.collapsed;
 }
 
-export function initPanel({ embed = false, phone = false } = {}) {
+// On a phone the open panel covers most of the graph, and a chevron in its
+// corner was the only way to fold it. There it also folds on a tap on the
+// graph or the inspect pane, on a tap on the tab that is already open, on its
+// own Done button, and once a pick has changed what the graph shows.
+let phoneQuery = null;
+function onPhone() {
+  return !!phoneQuery && typeof matchMedia === "function" && matchMedia(phoneQuery).matches;
+}
+/** Fold the panel when on a phone, so the graph a pick just changed is in view. */
+export function foldPanelOnPhone() {
+  if (onPhone() && !state.collapsed) setCollapsed(true);
+}
+
+export function initPanel({ embed = false, phone = false, phoneQuery: query = null } = {}) {
   panel = document.getElementById("panel");
   if (!panel) return;
+  phoneQuery = query;
   if (embed) {
     STORE_KEY = "behold.panel.embed";
     state.collapsed = true;
@@ -187,11 +201,21 @@ export function initPanel({ embed = false, phone = false } = {}) {
   const bar = document.getElementById("panel-tabs");
   initDrag(bar);
   bar.addEventListener("dblclick", (e) => {
-    if (!e.target.closest("#panel-collapse, #hintk")) togglePanelCollapsed();
+    // On a phone two taps on a tab are a double-click, and the taps already open and fold it.
+    if (!e.target.closest("#panel-collapse, #hintk") && !onPhone()) togglePanelCollapsed();
   });
   document.getElementById("panel-collapse").addEventListener("click", () => togglePanelCollapsed());
-  // Clicking a tab while collapsed expands (setPanelTab's default).
-  for (const b of panel.querySelectorAll("#panel-tabs button[data-tab]")) b.addEventListener("click", () => setPanelTab(b.dataset.tab));
+  // Clicking a tab while collapsed expands (setPanelTab's default); on a phone, the open tab folds.
+  for (const b of panel.querySelectorAll("#panel-tabs button[data-tab]"))
+    b.addEventListener("click", () => (onPhone() && !state.collapsed && state.tab === b.dataset.tab ? setCollapsed(true) : setPanelTab(b.dataset.tab)));
+  const done = document.createElement("button");
+  done.id = "panel-done";
+  done.textContent = "Done";
+  done.addEventListener("click", () => setCollapsed(true));
+  panel.appendChild(done);
+  document.addEventListener("pointerdown", (e) => {
+    if (onPhone() && !state.collapsed && e.target.closest && e.target.closest("#graph, #inspect")) setCollapsed(true);
+  });
   const known = [...panel.querySelectorAll("#panel-tabs button[data-tab]")].map((b) => b.dataset.tab);
   setCollapsed(state.collapsed);
   const hidden = embed ? ["deploy"] : [];

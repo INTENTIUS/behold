@@ -670,6 +670,26 @@
       #panel-collapse:hover { color: var(--fg); }
       #panel-body { overflow-y: auto; max-height: min(62vh, 540px); padding: var(--s3) var(--s4);
         font-size: var(--t-body); user-select: text; }
+      /* On a phone (web/panel.js): a Done button to fold the panel, a body short
+         enough to leave the graph in sight, and the toggles and the inspect
+         pane's controls where a thumb finds them. */
+      #panel-done { display: none; }
+      @media (max-width: 600px) {
+        #panel { width: min(272px, calc(100vw - 24px)); }
+        #panel-body { max-height: 46vh; }
+        #panel-foot { max-height: 4.5em; overflow-y: auto; }
+        #panel-done { display: block; margin: var(--s2) var(--s3) var(--s3); padding: var(--s2); border: 1px solid var(--rule);
+          border-radius: var(--r-ctl); background: var(--active); color: var(--fg); font: 600 var(--t-body)/1.2 var(--font-ui); cursor: pointer; }
+        #panel.collapsed #panel-done { display: none; }
+        #panel-collapse { min-width: 36px; font-size: 16px; }
+        #view-toggles { top: 56px; }
+        #inspect-collapse { top: 8px; right: 8px; padding: 6px 10px; border: 1px solid var(--rule); border-radius: var(--r-ctl); background: var(--panel);
+          font: 600 var(--t-caption)/1 var(--font-ui); color: var(--fg); }
+        #inspect-collapse .chev { display: none; }
+        #inspect-collapse::after { content: "\2715  close"; }
+        #inspect-reopen { top: 56px; right: 12px; transform: none; writing-mode: horizontal-tb; border: 1px solid var(--rule);
+          border-radius: var(--r-ctl); padding: var(--s2) var(--s3); color: var(--fg); }
+      }
       #panel-body section { display: none; }
       #panel-body section.active { display: block; }
       #panel h3 { margin: var(--s4) 0 var(--s2); font: 600 var(--t-caption)/1.4 var(--font-ui); color: var(--muted); }
@@ -1044,7 +1064,7 @@
       <div id="ws-gates" hidden></div>
       <aside id="inspect">
         <div id="inspect-resize" title="Drag to resize"></div>
-        <button id="inspect-collapse" title="Collapse panel">›</button>
+        <button id="inspect-collapse" title="Collapse panel"><span class="chev">›</span></button>
         <div id="inspect-body"><h2>Inspect</h2><p style="color:var(--ink2)">Click a node</p></div>
       </aside>
       <button id="inspect-reopen" title="Show inspect panel">Inspect ‹</button>
