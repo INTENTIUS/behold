@@ -4,6 +4,7 @@
 #   wb_terralith_render <scale> <estate-name>   — the generated estate + its sidecar
 #   wb_terralith_greenfield <scale> <port>      — choudoufu from nothing (terralith-1, terralith-4)
 #   wb_terralith_adopt <scale> <port>           — stock terraform first, then choudoufu (terralith-4-adopt)
+#   wb_terralith_stock <scale> <port>           — stock terraform and nothing after it (terralith-4-stock, #912)
 #
 # tools/terralith-gen renders one estate whose composition is a function of
 # -scale: 79 resources at 1, 205 at 4, the same proportions at both. Its
@@ -23,16 +24,22 @@
 # Render the estate, once. A target that already carries main.tf is reused: a
 # second `behold demo <entry>` restarts the serve, it does not re-render over
 # live state.
-wb_terralith_render() {
-  local scale="$1" estate="$2"
+wb_terralith_generate() { # <scale> [extra terralith-gen flags...]
+  local scale="$1"
+  shift
   wb_require_bin go
   if [ -f main.tf ]; then
     wb_say "reusing the terralith already rendered here (scale ${scale}) — nothing re-rendered over live state"
   else
-    wb_say "rendering the terralith at scale ${scale} with choudoufu's tools/terralith-gen"
-    env -u PWD go -C "$(wb_choudoufu_checkout)" run ./tools/terralith-gen -scale "$scale" -out "$PWD" ||
-      wb_die "terralith-gen -scale ${scale} failed"
+    wb_say "rendering the terralith at scale ${scale} with choudoufu's tools/terralith-gen${*:+ ($*)}"
+    env -u PWD go -C "$(wb_choudoufu_checkout)" run ./tools/terralith-gen -scale "$scale" "$@" -out "$PWD" ||
+      wb_die "terralith-gen -scale ${scale} $* failed"
   fi
+}
+
+wb_terralith_render() {
+  local scale="$1" estate="$2"
+  wb_terralith_generate "$scale"
   if [ -f estate.chdf.hcl ]; then
     wb_say "estate.chdf.hcl is already here — left as it is"
   else
@@ -128,6 +135,68 @@ live-import takes -estate even though estate.chdf.hcl names it: its identities
 come from the state file alone, so there is no configuration for it to derive
 the estate from (choudoufu's own \`live-import -help\` says so). Reload behold
 afterwards and the same cards are bound.
+
+EOF
+}
+
+# The stock stage (#912): the terralith with terralith-gen's -findings layer
+# (INTENTIUS/choudoufu#2199: an SSH-exposed bastion behind an internet gateway,
+# an unencrypted postgres instance, a role whose policy reaches a DynamoDB
+# table), applied by STOCK terraform and left there. No sidecar, no live block,
+# no choudoufu step: plain .tf files and a terraform.tfstate, the estate a
+# person has before any of our tools touch it. behold serves it as a bare
+# Terraform directory, through chant's terraform lexicon.
+#
+# The demo's planned change (aws_db_instance.orders storage_encrypted false ->
+# true, which forces replacement) is copied in beside the estate as
+# replace-db.patch, with the expected answers, and never applied here.
+wb_terralith_stock() {
+  local scale="$1" port="$2" container here
+  here="$(wb_root)/workbench/${BEHOLD_DEMO_NAME:-terralith-4-stock}"
+  container="$(wb_container)"
+  wb_require_bin terraform
+  # The help text is captured before it is searched: `grep -q` closing the
+  # pipe early would fail the pipeline under pipefail even on a match.
+  local help=""
+  [ -f main.tf ] || help="$(env -u PWD go -C "$(wb_choudoufu_checkout)" run ./tools/terralith-gen -help 2>&1 || true)"
+  if [ ! -f main.tf ] && [[ "$help" != *"-findings"* ]]; then
+    wb_die "$(wb_choudoufu_checkout)'s tools/terralith-gen has no -findings flag (INTENTIUS/choudoufu#2199). Update that checkout, or set BEHOLD_CHOUDOUFU_DIR to one that has it, and re-run."
+  fi
+  wb_terralith_generate "$scale" -findings
+  [ ! -f estate.chdf.hcl ] || wb_die "estate.chdf.hcl is here: this entry is stock terraform only, render it into a fresh target."
+  wb_floci_up "$container" "$port"
+  wb_write_down "$container"
+  wb_export_aws "$port"
+
+  if [ -f terraform.tfstate ]; then
+    wb_say "terraform.tfstate is already here — the stock apply already ran, nothing re-applied"
+  else
+    wb_say "STOCK terraform init"
+    terraform init -input=false -no-color >/dev/null || wb_die "terraform init failed in $PWD"
+    wb_say "STOCK terraform apply -auto-approve (the terralith at scale ${scale} with -findings, into the scratch floci)"
+    terraform apply -auto-approve -input=false -no-color | tail -3 ||
+      wb_die "terraform apply failed in $PWD — \`docker logs ${container}\` and \`bash scripts/down.sh\`."
+    [ -f terraform.tfstate ] || wb_die "terraform wrote no terraform.tfstate."
+  fi
+
+  cp "$here/replace-db.patch" replace-db.patch
+  cp "$here/expected-answers.md" expected-answers.md
+  wb_say "$(terraform state list 2>/dev/null | wc -l | tr -d ' ') resource instances in terraform.tfstate"
+
+  cat <<EOF
+
+behold workbench ${BEHOLD_DEMO_NAME}: up. Stock terraform applied the estate and
+nothing else ran: no sidecar, no live block, no choudoufu. behold serves it as a
+bare Terraform directory.
+
+The demo's planned change sits beside the estate, unapplied:
+
+  cd $PWD
+  export AWS_ENDPOINT_URL=http://127.0.0.1:${port} AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_REGION=us-east-1
+  patch -p1 < replace-db.patch     # storage_encrypted = false -> true
+  terraform plan                   # aws_db_instance.orders must be replaced
+
+expected-answers.md holds the answers to demo steps 2 to 6.
 
 EOF
 }
