@@ -131,7 +131,7 @@ import { comparisonRow, comparisonSummary } from "./cross-env.js";
 import { identityMark, tagGlyphSvg } from "./identity-mark.js";
 import { shotFromMessage, shotViewBox, tweenViewBox, unionBox, sameViewBox, heldFrame, heldInsets, heldTarget, holdsStage, medianWidth, smallStage } from "./kiosk-shot.js"; // behold#571: Watch's camera
 import { SHOT_ATTR, SHOT_CAPTION_PX, SHOT_DIM, readShotFrame, shotCaption, shotLit, shotProvenance, shotState } from "./shot-frame.js"; // behold#915: the page `behold shot` photographs
-import { countsLine, groupLabel, groupMarks, queryLine, queryMarks, searchKey, searchUrl, uncapturedLine } from "./search-view.js"; // behold#913: `q` drawn; behold#922: groups
+import { countsLine, groupLabel, groupMarks, queryLine, queryMarks, searchKey, searchUrl, stackIndex, uncapturedLine } from "./search-view.js"; // behold#913: `q` drawn; behold#922: groups
 // #712, #715: the dots layer, the zoom past the cards. Mounted for a live
 // carve when the estate has choudoufu roots or estate rosters
 // (/api/terragucci/carve, liveCarveGate below), or when /api/graph's meta
@@ -3431,10 +3431,13 @@ async function drawQuery() {
   clearQueryMarks(svg);
   const cardEls = svg ? [...svg.querySelectorAll("[data-node-id]")] : [];
   const edgeEls = svg ? [...svg.querySelectorAll("g[data-edge-from]")] : [];
+  const cardIds = new Set(cardEls.map((g) => g.getAttribute("data-node-id")));
+  const stackOf = stackIndex(lastGraphIr && lastGraphIr.nodes, cardIds);
   const marks = queryMarks(
     answer,
-    new Set(cardEls.map((g) => g.getAttribute("data-node-id"))),
+    cardIds,
     edgeEls.map((g) => ({ from: g.getAttribute("data-edge-from"), to: g.getAttribute("data-edge-to") })),
+    stackOf,
   );
   for (const g of cardEls) {
     const id = g.getAttribute("data-node-id");
@@ -3452,7 +3455,7 @@ async function drawQuery() {
   edgeEls.forEach((g, i) => {
     if (marks.edgeMarks[i]) g.setAttribute("data-q", marks.edgeMarks[i]);
   });
-  drawGroups(svg, answer, cardEls);
+  drawGroups(svg, answer, cardEls, stackOf);
   if (embedOpts.bare) return; // a bare frame has no chrome: the shot frame draws its own caption
   const line = queryLine(view, answer, marks);
   let el = lineEl;
@@ -3483,9 +3486,9 @@ async function drawQuery() {
  * and chant's count (web/search-view.js groupMarks). The cards are already
  * lit by drawQuery; this says which group each is in.
  */
-function drawGroups(svg, answer, cardEls) {
+function drawGroups(svg, answer, cardEls, stackOf) {
   if (!svg) return;
-  const gm = groupMarks(answer, new Set(cardEls.map((g) => g.getAttribute("data-node-id"))));
+  const gm = groupMarks(answer, new Set(cardEls.map((g) => g.getAttribute("data-node-id"))), stackOf);
   if (!gm.groups.length) return;
   const byId = new Map(cardEls.map((g) => [g.getAttribute("data-node-id"), g]));
   for (const [id, i] of gm.cardGroup) {
