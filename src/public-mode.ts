@@ -112,8 +112,8 @@ export function publicReadRefusal(path: string, query: URLSearchParams): string 
   if (path === "/api/graph" && LIVE_PARAMS.some((p) => query.has(p))) {
     return "a public view draws the source graph only; a live read uses behold's own credentials";
   }
-  // behold#913: a declared query is answered; a live or snapshot one reads with behold's own credentials.
-  if (path === "/api/search" && ["env", "snapshot"].some((p) => query.has(p) && query.get(p) !== "")) {
+  // behold#913: a declared query is answered; a live, snapshot or plan (behold#922) one reads with behold's own credentials.
+  if (path === "/api/search" && ["env", "snapshot", "plan"].some((p) => query.has(p) && query.get(p) !== "" && !(p === "plan" && query.get(p) === "0"))) {
     return "a public view answers a query over the declared source only; a live read uses behold's own credentials";
   }
   return undefined;

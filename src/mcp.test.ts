@@ -396,3 +396,47 @@ describe("a thin client", () => {
     expect(src).not.toMatch(/\bapp\.request\(/);
   });
 });
+
+describe("plan and countBy in ask, show and shot (behold#922)", () => {
+  it("ask passes them to the search route, and takes countBy with no query", async () => {
+    const dir = project();
+    const asked: string[] = [];
+    const localSearch: Context["localSearch"] = async (q) => (asked.push(q.toString()), { status: 200, body: { document: { contract: 1, groups: [], total: 0 }, link: "l" } });
+    const r = await callTool(TOOLS, "ask", { query: "attr:planAction=replace", plan: true, countBy: "module" }, ctxOf({ projectDir: dir, fetch: nothingListens, localSearch }));
+    expect(r.isError).toBeUndefined();
+    await callTool(TOOLS, "ask", { countBy: "kind" }, ctxOf({ projectDir: dir, fetch: nothingListens, localSearch }));
+    expect(asked).toEqual(["q=attr%3AplanAction%3Dreplace&plan=1&countBy=module", "q=&countBy=kind"]);
+    const none = await callTool(TOOLS, "ask", {}, ctxOf({ projectDir: dir, fetch: nothingListens, localSearch }));
+    expect(textOf(none)).toMatch(/ask needs a query, or countBy/);
+    const notBool = await callTool(TOOLS, "ask", { query: "a", plan: "1" }, ctxOf({ projectDir: dir, fetch: nothingListens, localSearch }));
+    expect(textOf(notBool)).toMatch(/plan must be true or false/);
+    const ask = TOOLS.find((t) => t.name === "ask")!;
+    expect(ask.description).toMatch(/what's in here\?/);
+    expect(ask.description).toMatch(/replace the database/);
+  });
+
+  it("refuses plan with a snapshot in every tool, naming both", async () => {
+    const dir = project();
+    for (const tool of ["ask", "show", "shot"]) {
+      const r = await callTool(TOOLS, tool, { query: "a", env: "prod", snapshot: "latest", plan: true }, ctxOf({ projectDir: dir, fetch: nothingListens }));
+      expect(r.isError, tool).toBe(true);
+      expect(textOf(r), tool).toMatch(/plan and snapshot were both asked/);
+    }
+  });
+
+  it("show moves the tab with plan as a boolean and countBy, and the link carries them", async () => {
+    const dir = project();
+    const s = serveOf(dir);
+    const r = await callTool(TOOLS, "show", { query: "kind:aws_", plan: true, countBy: "kind" }, ctxOf({ projectDir: dir, fetch: s.fetch, url: SERVE }));
+    // No tab is open on a test serve: the route answers the link to hand the person.
+    expect(jsonOf(r)).toMatchObject({ code: "no-tab", link: "http://127.0.0.1:4600/?q=kind%3Aaws_&plan=1&countBy=kind" });
+  });
+
+  it("shot with no serve asks for the same view", async () => {
+    const dir = project();
+    const reqs: ShotRequest[] = [];
+    const localShot = async (req: ShotRequest): Promise<ShotResult> => (reqs.push(req), { png: PNG, state: "drawn", link: "l", browser: "chrome", ms: 1, matched: 1 });
+    await callTool(TOOLS, "shot", { query: "a", plan: true, countBy: "module" }, ctxOf({ projectDir: dir, fetch: nothingListens, localShot }));
+    expect(reqs[0]).toMatchObject({ query: "a", view: { plan: "1", countBy: "module" } });
+  });
+});

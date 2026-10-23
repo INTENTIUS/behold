@@ -16,8 +16,11 @@
  * `run` (#569) pins which terragucci run the view draws: a commit's run view,
  * `none` (no run view: the newest pull request's plan), `pull-<n>[-<sha>]`
  * (no run view, and only that pull request's plan, of that commit) or `base`
- * (nothing in flight); absent, the newest. */
-export const VIEW_KEYS = ["member", "zoom", "env", "tier", "lens", "node", "radial", "alike", "gates", "focus", "run", "pull", "q", "snapshot"];
+ * (nothing in flight); absent, the newest. `plan` (behold#922) is the plan
+ * read: the cards carry each Terraform root's plan facts and `q` is answered
+ * at the plan depth. `countBy` (behold#922) groups `q`'s matches the way
+ * chant's `--count-by` does, and the view lights each group with its count. */
+export const VIEW_KEYS = ["member", "zoom", "env", "tier", "lens", "node", "radial", "alike", "gates", "focus", "run", "pull", "q", "snapshot", "plan", "countBy"];
 
 /** #914: the zooms behold has, whatever the estate. The server settles an
  * agent's view against these (it doesn't know which the tab's estate offers);
@@ -56,6 +59,22 @@ export function checkSnapshot(v) {
   return { ok: true, value: v.trim() };
 }
 
+/**
+ * behold#922: `countBy`, chant's `--count-by` grouping: `kind`, `module` or
+ * `attr:<name>`. A closed list of three spellings, so behold checks them (chant
+ * checks again and says the same). null or "" clears it.
+ */
+export function checkCountBy(v) {
+  if (v === null || v === undefined || v === "") return { ok: true, value: null };
+  if (typeof v !== "string") return { ok: false, reason: "countBy is kind, module or attr:<name>" };
+  const t = v.trim();
+  if (t === "kind" || t === "module" || /^attr:[A-Za-z0-9_.@-]{1,128}$/.test(t)) return { ok: true, value: t };
+  return { ok: false, reason: "countBy is kind, module or attr:<name>" };
+}
+
+/** behold#922: the refusal for a view that asks for the plan and a snapshot at once. */
+export const PLAN_SNAPSHOT_REASON = "plan and snapshot can't be asked together: a plan is read now, a snapshot replays what was recorded";
+
 /** An env name as the server takes one (src/workspace-gates.ts isEnvName). */
 export function isEnvName(env) {
   return typeof env === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(env);
@@ -76,7 +95,7 @@ export function readViewQuery(search) {
   for (const k of VIEW_KEYS) {
     if (!q.has(k)) continue;
     const v = (q.get(k) || "").trim();
-    if (k === "radial" || k === "alike") {
+    if (k === "radial" || k === "alike" || k === "plan") {
       if (/^(1|true|on|yes)$/i.test(v)) want[k] = true;
       else if (/^(0|false|off|no)$/i.test(v)) want[k] = false;
       else want[k] = v; // left for settleView to name
@@ -86,7 +105,7 @@ export function readViewQuery(search) {
       want.env = v || null;
       continue;
     }
-    if (k === "focus" || k === "run" || k === "pull" || k === "q" || k === "snapshot") {
+    if (k === "focus" || k === "run" || k === "pull" || k === "q" || k === "snapshot" || k === "countBy") {
       want[k] = v || null;
       continue;
     }
@@ -104,7 +123,7 @@ export function readViewQuery(search) {
  */
 export function restoreViewQuery(search, defaults = {}) {
   const want = readViewQuery(search);
-  const out = { member: null, gates: null, focus: null, run: null, pull: null, q: null, snapshot: null, radial: false, ...want };
+  const out = { member: null, gates: null, focus: null, run: null, pull: null, q: null, snapshot: null, countBy: null, radial: false, plan: false, ...want };
   if (!("env" in want)) out.env = defaults.env || null;
   if (!("lens" in want)) out.lens = defaults.lens || "drift";
   if (!("alike" in want)) out.alike = true;
@@ -128,12 +147,12 @@ export function viewFromObject(d) {
       refused.push({ key: k, value: show(v), reason });
       continue;
     }
-    if (k === "radial" || k === "alike") {
+    if (k === "radial" || k === "alike" || k === "plan") {
       if (typeof v === "boolean") want[k] = v;
       else refused.push({ key: k, value: show(v), reason: `${k} is true or false` });
       continue;
     }
-    if (k === "env" || k === "gates" || k === "focus" || k === "run" || k === "pull" || k === "member" || k === "q" || k === "snapshot") {
+    if (k === "env" || k === "gates" || k === "focus" || k === "run" || k === "pull" || k === "member" || k === "q" || k === "snapshot" || k === "countBy") {
       if (v === null || v === "") want[k] = null;
       else if (typeof v === "string" || k === "q") want[k] = v; // a non-string q is checkQuery's to name
       else refused.push({ key: k, value: show(v), reason: `${k} is a string or null` });
@@ -183,6 +202,8 @@ export function writeViewQuery(search, state, defaults = {}) {
   if (s.pull) q.set("pull", s.pull);
   if (s.q) q.set("q", s.q);
   if (s.snapshot) q.set("snapshot", s.snapshot);
+  if (s.plan) q.set("plan", "1");
+  if (s.countBy) q.set("countBy", s.countBy);
   const out = q.toString();
   return out ? `?${out}` : "";
 }
@@ -256,6 +277,20 @@ export function settleView(want, offer) {
     if (!c.ok) refused.push({ key: "snapshot", value: want.snapshot, reason: c.reason });
     else if (c.value && !env) refused.push({ key: "snapshot", value: want.snapshot, reason: "a snapshot is of an env; name one with env" });
     else apply.snapshot = c.value;
+  }
+  if ("plan" in want) {
+    if (typeof want.plan !== "boolean") refused.push({ key: "plan", value: want.plan, reason: "plan is 1 or 0" });
+    // behold#922: the two observations are named together, and neither is applied.
+    else if (want.plan && apply.snapshot) {
+      refused.push({ key: "plan", value: "1", reason: PLAN_SNAPSHOT_REASON });
+      refused.push({ key: "snapshot", value: apply.snapshot, reason: PLAN_SNAPSHOT_REASON });
+      delete apply.snapshot;
+    } else apply.plan = want.plan;
+  }
+  if ("countBy" in want) {
+    const c = checkCountBy(want.countBy);
+    if (c.ok) apply.countBy = c.value;
+    else refused.push({ key: "countBy", value: typeof want.countBy === "string" ? want.countBy.slice(0, 80) : String(want.countBy), reason: c.reason });
   }
   if (want.member === null) apply.member = null;
   else if (want.member) apply.member = want.member;

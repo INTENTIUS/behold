@@ -17,7 +17,7 @@ import { createHash } from "node:crypto";
 import { S3Error, S3Object } from "./s3-object.ts";
 import { fileURLToPath } from "node:url";
 import { createApp, type ServerOptions } from "./server.ts";
-import { checkQuery } from "../web/view-url.js";
+import { checkCountBy, checkQuery } from "../web/view-url.js";
 
 /** The only query params that select a distinct snapshot — a stable whitelist so
  * matching a request to a captured key is robust to any extra params the
@@ -25,7 +25,8 @@ import { checkQuery } from "../web/view-url.js";
  * capture and replay agree regardless of param order. MUST stay identical to the
  * copy in web/app.js (`canonicalKey`). */
 // behold#913: `q` and `snapshot` pick a distinct /api/search answer; no other route reads them.
-const LENS_PARAMS = ["alike", "collapse", "components", "detail", "env", "logical", "ops", "q", "radial", "snapshot", "stacks", "tier"];
+// behold#922: `countBy` and `plan` pick a distinct /api/search answer, and `plan` a distinct source graph.
+const LENS_PARAMS = ["alike", "collapse", "components", "countBy", "detail", "env", "logical", "ops", "plan", "q", "radial", "snapshot", "stacks", "tier"];
 export function canonicalKey(path: string, params: URLSearchParams): string {
   // The component-DAG, logical and ops views ignore detail/radial (they're
   // entity-graph knobs), but the frontend still appends the current detail —
@@ -35,7 +36,9 @@ export function canonicalKey(path: string, params: URLSearchParams): string {
     params.get("logical") === "1" ||
     params.get("ops") === "1" ||
     params.get("stacks") === "1";
-  const q = LENS_PARAMS.filter((k) => params.has(k) && !(flat && (k === "detail" || k === "radial")))
+  // behold#922: `plan` picks a snapshot of /api/graph (the cards' plan facts) and /api/search only; #404's one-shot plan on an overlay replays the overlay as captured.
+  const planned = path === "/api/graph" || path === "/api/search";
+  const q = LENS_PARAMS.filter((k) => params.has(k) && !(flat && (k === "detail" || k === "radial")) && !(k === "plan" && !planned))
     .map((k) => `${k}=${params.get(k)}`)
     .join("&");
   return q ? `${path}?${q}` : path;
@@ -76,6 +79,10 @@ export interface ExportAxes {
   ciRuns?: string[];
   /** behold#913: `--q`, the queries captured: each one's /api/search answer, for the source graph and every environment. */
   queries?: string[];
+  /** behold#922: `--count-by`, the grouping each `--q` is captured with too (and alone, over the whole graph). */
+  countBy?: string;
+  /** behold#922: `--plan`, the plan read captured: the source graph's cards with their plan facts, and each `--q` at the plan depth. */
+  plan?: boolean;
 }
 
 /** #900: the run ids the served run index lists, or nothing when no report URL is declared or the index can't be read. */
@@ -131,9 +138,27 @@ export function captureKeys(axes: ExportAxes): string[] {
   for (const env of axes.environments) add("/api/health", { env });
 
   // behold#913: each `--q` query's answer, as web/search-view.js searchUrl asks it, for the source graph and each env.
-  for (const q of axes.queries ?? []) {
-    add("/api/search", { q });
-    for (const env of axes.environments) add("/api/search", { env, q });
+  // behold#922: and with `--count-by`, grouped (a grouping with no `--q` counts the whole graph), and with `--plan`, at the plan depth.
+  const asked = axes.queries ?? [];
+  const searches = [...asked, ...(axes.countBy && !asked.length ? [""] : [])];
+  for (const q of searches) {
+    const groupings: Array<Record<string, string>> = [...(q ? [{}] : []), ...(axes.countBy ? [{ countBy: axes.countBy }] : [])];
+    for (const g of groupings) {
+      add("/api/search", { ...g, q });
+      for (const env of axes.environments) add("/api/search", { ...g, env, q });
+      if (axes.plan) add("/api/search", { ...g, plan: "1", q });
+    }
+  }
+  // behold#922: the plan read's cards, on the source graph at each detail, as a view with plan=1 asks for them.
+  if (axes.plan) {
+    for (const tier of axes.tiers && axes.tiers.length ? axes.tiers : [""]) {
+      for (const detail of ["1", "2", "3"]) {
+        const p: Record<string, string> = { detail, plan: "1", ...(tier ? { tier } : {}) };
+        add("/api/graph", p);
+        add("/api/graph", { ...p, radial: "1" });
+        if (axes.estate) add("/api/graph", { ...p, alike: "0" });
+      }
+    }
   }
 
   const tiers = axes.tiers && axes.tiers.length ? axes.tiers : [""];
@@ -273,6 +298,19 @@ export interface ExportOptions {
   note?: string;
   /** behold#913: `--q`, repeatable: the queries the bundle answers. Checked by `settleQueries` before anything is captured. */
   queries?: string[];
+  /** behold#922: `--count-by`: the grouping the queries are captured with too. Checked by `settleCountBy`. */
+  countBy?: string;
+  /** behold#922: `--plan`: capture the plan read as well. */
+  plan?: boolean;
+}
+
+/** behold#922: check `--count-by`: kind, module or attr:<name>, as a link's countBy is checked. */
+export function settleCountBy(countBy: string | undefined): { countBy?: string } | { error: string } {
+  if (countBy === undefined) return {};
+  const c = checkCountBy(countBy);
+  if (!c.ok) return { error: `--count-by ${JSON.stringify(countBy.slice(0, 80))} was refused: ${c.reason}` };
+  if (!c.value) return { error: "--count-by needs a grouping: kind, module or attr:<name>" };
+  return { countBy: c.value };
 }
 
 /** behold#913: check `--q`: each one a query `checkQuery` takes, and no two the same. */
@@ -331,6 +369,10 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
   const settledQueries = settleQueries(opts.queries);
   if ("error" in settledQueries) throw new ExportRefusal(settledQueries.error);
   if (settledQueries.queries) axes.queries = settledQueries.queries;
+  const settledCountBy = settleCountBy(opts.countBy);
+  if ("error" in settledCountBy) throw new ExportRefusal(settledCountBy.error);
+  if (settledCountBy.countBy) axes.countBy = settledCountBy.countBy;
+  if (opts.plan) axes.plan = true;
   // #827: refused before anything is captured, so a wrong env or zoom costs nothing.
   const settled = settleOpening(opts.open ?? {}, axes);
   if ("error" in settled) throw new ExportRefusal(settled.error);
@@ -385,6 +427,9 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
     ...(settledNote.note ? { note: settledNote.note } : {}),
     // behold#913: the queries this bundle answers; any other `q` is named as not captured and lights nothing.
     ...(axes.queries ? { queries: axes.queries } : {}),
+    // behold#922: the grouping and the plan read this bundle answers.
+    ...(axes.countBy ? { countBy: axes.countBy } : {}),
+    ...(axes.plan ? { plan: true } : {}),
     axes,
     keyToFile,
   };

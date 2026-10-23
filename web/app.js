@@ -131,7 +131,7 @@ import { comparisonRow, comparisonSummary } from "./cross-env.js";
 import { identityMark, tagGlyphSvg } from "./identity-mark.js";
 import { shotFromMessage, shotViewBox, tweenViewBox, unionBox, sameViewBox, heldFrame, heldInsets, heldTarget, holdsStage, medianWidth, smallStage } from "./kiosk-shot.js"; // behold#571: Watch's camera
 import { SHOT_ATTR, SHOT_CAPTION_PX, SHOT_DIM, readShotFrame, shotCaption, shotLit, shotProvenance, shotState } from "./shot-frame.js"; // behold#915: the page `behold shot` photographs
-import { queryLine, queryMarks, searchKey, searchUrl, uncapturedLine } from "./search-view.js"; // behold#913: `q` drawn
+import { countsLine, groupLabel, groupMarks, queryLine, queryMarks, searchKey, searchUrl, uncapturedLine } from "./search-view.js"; // behold#913: `q` drawn; behold#922: groups
 // #712, #715: the dots layer, the zoom past the cards. Mounted for a live
 // carve when the estate has choudoufu roots or estate rosters
 // (/api/terragucci/carve, liveCarveGate below), or when /api/graph's meta
@@ -610,12 +610,14 @@ if (staticMode) {
 
 /** Canonical key for a read URL — path + the lens params (whitelisted, sorted)
  * that select a distinct snapshot. MUST match src/export.ts `canonicalKey`. */
-const LENS_PARAMS = ["alike", "collapse", "components", "detail", "env", "logical", "ops", "q", "radial", "runtime", "snapshot", "stacks", "tier"]; // q, snapshot: behold#913's /api/search
+const LENS_PARAMS = ["alike", "collapse", "components", "countBy", "detail", "env", "logical", "ops", "plan", "q", "radial", "runtime", "snapshot", "stacks", "tier"]; // q, snapshot: behold#913's /api/search; countBy, plan: behold#922
 function canonicalKey(path, params) {
   // Components + logical + ops views ignore detail/radial — drop them so they
   // match the single captured snapshot (MUST match src/export.ts).
   const flat = params.get("components") === "1" || params.get("logical") === "1" || params.get("ops") === "1" || params.get("stacks") === "1";
-  const q = LENS_PARAMS.filter((k) => params.has(k) && !(flat && (k === "detail" || k === "radial")))
+  // behold#922: `plan` picks a snapshot of /api/graph (the cards' plan facts) and /api/search only; #404's one-shot plan on an overlay replays the overlay as captured.
+  const planned = path === "/api/graph" || path === "/api/search";
+  const q = LENS_PARAMS.filter((k) => params.has(k) && !(flat && (k === "detail" || k === "radial")) && !(k === "plan" && !planned))
     .map((k) => `${k}=${params.get(k)}`)
     .join("&");
   return q ? `${path}?${q}` : path;
@@ -2020,7 +2022,7 @@ function wire(ir) {
 // the graph is the whole estate, framed on that member's box.
 // q, snapshot (#913, #914): the question the view asks and the recorded snapshot it reads. Carried in the URL and
 // moved by an agent; nothing draws q until #913's search read lands.
-const view = { member: null, env: null, gates: null, focus: null, run: null, q: null, snapshot: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false, collapse: false, alike: true, compareTo: null };
+const view = { member: null, env: null, gates: null, focus: null, run: null, q: null, snapshot: null, plan: false, countBy: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false, collapse: false, alike: true, compareTo: null };
 
 // #182: `components` is the boot default, but a project that declares no
 // components renders it as ZERO nodes — the first screen was a blank graph
@@ -3026,6 +3028,10 @@ function applyWantedView(want) {
   if ("q" in apply) view.q = apply.q; // #914 carries it; #913 draws it (drawQuery)
   if ("snapshot" in apply) view.snapshot = apply.snapshot;
   if (!view.env) view.snapshot = null; // a snapshot is of an env: the source graph has none
+  // behold#922: the plan read (the cards' plan facts, q at the plan depth) and q's grouping.
+  if ("plan" in apply) view.plan = apply.plan;
+  if (view.plan) view.snapshot = null; // settleView refuses the two together; a plan is now
+  if ("countBy" in apply) view.countBy = apply.countBy;
   if (want.member === null) {
     view.member = null;
     selectedNodeId = null;
@@ -3039,7 +3045,7 @@ function applyWantedView(want) {
   return fetchKey() !== before;
 }
 function fetchKey() {
-  return [view.env, zoomValue(), view.tier, view.radial, view.alike].join("|");
+  return [view.env, zoomValue(), view.tier, view.radial, view.alike, view.plan].join("|"); // plan: behold#922's plan facts on the cards
 }
 
 // #476: the host moves the view with a `behold:view` message carrying the same
@@ -3404,6 +3410,12 @@ function clearQueryMarks(svg) {
     if (t) t.remove();
   }
   for (const el of svg.querySelectorAll("[data-q-unobserved]")) el.removeAttribute("data-q-unobserved");
+  // behold#922: a counts answer's group colours and labels.
+  for (const el of svg.querySelectorAll("[data-q-group]")) {
+    el.removeAttribute("data-q-group");
+    el.style.removeProperty("--q-group");
+  }
+  for (const el of svg.querySelectorAll(".q-group-label")) el.remove();
 }
 async function drawQuery() {
   const key = searchKey(view);
@@ -3440,6 +3452,7 @@ async function drawQuery() {
   edgeEls.forEach((g, i) => {
     if (marks.edgeMarks[i]) g.setAttribute("data-q", marks.edgeMarks[i]);
   });
+  drawGroups(svg, answer, cardEls);
   if (embedOpts.bare) return; // a bare frame has no chrome: the shot frame draws its own caption
   const line = queryLine(view, answer, marks);
   let el = lineEl;
@@ -3461,6 +3474,38 @@ async function drawQuery() {
     ns.className = "q-line-not-searched";
     ns.textContent = line.notSearched;
     el.appendChild(ns);
+  }
+}
+
+/**
+ * behold#922: a counts answer drawn: each group's cards outlined in the
+ * group's colour, and the group's first drawn card labelled with the group
+ * and chant's count (web/search-view.js groupMarks). The cards are already
+ * lit by drawQuery; this says which group each is in.
+ */
+function drawGroups(svg, answer, cardEls) {
+  if (!svg) return;
+  const gm = groupMarks(answer, new Set(cardEls.map((g) => g.getAttribute("data-node-id"))));
+  if (!gm.groups.length) return;
+  const byId = new Map(cardEls.map((g) => [g.getAttribute("data-node-id"), g]));
+  for (const [id, i] of gm.cardGroup) {
+    const g = byId.get(id);
+    g.setAttribute("data-q-group", gm.groups[i].group);
+    g.style.setProperty("--q-group", gm.groups[i].colour);
+  }
+  for (const grp of gm.groups) {
+    const g = grp.label && byId.get(grp.label);
+    const rect = g && g.querySelector(":scope > rect");
+    if (!rect) continue;
+    const x = Number(rect.getAttribute("x") || 0);
+    const y = Number(rect.getAttribute("y") || 0);
+    const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    t.setAttribute("class", "q-group-label");
+    t.setAttribute("x", String(x));
+    t.setAttribute("y", String(y - 4));
+    t.setAttribute("fill", grp.colour);
+    t.textContent = groupLabel(grp);
+    g.appendChild(t);
   }
 }
 
@@ -3541,6 +3586,8 @@ function syncViewUrl() {
     run: view.run,
     q: view.q,
     snapshot: view.snapshot,
+    plan: view.plan,
+    countBy: view.countBy,
   };
   const defaults = { env: defaultEnv(manifest && manifest.opening, projectInfo && projectInfo.currentEnv), lens: savedColourMode };
   const next = location.pathname + writeViewQuery(location.search, state, defaults) + location.hash;
@@ -6664,7 +6711,8 @@ function shotFrameApply(failed = !!document.querySelector("#graph > .err")) {
   // behold#913: chant's own provenance line, and its failure, when a query was asked.
   const qFailure = qa ? (qa.draw ? qa.draw.failure && [qa.draw.failure.message, qa.draw.failure.hint].filter(Boolean).join(". ") : qa.error || "the search failed") : null;
   cap.textContent = shotCaption({
-    query: params.get("q"),
+    query: params.get("q") || (params.get("countBy") ? "the whole graph" : null),
+    counts: qa && qa.draw && qa.draw.counts ? countsLine(qa.draw.counts) : null,
     label: lit.label,
     provenance: (qa && qa.draw && qa.draw.provenance) || shotProvenance({ env: view.env, snapshot: params.get("snapshot") }),
     failure: state === "failed" ? (err ? (err.textContent || "the graph failed to draw").split("\n")[0] : qFailure || "the graph failed to draw") : null,
@@ -10674,11 +10722,11 @@ async function loadOnce(opts = {}, isCurrent = () => true) {
       if (view.runtime) q.set("runtime", "1");
       // #404: the attribute-drift read, when this load is the one the person
       // asked for it on. Consumed here — the next load goes without it.
-      if (planDriftOnce) {
-        q.set("plan", "1");
+      if (planDriftOnce || view.plan) {
+        q.set("plan", "1"); // behold#922: a view with plan=1 reads the plan on every load
         planDriftOnce = false;
       }
-    } else if (terraformPlanOnce && !view.components) {
+    } else if ((terraformPlanOnce || view.plan) && !view.components) {
       // #910: the plan on the stock Terraform roots, read through chant onto
       // the source graph's cards. One-shot, like #404's above.
       q.set("plan", "1");
