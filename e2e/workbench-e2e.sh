@@ -355,6 +355,27 @@ while IFS=$'\x1f' read -r name env inplace local reason <&3; do
     jq_assert "$C" '(.ir.nodes | length) == 1 and (.ir.nodes[0].id | startswith("box:"))' "?collapse=1 draws the 301-card box as one summary card"
   fi
 
+  # #924: "Re-check live with plan" on the one cohort floci applies clean.
+  # Ownership and the plan come from one chant read at the plan depth, which
+  # hands its live-plan document back to behold under the OS temp directory.
+  # Clean as applied, so every card is bound and none carries a plan mark;
+  # the answer says a plan was read; and the served folder is byte-for-byte
+  # what it was (no chant.live-plan.json, no plan file). A chant below
+  # 0.124.46 reads no plan here, and that is said instead of asserted.
+  if [ "$name" = "choudoufu-cohort-iam-ecr" ]; then
+    snap() { ( cd "$TARGET" && find . -path ./.behold -prune -o -type f -print0 | sort -z | xargs -0 shasum | shasum ); }
+    s0="$(snap)"
+    P="$(api "$port" "/api/overlay?env=$env&plan=1")"
+    if printf '%s' "$P" | jq -e '.meta.drift.read == true' >/dev/null; then
+      jq_assert "$P" '.meta.drift.drifted == 0' "re-check with plan: read through chant, nothing would change on the clean estate"
+      jq_assert "$P" '([.ir.nodes[]|select(.attrs._status=="good")]|length) == 6' "re-check with plan: all 6 cards bound"
+    else
+      echo "  · re-check with plan read no plan (chant below 0.124.46, or no terraform lexicon) — not asserted"
+    fi
+    [ "$(snap)" = "$s0" ] || { echo "FAIL: $name: the re-check with plan changed the served folder" >&2; exit 1; }
+    echo "  ✓ re-check with plan left the served folder unchanged"
+  fi
+
   # #391: the adopt entry, twice — unowned before the by-hand import, bound
   # after it. The line run below is the one the up script printed into the
   # log; behold never runs it, and neither does the entry's setup.

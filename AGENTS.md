@@ -1960,21 +1960,36 @@ tag, path or mutability was changed out of band still carries its markers, so
 it is still bound, and it is still green.
 
 The other half of the terminal's answer ("would a plan change anything?") is
-a **separate, opt-in read**: `choudoufu plan -input=false -out=<tmp>` then
-`choudoufu show -json <tmp>`, whose `resource_changes[].change.{actions,before,
-after}` name the attributes and both their values. (`choudoufu plan -json` is
-NOT this: on 0.16.0 it prints choudoufu's own ownership document, the same
-shape as `live-plan -json`, with no attribute values in it at all. The
-measurement is in src/choudoufu-plan.ts's header.) The plan file is written to
-a scratch directory of behold's own and removed after rather than inside the served
-member, which would be a write into someone's source.
+a **separate, opt-in read**, and since #924 it goes through chant together with
+the ownership it is about (src/choudoufu-chant-read.ts): one `chant graph
+--live` over the member's `chdf` reader project at the plan depth
+(`CHANT_TERRAFORM_OBSERVE=plan`, INTENTIUS/chant#4371). chant runs `choudoufu
+live-plan -json` for ownership, then `choudoufu plan -input=false -lock=false
+-out=<its tmp>` and `show -json` for the attributes, and puts `planChanges`
+(live value `before`, declared value `after`) on each bound block. With
+`CHANT_TERRAFORM_LIVE_PLAN_DIR` set to a directory behold made under the OS
+temp directory (INTENTIUS/chant#4383), chant also hands back the `live-plan`
+document its verdicts came from, and behold paints ownership from that, so a
+re-check runs ONE `live-plan` per member and the plan sits on the same
+verdicts as the card. Nothing is written in the served member (chant writes
+its plan file and the handed document outside it, INTENTIUS/chant#4379).
+(`choudoufu plan -json` is not this read: on 0.16.0 it prints choudoufu's own
+ownership document with no attribute values in it at all, measured in #404.)
+On a live root drift IS the planned `update`: choudoufu rebuilds prior state
+from the account, so chant's `planDrift` is empty there and is not read. A
+path chant finds flagged sensitive on either side is `(sensitive)` on both,
+and so is every copy of a flagged string (`tags_all`): a choudoufu plan flags
+a sensitive variable's value on `after` only, with the old secret unflagged in
+`before`. Floor: `CHOUDOUFU_PLAN_CHANT_FLOOR` (0.124.46); below it, or with no
+terraform lexicon, a re-check paints from behold's own `live-plan` and reads
+no plan.
 
 It is opt-in because it costs differently: the ownership read is answered out
 of the tagging index and is flat in the estate's size, while `plan` refreshes
 every resource, one provider read per card, 301 of them on `terralith-4`. So:
 
 - **Never on an ordinary overlay read.** `GET /api/overlay?plan=1` and
-  `GET /api/diff?plan=1` are the only things that spawn one, and the palette's
+  `GET /api/diff?plan=1` are the only things that read one, and the palette's
   **"Re-check live with plan (attribute drift)"** row is the only thing in the
   SPA that sends the flag. The cheap **"Re-check live (refresh drift)"** row is
   deliberately left alone — it is `POST /api/refresh`, a primary-only re-observe
@@ -1982,7 +1997,7 @@ every resource, one provider read per card, 301 of them on `terralith-4`. So:
 - **Cached under the member's source stamp**, the same key half `memberIr`
   uses. A read that did NOT ask is served that stored answer, so a reload after
   a refresh keeps showing the drift without paying for a second pass; a read
-  that DID ask always re-plans, because "re-check" means re-check.
+  that DID ask always re-reads both halves, because "re-check" means re-check.
 - **The ownership verdict stays the card's colour.** A bound card that drifted
   is still painted bound and still counted `bound`; it gains `attrs._planDrift`
   and wears a dashed `--degraded` edge plus a `~ n attributes` corner glyph
@@ -2017,13 +2032,10 @@ same facts per card as JSON.
   lexicon; below it the read is refused with the upgrade line.
 - **A planned create has no facts**: it reads absent at the plan depth
   (chant#4372), so its card carries nothing from the plan.
-- **choudoufu members keep #404's read** (src/choudoufu-plan.ts). chant reads a
-  live root at the plan depth since chant#4371 (`sources: "live+plan"`), but
-  behold reads choudoufu ownership itself (src/choudoufu-live.ts), and taking
-  only the plan from chant would add a third refresh and a second `live-plan`.
-  Both move together in #924. A path flagged sensitive on either side is
-  redacted on both, and so is any attribute holding a flagged string: a
-  choudoufu plan flags a sensitive variable's value on `after` only.
+- **choudoufu members read ownership and the plan through chant together**
+  (src/choudoufu-chant-read.ts, #924): src/choudoufu-plan.ts is gone, and a
+  re-check's `live-plan` is chant's, handed back to behold. See the choudoufu
+  section above.
 
 ### A lexicon behold draws but cannot aim (#430)
 
