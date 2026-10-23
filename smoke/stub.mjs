@@ -19,6 +19,9 @@ import { carveReportToIr } from "../src/carve-lens.ts";
 // #230 M3: the same reader the server uses, so the stub's carve state is the
 // real shape rather than a hand-cut echo of it.
 import { carveStateOf, carveStatePayload } from "../src/carve-manifest.ts";
+// #914: POST /api/view is answered by the server's own decision (src/view-move.ts), so the
+// smoke drives the route's real settle, refusals and event, end to end with the real SPA.
+import { moveView } from "../src/view-move.ts";
 
 const WEB = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 
@@ -776,8 +779,10 @@ export const WARM_ANSWER_DELAY_MS = 400;
 
 export function startStub(port, { carve = false, nonChant = false, choudoufu = false, behaviour = null, why = false, warmFrames = false } = {}) {
   if (warmFrames) choudoufu = true;
-  /** warmFrames: the open /api/events streams, so the stub can write a frame to them. */
+  /** The open /api/events streams: warmFrames writes a frame to them, and #914's POST /api/view a `view` event. */
   const streams = [];
+  /** #914: every POST /api/view and what it answered. */
+  const viewPosts = [];
   // #471: the why estate is the choudoufu estate served as a declared
   // workspace, whose member is terralith-4.
   if (why) choudoufu = true;
@@ -1090,7 +1095,33 @@ export function startStub(port, { carve = false, nonChant = false, choudoufu = f
       res.writeHead(200, { "content-type": "text/event-stream" });
       res.write(": open\n\n");
       streams.push(res);
+      req.on("close", () => {
+        const i = streams.indexOf(res);
+        if (i >= 0) streams.splice(i, 1);
+      });
       return; // held open — the SPA's EventSource stays quiet, except for a warmFrames stub
+    }
+    // #914: an agent moves every open tab. The default estate's envs are the offer, as /api/project lists them.
+    if (path === "/api/view" && req.method === "POST") {
+      let body = null;
+      try {
+        body = JSON.parse(await readBody(req));
+      } catch {
+        body = null;
+      }
+      const answer = moveView(body, {
+        public: false,
+        preview: false,
+        offer: { envs: JSON_ROUTES["/api/project"].environments },
+        tabs: streams.length,
+        origin: `http://${req.headers.host}`,
+        defaultEnv: JSON_ROUTES["/api/project"].currentEnv,
+        userAgent: req.headers["user-agent"] ?? null,
+      });
+      if (answer.event) for (const stream of streams) stream.write(`event: view\ndata: ${JSON.stringify(answer.event)}\n\n`);
+      viewPosts.push({ body, status: answer.status, answer: answer.body });
+      res.writeHead(answer.status, { "content-type": "application/json" });
+      return res.end(JSON.stringify(answer.body));
     }
     // #284 item 2 — the delegated gate signal the pending card's Approve button
     // performs, and the gateState re-read it does straight after. The re-read
@@ -1230,5 +1261,6 @@ export function startStub(port, { carve = false, nonChant = false, choudoufu = f
   server.logGets = logGets; // when the converge history was read (#234, chant#2029)
   server.doctorGets = doctorGets; // that the SPA asks what the last read cost (#421)
   server.whyGets = whyGets; // when a why was read (#471)
+  server.viewPosts = viewPosts; // what POST /api/view answered (#914)
   return new Promise((resolve) => server.listen(port, () => resolve(server)));
 }

@@ -1841,6 +1841,78 @@ try {
     }
   }
 
+  // #914: an agent moves the open tabs. POST /api/view on a stub that answers
+  // it with the server's own decision (src/view-move.ts); two full tabs move
+  // through /api/events within a second, say who asked what and when, and
+  // step back with the banner's Back and the browser's. An embedded frame
+  // with a host stays where its host put it.
+  {
+    const VPORT = PORT + 10;
+    const viewServer = await startStub(VPORT);
+    const base = `http://localhost:${VPORT}`;
+    const tabA = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+    const tabB = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+    const framed = await browser.newPage({ viewport: { width: 900, height: 600 } });
+    const viewErrors = [];
+    for (const p of [tabA, tabB, framed]) p.on("pageerror", (e) => viewErrors.push(String(e)));
+    const moveTo = (view, by = "smoke-agent") =>
+      fetch(`${base}/api/view`, { method: "POST", headers: { "content-type": "application/json", "user-agent": "smoke/1" }, body: JSON.stringify({ view, ...(by ? { by } : {}) }) }).then(async (r) => ({ status: r.status, body: await r.json() }));
+    const qOf = (p) => new URL(p.url()).searchParams.get("q");
+    const banner = (p) => p.evaluate(() => {
+      const el = document.getElementById("agent-banner");
+      return el && !el.hidden ? el.querySelector(".agent-banner-text").textContent : null;
+    });
+    try {
+      const none = await moveTo({ q: "kind:Bucket" });
+      check("#914: with no tab open, the route answers 409 no-tab with the link", none.status === 409 && none.body.code === "no-tab" && none.body.link === `${base}/?q=kind%3ABucket`);
+      for (const [p, q] of [[tabA, "/?zoom=resources"], [tabB, "/"], [framed, "/?embed=1&host=http%3A%2F%2Flocalhost%3A9999"]]) {
+        await p.goto(base + q);
+        await p.waitForSelector("#graph svg [data-node-id]", { timeout: 20000 });
+      }
+      await tabA.waitForTimeout(300);
+      const urlBefore = tabA.url();
+      const lenBefore = await tabA.evaluate(() => history.length);
+      const t0 = Date.now();
+      const moved = await moveTo({ q: "attr:internetFacing=true", env: "prod" });
+      await Promise.all([tabA, tabB].map((p) => p.waitForFunction(() => { const el = document.getElementById("agent-banner"); return el && !el.hidden; }, null, { timeout: 1000 })));
+      const took = Date.now() - t0;
+      check(`#914: POST /api/view answers 200 and reaches all three open streams (${moved.body.sent})`, moved.status === 200 && moved.body.sent === 3 && typeof moved.body.movedAt === "string" && !("at" in moved.body));
+      check(`#914: both tabs show the move within one second (${took} ms)`, took < 1000);
+      check("#914: …and both carry the view in their URL", [tabA, tabB].every((p) => qOf(p) === "attr:internetFacing=true" && new URL(p.url()).searchParams.get("env") === "prod"));
+      const line = await banner(tabA);
+      check("#914: the banner says who asked which query, when, and which request", /^Moved by an agent: smoke-agent asked `attr:internetFacing=true` at \d\d:\d\d:\d\d \(request [0-9a-f]+\)\.$/.test(line || "") && line.includes(moved.body.id));
+      check("#914: the agent's move pushed a history entry", (await tabA.evaluate(() => history.length)) === lenBefore + 1);
+      await tabA.screenshot({ path: join(SHOTS, "agent-move-banner.png") });
+      await framed.waitForTimeout(300);
+      check("#914: an embedded frame with a host is not moved", qOf(framed) === null && (await banner(framed)) === null);
+
+      // A second move, then the banner's Back and the browser's Back.
+      const second = await moveTo({ q: "kind:Bucket" }, null);
+      await tabA.waitForFunction((id) => document.getElementById("agent-banner")?.dataset.request === id, second.body.id, { timeout: 1000 });
+      check("#914: by defaults to the User-Agent's product token", (await banner(tabA)).startsWith("Moved by an agent: smoke/1 asked `kind:Bucket`"));
+      await tabA.click("#agent-banner .agent-banner-back");
+      await tabA.waitForFunction(() => new URL(location.href).searchParams.get("q") === "attr:internetFacing=true", null, { timeout: 2000 });
+      check("#914: the banner's Back returns to the view before the move, and names that move", (await banner(tabA)).includes("smoke-agent asked `attr:internetFacing=true`"));
+      await tabA.evaluate(() => history.back());
+      await tabA.waitForFunction(() => !new URL(location.href).searchParams.has("q"), null, { timeout: 2000 });
+      await tabA.waitForTimeout(300);
+      check("#914: the browser's Back returns to the person's own view, banner gone", tabA.url() === urlBefore && (await banner(tabA)) === null);
+      // The person's own change replaces the entry they are on, as before.
+      const lenOwn = await tabA.evaluate(() => history.length);
+      await tabA.click('#panel-tabs button[data-tab="view"]');
+      await tabA.locator("#panel-zoom button", { hasText: /^logical$/ }).click();
+      await tabA.waitForTimeout(500);
+      check("#914: the person's own change keeps replaceState", (await tabA.evaluate(() => history.length)) === lenOwn && new URL(tabA.url()).searchParams.get("zoom") === "logical");
+      const bad = await moveTo({ q: "a\nb", at: "abc" });
+      check("#914: a refused view names each key and moves nothing", bad.status === 400 && bad.body.refused.map((r) => r.key).join(",") === "at,q");
+      check("#914: no page errors in the moved tabs", viewErrors.length === 0);
+      if (viewErrors.length) console.error("view-move page errors:", viewErrors);
+    } finally {
+      for (const p of [tabA, tabB, framed]) await p.close();
+      viewServer.close();
+    }
+  }
+
   // #421: the cost line, end to end. The SPA asks what the last read cost after
   // a load settles, so a boot alone proves the wiring — and the element has to
   // be there for the next load to have somewhere to put the sentence.

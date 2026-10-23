@@ -121,6 +121,7 @@ export const TERRAGUCCI_ALLOWED_WRITES: readonly { method: string; pattern: RegE
   { method: "POST", pattern: /^\/api\/project\/reveal$/, why: "opening the served directory in the file manager" },
   { method: "POST", pattern: /^\/api\/demos\/open$/, why: "loading a bundled demo into a copy behold makes, and serving it" },
   { method: "POST", pattern: /^\/api\/refresh$/, why: "dropping behold's caches" },
+  { method: "POST", pattern: /^\/api\/view$/, why: "moving the open tabs' view, which writes nothing (#914)" },
   { method: "POST", pattern: /^\/api\/carve\/emit$/, why: "the carve walkthrough's scratch directory" },
   { method: "POST", pattern: /^\/api\/carve\/bridge$/, why: "the carve walkthrough's scratch directory" },
   { method: "POST", pattern: /^\/api\/carve\/observe$/, why: "the carve walkthrough's read of its scratch emulator" },
