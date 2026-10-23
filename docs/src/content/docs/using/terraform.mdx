@@ -3,7 +3,6 @@ title: Look at a Terraform estate
 description: Draw a multi-root Terraform estate. What behold reads, what it refuses to infer, and where the live half is not.
 prompt: |
   Read https://intentius.io/behold/using/terraform/.
-  Install the two packages the page names beside behold.
   Serve this repository's Terraform with `npx @intentius/behold serve <dir>` and tell me the URL.
   List the roots it found and each directory it skipped, and why.
   Never deploy with the Deploy button, `POST /api/apply` or `POST /api/ci/dispatch`. Gate approvals stay mine as well (`/api/ops/:name/signal/:gate`, `/api/workspace/gates/approve`, `/api/operator/approve/:op/:gate`). Op runs (`/api/ops/:name/run`) and rollbacks (`/api/rollback`) are mine too. Leave `--auto-sync` off, and keep a `behold preview` or `--public` serve read-only.
@@ -11,16 +10,20 @@ prompt: |
 
 import { Aside } from '@astrojs/starlight/components';
 
-behold draws a directory of `.tf` files the way it draws a chant project: roots
-as boxes, resources as cards, and the references the configuration actually
-states as edges.
+In a folder of `.tf` files, one command draws it:
 
 ```sh
-npx @intentius/behold demo terraform-estate     # the bundled estate
-npx @intentius/behold serve ./infra             # your own
+npx @intentius/behold serve .
 ```
 
-No cloud account, no Docker, no `terraform` binary.
+Nothing else is installed or run first. behold draws the folder the way it
+draws a chant project: roots as boxes, resources as cards, and the references
+the configuration actually states as edges. No cloud account, no Docker, no
+`terraform` binary. To see the bundled estate instead of your own:
+
+```sh
+npx @intentius/behold demo terraform-estate
+```
 
 ## behold parses no HCL
 
@@ -29,21 +32,22 @@ reads the HCL an estate already has and emits one entity per block, so **a
 Terraform estate is a chant project whose only lexicon is a reader**, and
 `chant graph` serves it like any other. behold ships no HCL parser and never has.
 
-The lexicon and the `@cdktn/hcl2json` wasm blob underneath it are **optional
-peers**: declared in behold's `package.json`, never installed by it, probed when
-you serve, and refused with one install line and where behold looked.
+The lexicon and `@cdktn/hcl2json`, the ~1.8 MB wasm HCL parser chant loads
+when it reads a root, are dependencies of behold, so `npx` installs them with
+it. They add about 8 MB to behold's install (#909).
+
+behold still checks for both before it serves a Terraform folder. chant itself
+warns, exits 0 and prints an empty graph when the parser is missing, so an
+install that skipped or pruned them (`npm install --omit`, a trimmed container
+image) is refused instead, with where behold looked and one install line:
 
 ```sh
-npm install --no-save @intentius/chant-lexicon-terraform@^0.124.0 @cdktn/hcl2json@^0.24.0
+npm install @intentius/chant-lexicon-terraform@^0.124.38 @cdktn/hcl2json@^0.24.0
 ```
 
-That keeps a ~1.8 MB parser out of the install of everyone who serves an
-ordinary chant project.
-
-The tested ranges are the ones above. The lexicon's minor has to be behold's
-chant's (0.124): each lexicon release asks for its own chant minor as a peer,
-so installing an older one puts a second chant in the tree and the lexicon
-where behold's reader does not look.
+The lexicon's minor has to be behold's chant's (0.124): each lexicon release
+asks for its own chant minor as a peer, so an older one puts a second chant in
+the tree and the lexicon where behold's reader does not look.
 
 <Aside type="note" title="Nothing is written under your estate">
 chant resolves a lexicon from its config file's location, so behold generates

@@ -61,7 +61,7 @@ describe("demos.json — the committed catalog (#209)", () => {
     // and listing them would be a second roster to keep in step.
     expect(tf!.serve.dirs).toBeUndefined();
     expect(tf!.serve.env).toBeUndefined();
-    // The lexicon behold does not install is named where someone will read it.
+    // The lexicon the estate reads through is named where someone will read it.
     expect(tf!.description).toContain("@intentius/chant-lexicon-terraform");
   });
 

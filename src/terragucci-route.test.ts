@@ -5,8 +5,8 @@ import { join } from "node:path";
 import type { GraphIR } from "@intentius/chant";
 
 // #490: the routes over terragucci's example. The one seam mocked is the
-// estate read, which needs chant's terraform lexicon (an optional peer, so CI
-// has none): it answers the IR recorded from the real read of the example.
+// estate read, which needs chant's terraform lexicon and a real chant run: it
+// answers the IR recorded from the real read of the example.
 vi.mock("./estate.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./estate.ts")>()),
   composeEstate: vi.fn(),

@@ -13,8 +13,9 @@
  * plan command chant ran. With BEHOLD_SHIM_FAIL_PLAN=1 the shim answers
  * `plan` as a provider with no credentials does, which is the fallback case.
  *
- * Gated three ways, each skipped with its reason: the optional peers
- * (required in CI's `peers` job), a chant at TERRAFORM_PLAN_CHANT_FLOOR or
+ * Gated three ways, each skipped with its reason: the terraform lexicon and
+ * @cdktn/hcl2json (behold dependencies since #909, absent only from a pruned
+ * install, required in CI's `peers` job), a chant at TERRAFORM_PLAN_CHANT_FLOOR or
  * newer (INTENTIUS/chant#4358), and `terraform` on PATH.
  */
 import { afterAll, describe, expect, it } from "vitest";
@@ -42,7 +43,7 @@ const chantMeets = meetsFloor(resolvedVersion("@intentius/chant"), TERRAFORM_PLA
 const which = spawnSync("sh", ["-c", "command -v terraform"], { encoding: "utf8" });
 const TERRAFORM = which.status === 0 ? which.stdout.trim() : undefined;
 const skip = (!peers && !REQUIRE_PEERS) || !chantMeets || !TERRAFORM;
-const why = `needs the optional peers, chant ${TERRAFORM_PLAN_CHANT_FLOOR} (INTENTIUS/chant#4358) and terraform on PATH`;
+const why = `needs the terraform lexicon and @cdktn/hcl2json, chant ${TERRAFORM_PLAN_CHANT_FLOOR} (INTENTIUS/chant#4358) and terraform on PATH`;
 
 const made: string[] = [];
 afterAll(() => {

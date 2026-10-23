@@ -17,7 +17,9 @@
 #
 # Needs: TERRAGUCCI=<a terragucci checkout> (its example/ is copied, never
 # written), and chant's terraform lexicon + @cdktn/hcl2json beside behold.
-# Exits 0 with "skip" when either is absent: CI has neither.
+# Exits 0 with "skip" when either is absent: CI has no terragucci checkout, and
+# the lexicon and parser are behold dependencies (#909), so only a pruned
+# install lacks them.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 PORT="${BEHOLD_E2E_PORT:-4698}"

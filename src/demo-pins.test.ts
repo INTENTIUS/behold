@@ -88,8 +88,8 @@ describe("linkDemoPins (#484)", () => {
   });
 });
 
-// The whole path, where the lexicon is installed beside behold (it is an
-// optional peer, so CI has none): a copy of the bundled demo, loaded the way
+// The whole path, where the lexicon is installed beside behold (a dependency
+// since #909; skipped only in an install that pruned it): a copy of the bundled demo, loaded the way
 // `behold demo` loads it, is one chant lists with both members readable.
 describe("behold demo terraform-estate, against chant (#484)", () => {
   const installed = resolvedPackage(LEXICON) && resolvedPackage("@cdktn/hcl2json");

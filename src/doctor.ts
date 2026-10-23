@@ -89,7 +89,7 @@ export interface DoctorProbes {
     version: () => ChoudoufuVersion | undefined;
     liveCheck: (dir: string) => Promise<LiveCheckParse>;
   };
-  /** The terraform reader's two optional peers and the root walk (#384),
+  /** The terraform reader's two packages and the root walk (#384),
    * injectable so a test needs neither installed. */
   terraform?: {
     reader: () => TerraformReaderState;
@@ -437,10 +437,10 @@ async function choudoufuCheck(root: string, members: { dir: string; abs: string 
  * The terraform line (#384), only on an estate with a terraform member: is the
  * reader here at all, and what did root discovery find.
  *
- * The reader is two optional peers behold deliberately does not install (see
- * src/terraform-member.ts's header — an HCL parser in every user's install is
- * the cost, and most users serve chant projects), so its absence is a fail with
- * the one install line, exactly as a missing choudoufu binary is. The roots are
+ * The reader is two packages behold installs as dependencies (#909, see
+ * src/terraform-member.ts's header). An install that skipped or pruned them
+ * would draw an empty graph with exit 0, so their absence is a fail with the
+ * one install line, exactly as a missing choudoufu binary is. The roots are
  * a pass that says what will be drawn and what was skipped, because a root
  * missing from the picture should be findable here rather than by counting
  * boxes.
