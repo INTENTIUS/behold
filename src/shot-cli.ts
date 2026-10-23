@@ -158,6 +158,21 @@ export async function localSearch(projectDir: string, query: URLSearchParams): P
   });
 }
 
+/**
+ * behold#926: GET /api/capabilities with no serve running, through behold's
+ * app started in this process for the one request. The body is chant's
+ * capabilities document as the route answered it, as text, so it reaches
+ * the agent byte for byte.
+ */
+export async function localCapabilities(projectDir: string): Promise<{ status: number; text: string }> {
+  if (!existsSync(projectDir)) throw new Error(`project not found at ${projectDir}`);
+  const cfg = await localServeOptions(projectDir);
+  return withLocalServe(cfg, async (base) => {
+    const res = await fetch(`${base}/api/capabilities`, { headers: { accept: "application/json" } });
+    return { status: res.status, text: await res.text() };
+  });
+}
+
 /** The default file: under the OS temp directory, never in the project. */
 export function defaultShotPath(now = new Date()): string {
   return join(tmpdir(), `behold-shot-${now.toISOString().replace(/[:.]/g, "-")}.png`);

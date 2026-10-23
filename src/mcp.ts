@@ -5,7 +5,8 @@
  * chant answers, behold draws (the read-contract ruling on behold#908): an
  * agent can ask its estate questions through chant's own MCP tool
  * `workspace-search` (INTENTIUS/chant#4374), and this server keeps the two
- * tools that draw, plus `ask`, which hands back chant's answer as it is:
+ * tools that draw, plus `ask` and `capabilities`, which hand back chant's
+ * answer and chant's catalog as they are:
  *
  * - `ask` returns chant's read-contract `search` document verbatim, with
  *   `link` (the view that draws it) and `drawn: false` added, through the
@@ -15,7 +16,12 @@
  *   `POST /api/view` (#914);
  * - `shot` returns a PNG of a view and its link, through the serve's
  *   `GET /api/shot` (#915), or, with no serve running, through a behold view
- *   started in this process for the length of the shot (src/shot-cli.ts).
+ *   started in this process for the length of the shot (src/shot-cli.ts);
+ * - `capabilities` (#926) returns chant's capability catalog, the read
+ *   contract's `capabilities` document (INTENTIUS/chant#4375), verbatim,
+ *   through the serve's `GET /api/capabilities`, or, with no serve, through
+ *   behold's app started in this process for the one request. An agent reads
+ *   it before it asks a `cap:` question.
  *
  * It is a thin client of a running serve's HTTP API: it holds no copy of the
  * query, view or shot logic, and a test fails if it imports any. It finds the
@@ -40,7 +46,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findServe, realDir, within } from "./serve-registry.ts";
-import { DEFAULT_LINK_BASE, localSearch, shotFromArgs } from "./shot-cli.ts";
+import { DEFAULT_LINK_BASE, localCapabilities, localSearch, shotFromArgs } from "./shot-cli.ts";
 import type { ShotRefusalBody, ShotRequest, ShotResult } from "./shot.ts";
 
 /** The serve `behold serve` starts when no port is given. */
@@ -116,9 +122,9 @@ export function refusal(name: string): string {
   const w = writeWord(name);
   const what = w ? `${name} would ${w}, and ` : `there is no tool ${name}; `;
   return (
-    `behold mcp draws and never changes anything: ${what}it serves ask, show and shot only. ` +
+    `behold mcp draws and never changes anything: ${what}it serves capabilities, ask, show and shot only. ` +
     "Deploys, approvals, Ops and rollbacks belong to a person in behold's panel or at a shell. " +
-    "Ask estate questions through chant's MCP tool workspace-search."
+    "Ask estate questions with ask, after reading the catalog with capabilities."
   );
 }
 
@@ -182,6 +188,8 @@ export interface Context {
   localShot(req: ShotRequest): Promise<ShotResult>;
   /** behold#916: GET /api/search with no serve: behold started in this process for the one request (src/shot-cli.ts). */
   localSearch(query: URLSearchParams): Promise<{ status: number; body: Record<string, unknown> }>;
+  /** behold#926: GET /api/capabilities with no serve, the body as text (src/shot-cli.ts). */
+  localCapabilities(): Promise<{ status: number; text: string }>;
 }
 
 const trimUrl = (u: string): string => u.replace(/\/+$/, "");
@@ -226,7 +234,7 @@ const SEARCH_OPTIONS =
   "The query is chant's search grammar, unchanged (https://intentius.io/chant/cli/search/). env reads that environment live (chant search --live --env <env>); " +
   "snapshot with env replays a recorded snapshot instead (chant --snapshot <ref>, such as latest); chant's --explain is always on, for the near-misses drawn. " +
   "It takes no --check-live or --check-snapshot (drift is not drawn), and no --ambient, --src or --fail-on-drift. " +
-  "To get the rows themselves, ask chant's MCP tool workspace-search; the capability catalog comes from chant once INTENTIUS/chant#4361 ships.";
+  "Read the capabilities tool first: it lists the capabilities a cap: term asks (cap:internet-reachable(22), ->[cap=network]), each one's meaning, parameters and rule (INTENTIUS/chant#4375).";
 
 const VIEW_PROPS: Record<string, Prop> = {
   query: { type: "string", description: "A chant search query whose matches the view lights, such as `attr:internetFacing=true`." },
@@ -403,6 +411,39 @@ export const TOOLS: Tool[] = [
       return { content: [{ type: "image", data: shot.png.toString("base64"), mimeType: "image/png" }, { type: "text", text: JSON.stringify(facts, null, 2) }] };
     },
   },
+  {
+    name: "capabilities",
+    description:
+      "Read this first. The capability catalog chant answers cap: terms with, for the estate behold serves: chant's read-contract capabilities document, verbatim " +
+      "(chant search --capabilities --json, INTENTIUS/chant#4375; chant workspace search --capabilities --json on a declared workspace). " +
+      "Each capability has its name, what it means, its parameters, the search term that asks it (cap:internet-reachable, ->[cap=network]), the questions it answers, " +
+      "what it does not evaluate, its rule, and which lexicons supply it. Then ask with that term; a cap: match's path is in its because hops, and show draws it. " +
+      "Uses the running behold serve of this project; with none, behold answers in this process. Takes no arguments. Needs chant 0.124.46 or newer.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: READ_ONLY,
+    async run(_a, ctx) {
+      const serve = await ctx.findServe();
+      let status: number;
+      let text: string;
+      if (serve?.ours) {
+        const res = await ctx.fetch(`${serve.url}/api/capabilities`, { headers: { accept: "application/json" } });
+        status = res.status;
+        text = await res.text();
+      } else {
+        ({ status, text } = await ctx.localCapabilities());
+      }
+      let body: Record<string, unknown> = {};
+      try {
+        const parsed = JSON.parse(text) as unknown;
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) body = parsed as Record<string, unknown>;
+      } catch {
+        // Not JSON: refused below with the status.
+      }
+      // chant's own document, a failure one included, goes back as chant printed it; a route refusal is a refusal.
+      if (body.contract === undefined) throw new ToolError(typeof body.error === "string" ? body.error : `GET /api/capabilities answered ${status}`, { status, ...body });
+      return { ...("error" in body || status !== 200 ? { isError: true } : {}), content: [{ type: "text", text }] };
+    },
+  },
 ];
 
 /** Answer one tools/call: a listed tool with its own arguments, or a refusal. */
@@ -444,10 +485,12 @@ export interface McpOptions {
   registry?: (dir: string) => { url: string; projectDir: string } | undefined;
   localShot?: (req: ShotRequest) => Promise<ShotResult>;
   localSearch?: Context["localSearch"];
+  localCapabilities?: Context["localCapabilities"];
 }
 
 export const INSTRUCTIONS =
-  "behold draws a Terraform or chant estate in the person's browser. ask returns chant's answer to an estate question (its search document, the one chant's own MCP tool workspace-search returns, verbatim, plus the link to the view); " +
+  "behold draws a Terraform or chant estate in the person's browser. Read capabilities first: chant's capability catalog, what each cap: term means and asks. " +
+  "ask returns chant's answer to an estate question (its search document, verbatim, plus the link to the view); " +
   "then use show to move the person's open behold tab to the matches, or shot to get a PNG of them and the link. " +
   "Nothing here deploys, approves, runs an Op, rolls back or writes; a person does that.";
 
@@ -467,6 +510,7 @@ export async function serveMcp(o: McpOptions, transport: Transport): Promise<Ser
     findServe: () => locateServe({ projectDir, projectGiven: o.projectGiven ?? true, ...(o.url ? { url: o.url } : {}), fetch, ...(o.registry ? { registry: o.registry } : {}) }),
     localShot: o.localShot ?? ((req) => shotFromArgs({ req, projectDir, linkBase: DEFAULT_LINK_BASE })),
     localSearch: o.localSearch ?? ((query) => localSearch(projectDir, query)),
+    localCapabilities: o.localCapabilities ?? (() => localCapabilities(projectDir)),
   };
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, annotations: t.annotations })),
@@ -478,17 +522,19 @@ export async function serveMcp(o: McpOptions, transport: Transport): Promise<Ser
 
 export const MCP_USAGE = `Usage: behold mcp [project-dir] [--url <serve> | --port <n>]
 
-  A stdio MCP server with three tools: ask returns chant's search document
-  for a query, verbatim, with the link to the view that draws it; show moves
-  the open behold tab to a view; shot returns a PNG of one with its link.
+  A stdio MCP server with four tools: capabilities returns chant's
+  capability catalog, verbatim, to read first; ask returns chant's search
+  document for a query, verbatim, with the link to the view that draws it;
+  show moves the open behold tab to a view; shot returns a PNG of one with
+  its link.
   chant answers and behold draws. Configure it in the agent,
   for example: claude mcp add behold -- npx @intentius/behold mcp <dir>
 
   It reaches the serve at --url (or http://127.0.0.1:--port), else the serve
   of project-dir (default: the current directory) that the per-user registry
   under the OS temp directory names, else http://127.0.0.1:4600. With no serve
-  running, show refuses with the command that starts one, and ask and shot
-  start behold in their own process. Nothing it does deploys, approves,
+  running, show refuses with the command that starts one, and capabilities,
+  ask and shot start behold in their own process. Nothing it does deploys, approves,
   runs an Op, rolls back or writes.
 `;
 

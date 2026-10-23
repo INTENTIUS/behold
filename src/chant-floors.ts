@@ -157,6 +157,15 @@ export const GRAPH_LINT_REPORT_CHANT_FLOOR = "0.124.46";
  * through it. Below it a query is refused: an older `search --json` has no
  * contract head, and an older chant has no workspace form to read. */
 export const SEARCH_CONTRACT_CHANT_FLOOR = "0.124.46";
+/** The first chant that prints its capability catalog as a read-contract
+ * document: `chant search --capabilities --json` in a project and `chant
+ * workspace search --capabilities --json` at a workspace root write the
+ * contract 1 `capabilities` document, each capability's name, meaning,
+ * parameters, rule and lexicon support (capabilities.schema.json,
+ * INTENTIUS/chant#4375). behold's `GET /api/capabilities` and behold mcp's
+ * `capabilities` tool pass it through (behold#926). Below it the catalog is
+ * refused: an older chant has no `--capabilities` and no `cap:` terms. */
+export const CAPABILITIES_CHANT_FLOOR = "0.124.46";
 
 export interface ChantFloor {
   /** The read, in words: `the why of a member or a card`. */
@@ -195,6 +204,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "search over a Terraform folder", floor: SEARCH_TERRAFORM_ROOTS_CHANT_FLOOR, adds: "chant search reads terraform.roots, as graph does (chant#4365)" },
   { read: "plan read on a Terraform root", floor: TERRAFORM_PLAN_CHANT_FLOOR, adds: "the terraform lexicon reads a saved plan as an observation depth, CHANT_TERRAFORM_OBSERVE=plan (chant#4358)" },
   { read: "search", floor: SEARCH_CONTRACT_CHANT_FLOOR, adds: "the read contract's search document, from chant search --json and chant workspace search (chant#4374)" },
+  { read: "capability catalog", floor: CAPABILITIES_CHANT_FLOOR, adds: "the capabilities document, from chant search --capabilities --json and chant workspace search --capabilities --json (chant#4375)" },
   { read: "a Terraform folder with lint errors", floor: GRAPH_LINT_REPORT_CHANT_FLOOR, adds: "graph.lint: \"report\" draws it, the findings on meta.lint (behold#919)", degraded: "a bare Terraform estate that lint finds errors in is refused, and the refusal says which chant draws it" },
   { read: "decision points", floor: DECISION_POINTS_CHANT_FLOOR, adds: "a gate that asks a decision point, read with chant workspace points --open (chant#3170)", degraded: "the gate strip draws no open decision points, and says which chant adds them" },
 ];

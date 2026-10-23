@@ -64,7 +64,7 @@ const nothingListens: Fetch = async (url) => {
   throw new TypeError(`fetch failed: connect ECONNREFUSED ${new URL(url).host}`);
 };
 
-function ctxOf(o: { projectDir: string; fetch: Fetch; url?: string; projectGiven?: boolean; registry?: McpOptions["registry"]; localShot?: Context["localShot"]; localSearch?: Context["localSearch"]; client?: string }): Context {
+function ctxOf(o: { projectDir: string; fetch: Fetch; url?: string; projectGiven?: boolean; registry?: McpOptions["registry"]; localShot?: Context["localShot"]; localSearch?: Context["localSearch"]; localCapabilities?: Context["localCapabilities"]; client?: string }): Context {
   return {
     projectDir: o.projectDir,
     projectGiven: o.projectGiven ?? true,
@@ -73,6 +73,7 @@ function ctxOf(o: { projectDir: string; fetch: Fetch; url?: string; projectGiven
     findServe: () => locateServe({ projectDir: o.projectDir, projectGiven: o.projectGiven ?? true, fetch: o.fetch, registry: o.registry ?? (() => undefined), ...(o.url ? { url: o.url } : {}) }),
     localShot: o.localShot ?? (async () => { throw new Error("no local shot expected"); }),
     localSearch: o.localSearch ?? (async () => { throw new Error("no local search expected"); }),
+    localCapabilities: o.localCapabilities ?? (async () => { throw new Error("no local capabilities read expected"); }),
   };
 }
 
@@ -80,8 +81,8 @@ const textOf = (r: CallToolResult): string => (r.content.find((c) => c.type === 
 const jsonOf = (r: CallToolResult): Record<string, unknown> => JSON.parse(textOf(r)) as Record<string, unknown>;
 
 describe("the tools behold mcp serves", () => {
-  it("are ask, show and shot, and nothing else: a new tool fails here until it is read for writes and listed", () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(["ask", "show", "shot"]);
+  it("are ask, show, shot and capabilities, and nothing else: a new tool fails here until it is read for writes and listed", () => {
+    expect(TOOLS.map((t) => t.name)).toEqual(["ask", "show", "shot", "capabilities"]);
   });
 
   it("each lists every argument, takes no other, carries annotations, and is never destructive", () => {
@@ -96,17 +97,24 @@ describe("the tools behold mcp serves", () => {
     expect(TOOLS.find((t) => t.name === "show")!.annotations).toEqual({ readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false });
     expect(TOOLS.find((t) => t.name === "shot")!.annotations.readOnlyHint).toBe(true);
     expect(TOOLS.find((t) => t.name === "ask")!.annotations.readOnlyHint).toBe(true);
+    // behold#926: the catalog is read-only and takes no argument at all.
+    expect(TOOLS.find((t) => t.name === "capabilities")!.annotations).toEqual({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
+    expect(TOOLS.find((t) => t.name === "capabilities")!.inputSchema.properties).toEqual({});
   });
 
-  it("each description says which chant search options it takes and which it doesn't", () => {
-    for (const t of TOOLS) {
+  it("each search tool's description says which chant search options it takes and which it doesn't, and to read the catalog first", () => {
+    for (const t of TOOLS.filter((t) => t.name !== "capabilities")) {
       expect(t.description).toContain("--live --env");
       expect(t.description).toContain("--snapshot");
       expect(t.description).toContain("--explain");
       expect(t.description).toContain("no --check-live");
-      expect(t.description).toContain("workspace-search");
-      expect(t.description).toContain("INTENTIUS/chant#4361");
+      expect(t.description).toContain("Read the capabilities tool first");
+      expect(t.description).toContain("INTENTIUS/chant#4375");
+      // The catalog has shipped (chant#4375), and workspace-search is out of reach on a bare Terraform folder.
+      expect(t.description).not.toContain("INTENTIUS/chant#4361");
+      expect(t.description).not.toContain("workspace-search");
     }
+    expect(TOOLS.find((t) => t.name === "capabilities")!.description).toMatch(/^Read this first\./);
   });
 });
 
@@ -130,7 +138,7 @@ describe("the write guard", () => {
     expect(r.isError).toBe(true);
     expect(textOf(r)).toContain("approve would approve");
     expect(refusal("search_all")).toContain("there is no tool search_all");
-    expect(refusal("search_all")).toContain("workspace-search");
+    expect(refusal("search_all")).toContain("capabilities");
   });
 });
 
@@ -370,9 +378,9 @@ describe("over the protocol", () => {
     const client = new Client({ name: "test-agent", version: "1" });
     await client.connect(clientSide);
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name)).toEqual(["ask", "show", "shot"]);
+    expect(tools.map((t) => t.name)).toEqual(["ask", "show", "shot", "capabilities"]);
     expect(tools[0].annotations).toMatchObject({ destructiveHint: false });
-    expect(client.getInstructions()).toContain("workspace-search");
+    expect(client.getInstructions()).toContain("Read capabilities first");
     const r = (await client.callTool({ name: "show", arguments: { node: "a" } })) as CallToolResult;
     expect(r.isError).toBe(true);
     expect(jsonOf(r).code).toBe("no-tab");

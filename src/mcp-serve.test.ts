@@ -51,7 +51,7 @@ describe("behold serve and behold mcp, as processes", () => {
     const transport = new StdioClientTransport({ command: TSX, args: ["src/cli.ts", "mcp", project], cwd: ROOT, env: env as Record<string, string>, stderr: "ignore" });
     const client = new Client({ name: "test-agent", version: "1" });
     await client.connect(transport);
-    expect((await client.listTools()).tools.map((t) => t.name)).toEqual(["ask", "show", "shot"]);
+    expect((await client.listTools()).tools.map((t) => t.name)).toEqual(["ask", "show", "shot", "capabilities"]);
     // No tab is open on the serve: the route's answer, from the serve the registry named.
     const r = (await client.callTool({ name: "show", arguments: { env: "prod", node: "a" } })) as CallToolResult;
     const body = JSON.parse((r.content[0] as { text: string }).text) as { code: string; link: string };

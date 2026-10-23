@@ -215,7 +215,7 @@ import { COLLISION_READ, collisionsFloorRefusal, readCollisions } from "./collis
 import { sqlYodelerLaneRoute } from "./sql-yodeler-lane.ts";
 import { cachedHealth, invalidateHealth, readHealthOverlay, rememberHealth, type HealthMember } from "./health-overlay.ts";
 import { rootReader } from "./workspace-reader.ts";
-import { SearchAskError, checkAsk, drawnOf, drawnUnder, runSearch, searchTarget, type SearchTarget } from "./search.ts";
+import { SearchAskError, checkAsk, drawnOf, drawnUnder, runCapabilities, runSearch, searchTarget, type SearchTarget } from "./search.ts";
 import { resolvedVersion } from "./terraform-member.ts";
 import { writeViewQuery } from "../web/view-url.js";
 import { controlRepoInfo, terragucciEstateRoutes } from "./terragucci-estate.ts";
@@ -2502,6 +2502,23 @@ export function createApp(
     return c.json({ ...view, document: read.document, draw: drawn, link });
   });
 
+  // behold#926: the capability catalog, for an agent to read before it asks a
+  // cap: question. chant's capabilities document (chant search
+  // --capabilities --json, chant#4375), byte for byte, from the same target a
+  // search asks, through the workspace reader and behind its floor.
+  app.get("/api/capabilities", async (c) => {
+    let target: SearchTarget;
+    try {
+      target = searchTargetNow();
+    } catch (e) {
+      if (e instanceof TerraformReadError) return c.json(e.refusal, 422);
+      throw e;
+    }
+    const read = await runCapabilities(target, (root) => rootReader(root));
+    if (!read.ok) return c.json(read.refusal, 422);
+    return c.body(JSON.stringify(read.document), "error" in read.document ? 422 : 200, { "content-type": "application/json; charset=UTF-8" });
+  });
+
   // #193: the API's front door, for agents. Everything the SPA can see is
   // plain JSON over these routes — this index makes them discoverable without
   // reading source. Shapes and the read/act loop: AGENTS.md (shipped in the
@@ -2531,6 +2548,11 @@ export function createApp(
           method: "GET",
           path: "/api/search",
           desc: "a chant search query over the served estate (behold#913): ?q=<query>&env=&snapshot=&show= -> {q, env, snapshot, document: chant's read-contract search document unchanged (chant workspace search on a declared workspace, chant search --json on one project or a Terraform folder), draw: what the page draws from it {lit, onPath, edges, unobserved, nearMisses, provenance, failure, notSearched}, link}; no env is the declared source, env is a live read, env+snapshot replays a recorded snapshot; --explain always on; 400 code query with chant's hint for a query chant refuses; 422 chant-too-old below chant 0.124.46; --public answers declared queries only",
+        },
+        {
+          method: "GET",
+          path: "/api/capabilities",
+          desc: "the capability catalog to read before asking a cap: question (behold#926): chant's read-contract capabilities document, byte for byte (chant workspace search --capabilities --json on a declared workspace, chant search --capabilities --json on one project or a Terraform folder): each capability's name, meaning, params, the search term that asks it, the questions it answers, its rule and which lexicons supply it; 422 chant-too-old below chant 0.124.46",
         },
         { method: "GET", path: "/api/graph", desc: "the graph {ir, svg, meta} — params: detail=0..3, components=1, logical=1, ops=1 (+entities=1 to link steps to the estate), env, stack, tier, target, lens, up=1, down=1, radial=1, layout=1" },
         ...(cfg.carveReport
