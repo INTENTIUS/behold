@@ -128,6 +128,68 @@ export const CI_RUN_LOCAL_CHANT_FLOOR = "0.124.32";
  * it could not read (INTENTIUS/chant#4177, chant PR #4188). Health and
  * rotation on the graph (#825). Below it the graph draws no health marks. */
 export const HEALTH_CHANT_FLOOR = "0.124.33";
+/** The first chant whose `search` reads the entities a lexicon contributes
+ * from build roots, as `graph` does: a Terraform folder's `terraform.roots`
+ * in behold's generated scratch config (INTENTIUS/chant#4365, found by #911).
+ * Below it `chant search` answers `(no matches)` there for every query, so a
+ * question asked of a bare Terraform folder (#908) has no rows to draw. */
+export const SEARCH_TERRAFORM_ROOTS_CHANT_FLOOR = "0.124.46";
+/** The first chant whose terraform lexicon reads a saved plan as an
+ * observation depth: `CHANT_TERRAFORM_OBSERVE=plan` puts each block's planned
+ * action, replace reason and forcing attribute paths, unknown-until-apply
+ * paths, changes and drift on the IR, with sensitive values redacted, and the
+ * plan runs with `-lock=false` (INTENTIUS/chant#4358). The cards' plan facts
+ * on a stock Terraform root (#910). Below it `?plan=1` is refused for a
+ * terraform member and the cards show the configuration only. */
+export const TERRAFORM_PLAN_CHANT_FLOOR = "0.124.46";
+/** The first chant whose terraform lexicon reads a choudoufu live root at the
+ * plan depth, the plan's attributes on the blocks `live-plan` bound with
+ * `-lock=false` and a value flagged sensitive on either side redacted on both
+ * (INTENTIUS/chant#4371), and hands the `live-plan -json` document that read
+ * used to a directory the caller names, CHANT_TERRAFORM_LIVE_PLAN_DIR
+ * (INTENTIUS/chant#4383), writing nothing into the root (INTENTIUS/chant#4379).
+ * A choudoufu member's "Re-check live with plan" reads ownership and the plan
+ * through it, one `live-plan` for both (#924). Below it `?plan=1` paints
+ * ownership from behold's own `live-plan` and reads no plan. */
+export const CHOUDOUFU_PLAN_CHANT_FLOOR = "0.124.46";
+/** The first chant whose `graph` honours `graph.lint: "report"` in a project's
+ * config: it draws source that lint finds errors in and carries the findings
+ * on `meta.lint`, each with the `entity` it is about (INTENTIUS/chant commit
+ * 010c3f99c on epic/908-ask-your-agent, for #919). behold's scratch config for
+ * a bare Terraform folder sets it. Below it chant ignores the key, and an
+ * estate with an error-severity finding is refused as before. */
+export const GRAPH_LINT_REPORT_CHANT_FLOOR = "0.124.46";
+/** The first chant whose `search --json` prints the read contract's `search`
+ * document (contract 1, `$schema`, coded failures, search.schema.json) and
+ * that has `chant workspace search`, which composes a declared workspace's
+ * members with `workspace graph`'s `<member>/<id>` ids (INTENTIUS/chant#4374,
+ * on chant's epic/908-ask-your-agent at d239908c7). behold#913 draws `q`
+ * through it. Below it a query is refused: an older `search --json` has no
+ * contract head, and an older chant has no workspace form to read. */
+export const SEARCH_CONTRACT_CHANT_FLOOR = "0.124.46";
+/** The first chant that searches a bare Terraform folder the way behold#925
+ * reads it: `chant workspace search` at behold's one-member scratch workspace,
+ * whose member is the generated project naming the folder's roots. It needs
+ * `chant workspace search` (INTENTIUS/chant#4374), `search` reading
+ * `terraform.roots` (INTENTIUS/chant#4365), and the release that makes
+ * `workspace search` read Terraform members and name a member whose kind is
+ * unknown (INTENTIUS/chant#4380). Below it a query on a bare Terraform folder
+ * is refused. */
+export const SEARCH_TERRAFORM_WORKSPACE_CHANT_FLOOR = "0.124.46";
+/** The first chant whose `search --count-by --json` lists each group's matched
+ * ids (`groups[].ids`, INTENTIUS/chant#4382, on chant's epic/908-ask-your-agent
+ * at ab5b422fc). behold#922 lights each group's cards from them. Below it the
+ * groups and the total are still shown, and nothing is lit. */
+export const SEARCH_COUNT_BY_IDS_CHANT_FLOOR = "0.124.46";
+/** The first chant that prints its capability catalog as a read-contract
+ * document: `chant search --capabilities --json` in a project and `chant
+ * workspace search --capabilities --json` at a workspace root write the
+ * contract 1 `capabilities` document, each capability's name, meaning,
+ * parameters, rule and lexicon support (capabilities.schema.json,
+ * INTENTIUS/chant#4375). behold's `GET /api/capabilities` and behold mcp's
+ * `capabilities` tool pass it through (behold#926). Below it the catalog is
+ * refused: an older chant has no `--capabilities` and no `cap:` terms. */
+export const CAPABILITIES_CHANT_FLOOR = "0.124.46";
 
 export interface ChantFloor {
   /** The read, in words: `the why of a member or a card`. */
@@ -163,6 +225,13 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "declared CI report URL", floor: CI_REPORT_URL_CHANT_FLOOR, adds: "workspace ls ci.reportUrl, the declaration's report URL (chant#4160)", degraded: "the runs pane reads chant's run index only when serve is given --ci-report-url" },
   { read: "local CI run", floor: CI_RUN_LOCAL_CHANT_FLOOR, adds: "chant ci run --local (chant#4161)" },
   { read: "runtime health", floor: HEALTH_CHANT_FLOOR, adds: "chant lifecycle health --json, a chant-health/v1 document (chant#4177)", degraded: "the graph draws no health marks and no record out of rotation" },
+  { read: "search over a Terraform folder", floor: SEARCH_TERRAFORM_WORKSPACE_CHANT_FLOOR, adds: "chant workspace search over a one-member workspace whose member reads terraform.roots (chant#4365, chant#4374, chant#4380)" },
+  { read: "plan read on a Terraform root", floor: TERRAFORM_PLAN_CHANT_FLOOR, adds: "the terraform lexicon reads a saved plan as an observation depth, CHANT_TERRAFORM_OBSERVE=plan (chant#4358)" },
+  { read: "groups lit by count", floor: SEARCH_COUNT_BY_IDS_CHANT_FLOOR, adds: "chant search --count-by --json lists each group's ids (chant#4382)", degraded: "the groups and the total are listed and no card is lit" },
+  { read: "search", floor: SEARCH_CONTRACT_CHANT_FLOOR, adds: "the read contract's search document, from chant search --json and chant workspace search (chant#4374)" },
+  { read: "plan read on a choudoufu member", floor: CHOUDOUFU_PLAN_CHANT_FLOOR, adds: "the plan depth on a live choudoufu root (chant#4371) and its live-plan document handed back (chant#4383)", degraded: "Re-check live with plan re-reads ownership and draws no plan marks on a choudoufu member" },
+  { read: "capability catalog", floor: CAPABILITIES_CHANT_FLOOR, adds: "the capabilities document, from chant search --capabilities --json and chant workspace search --capabilities --json (chant#4375)" },
+  { read: "a Terraform folder with lint errors", floor: GRAPH_LINT_REPORT_CHANT_FLOOR, adds: "graph.lint: \"report\" draws it, the findings on meta.lint (behold#919)", degraded: "a bare Terraform estate that lint finds errors in is refused, and the refusal says which chant draws it" },
   { read: "decision points", floor: DECISION_POINTS_CHANT_FLOOR, adds: "a gate that asks a decision point, read with chant workspace points --open (chant#3170)", degraded: "the gate strip draws no open decision points, and says which chant adds them" },
 ];
 

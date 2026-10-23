@@ -1,0 +1,12 @@
+diff --git a/data.tf b/data.tf
+--- a/data.tf
++++ b/data.tf
+@@ -38,7 +38,7 @@ resource "aws_db_instance" "orders" {
+   username             = "orders_admin"
+   password             = "emulator-only-not-a-secret"
+   db_subnet_group_name = aws_db_subnet_group.orders.name
+-  storage_encrypted    = false
++  storage_encrypted    = true
+   skip_final_snapshot  = true
+ }
+ 

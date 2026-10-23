@@ -56,6 +56,10 @@ export interface GraphOptions {
    * index until two reads agree (up to ~100s), for the read right after a
    * `live-mv`. Not a chant flag; a chant member ignores it. `?consistent=1`. */
   consistent?: boolean;
+  /** #924: a choudoufu member's "Re-check live with plan" (`?plan=1`): its
+   * ownership and its plan read through one chant read at the plan depth
+   * (src/choudoufu-chant-read.ts). Not a chant flag; a chant member ignores it. */
+  plan?: boolean;
   /** Live acquisition — `chant graph --live --env <env>`. Requires cloud creds
    * + provider CLIs on the host (why behold is a Node service, not an edge fn). */
   live?: boolean;

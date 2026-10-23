@@ -27,7 +27,7 @@ import {
 import { resetMemberIrCache } from "./member-ir.ts";
 import { resetOverlayCache } from "./overlay-ir.ts";
 import { applyMemberPasses, memberPassNote, registerMemberKind } from "./member-kind.ts";
-import { terraformSpec } from "./terraform-member.ts";
+import { terraformSpec, WORKSPACE_NAME } from "./terraform-member.ts";
 import { attachRuntimeContainment } from "./overlay.ts";
 import { LS_SCHEMA_ID, parseWorkspaceLs, setServedWorkspace, WorkspaceMemberError } from "./workspace.ts";
 import type { GraphIR as ChantGraphIR } from "@intentius/chant";
@@ -707,6 +707,45 @@ describe("estate reads dispatch on member kind (#368)", () => {
     expect(tfRead.mock.calls.map(([dir]) => dir)).toEqual([tfDir]);
     expect(vi.mocked(graphIr).mock.calls.map(([dir]) => dir)).toEqual([chantDir]);
     expect(ir.nodes.map((n) => n.id).sort()).toEqual(["access/aws_s3_bucket.artifacts", "app/vpc"]);
+  });
+
+  // behold#927: a bare Terraform folder served alone is searched at a
+  // one-member workspace named for its box, so the box takes a name chant's
+  // declaration accepts. A name that already is one is untouched, so saved
+  // `node=` and `focus=` links on it do not move.
+  it("names a lone bare Terraform folder with a name chant's member grammar accepts, and leaves a valid one alone", async () => {
+    const long = `Platform_${"x".repeat(51)}`;
+    expect(long).toHaveLength(60);
+    const tfRead = vi.fn(async (_dir: string) => stack("prod/aws_s3_bucket.artifacts", "terraform"));
+    registerMemberKind({ ...terraformSpec, via: { tool: () => "lexicon\0v1", read: tfRead as never } });
+    const bare = (name: string): string => {
+      const root = mkdtempSync(join(tmpdir(), "behold-tf-name-"));
+      made.push(root);
+      const dir = join(root, name);
+      mkdirSync(join(dir, "envs", "prod"), { recursive: true });
+      writeFileSync(join(dir, "envs", "prod", "versions.tf"), "terraform {\n  required_providers {\n    aws = {}\n  }\n}\n");
+      writeFileSync(join(dir, "envs", "prod", "main.tf"), 'resource "aws_s3_bucket" "artifacts" {}\n');
+      return dir;
+    };
+    const cases: [string, string][] = [
+      ["MyInfra", "myinfra"],
+      ["terraform_ec2", "terraform-ec2"],
+      ["Terraform_Estate", "terraform-estate"],
+      [long, `platform-${"x".repeat(31)}`],
+      ["infra", "infra"],
+      ["infra-", "infra-"],
+    ];
+    for (const [folder, member] of cases) {
+      const dir = bare(folder);
+      expect(estateMembers([dir])).toEqual([{ name: member, dir, kind: "terraform" }]);
+      expect(member).toMatch(WORKSPACE_NAME);
+      const ir = await composeEstate([dir]);
+      expect(ir.nodes.map((n) => n.id)).toEqual([`${member}/prod/aws_s3_bucket.artifacts`]);
+    }
+    // A loose estate of several folders is not searched, and keeps its readable names.
+    const a = bare("MyInfra");
+    const b = bare("Other_Infra");
+    expect(estateMembers([a, b]).map((m) => m.name)).toEqual(["MyInfra", "Other_Infra"]);
   });
 
   it("a directory no kind claims still reads as chant — the failure it always produced, from the same place", async () => {

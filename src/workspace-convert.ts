@@ -40,7 +40,7 @@ import { shortStackNames } from "@intentius/pinhole";
 import { resolveChant } from "./chant.ts";
 import { LAYOUT_DIR, layoutPath, readLayoutFile, type LayoutFile } from "./layout.ts";
 import { detectProjectShape } from "./project.ts";
-import { discoverTerraformRoots } from "./terraform-member.ts";
+import { declarationName, discoverTerraformRoots } from "./terraform-member.ts";
 import { DECLARATION_FILES } from "./workspace.ts";
 
 export const TERRAFORM_LEXICON = "@intentius/chant-lexicon-terraform";
@@ -79,16 +79,8 @@ export interface ConversionPlan {
 
 export type ConversionResult = { ok: true; plan: ConversionPlan } | { ok: false; error: string };
 
-/** A declaration name: lowercase letters, digits and hyphens, starting with one of the first two, 40 at most. */
-export function declarationName(raw: string): string {
-  const folded = raw
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40)
-    .replace(/-+$/, "");
-  return folded || "member";
-}
+/** A declaration name (one rule with behold#927's bare-folder box name, in src/terraform-member.ts). */
+export { declarationName };
 
 /** Make `name` unique among `taken`, adding `-2`, `-3`... */
 function unique(name: string, taken: Set<string>): string {

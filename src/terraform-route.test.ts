@@ -241,7 +241,7 @@ describe("GET /api/graph over a bare Terraform directory (#384)", () => {
   it("answers the reader's own refusal, with the install line, when the lexicon is not there", async () => {
     const dir = estate();
     const refusal = {
-      error: "Reading a Terraform estate needs chant's terraform lexicon, which behold does not install: …",
+      error: "Reading a Terraform estate needs chant's terraform lexicon and its HCL parser, which behold installs as dependencies: …",
       code: "terraform-lexicon" as const,
       remedy: "Install @intentius/chant-lexicon-terraform@^0.77.0 @cdktn/hcl2json@^0.24.0 beside behold, then reload.",
     };

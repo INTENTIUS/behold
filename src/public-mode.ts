@@ -86,6 +86,7 @@ const REFUSED_READS: Array<[RegExp, string]> = [
   [/^\/api\/overlay$/, "it reads the live estate with behold's own credentials"],
   [/^\/api\/reconcile$/, "it plans against the live estate with behold's own credentials"],
   [/^\/api\/diff(\/|$)/, "it reads the live estate with behold's own credentials"],
+  [/^\/api\/terraform\/plan$/, "it plans against the live estate with behold's own credentials"],
   [/^\/api\/health$/, "it reads the live estate with behold's own credentials"],
   [/^\/api\/health$/, "it reads the live estate with behold's own credentials"],
   [/^\/api\/components\/compare$/, "it reads the live estate with behold's own credentials"],
@@ -98,6 +99,7 @@ const REFUSED_READS: Array<[RegExp, string]> = [
   [/^\/api\/choudoufu\/(moves|split)$/, "it runs choudoufu"],
   [/^\/choudoufu\/(morph|split)$/, "it runs choudoufu"],
   [/^\/api\/sql-yodeler\/lifecycle$/, "a public view shows a terragucci repo"],
+  [/^\/api\/shot$/, "a shot starts a browser on this machine"],
   [/^\/api\/chant\/ci\/local(\/|$)/, "a local run is a job started on this machine, and a public view starts nothing"],
 ];
 
@@ -109,6 +111,10 @@ export function publicReadRefusal(path: string, query: URLSearchParams): string 
   for (const [re, why] of REFUSED_READS) if (re.test(path)) return why;
   if (path === "/api/graph" && LIVE_PARAMS.some((p) => query.has(p))) {
     return "a public view draws the source graph only; a live read uses behold's own credentials";
+  }
+  // behold#913: a declared query is answered; a live, snapshot or plan (behold#922) one reads with behold's own credentials.
+  if (path === "/api/search" && ["env", "snapshot", "plan"].some((p) => query.has(p) && query.get(p) !== "" && !(p === "plan" && query.get(p) === "0"))) {
+    return "a public view answers a query over the declared source only; a live read uses behold's own credentials";
   }
   return undefined;
 }

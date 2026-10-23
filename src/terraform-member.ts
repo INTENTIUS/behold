@@ -15,18 +15,23 @@
  * Three decisions shape this, and each was a real trade (#384's own three open
  * questions).
  *
- * **The lexicon is opt-in, not part of behold's install.** chant resolves
+ * **The reader ships with behold, and is still probed.** chant resolves
  * `@intentius/chant-lexicon-terraform` from the config file's own location, so
- * the generated project has to see it. Making it a dependency would put an HCL
- * parser — `@cdktn/hcl2json`, a ~1.8 MB wasm blob — in every user's install,
- * most of whom serve chant projects, and would break `src/carve-lens.ts`'s
- * posture that behold ships no Terraform tooling. So both are declared as
- * OPTIONAL PEERS in behold's package.json (the versions this reader was built
- * against, and the only place they are named), probed here, and refused with
- * the one install line when absent — the way `behold demo` gates on binaries it
- * does not ship and the choudoufu member refuses when its binary is missing.
- * The refusal names where behold looked, because "install it" is only useful
- * beside "here".
+ * the generated project has to see it, and chant core (not the lexicon) does
+ * `import("@cdktn/hcl2json")` from its own real path when it parses HCL. The
+ * lexicon declares no dependency on the parser; neither does chant. #384 made
+ * both optional peers to keep a ~1.8 MB wasm blob out of chant-only installs.
+ * #909 reversed that: both are DEPENDENCIES in behold's package.json (the
+ * versions this reader was built against, and the only place they are named),
+ * so `npx @intentius/behold serve .` in a folder of `.tf` files draws with no
+ * other command. The maintainer accepted the cost on #909 (+8.3 MB on a 195 MB
+ * install, six packages). behold still runs no `terraform` binary
+ * (`src/carve-lens.ts`). The probe stays: an install that skipped or pruned
+ * them (`--omit`, a hand-trimmed image) would otherwise reach chant, which
+ * warns, exits 0 and prints an empty graph when the parser is missing. So both
+ * are resolved here and refused with the one install line when absent, the way
+ * `behold demo` gates on binaries it does not ship. The refusal names where
+ * behold looked, because "install it" is only useful beside "here".
  *
  * **Roots are discovered, not declared.** `chant carve advise --from <parent>`
  * over the parent of six roots returns zero resources: the parse is one root at
@@ -64,7 +69,14 @@
  *     entry per discovered root.
  *   - `node_modules` — a symlink to behold's OWN `node_modules`. Node
  *     resolution from the config's location then finds the lexicon, chant and
- *     zod exactly as it would inside behold's install. The alternative (place
+ *     zod exactly as it would inside behold's install. It is the directory
+ *     chant resolves into (`beholdNodeModules`): under npx or a global prefix
+ *     that is the tree behold itself sits in, where npm hoists behold's
+ *     dependencies, so the lexicon and the parser land beside chant. That is
+ *     also where chant's own `import("@cdktn/hcl2json")` looks. The lexicon's
+ *     range in package.json starts at behold's chant floor, so the lexicon's
+ *     `@intentius/chant` peer is met by behold's chant instead of a second
+ *     copy. The alternative (place
  *     the scratch project under behold's tree so resolution walks up into it)
  *     was refused: behold's install is often a global npm prefix or an npx
  *     cache, both of which may be read-only, and a scratch directory that
@@ -104,6 +116,10 @@ import {
   terraformElisionNoteShort,
 } from "./terraform-lens.ts";
 import { SCRATCH_PREFIX, assertScratch } from "./scratch.ts";
+import { attachLintFindings, terraformLintNote } from "./terraform-lint.ts";
+import { redactSensitiveSources } from "./terraform-redact.ts";
+import { GRAPH_LINT_REPORT_CHANT_FLOOR } from "./chant-floors.ts";
+import { meetsFloor } from "./floor.ts";
 import {
   TERRAGUCCI_COMPONENT_MODULE,
   declaredRootScan,
@@ -113,15 +129,17 @@ import {
 } from "./terragucci-components.ts";
 import { addTerragruntUnits, discoverTerragruntUnits, terragruntNote, terragruntPicture, type TerragruntPicture } from "./terragrunt-units.ts";
 
-/** The reader chant loads for a Terraform root, and the HCL parser it lazily
- * loads underneath. Both are optional peers of behold (see the header); the
- * ranges live in behold's package.json and are read from it, so the install
- * line and the manifest cannot drift apart. */
+/** The reader chant loads for a Terraform root, and the HCL parser chant
+ * lazily loads underneath. Both are dependencies of behold (#909, see the
+ * header); the ranges live in behold's package.json and are read from it, so
+ * the install line and the manifest cannot drift apart. */
 export const TERRAFORM_LEXICON_PKG = "@intentius/chant-lexicon-terraform";
-/** The parser chant's terraform lexicon loads since 0.77.0 (chant#2483): the
- * CDK Terrain continuation of `@cdktf/hcl2json`, whose repo HashiCorp archived
- * on 2025-12-10. The lexicon peer range above this constant in package.json is
- * the floor that names it, so the two are installed and refused together. */
+/** The HCL parser chant core imports when it reads a Terraform root, by this
+ * name since 0.77.0 (chant#2483): the CDK Terrain continuation of
+ * `@cdktf/hcl2json`, whose repo HashiCorp archived on 2025-12-10. Neither
+ * chant nor the lexicon declares it (both list it as a devDependency only), so
+ * behold's package.json is what puts it beside chant. The two are installed
+ * and refused together. */
 export const HCL_PARSER_PKG = "@cdktn/hcl2json";
 
 /** How far below the served directory a root may sit. water park's roots are
@@ -313,26 +331,26 @@ export function terraformRootsNoteShort(scan: TerraformRootScan): string | undef
 // The reader: is the lexicon here at all?
 // ---------------------------------------------------------------------------
 
-/** One optional peer: the range behold declares, and the version installed
- * beside it (undefined when it is not there at all). */
-export interface OptionalPeer {
+/** One reader package: the range behold's package.json declares, and the
+ * version installed beside it (undefined when it is not there at all). */
+export interface ReaderPackage {
   pkg: string;
   range?: string;
   version?: string;
 }
 
 /** behold's own directory — where its `node_modules` is resolved from, and the
- * directory whose package.json declares the peers. `dist/` in a build, `src/`
+ * directory whose package.json declares the reader packages. `dist/` in a build, `src/`
  * under tsx; both sit one level under the package root. */
 const beholdDir = (): string => dirname(fileURLToPath(import.meta.url));
 
-/** The optional-peer ranges behold declares, read from its own manifest so the
+/** The range behold's own manifest declares for a reader package, so the
  * install line quotes what the package actually asks for (the same reading
  * `chantFloor` does for the chant floor). */
-export function declaredPeerRange(pkg: string, manifestDir = join(beholdDir(), "..")): string | undefined {
+export function declaredRange(pkg: string, manifestDir = join(beholdDir(), "..")): string | undefined {
   try {
-    const manifest = JSON.parse(readFileSync(join(manifestDir, "package.json"), "utf8")) as { peerDependencies?: Record<string, string> };
-    return manifest.peerDependencies?.[pkg];
+    const manifest = JSON.parse(readFileSync(join(manifestDir, "package.json"), "utf8")) as { dependencies?: Record<string, string> };
+    return manifest.dependencies?.[pkg];
   } catch {
     return undefined;
   }
@@ -379,18 +397,18 @@ export interface TerraformRefusal {
   remedy: string;
 }
 
-/** What behold can see of the reader: both peers, and the refusal when either
+/** What behold can see of the reader: both packages, and the refusal when either
  * is absent. */
 export interface TerraformReaderState {
-  lexicon: OptionalPeer;
-  parser: OptionalPeer;
+  lexicon: ReaderPackage;
+  parser: ReaderPackage;
   /** Where behold looked — named in the refusal, since "install it" is only
    * useful beside "here". */
   from: string;
   refusal?: TerraformRefusal;
 }
 
-const spec = (peer: OptionalPeer): string => `${peer.pkg}@${peer.range ?? "latest"}`;
+const spec = (peer: ReaderPackage): string => `${peer.pkg}@${peer.range ?? "latest"}`;
 
 /**
  * Probe the reader. Read-only and cheap (two module resolutions), so the graph
@@ -398,7 +416,7 @@ const spec = (peer: OptionalPeer): string => `${peer.pkg}@${peer.range ?? "lates
  * get the same answer.
  */
 export function terraformReaderState(from = beholdDir()): TerraformReaderState {
-  const peer = (pkg: string): OptionalPeer => ({ pkg, ...(declaredPeerRange(pkg) ? { range: declaredPeerRange(pkg) } : {}), ...(resolvedVersion(pkg, from) !== undefined ? { version: resolvedVersion(pkg, from) } : {}) });
+  const peer = (pkg: string): ReaderPackage => ({ pkg, ...(declaredRange(pkg) ? { range: declaredRange(pkg) } : {}), ...(resolvedVersion(pkg, from) !== undefined ? { version: resolvedVersion(pkg, from) } : {}) });
   const lexicon = peer(TERRAFORM_LEXICON_PKG);
   const parser = peer(HCL_PARSER_PKG);
   const missing = [lexicon, parser].filter((p) => p.version === undefined);
@@ -409,8 +427,8 @@ export function terraformReaderState(from = beholdDir()): TerraformReaderState {
     from,
     refusal: {
       error:
-        `Reading a Terraform estate needs chant's terraform lexicon, which behold does not install: ` +
-        `${missing.map((p) => p.pkg).join(" and ")} ${missing.length === 1 ? "is" : "are"} not resolvable from ${from}.`,
+        `Reading a Terraform estate needs chant's terraform lexicon and its HCL parser, which behold installs as dependencies: ` +
+        `${missing.map((p) => p.pkg).join(" and ")} ${missing.length === 1 ? "is" : "are"} not resolvable from ${from}, so this install skipped or pruned ${missing.length === 1 ? "it" : "them"}.`,
       code: "terraform-lexicon",
       remedy: `Install ${missing.map(spec).join(" ")} beside behold, then reload.`,
     },
@@ -481,8 +499,9 @@ export function terraformScratchDir(estate: string, tmp = tmpdir(), flavour: Scr
  * reader (`tf`, #384), or the choudoufu member's predictor (`chdf`, #402),
  * whose config names `binary: "choudoufu"` so the lexicon reads the root live.
  * Two names, so one directory served as each kind in turn never rewrites the
- * other's config. */
-export type ScratchFlavour = "tf" | "chdf";
+ * other's config. `tfws` is the one-member workspace a bare folder is searched
+ * through (behold#925), which holds a declaration and no config. */
+export type ScratchFlavour = "tf" | "chdf" | "tfws";
 
 /** The `chant.config.ts` a scan generates. Pure and deterministic: the same
  * estate and the same roots produce the same bytes, so a reload rewrites
@@ -506,6 +525,9 @@ export function terraformScratchConfig(scan: TerraformRootScan, estateLink: stri
     ...entries,
     "    },",
     "  },",
+    // #919: draw the estate when lint finds errors, with the findings on
+    // meta.lint. A chant older than GRAPH_LINT_REPORT_CHANT_FLOOR ignores it.
+    '  graph: { lint: "report" },',
     "} satisfies ChantConfig;",
     "",
   ].join("\n");
@@ -588,6 +610,96 @@ export function terraformMemberProject(dir: string): { project: string; componen
   return { project: writeTerraformScratchProject(dir, scan, undefined, "tf", components), ...(components ? { components } : {}) };
 }
 
+// ---------------------------------------------------------------------------
+// The scratch workspace (behold#925).
+//
+// A bare folder is drawn as a one-member estate whose cards are
+// `<member>/<id>` (#389), and chant's scratch project knows nothing of that
+// member. So the folder is declared to chant as a workspace of one member,
+// named what behold names it, and `chant workspace search` composes the ids
+// itself: behold does no id prefixing (the read-contract ruling on #908).
+//
+// The member is of kind `chant` and its directory is a link to the scratch
+// project above, not a member of kind `terraform` over the folder. chant's
+// terraform kind reads one root named for the member at the member's
+// directory, so a folder of several roots (`envs/prod` and `platform`)
+// fails its probe, and a lone root's ids would be `<member>/<member>/...`
+// rather than `<member>/<root>/...`. The scratch project already names every
+// root the way the graph does, a Terragrunt unit or a terragucci component
+// included, so the ids chant composes are the ids behold draws.
+//
+// `<tmpdir>/behold-tfws-<hash of the estate path>` holds three things and
+// nothing else: `chant.workspace.json`, a `node_modules` link to behold's own
+// (the workspace root's chant, ws-021), and a link named for the member to the
+// scratch project. Not a git repository: chant then reads the working tree,
+// and `at` is null.
+// ---------------------------------------------------------------------------
+
+/** The name grammar chant's declaration gives a workspace and its members. */
+export const WORKSPACE_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
+
+/** A declaration name: lowercase letters, digits and hyphens, starting with one of the first two, 40 at most. */
+export function declarationName(raw: string): string {
+  const folded = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40)
+    .replace(/-+$/, "");
+  return folded || "member";
+}
+
+/**
+ * behold#927: the name a bare Terraform folder served alone is drawn under.
+ * It is also the member of the scratch workspace it is searched at (#925),
+ * so it has to be one chant's declaration accepts. A folder name that already
+ * is one is kept as it is, so its ids and saved links do not move; any other
+ * is folded once by {@link declarationName} (`MyInfra` -> `myinfra`,
+ * `terraform_ec2` -> `terraform-ec2`, cut to 40).
+ */
+export function bareFolderMemberName(folder: string): string {
+  return WORKSPACE_NAME.test(folder) ? folder : declarationName(folder);
+}
+
+/** The declaration the scratch workspace holds. Pure and deterministic. Exported for testing. */
+export function terraformScratchDeclaration(member: string): string {
+  return `${JSON.stringify(
+    {
+      $comment: "Generated by behold (#925): a bare Terraform folder, declared as a workspace of one member so chant composes its ids. Written outside the folder; nothing here is yours to edit.",
+      name: member,
+      schema: 1,
+      members: [{ name: member, dir: member, kind: "chant" }],
+    },
+    null,
+    2,
+  )}\n`;
+}
+
+/**
+ * Write (or refresh) the scratch workspace for `estate`, whose one member is
+ * `member` at the scratch project `project`, and return its root. Every write
+ * is under the OS temp directory, and nothing is ever removed. Throws when
+ * `member` is not a name chant's declaration accepts.
+ */
+export function writeTerraformScratchWorkspace(estate: string, member: string, project: string, tmp = tmpdir()): string {
+  if (!WORKSPACE_NAME.test(member)) throw new Error(`${JSON.stringify(member)} is not a workspace member name chant accepts (${WORKSPACE_NAME.source})`);
+  const dir = terraformScratchDir(resolve(estate), tmp, "tfws");
+  mkdirSync(dir, { recursive: true });
+  const modules = beholdNodeModules();
+  if (modules) relink(join(dir, "node_modules"), modules);
+  relink(join(dir, member), resolve(project));
+  const file = join(dir, "chant.workspace.json");
+  const text = terraformScratchDeclaration(member);
+  if (!existsSync(file) || readFileSync(file, "utf8") !== text) writeFileSync(file, text);
+  return dir;
+}
+
+/** behold#925: the scratch project and the one-member workspace over it, for a bare folder served as `member`. */
+export function terraformMemberWorkspace(dir: string, member: string): { root: string; project: string } {
+  const { project } = terraformMemberProject(dir);
+  return { root: writeTerraformScratchWorkspace(dir, member, project), project };
+}
+
 /** The scratch project's package.json: private, and an ES module (INTENTIUS/chant#3897). */
 export const SCRATCH_PACKAGE_JSON = `${JSON.stringify({ name: "behold-scratch", private: true, type: "module" }, null, 2)}\n`;
 
@@ -665,8 +777,23 @@ export async function readTerraformMember(dir: string, opts: GraphOptions, state
   // load-time edge back into src/chant.ts from here is the cycle that module's
   // header refuses. A dynamic import inside the read is not one, and a test's
   // mock of ./chant.ts still answers it.
-  const { graphIr } = await import("./chant.ts");
-  const ir = await graphIr(project, { ...source, detail });
+  const { graphIr, ChantCliError } = await import("./chant.ts");
+  let ir: GraphIR;
+  try {
+    ir = await graphIr(project, { ...source, detail });
+  } catch (err) {
+    // #919: a chant below the floor ignores `graph.lint` and still refuses an
+    // estate lint finds errors in. Say which chant draws it.
+    const chant = resolvedVersion("@intentius/chant");
+    if (err instanceof ChantCliError && err.failure.code === "lint" && !meetsFloor(chant, GRAPH_LINT_REPORT_CHANT_FLOOR)) {
+      err.failure.remedy = `chant ${GRAPH_LINT_REPORT_CHANT_FLOOR} draws a Terraform estate that lint finds errors in, and lists the findings. behold resolves chant ${chant ?? "(unknown version)"}: upgrade @intentius/chant beside behold, then reload.`;
+    }
+    throw err;
+  }
+  // Before composition, which keeps nodes and nothing above them.
+  attachLintFindings(ir);
+  // #920: a sensitive variable's literal default, in the file text each card carries and in its parsed body.
+  redactSensitiveSources(ir);
   return terragrunt ? addTerragruntUnits(ir, terragrunt) : ir;
 }
 
@@ -683,6 +810,9 @@ export async function readTerraformMember(dir: string, opts: GraphOptions, state
  */
 const terraformPasses: MemberPasses = {
   apply(ir, { detail }) {
+    // #919: before the elision, so a finding on a block this zoom does not draw is still named.
+    attachLintFindings(ir);
+    const lint = terraformLintNote(ir);
     const elision = hasTerraformEntities(ir)
       ? (groupTerraformByRoot(normalizeTerraformNodes(ir)), filterTerraformCards(ir, detail))
       : { dropped: {}, total: 0 };
@@ -697,8 +827,8 @@ const terraformPasses: MemberPasses = {
         // behold#571: a Terragrunt repo says which units it drew, and from what.
         const units = dirs.map((d) => terragruntOf(d)).filter((p): p is TerragruntPicture => !!p);
         const unitShort = (p: TerragruntPicture) => `${p.units.length} unit${p.units.length === 1 ? "" : "s"}`;
-        const note = [...scans.map(terraformRootsNote), ...units.map(terragruntNote), terraformElisionNote(elision, detail)].filter(Boolean).join("; ");
-        const short = [...scans.map(terraformRootsNoteShort), ...units.map(unitShort), terraformElisionNoteShort(elision)].filter(Boolean).join(" · ");
+        const note = [...scans.map(terraformRootsNote), ...units.map(terragruntNote), terraformElisionNote(elision, detail), lint.note].filter(Boolean).join("; ");
+        const short = [...scans.map(terraformRootsNoteShort), ...units.map(unitShort), terraformElisionNoteShort(elision), lint.noteShort].filter(Boolean).join(" · ");
         return note ? { note, ...(short && short !== note ? { noteShort: short } : {}) } : {};
       },
     };

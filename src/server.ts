@@ -147,6 +147,8 @@ import { nodeDiff, nodeObserved, nodeFieldDrift, type LiveDiffJson } from "./dif
 import { classifyObservedHealth } from "./health.ts";
 import { OpRunner } from "./op-runner.ts";
 import { ReadOnlyRunner, publicRoutes, type Runner } from "./public-mode.ts";
+import { SHOT_VIEW_KEYS, ShotRefusal, shotQueue, takeShot, type ShotDeps } from "./shot.ts";
+import { removeServeEntry, writeServeEntry } from "./serve-registry.ts";
 import { detectSubstrates, projectLexicons } from "./substrates.ts";
 import { pickAutoSyncOps, splitForgeRouted, suspendedByRollback, type AutoSyncMode } from "./autosync.ts";
 import { sourceCommits, openRollbackBranches } from "./history.ts";
@@ -156,8 +158,8 @@ import { attachBehaviour, type BehaviourMember } from "./behaviour.ts";
 import { attachBehaviourDelta, attachDeclaredBehaviour, paintLive, predictMember, trafficFor, type DeltaMember, type PredictMemberDeps } from "./behaviour-delta.ts";
 import { addEstateMemberEdges } from "./estate-edges.ts";
 import { addChoudoufuReferenceEdges, liveCheckToIr, readLiveCheck, setChoudoufuRunner, setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
-import { choudoufuDiffNodes, paintPlanDrift, readChoudoufuLive, type Runner as ChoudoufuRunner } from "./choudoufu-live.ts";
-import { cacheChoudoufuPlan, cachedChoudoufuPlan, readChoudoufuPlan, type PlanResourceDrift } from "./choudoufu-plan.ts";
+import { choudoufuDiffNodes, choudoufuPlanAnswer, paintPlanDrift, readChoudoufuLive, type Runner as ChoudoufuRunner } from "./choudoufu-live.ts";
+import { cachedChoudoufuPlan, setChoudoufuChantDeps, type ChoudoufuChantDeps, type PlanResourceDrift } from "./choudoufu-chant-read.ts";
 import { choudoufuLexiconNote, setEstateLexiconRead, type LexiconRead } from "./choudoufu-refs.ts";
 import { readTerralith } from "./terralith-demo.ts";
 import { discoverSplitPlans, moveMembers, moveReceipt, movesPayload, readSplitPlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
@@ -169,7 +171,8 @@ import { readWhy, whyRegion, withChain } from "./workspace-why.ts";
 import { floorFor, floorMet, floorRefusal } from "./chant-floors.ts";
 import { allowedHostsFrom, guardRequest } from "./request-guard.ts";
 import { applyMemberPasses, memberKindOf, memberKindSpec, memberPassNote, servesAsEstate, type MemberPassRun } from "./member-kind.ts";
-import { TerraformReadError, terraformMemberProject, terraformReaderState, terraformVia } from "./terraform-member.ts";
+import { TerraformReadError, terraformMemberProject, terraformMemberWorkspace, terraformReaderState, terraformVia } from "./terraform-member.ts";
+import { paintTerraformPlan, readTerraformPlan, terraformPlanNote, type MemberPlanAnswer, type PlanReadDeps, type TerraformPlanRead } from "./terraform-plan.ts";
 import { normalizeTerraformNodes } from "./terraform-lens.ts";
 import { invalidateMember, memberIr, memberIrCacheStats, memberSourceStamp } from "./member-ir.ts";
 import { diagnose } from "./doctor.ts";
@@ -212,8 +215,12 @@ import { COLLISION_READ, collisionsFloorRefusal, readCollisions } from "./collis
 import { sqlYodelerLaneRoute } from "./sql-yodeler-lane.ts";
 import { cachedHealth, invalidateHealth, readHealthOverlay, rememberHealth, type HealthMember } from "./health-overlay.ts";
 import { rootReader } from "./workspace-reader.ts";
+import { SearchAskError, checkAsk, drawnOf, runCapabilities, runSearch, searchTarget, type SearchTarget } from "./search.ts";
+import { resolvedVersion } from "./terraform-member.ts";
+import { writeViewQuery } from "../web/view-url.js";
 import { controlRepoInfo, terragucciEstateRoutes } from "./terragucci-estate.ts";
 import { yodelReportRoute } from "./yodel-report.ts";
+import { viewMoveRoute } from "./view-move.ts";
 import { loadDemoRegistry, missingRequirements, fetchesFromNetwork, demoTargetDir, loadDemo, type DemoEntry } from "./demos.ts";
 
 /** The installed behold package root — `demos.json` and the bundled examples
@@ -228,6 +235,8 @@ const execFileP = async (cmd: string, args: string[]): Promise<string> =>
 export interface ServerOptions {
   /** #712: the local dots preview's sources (scripts/dots-preview.ts); never set by the CLI. */
   dotsPreview?: DotsPreviewOptions;
+  /** behold#915: a stand-in for the headless-browser peer, for tests; never set by the CLI. */
+  shotDeps?: ShotDeps;
   /** The address to bind. 127.0.0.1 unless given (`--host`, BEHOLD_HOST). */
   host?: string;
   /** Names besides loopback that behold answers to (`--allow-host`,
@@ -292,6 +301,10 @@ export interface ServerOptions {
    * strip to Docker+Floci, and tells the SPA to hide those controls. Local
    * deploy (apply/reset/bring-up/approve) and all reads stay on. */
   previewMode?: boolean;
+  /** #914: served by `behold preview`, with or without `--emulator`. Refuses
+   * only the routes that change what someone else is looking at (`POST
+   * /api/view`); everything previewMode locks stays keyed on previewMode. */
+  preview?: boolean;
   /** Carve mode (#252, M1 of #230): the path of a `chant carve advise --json`
    * peelability report to render instead of a chant project. Mutually exclusive
    * with everything project-shaped — the report IS the estate here, so no chant
@@ -329,11 +342,19 @@ export interface ServerOptions {
     /** #334: a test that wants intra-estate edges hands in a reader over a
      * recorded lexicon IR; absent, a fake choudoufu means no lexicon spawn. */
     lexicon?: LexiconRead;
+    /** #924: how a member's re-check with plan reads through chant. A test
+     * answers the chant spawn from recorded output; absent beside a fake
+     * choudoufu, the re-check paints from the fake's `live-plan` and reads
+     * no plan. */
+    chant?: ChoudoufuChantDeps;
   };
   /** #402: how a member is predicted — the chant read, and the probe for the
    * optional lexicon. `graphIr` and the real probe outside a test; a route
    * test answers both halves from written reports with no chant to spawn. */
   behaviour?: PredictMemberDeps;
+  /** #910: how the plan read on a stock Terraform root runs — the chant spawn
+   * and the versions it is checked against. Absent outside a test. */
+  terraformPlan?: PlanReadDeps;
   port: number;
 }
 
@@ -1060,6 +1081,7 @@ export function createApp(
   // (src/choudoufu-member.ts `setChoudoufuRunner`); undefined in production.
   setChoudoufuRunner(cfg.choudoufu?.run);
   setEstateLexiconRead(cfg.choudoufu ? (cfg.choudoufu.lexicon ?? null) : undefined);
+  setChoudoufuChantDeps(cfg.choudoufu ? (cfg.choudoufu.chant ?? null) : undefined);
   // #464: the declared workspace this app serves, if any — the estate code asks
   // it which member a directory is and what the declaration names it.
   setServedWorkspace(cfg.workspace);
@@ -1805,19 +1827,46 @@ export function createApp(
   // Live updates (#3): SSE stream the SPA subscribes to. On a "changed" event
   // (a source edit — see startServer's watcher) the SPA re-pulls the current view.
   // Keep-alive pings hold the connection open; the browser's EventSource reconnects.
+  // #914: the open streams are the tabs POST /api/view reaches.
+  let openTabs = 0;
   app.get("/api/events", (c) =>
     streamSSE(c, async (stream) => {
+      openTabs++;
+      let open = true;
       const unsubscribe = broadcaster.subscribe((type, data) => {
         void stream.writeSSE({ event: type, data: data || String(Date.now()) });
       });
-      stream.onAbort(unsubscribe);
-      while (!stream.aborted) {
-        await stream.writeSSE({ event: "ping", data: "" });
-        await stream.sleep(30_000);
+      const close = () => {
+        if (open) openTabs--;
+        open = false;
+        unsubscribe();
+      };
+      stream.onAbort(close);
+      try {
+        while (!stream.aborted) {
+          await stream.writeSSE({ event: "ping", data: "" });
+          await stream.sleep(30_000);
+        }
+      } finally {
+        close();
       }
-      unsubscribe();
     }),
   );
+
+  // #914: an agent moves every open tab's view. Writes nothing; refused under
+  // --public and any `behold preview` (src/view-move.ts).
+  viewMoveRoute(app, {
+    emit: (e) => broadcaster.emit("view", JSON.stringify(e)),
+    tabs: () => openTabs,
+    public: () => !!cfg.public,
+    preview: () => !!(cfg.preview || cfg.previewMode),
+    offer: async () => {
+      const { environments } = await detectProject(cfg.projectDir).catch(() => ({ environments: [] as string[] }));
+      const envs = environments.length === 0 && (cfg.projectDirs ?? [cfg.projectDir]).some((d) => memberKindOf(d) === "choudoufu") ? ["live"] : environments;
+      return { envs, ...(beholdConfig.tiers ? { tiers: beholdConfig.tiers.values } : {}) };
+    },
+    defaultEnv: () => cfg.env ?? null,
+  });
 
   // What behold is and what its reads cost (#421, M2 of #419). `diagnose()` has
   // produced this report since #193 and only the CLI has ever asked for it, so
@@ -2369,6 +2418,115 @@ export function createApp(
   app.use("/api/graph", bakeHandLayout);
   app.use("/api/overlay", bakeHandLayout);
 
+  // behold#915: a PNG of a view, and the link to it. One browser at a time per
+  // serve. Never a file path: the bytes are the answer, so the serve writes
+  // nothing. Refused on --public (src/public-mode.ts refuses it first): anyone
+  // could make this machine start browsers.
+  const shotOneAtATime = shotQueue();
+  app.get("/api/shot", async (c) => {
+    if (cfg.public) return c.json({ error: "a public view takes no shots: each one starts a browser on this machine", code: "public", remedy: "Take the shot with behold shot against a serve of your own." }, 403);
+    const q = new URL(c.req.url).searchParams;
+    const view: Record<string, string> = {};
+    for (const k of SHOT_VIEW_KEYS) if (q.has(k)) view[k] = q.get(k) ?? "";
+    const origin = new URL(c.req.url).origin;
+    // The browser loads this serve where it listens; the link names it the way the caller reached it.
+    const bound = cfg.host && !["0.0.0.0", "::", "[::]"].includes(cfg.host) ? cfg.host : "127.0.0.1";
+    const base = cfg.port > 0 ? `http://${bound.includes(":") && !bound.startsWith("[") ? `[${bound}]` : bound}:${cfg.port}` : origin;
+    try {
+      const shot = await shotOneAtATime(() =>
+        takeShot(
+          base,
+          {
+            ...(q.has("q") ? { query: q.get("q") ?? "" } : {}),
+            ...(q.has("env") ? { env: q.get("env") ?? "" } : {}),
+            ...(q.has("snapshot") ? { snapshot: q.get("snapshot") ?? "" } : {}),
+            ...(q.has("width") ? { width: Number(q.get("width")) } : {}),
+            ...(q.has("height") ? { height: Number(q.get("height")) } : {}),
+            view,
+          },
+          { linkBase: origin, ...(cfg.shotDeps ? { deps: cfg.shotDeps } : {}) },
+        ),
+      );
+      return new Response(new Uint8Array(shot.png), {
+        status: 200,
+        headers: { "content-type": "image/png", "cache-control": "no-store", "behold-view-link": shot.link, "behold-shot-state": shot.state },
+      });
+    } catch (e) {
+      if (e instanceof ShotRefusal) return c.json(e.body, e.status as 400 | 403 | 501 | 504);
+      throw e;
+    }
+  });
+
+  // behold#913: `q`. chant answers, behold draws: one search through the
+  // workspace reader (src/search.ts), `chant workspace search` on a declared
+  // workspace and on a bare Terraform folder's one-member scratch workspace
+  // (#925), and plain `chant search --json` on one project. chant composes
+  // every id, and behold draws them as chant printed them. The answer is
+  // chant's document, unchanged, plus what the page draws from it (`draw`) and the link to the
+  // view. A --public serve answers a declared query only (src/public-mode.ts
+  // refuses env and snapshot before this runs).
+  const searchTargetNow = (): SearchTarget =>
+    searchTarget({
+      // A declared workspace with members is searched whole, at its root, by chant.
+      workspace: cfg.workspace?.members.length ? { root: cfg.workspace.root, chant: cfg.workspace.chant } : undefined,
+      dirs: cfg.projectDirs ?? [cfg.projectDir],
+      kindOf: (dir) => memberKindOf(dir),
+      chantOf: (dir) => resolveChant(dir).version,
+      // A lone folder is a one-member estate (#389); its box is named here, and chant composes ids under that name (#925).
+      memberOf: (dir) => estateMembers([dir])[0]!.name,
+      terraformWorkspace: (dir, member) => ({ root: terraformMemberWorkspace(dir, member).root, chant: resolvedVersion("@intentius/chant") }),
+    });
+  app.get("/api/search", async (c) => {
+    const url = new URL(c.req.url);
+    const p = url.searchParams;
+    let ask;
+    try {
+      ask = checkAsk({ q: p.get("q"), env: p.get("env"), snapshot: p.get("snapshot"), show: p.get("show"), countBy: p.get("countBy"), plan: p.get("plan") });
+    } catch (e) {
+      if (e instanceof SearchAskError) return c.json({ ...e.refusal, q: p.get("q") }, 400);
+      throw e;
+    }
+    if (cfg.public && (ask.env || ask.snapshot || ask.plan)) {
+      return c.json({ error: "a public view answers a query over the declared source only; a live read or a plan uses behold's own credentials", code: "public", remedy: "Drop env, snapshot and plan.", q: ask.q }, 403);
+    }
+    // behold#922: plan and countBy are view keys too, so the link draws the same answer.
+    const view = { q: ask.q, env: ask.env ?? null, snapshot: ask.snapshot ?? null, ...(ask.countBy ? { countBy: ask.countBy } : {}), ...(ask.plan ? { plan: true } : {}) };
+    const link = `${url.origin}/${writeViewQuery("", view)}`;
+    let target: SearchTarget;
+    try {
+      target = searchTargetNow();
+    } catch (e) {
+      if (e instanceof TerraformReadError) return c.json({ ...e.refusal, ...view, link }, 422);
+      throw e;
+    }
+    const read = await runSearch(target, ask, (root, env) => rootReader(root, env));
+    if (!read.ok) return c.json({ ...read.refusal, ...view, link }, 422);
+    const drawn = drawnOf(read.document);
+    // A query chant's grammar refuses is the asker's to fix: 400, chant's message and hint verbatim.
+    if (drawn.failure?.kind === "query") {
+      const code = drawn.failure.code === "query-invalid" ? "query" : (drawn.failure.code ?? "query");
+      return c.json({ error: drawn.failure.message, code, remedy: drawn.failure.hint ?? "See https://intentius.io/chant/cli/search/ for the grammar.", ...view, document: read.document, draw: drawn, link }, 400);
+    }
+    return c.json({ ...view, document: read.document, draw: drawn, link });
+  });
+
+  // behold#926: the capability catalog, for an agent to read before it asks a
+  // cap: question. chant's capabilities document (chant search
+  // --capabilities --json, chant#4375), byte for byte, from the same target a
+  // search asks, through the workspace reader and behind its floor.
+  app.get("/api/capabilities", async (c) => {
+    let target: SearchTarget;
+    try {
+      target = searchTargetNow();
+    } catch (e) {
+      if (e instanceof TerraformReadError) return c.json(e.refusal, 422);
+      throw e;
+    }
+    const read = await runCapabilities(target, (root) => rootReader(root));
+    if (!read.ok) return c.json(read.refusal, 422);
+    return c.body(JSON.stringify(read.document), "error" in read.document ? 422 : 200, { "content-type": "application/json; charset=UTF-8" });
+  });
+
   // #193: the API's front door, for agents. Everything the SPA can see is
   // plain JSON over these routes — this index makes them discoverable without
   // reading source. Shapes and the read/act loop: AGENTS.md (shipped in the
@@ -2388,6 +2546,21 @@ export function createApp(
           method: "POST",
           path: "/api/demos/open",
           desc: "load a demo and serve it: JSON body {name} (a catalog name, never a path) — copies/clones, installs, runs its setup, then switches (preview-locked)",
+        },
+        {
+          method: "GET",
+          path: "/api/shot",
+          desc: "a PNG of a view (behold#915): ?q=&env=&snapshot=&width=&height= plus view keys (node, focus, member, zoom, ...) -> image/png bytes, the view's link in the Behold-View-Link header and drawn|no-matches|failed in Behold-Shot-State, the query's matches lit and framed (behold#913); 501 no-browser without the playwright-core peer, 403 on --public, 504 not-ready when the page never draws",
+        },
+        {
+          method: "GET",
+          path: "/api/search",
+          desc: "a chant search query over the served estate (behold#913): ?q=<query>&env=&snapshot=&show=&countBy=&plan= -> {q, env, snapshot, countBy?, plan?, document: chant's read-contract search document unchanged (chant workspace search on a declared workspace, chant search --json on one project or a Terraform folder), draw: what the page draws from it {lit, onPath, edges, unobserved, nearMisses, provenance, failure, notSearched}, link}; no env is the declared source, env is a live read, env+snapshot replays a recorded snapshot; --explain always on; countBy=kind|module|attr:<name> (behold#922) is chant's --count-by, the document its counts branch with each group's ids and draw.counts the groups the page lights, and q may then be empty to count the whole graph; plan=1 (behold#922) answers at the plan depth (CHANT_TERRAFORM_OBSERVE=plan, --live --env <env, or a placeholder on a bare Terraform folder>), refused with snapshot (400) and without env on a chant project (422 plan-env); 400 code query with chant's hint for a query chant refuses; 422 chant-too-old below chant 0.124.46; --public answers declared queries only",
+        },
+        {
+          method: "GET",
+          path: "/api/capabilities",
+          desc: "the capability catalog to read before asking a cap: question (behold#926): chant's read-contract capabilities document, byte for byte (chant workspace search --capabilities --json on a declared workspace, chant search --capabilities --json on one project or a Terraform folder): each capability's name, meaning, params, the search term that asks it, the questions it answers, its rule and which lexicons supply it; 422 chant-too-old below chant 0.124.46",
         },
         { method: "GET", path: "/api/graph", desc: "the graph {ir, svg, meta} — params: detail=0..3, components=1, logical=1, ops=1 (+entities=1 to link steps to the estate), env, stack, tier, target, lens, up=1, down=1, radial=1, layout=1" },
         ...(cfg.carveReport
@@ -2414,6 +2587,7 @@ export function createApp(
         { method: "POST", path: "/api/layout", desc: "store one lens's deltas: JSON body {lens, deltas: {<node id>: {dx,dy,dw,dh}}} (the only file behold writes in your project)" },
         { method: "GET", path: "/api/health", desc: "runtime health for ?env= from chant lifecycle health (chant 0.124.33+): {env, nodes: {<id>: {state: healthy|unhealthy|unknown|unobserved|absent, detail, observedAt, checkedAt?, reason?}}, rotation: {<record id>: {check, inRotation: true|false|null, line}}, members, counts}; cached 30 s, ?fresh=1 reads again (#825)" },
         { method: "GET", path: "/api/diff", desc: "per-node live diff for ?env= — {env, nodes: {<id>: {observed, diff, health, fieldDrift}}}" },
+        { method: "GET", path: "/api/terraform/plan", desc: "the plan on each stock Terraform root, read through chant (chant 0.124.46+, #910): {members: [{member?, roots: [{root, answered: plan|state|none, note}], cards: {<id>: {source, action, reason, replacePaths, forcedFrom, afterUnknown, changes, drift}}} | {member?, refusal}]}; sensitive values are (sensitive); /api/graph?plan=1 puts the same facts on the cards" },
         { method: "GET", path: "/api/reconcile", desc: "pending-change summary for ?env=" },
         { method: "GET", path: "/api/resources", desc: "component → declared resources" },
         { method: "GET", path: "/api/components/compare", desc: "cross-env digest comparison: ?env=&to= — is one env running what the other tested (ledger-only)" },
@@ -2433,7 +2607,12 @@ export function createApp(
         { method: "GET", path: "/api/operator/log", desc: "the operating loop's timeline: converge ticks + gate resolutions, newest ?limit=n (max 200) from ?since=<iso>" },
         { method: "GET", path: "/api/history", desc: "recent source commits (rollback targets)" },
         { method: "GET", path: "/api/frames", desc: "captured lanes frames" },
-        { method: "GET", path: "/api/events", desc: "SSE: changed / op / apply / run / pr" },
+        { method: "GET", path: "/api/events", desc: "SSE: changed / op / apply / run / pr / view" },
+        {
+          method: "POST",
+          path: "/api/view",
+          desc: "move every open tab to a view, writing nothing: JSON body {view: {q, snapshot, env, member, zoom, node, focus, ...}, by?}; by is a label, not authentication; answers {id, movedAt, sent, link, view, refused}, or 409 code no-tab with the link when no tab is open; refused under --public and behold preview (#914)",
+        },
         { method: "POST", path: "/api/refresh", desc: "re-observe live now (?env=) — returns the fresh graph. With ?notify=1 it is a host's notice that the workspace changed: cached reads are dropped and every open page re-pulls (#476)" },
         { method: "POST", path: "/api/apply", desc: "delegated apply: ?env=&component=<name|all> (guarded, preview-locked)" },
         { method: "POST", path: "/api/ops/:name/run", desc: "run a committed Op (delegated write)" },
@@ -2525,6 +2704,50 @@ export function createApp(
       },
     };
   };
+
+  /**
+   * #910: the plan read on each stock Terraform member served, through chant
+   * (src/terraform-plan.ts). A choudoufu member is not one here: its re-check
+   * reads ownership and the plan through chant's live+plan read together
+   * (INTENTIUS/chant#4371, src/choudoufu-chant-read.ts, #924).
+   */
+  const terraformPlans = async (multi: boolean): Promise<Array<MemberPlanAnswer & { dir: string; read?: TerraformPlanRead }>> => {
+    const members = multi
+      ? estateMembers(cfg.projectDirs!).filter((m) => m.kind === "terraform").map((m) => ({ member: m.name as string | undefined, dir: m.dir }))
+      : memberKindOf(cfg.projectDir) === "terraform"
+        ? [{ member: undefined, dir: cfg.projectDir }]
+        : [];
+    return Promise.all(
+      members.map(async ({ member, dir }) => {
+        const res = await readTerraformPlan(dir, cfg.terraformPlan);
+        return res.ok ? { ...(member ? { member } : {}), dir, roots: res.read.roots, read: res.read } : { ...(member ? { member } : {}), dir, refusal: res.refusal };
+      }),
+    );
+  };
+  const paintTerraformPlans = async (ir: GraphIR, multi: boolean): Promise<MemberPlanAnswer[]> => {
+    const answers = await terraformPlans(multi);
+    for (const a of answers) if (a.read) paintTerraformPlan(ir, a.read, a.member);
+    return answers.map(({ dir: _dir, read: _read, ...a }) => a);
+  };
+
+  /**
+   * #910: the plan facts per card, for an agent: `{members: [{member?, roots:
+   * [{root, answered: plan|state|none, note}], cards: {<id>: facts}} |
+   * {member?, refusal}]}`. Ids are the graph's (`<member>/<root>/<address>`
+   * on an estate). Only plan facts, every sensitive value already
+   * `(sensitive)`; a root that fell back says which read answered.
+   */
+  app.get("/api/terraform/plan", async (c) => {
+    const multi = !!cfg.projectDirs;
+    const answers = await terraformPlans(multi);
+    return c.json({
+      members: answers.map(({ dir: _dir, read, ...a }) => ({
+        ...a,
+        ...(read ? { cards: Object.fromEntries(Object.entries(read.cards).map(([id, f]) => [a.member ? `${a.member}/${id}` : id, f])) } : {}),
+      })),
+      ...(answers.length ? {} : { note: terraformPlanNote([]) }),
+    });
+  });
 
   app.get("/api/graph", async (c) => {
     const url = new URL(c.req.url);
@@ -2974,6 +3197,10 @@ export function createApp(
       // logical path returns before this line — so this is the single-project
       // half of the same one call per request.
       const run = multi ? estateRun : applyMemberPasses(ir, { detail: opts.detail });
+      // #910: `?plan=1` reads the plan on every stock Terraform root through
+      // chant and puts each card's plan facts on it (`attrs._plan`), which the
+      // card's rows print. Opt-in: a plan refreshes every resource in a root.
+      const planNote = url.searchParams.get("plan") === "1" && !components ? terraformPlanNote(await paintTerraformPlans(ir, multi)) : undefined;
       // COMPOSITES (level 1) on the SOURCE view too (#138): the overlay branch
       // below has joined the component DAG's dependsOn edges since #84, but a
       // source-only serve (no env) rendered the tier with no component edges at
@@ -3142,7 +3369,7 @@ export function createApp(
       // picker rows, one image. One clause, through the same module every
       // other caption comes from.
       const sameNote = unchangedZoomNote(srcZoom, estateMembers(estateDirs()).map((m) => m.kind));
-      const ownNote = [estateLensNote, tf.note, cdNote, sameNote].filter(Boolean).join(" · ");
+      const ownNote = [estateLensNote, tf.note, cdNote, sameNote, planNote].filter(Boolean).join(" · ");
       // #554: notesFor counts the references to undeclared targets itself.
       // When it is not consulted (an estate, or a note above took its place),
       // the count is added here, read from the expanded IR like the rest.
@@ -3156,7 +3383,7 @@ export function createApp(
           .filter(Boolean)
           .join(" · ") || undefined;
       const srcNoteShort =
-        tf.noteShort || sameNote ? [estateLensNote, tf.noteShort ?? tf.note, cdNote, sameNote, danglingClause, collapsedNote].filter(Boolean).join(" · ") : undefined;
+        tf.noteShort || sameNote ? [estateLensNote, tf.noteShort ?? tf.note, cdNote, sameNote, planNote, danglingClause, collapsedNote].filter(Boolean).join(" · ") : undefined;
       return c.json({
         ir,
         svg,
@@ -3438,50 +3665,43 @@ export function createApp(
   /**
    * #404: the attribute drift half of a choudoufu member, per member.
    *
-   * OPT-IN. `plan` refreshes every resource in the estate — a read per
-   * resource against the account, where the ownership half (`live-ls` /
-   * `live-plan`) costs the tagging index and is flat in the estate's size. So
-   * an ordinary overlay read never plans; `?plan=1` does, and that is the only
-   * thing that spawns one.
+   * OPT-IN. `plan` refreshes every resource in the estate, a read per resource
+   * against the account, where the ownership half costs the tagging index. So
+   * an ordinary overlay read never plans; `?plan=1` does. Since #924 the plan
+   * is not read here: the re-check's member read takes ownership and the plan
+   * from one chant read (src/choudoufu-chant-read.ts, `opts.plan` through
+   * `readChoudoufuLive`) and caches the change set under the member's source
+   * stamp. This serves what that read cached, for the re-check itself and for
+   * every ordinary reload after it while the source has not moved. `read` is
+   * false only when no member has a change set, which is what lets the SPA
+   * tell "not looked" from "looked, nothing drifted".
    *
-   * A read WITHOUT `plan=1` still serves a change set already in the cache for
-   * a member whose source has not moved, so a reload after a plan refresh
-   * keeps showing what the refresh found rather than dropping it. `read` is
-   * false only when no plan was asked for AND none was cached — which is what
-   * lets the SPA tell "not looked" from "looked, nothing drifted".
-   *
-   * A member whose plan refuses (no credentials, a provider error) is skipped:
-   * the ownership overlay is untouched and perfectly good, and a failed
-   * SECOND opinion must not blank the first one.
+   * A member whose plan was not read (no credentials, a provider error, a
+   * chant below the floor) has none: its ownership overlay stands, and a
+   * failed second opinion must not blank the first one.
    */
-  const choudoufuPlanDrift = async (dirs: string[], wanted: boolean): Promise<{ read: boolean; byDir: Map<string, { name: string; drift: Map<string, PlanResourceDrift> }> }> => {
-    const members = estateMembers(dirs).filter((m) => m.kind === "choudoufu");
+  /** #924: why a re-check read no plan, per choudoufu member that read none
+   * (chant's own note, or the floor), or undefined when every member did. */
+  const planNotes = (dirs: string[]): string | undefined => {
+    const notes = estateMembers(dirs)
+      .filter((m) => m.kind === "choudoufu")
+      .flatMap((m) => {
+        const a = choudoufuPlanAnswer(m.dir);
+        return a && a.answered !== "live+plan" ? [`${m.name}: ${a.note ?? "the plan was not read"}`] : [];
+      });
+    return notes.length ? notes.join("; ") : undefined;
+  };
+  const choudoufuPlanDrift = (dirs: string[]): { read: boolean; byDir: Map<string, { name: string; drift: Map<string, PlanResourceDrift> }> } => {
     // Keyed by DIRECTORY, not by member name: a member's name is derived from
     // its path, so a call scoped to one member (the single-node diff route)
-    // and a call over the whole estate must agree on the key, and the
-    // directory is the only thing both of them know for certain.
+    // and a call over the whole estate must agree on the key.
     const byDir = new Map<string, { name: string; drift: Map<string, PlanResourceDrift> }>();
     let read = false;
-    for (const m of members) {
-      const stamp = memberSourceStamp(m.dir);
-      if (!wanted) {
-        const hit = cachedChoudoufuPlan(m.dir, stamp);
-        if (hit) {
-          read = true;
-          byDir.set(m.dir, { name: m.name, drift: hit });
-        }
-        continue;
-      }
-      try {
-        const drift = await readChoudoufuPlan(m.dir, cfg.choudoufu?.run);
-        cacheChoudoufuPlan(m.dir, stamp, drift);
-        read = true;
-        byDir.set(m.dir, { name: m.name, drift });
-      } catch {
-        // The plan could not be read for this member — the overlay's ownership
-        // colours stand, and `drift.read` stays false unless another member
-        // answered.
-      }
+    for (const m of estateMembers(dirs).filter((m) => m.kind === "choudoufu")) {
+      const hit = cachedChoudoufuPlan(resolve(m.dir), memberSourceStamp(m.dir));
+      if (!hit) continue;
+      read = true;
+      byDir.set(m.dir, { name: m.name, drift: hit });
     }
     return { read, byDir };
   };
@@ -3559,7 +3779,7 @@ export function createApp(
         // build the first picture and none is reused; a pending member becomes
         // a real one only when its own read completes.
         if (new URL(c.req.url).searchParams.get("progressive") === "1") {
-          const readOpts = { ...tierTargetOpts(query), detail, env };
+          const readOpts = { ...tierTargetOpts(query), detail, env, ...(planWanted ? { plan: true } : {}) };
           const pending = await composeEstatePending(cfg.projectDirs, readOpts);
           // The live pass runs past this response on purpose. It is the same
           // read the blocking branch does — one per member, under the same
@@ -3606,7 +3826,7 @@ export function createApp(
         // has settled, and a figure about the account belongs with the picture
         // of the account.
         const traffic = trafficFor(new URL(c.req.url).searchParams, beholdConfig);
-        const est = await composeEstateOverlay(cfg.projectDirs, { ...tierTargetOpts(query), detail, env, ...(traffic ? { traffic } : {}) }, reclassifyOverlay, { fresh: planWanted });
+        const est = await composeEstateOverlay(cfg.projectDirs, { ...tierTargetOpts(query), detail, env, ...(traffic ? { traffic } : {}), ...(planWanted ? { plan: true } : {}) }, reclassifyOverlay, { fresh: planWanted });
         if (est.dropped.length === est.total) {
           return c.json({ error: `no project in the estate could be graphed — ${est.dropped.map((d) => `${d.name}: ${d.reason}`).join("; ")}` }, 500);
         }
@@ -3644,7 +3864,7 @@ export function createApp(
         // attribute drift) and only ever adds `_planDrift` beside it — the
         // ownership verdict stays the card's colour. `planWanted` is read
         // above, where it also decides whether the ownership half re-observes.
-        const drift = await choudoufuPlanDrift(cfg.projectDirs, planWanted);
+        const drift = choudoufuPlanDrift(cfg.projectDirs);
         let driftedCards = 0;
         for (const e of drift.byDir.values()) driftedCards += paintPlanDrift(ir, e.drift, e.name);
         const coverNote =
@@ -3790,7 +4010,7 @@ export function createApp(
             // that says nothing where a plan was never read is honest; one
             // that says `0 drifted` there is a claim behold did not earn.
             // The figure is CARDS marked, which is what the legend counts.
-            drift: drift.read ? { read: true, drifted: driftedCards } : { read: false },
+            drift: { ...(drift.read ? { read: true, drifted: driftedCards } : { read: false }), ...(planWanted && planNotes(cfg.projectDirs) ? { note: planNotes(cfg.projectDirs) } : {}) },
             ...(note ? { note } : {}),
           },
         });
@@ -4110,11 +4330,13 @@ export function createApp(
     // #404: the same opt-in the overlay takes — `?plan=1` reads a plan, no
     // flag serves one already cached for a member whose source has not moved,
     // and neither one ever plans on a read that did not ask.
-    const diffDrift = await choudoufuPlanDrift(cfg.projectDirs ?? [cfg.projectDir], new URL(c.req.url).searchParams.get("plan") === "1");
+    // #924: a re-check reads the plan in the same chant read as ownership.
+    const diffPlan = new URL(c.req.url).searchParams.get("plan") === "1";
     for (const m of estateMembers(cfg.projectDirs ?? [cfg.projectDir])) {
       if (m.kind !== "choudoufu") continue;
       try {
-        const r = await readChoudoufuLive(m.dir, {});
+        const r = await readChoudoufuLive(m.dir, diffPlan ? { plan: true } : {});
+        const diffDrift = choudoufuPlanDrift([m.dir]);
         Object.assign(nodes, choudoufuDiffNodes(r.check, r.ls, r.plan, multi ? m.name : undefined, diffDrift.byDir.get(m.dir)?.drift));
       } catch {
         // painted unobserved on the overlay; nothing to slice
@@ -4255,10 +4477,10 @@ export function createApp(
     const owner = estateMembers(cfg.projectDirs ?? [cfg.projectDir]).find((m) => m.kind === "choudoufu" && (multi ? node.startsWith(`${m.name}/`) : true));
     if (owner) {
       try {
-        const r = await readChoudoufuLive(owner.dir, {});
         // #404: the same opt-in as the bulk route above, so one node's pane
         // and the whole estate's pane cannot disagree about what drifted.
-        const one = await choudoufuPlanDrift([owner.dir], new URL(c.req.url).searchParams.get("plan") === "1");
+        const r = await readChoudoufuLive(owner.dir, new URL(c.req.url).searchParams.get("plan") === "1" ? { plan: true } : {});
+        const one = choudoufuPlanDrift([owner.dir]);
         const entry = choudoufuDiffNodes(r.check, r.ls, r.plan, multi ? owner.name : undefined, one.byDir.get(owner.dir)?.drift)[node];
         return c.json({ node, env, ...(entry ?? { diff: null, observed: null, health: "unknown", fieldDrift: null }) });
       } catch (err) {
@@ -4621,16 +4843,29 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
     stopPoll();
     stopPoll = () => {};
     process.stdout.write(`  switched → ${dir}\n`);
+    registerServe(); // behold#916: the registry names the project now served
     void capture(); // baseline keyframe for the new project
   };
   if (!carve) void capture(); // baseline keyframe at startup
   // Clean shutdown on both Ctrl-C (SIGINT) and `kill` (SIGTERM) — otherwise a
   // `kill`ed instance leaves its emulator container running, which the next launch
   // silently reuses (a stale-state trap). Guard against double-fire.
+  // behold#916: this serve's entry in the per-user registry under the OS temp
+  // dir (src/serve-registry.ts), so `behold mcp` finds it. Written once the
+  // port is known, rewritten on a project switch, removed at exit. Nothing
+  // goes in the project.
+  let listening: string | undefined;
+  const registerServe = (): void => {
+    if (!listening) return;
+    writeServeEntry({ url: listening, pid: process.pid, projectDir: cfg.workspace?.root ?? cfg.projectDir, version: beholdVersion(), startedAt });
+  };
+  const startedAt = new Date().toISOString();
+  process.on("exit", () => removeServeEntry());
   let shuttingDown = false;
   const shutdown = (): void => {
     if (shuttingDown) return;
     shuttingDown = true;
+    removeServeEntry();
     stopWatch();
     stopPoll();
     // Local mode (#46): tear the emulator(s) down so nothing is left running.
@@ -4649,6 +4884,9 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   process.on("SIGTERM", shutdown);
   const hostname = cfg.host ?? process.env.BEHOLD_HOST ?? "127.0.0.1";
   const server = serve({ fetch: app.fetch, port: cfg.port, hostname }, (info) => {
+    const reach = ["0.0.0.0", "::", "[::]"].includes(hostname) ? "127.0.0.1" : hostname;
+    listening = `http://${reach.includes(":") && !reach.startsWith("[") ? `[${reach}]` : reach}:${info.port}`;
+    registerServe();
     if (cfg.terralithDemo) {
       process.stdout.write(
         `behold → http://localhost:${info.port}/terralith\n` +

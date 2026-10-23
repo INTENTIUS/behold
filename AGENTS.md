@@ -526,7 +526,8 @@ preview-locked, and one load runs at a time (409 otherwise).
    `?env=`, `/api/overlay` is the live entity overlay; `/api/diff?env=` slices
    per-node observed state, drift and field ownership; `/api/reconcile?env=`
    summarizes the pending change set; `/api/substrates` reports substrate
-   readiness; `/api/events` (SSE) pushes `changed`/`op`/`apply`/`run`/`pr`.
+   readiness; `/api/events` (SSE) pushes `changed`/`op`/`apply`/`run`/`pr`,
+   and `view` when an agent moves the tab (below).
    With `?components=1&env=`, each component node carries `_liveStatus` (the
    `chant components status` verdict) and, when the release ledger recorded
    one, `_release` — `{runId, forge, originSource, url?, gitSha, digest,
@@ -885,6 +886,236 @@ pass.
 
 There is still **no** endpoint that runs `terraform`. The handoff step hands
 back the runbook's commands as text.
+
+## A chant search query: `q` and `GET /api/search` (#913)
+
+`q` is a view key holding a query in chant's search grammar. In a link
+(`?q=...`), a `behold:view` message, `POST /api/view` and `behold shot`, it
+draws the same way: the cards chant matched are lit, the cards and edges on
+each match's path (chant's `paths[].hops`, and for a `cap:` term the hops
+in `paths[].because[]` too, INTENTIUS/chant#4375) are drawn at full weight, and the
+rest is dimmed, with nothing hidden. One line at the top left says the query,
+the match count and chant's provenance line. A query with no matches dims
+the whole graph, says "no matches" with the universe count, and outlines the
+near-misses `--explain` names (hover one for the term it fails). A live read
+that failed is said as a failure naming the lexicon, and its rows wear a
+dashed ring. A query chant's grammar refuses lights and dims nothing and
+shows chant's message and hint. A reload keeps `q`.
+
+chant answers and behold draws. Every search goes through the workspace
+reader (`src/workspace-reader.ts`, a fifth `BEHOLD_READS` entry held by
+chant's reader conformance suite):
+
+| Served | chant call |
+|---|---|
+| a declared workspace | `chant workspace search [flags] --json -- <q>` at the root (INTENTIUS/chant#4374). Ids are `<member>/<id>`, as `workspace graph` gives them. A member chant didn't search is named in a "not searched" line with chant's reason code, never shown as no matches |
+| one chant project | `chant search [flags] --json -- <q>` in its directory |
+| a bare Terraform folder | `chant workspace search` at a scratch workspace of one member (#925): `<tmpdir>/behold-tfws-<hash>`, whose `chant.workspace.json` declares one member of kind `chant`, named what the folder's box is named, at a link to the scratch project behold graphs the folder through. chant composes the `<member>/<id>` ids the cards carry; behold prefixes nothing. Nothing is written in the folder. The folder's box is named with a member name chant accepts (`^[a-z0-9][a-z0-9-]{0,39}$`, #927): a folder name that already is one is kept, any other is lowercased, with each run of other characters turned into `-`, and cut to 40 (`MyInfra` -> `myinfra`, `terraform_ec2` -> `terraform-ec2`), for the graph and the search alike. `code: "search-member-name"` is left only as a guard |
+| a loose estate of several dirs | refused, `code: "search-estate"`: declare a workspace |
+
+The mode follows the view: no `env` is the declared source, `env` is a live
+read (`--live --env`), and `env` with `snapshot` replays a recorded snapshot
+(`--snapshot <ref> --env`). `--explain` is always passed.
+
+```
+GET /api/search?q=->kind:aws_kms_key&env=&snapshot=&show=
+-> 200 {q, env, snapshot,
+        document: <chant's search document, unchanged>,
+        draw: {lit, onPath, edges, unobserved, nearMisses, provenance, failure, notSearched},
+        link}
+```
+
+A query chant refuses answers 400 `code: "query"` with chant's hint as the
+remedy (and the document). A chant below 0.124.46 answers 422
+`code: "chant-too-old"` (`SEARCH_CONTRACT_CHANT_FLOOR` in
+`src/chant-floors.ts`). A `--public` serve answers declared queries and
+refuses `env` and `snapshot` (403).
+
+`behold export --q "<query>"` (repeatable) captures each query's answer for
+the source graph and every environment, so the bundle draws it with no
+backend. The manifest lists `queries`; a link's `q` that wasn't captured is
+named, with the captured ones, and lights nothing.
+
+### Groups and the plan: `countBy` and `plan` (#922)
+
+Two more view keys, carried the same way as `q` (a link, `behold:view`,
+`POST /api/view`, `behold shot --view`, the MCP tools, an export):
+
+- `countBy=kind|module|attr:<name>` is chant's `--count-by`. The document is
+  chant's counts branch, verbatim: `countBy`, `groups[{group, count, ids}]`
+  and `total` (INTENTIUS/chant#4360; `ids` is INTENTIUS/chant#4382). The page
+  lights each group's cards from `ids`, outlines them in the group's colour,
+  labels the group's first drawn card `<group> · <count>`, and the top-left
+  line lists the groups and the total. `draw.counts` is `{by, total, groups}`.
+  With `countBy`, `q` may be empty: the whole graph is counted. A chant that
+  lists no ids per group lights nothing and the line says so. behold never
+  works out a node's group itself.
+- `plan=1` is the plan read. The source graph's cards carry each stock
+  Terraform root's plan facts (`/api/graph?plan=1`, #910) on every load, and
+  `q` is answered at the plan depth: `CHANT_TERRAFORM_OBSERVE=plan` in the
+  environment of that one chant call, with `--live --env <env>`
+  (INTENTIUS/chant#4358). A bare Terraform folder needs no env (the plan
+  read's placeholder `behold-plan` is used); a chant project or workspace
+  needs one (422 `code: "plan-env"`). `plan` with `snapshot` is refused,
+  naming both: a 400 on the route, both keys in `refused` on a link or
+  `POST /api/view`. A `--public` serve refuses it (403). It runs
+  `terraform plan -lock=false` in each root: nothing is changed, but every
+  resource is read.
+
+```
+GET /api/search?q=kind:aws_&countBy=module
+GET /api/search?q=attr:planAction=replace&plan=1&show=planActions,planReplacePaths,planActionReason
+```
+
+`behold export --count-by <g>` captures each `--q` grouped too (with no
+`--q`, the whole graph's groups); `behold export --plan` captures the plan
+cards on the source graph and each `--q` at the plan depth.
+
+A `cap:` term (INTENTIUS/chant#4375) asks a capability, such as
+`cap:internet-reachable(22)`. Its route is in the path's `because`, one
+entry per capability the match relied on, each with the hops that proved it,
+and `draw.edges` and `draw.onPath` include them (#926). A hop that ends on a
+node inside a resource, `<id>#<attr>[n]` (a security group's ingress rule),
+is drawn on the resource's card.
+
+### The capability catalog: `GET /api/capabilities` (#926)
+
+Read it before asking a `cap:` question. It answers chant's capabilities
+document byte for byte (capabilities.schema.json, contract 1), read through
+the workspace reader from the same target a search asks:
+`chant workspace search --capabilities --json` at a declared workspace's
+root, `chant search --capabilities --json` in one project or a Terraform
+folder's scratch project. Each capability has its `name`, `meaning`,
+`params`, the `search` term that asks it, the questions it `answers`, what
+it leaves `notEvaluated`, its `rule`, and per lexicon whether it is
+supplied. A chant below 0.124.46 answers 422 `code: "chant-too-old"`
+(`CAPABILITIES_CHANT_FLOOR`). behold mcp's `capabilities` tool returns the
+same text.
+
+```
+GET /api/capabilities
+-> 200 {"$schema":".../capabilities/v1/capabilities.schema.json","contract":1,"chant":"0.124.46",
+        "capabilities":[{"name":"internet-facing","meaning":...,"search":"cap:internet-facing",...}],
+        "helpers":[...]}
+```
+
+## Moving the person's open tab (#914)
+
+`POST /api/view` changes what every open tab of this serve draws. It is a
+view change and writes nothing: no infrastructure, no project file, not
+`.behold/layout.json`, and nothing kept on the server.
+
+```
+POST /api/view
+{"view": {"q": "attr:internetFacing=true", "env": "prod", "snapshot": "latest", "zoom": "resources"},
+ "by": "claude-code via behold mcp"}
+```
+
+`view` takes the URL's view keys (`member`, `zoom`, `env`, `tier`, `lens`,
+`node`, `radial`, `alike`, `gates`, `focus`, `run`, `pull`, and #922's
+`plan` (a boolean) and `countBy`) plus `q`, a
+question in chant's search grammar, and `snapshot`, a recorded lifecycle
+snapshot (`latest` or a ref) that needs an `env`. They are settled with the
+same checks a link's query gets (`web/view-url.js`: `viewFromObject`,
+`settleView`, `checkQuery`); an env the project doesn't declare, a `q` with a
+control character or over 2000 characters, or a key that isn't a view key is
+named in `refused` and the rest still moves. `at` is refused by name: in
+chant's read contract it is a git revision, so a snapshot is `snapshot`.
+behold does not parse `q`. The tab draws it through `GET /api/search`
+(below): the matches lit, the rest dimmed.
+
+The answer is `200 {id, movedAt, sent, link, view, refused}`, where `sent` is
+the number of open tabs it reached and `link` opens the same view. With no
+tab open it is `409 {code: "no-tab", link}`: hand the person the link. A
+view with nothing that can be applied is `400 {code: "view", refused}`.
+
+Each tab gets a `view` event `{id, movedAt, by, view}` on `/api/events`,
+moves, and shows "Moved by an agent: `<by>` asked `<q>` at <time> (request
+<id>)" with a Back button. An agent's move pushes a browser history entry, so
+the banner's Back and the browser's Back both return to the view from before
+it; up to 20 moves in a row stack this way. The person's own changes keep
+replacing the entry they are on. An embedded frame with a host (`embed=1&host=`)
+ignores the event, because its host owns its view (#476).
+
+`by` is a label of at most 80 printable characters. Without one it is the
+request's User-Agent product token. Anyone who can reach the serve can send
+any name, so `by` says who the caller claims to be and is not authentication.
+
+Refused: under `serve --public` (405 from the request guard, and 403 `code:
+"public"` in the route itself), and under every `behold preview`, with or
+without `--emulator` (403 `code: "preview"`). A terragucci or SQL Yodeler
+repo allows it, since it writes nothing. A static export has no server, so no
+route.
+
+## A picture of a view (#915)
+
+`behold shot "<query>" [project-dir] -o out.png` and `GET /api/shot` take a
+PNG of a view and give the link to the same view. Both call `src/shot.ts`.
+The page is behold's own, loaded in a headless browser with
+`embed=1&bare=1&frame=matches`: it lights what the view asks for, dims the
+rest, frames the lit cards with the kiosk's arithmetic (`web/kiosk-shot.js`),
+draws one caption line (what was asked, from where, when), and sets
+`data-behold-shot` on `<html>` to `drawn`, `no-matches` or `failed`. Nothing
+is photographed until it does: a page that never reports ready within 60 s,
+or one that draws no cards, is refused and no file is written.
+
+```
+GET /api/shot?node=aws_vpc.main&env=prod&width=1600&height=1000
+-> 200 image/png, Behold-View-Link: http://127.0.0.1:4600/?env=prod&node=aws_vpc.main,
+   Behold-Shot-State: drawn | no-matches | failed
+```
+
+The browser comes from `playwright-core`, an optional peer behold does not
+install: the system Chrome first, then Playwright's `chromium-headless-shell`.
+Without either the CLI exits 1 with the install line and the route answers
+501 `code: "no-browser"`. `--env`/`env=` draws the env's live view, and
+`--snapshot <ref>`/`snapshot=` a recorded snapshot of it (`at` is a git
+revision and is not taken). The route answers bytes, never a path, and is
+refused on `serve --public` (403), since each shot starts a browser. The CLI
+uses the serve at `--url`, or starts behold's app for the project on a free
+loopback port and stops it after; without `-o` the PNG goes under the OS temp
+directory. Nothing is written in the served project.
+
+A query's matches are lit and framed (#913). Without a query, a shot frames
+the view's own `node` or `focus` (`behold shot "" --view node=<id>`).
+
+## Over MCP: `behold mcp` (#916)
+
+`behold mcp [project-dir] [--url <serve> | --port <n>]` is a stdio MCP server
+with four tools, all clients of a running serve's HTTP API. An agent reads
+`capabilities` first (#926): it calls `GET /api/capabilities` and returns
+chant's capability catalog, the read contract's `capabilities` document
+(`chant search --capabilities --json`, INTENTIUS/chant#4375), byte for byte.
+It names each capability a `cap:` term asks, what it means, its parameters,
+the search term, the questions it answers, what it does not evaluate, its
+rule and which lexicons supply it, and it takes no arguments. `ask` calls
+`GET /api/search` and returns chant's search document verbatim, with `link`
+and `drawn: false` added after its own fields (a test holds it byte for byte
+to what chant prints); it takes `query`, `env`, `snapshot` and `show`, and
+never moves the tab. `show` calls
+`POST /api/view` (its `by` is the MCP client's name plus "via behold mcp"),
+and `shot` calls `GET /api/shot` and returns the PNG as MCP `image` content
+followed by a text block `{link, state, serve}`. They take `query`, `env`,
+`snapshot`, `member`, `zoom`, `focus` and `node`; `shot` also takes `width`
+and `height`. The answers are chant's: behold passes chant's documents
+through and computes none of its own.
+
+It finds the serve through `--url`/`--port`, then the per-user registry at
+`<os.tmpdir()>/behold/serves/<pid>.json` (`{url, pid, projectDir, version,
+startedAt}`, written by every serve at start, rewritten on a project switch,
+removed at exit, a dead pid ignored; `BEHOLD_SERVES_DIR` moves it), then
+`http://127.0.0.1:4600`. It confirms the serve through `GET /api/project`.
+`show` refuses a serve of another project, naming both, and refuses with the
+serve command when none runs. `capabilities`, `ask` and `shot` with no serve of the project
+start behold in their own process for the call (`src/shot-cli.ts`), and the
+answer comes from the same route.
+
+Arguments are checked against each tool's schema (`additionalProperties:
+false`), a credential-named one is refused by name, and a refusal is an
+`isError` result carrying the route's `{error, code, remedy}`. The server
+refuses to start with a tool whose name holds a write word (deploy, apply,
+approve, run, op, rollback, write and kin), and a call to an unlisted tool is
+refused with the same words.
 
 ## The act loop (delegated, never direct)
 
@@ -1344,7 +1575,8 @@ allowlist (#500): every request whose method is not GET, HEAD or OPTIONS, on
 any path, answers that `409` unless `TERRAGUCCI_ALLOWED_WRITES` names its
 method and route, and that list holds only the exceptions below (the layout
 sidecar, project open and reveal, demo open, refresh, and the four carve
-steps). A new write route is refused on a terragucci repo until it is added
+steps), plus `POST /api/view`, which moves the open tabs and writes nothing
+(#914). A new write route is refused on a terragucci repo until it is added
 there. `src/terragucci-repo.test.ts` walks every non-GET route of the real
 app (`app.routes`, built plain, with a carve report and with `--terragucci`)
 and asserts each one is allowlisted or answers 409, and that every allowlist
@@ -1652,7 +1884,7 @@ its own graph and overlay counts as it runs.
 | `terralith-1` | `terralith-gen` at scale 1 plus the `estate.chdf.hcl` sidecar it omits, applied by choudoufu from nothing: 79 cards, all 79 bound | docker, choudoufu, go |
 | `terralith-4` | the same at scale 4: 301 cards, all 301 bound. The estate behold is sized against | the same |
 | `terralith-4-adopt` | scale 4 again, but STOCK terraform applies it first, so nothing wears a marker: 301 cards — 85 UNOWNED, 84 bound by derived identity alone, 132 neutral. One `choudoufu live-import` line, which the up script prints and you run, and all 301 read bound | docker, choudoufu, go, terraform |
-| `waterpark` | `../waterpark/access` in place as a bare Terraform directory (#384): five roots as boxes, 58 cards, 49 edges, nothing written under the estate | `@intentius/chant-lexicon-terraform` + `@cdktn/hcl2json` beside behold — optional peers behold declares and does not install |
+| `waterpark` | `../waterpark/access` in place as a bare Terraform directory (#384): five roots as boxes, 58 cards, 49 edges, nothing written under the estate | `@intentius/chant-lexicon-terraform` + `@cdktn/hcl2json` beside behold, dependencies of behold since #909 |
 
 **The scratch, by name and port.** Each emulator is the entry's own, booted by
 its up script and removed by the `scripts/down.sh` that script wrote into the
@@ -1716,8 +1948,9 @@ A Terraform estate reaches behold through chant.
 `@intentius/chant-lexicon-terraform` reads the HCL an estate already has and
 emits one entity per block, so **a Terraform estate is a chant project whose
 only lexicon is a reader** and `chant graph --format ir` serves it like any
-other. behold parses no HCL and ships no HCL parser, the same posture
-`src/carve-lens.ts` states for the carve report (#378).
+other. behold parses no HCL itself, the same posture `src/carve-lens.ts`
+states for the carve report (#378). The parser chant uses is installed with
+behold since #909, below.
 
 Three passes turn what arrives into a picture (`src/terraform-lens.ts`), in this
 order, guarded on the IR carrying terraform entities so every other estate gets
@@ -1780,17 +2013,24 @@ points chant at it. The Invariant's one in-project write stays
 across a read. Three decisions, each a trade #384 left open and each measured on
 water park's `access/` before it was taken:
 
-1. **The lexicon is opt-in.** chant resolves the lexicon from the config file's
-   own location, so the generated project has to see it, and making it a
-   dependency would put `@cdktn/hcl2json`, a ~1.8 MB wasm blob, in the install
-   of every user who serves a chant project. `@intentius/chant-lexicon-terraform`
-   and `@cdktn/hcl2json` are therefore **optional peers**: declared in
-   package.json (the only place their versions are named, the refusal reads
-   them from there), never installed by behold, probed at serve and doctor time,
-   and refused with the one install line and where behold looked. The same gate
-   `behold demo` puts on a binary it does not ship. The lexicon's own chant peer
-   is what moved behold's `@intentius/chant` floor to `^0.61.0`: chant 0.54
-   loads no published version of it (`applyLineage is not a function`).
+1. **The reader ships with behold, and is still probed.** chant resolves the
+   lexicon from the config file's own location, so the generated project has to
+   see it, and chant core (not the lexicon) imports `@cdktn/hcl2json` from its
+   own real path; neither package declares the parser. #384 made both optional
+   peers to keep a ~1.8 MB wasm blob out of chant-only installs. #909 reversed
+   that so `npx @intentius/behold serve .` on a folder of `.tf` files is one
+   command: `@intentius/chant-lexicon-terraform` and `@cdktn/hcl2json` are
+   **dependencies** in package.json (the only place their versions are named;
+   the refusal reads them from there). The maintainer accepted the cost on #909:
+   +8.3 MB on a 195 MB install, six packages. The lexicon's range starts at
+   behold's chant floor so its chant peer dedupes against behold's chant, and
+   npm hoists both beside chant, which is where the scratch project's
+   `node_modules` symlink and chant's parser import look. They are still probed
+   at serve and doctor time and refused with the one install line and where
+   behold looked, because an install that pruned them reaches a chant that
+   warns, exits 0 and prints an empty graph. The lexicon's own chant peer is
+   what moved behold's `@intentius/chant` floor to `^0.61.0`: chant 0.54 loads
+   no published version of it (`applyLineage is not a function`).
 2. **Roots are discovered, and the skips are reported.** A root is a directory
    with a `.tf` declaring a line-start `terraform {` or `provider "` block
    beside a `resource`, `data` or `module` block, a regex probe at the depth
@@ -1843,21 +2083,36 @@ tag, path or mutability was changed out of band still carries its markers, so
 it is still bound, and it is still green.
 
 The other half of the terminal's answer ("would a plan change anything?") is
-a **separate, opt-in read**: `choudoufu plan -input=false -out=<tmp>` then
-`choudoufu show -json <tmp>`, whose `resource_changes[].change.{actions,before,
-after}` name the attributes and both their values. (`choudoufu plan -json` is
-NOT this: on 0.16.0 it prints choudoufu's own ownership document, the same
-shape as `live-plan -json`, with no attribute values in it at all. The
-measurement is in src/choudoufu-plan.ts's header.) The plan file is written to
-a scratch directory of behold's own and removed after rather than inside the served
-member, which would be a write into someone's source.
+a **separate, opt-in read**, and since #924 it goes through chant together with
+the ownership it is about (src/choudoufu-chant-read.ts): one `chant graph
+--live` over the member's `chdf` reader project at the plan depth
+(`CHANT_TERRAFORM_OBSERVE=plan`, INTENTIUS/chant#4371). chant runs `choudoufu
+live-plan -json` for ownership, then `choudoufu plan -input=false -lock=false
+-out=<its tmp>` and `show -json` for the attributes, and puts `planChanges`
+(live value `before`, declared value `after`) on each bound block. With
+`CHANT_TERRAFORM_LIVE_PLAN_DIR` set to a directory behold made under the OS
+temp directory (INTENTIUS/chant#4383), chant also hands back the `live-plan`
+document its verdicts came from, and behold paints ownership from that, so a
+re-check runs ONE `live-plan` per member and the plan sits on the same
+verdicts as the card. Nothing is written in the served member (chant writes
+its plan file and the handed document outside it, INTENTIUS/chant#4379).
+(`choudoufu plan -json` is not this read: on 0.16.0 it prints choudoufu's own
+ownership document with no attribute values in it at all, measured in #404.)
+On a live root drift IS the planned `update`: choudoufu rebuilds prior state
+from the account, so chant's `planDrift` is empty there and is not read. A
+path chant finds flagged sensitive on either side is `(sensitive)` on both,
+and so is every copy of a flagged string (`tags_all`): a choudoufu plan flags
+a sensitive variable's value on `after` only, with the old secret unflagged in
+`before`. Floor: `CHOUDOUFU_PLAN_CHANT_FLOOR` (0.124.46); below it, or with no
+terraform lexicon, a re-check paints from behold's own `live-plan` and reads
+no plan.
 
 It is opt-in because it costs differently: the ownership read is answered out
 of the tagging index and is flat in the estate's size, while `plan` refreshes
 every resource, one provider read per card, 301 of them on `terralith-4`. So:
 
 - **Never on an ordinary overlay read.** `GET /api/overlay?plan=1` and
-  `GET /api/diff?plan=1` are the only things that spawn one, and the palette's
+  `GET /api/diff?plan=1` are the only things that read one, and the palette's
   **"Re-check live with plan (attribute drift)"** row is the only thing in the
   SPA that sends the flag. The cheap **"Re-check live (refresh drift)"** row is
   deliberately left alone — it is `POST /api/refresh`, a primary-only re-observe
@@ -1865,7 +2120,7 @@ every resource, one provider read per card, 301 of them on `terralith-4`. So:
 - **Cached under the member's source stamp**, the same key half `memberIr`
   uses. A read that did NOT ask is served that stored answer, so a reload after
   a refresh keeps showing the drift without paying for a second pass; a read
-  that DID ask always re-plans, because "re-check" means re-check.
+  that DID ask always re-reads both halves, because "re-check" means re-check.
 - **The ownership verdict stays the card's colour.** A bound card that drifted
   is still painted bound and still counted `bound`; it gains `attrs._planDrift`
   and wears a dashed `--degraded` edge plus a `~ n attributes` corner glyph
@@ -1876,6 +2131,36 @@ every resource, one provider read per card, 301 of them on `terralith-4`. So:
 - **`/api/overlay`'s meta carries `drift`**: `{read: false}` or `{read: true,
   drifted: n}`. The two are different answers — "nobody looked" versus "looked,
   nothing drifted", and the legend prints a count only for the second.
+
+### A stock Terraform root's plan comes from chant (#910)
+
+`GET /api/graph?plan=1` (palette: **"Read the plan on the Terraform roots"**)
+reads each stock Terraform member's roots at chant's plan depth
+(INTENTIUS/chant#4358): behold's own chant over the member's scratch project,
+`CHANT_TERRAFORM_OBSERVE=plan chant graph . --live --overlay --env behold-plan
+--format ir --detail 3` (src/terraform-plan.ts). The plan runs with
+`-lock=false`, its file under the OS temp directory. Each resource or data card
+gains `attrs._plan` (`source`, `action`, `reason`, `replacePaths`,
+`forcedFrom`, `afterUnknown`, `changes`, `drift`), and the card's rows lead with
+`plan`, `forced by`, `from` and `read`. `GET /api/terraform/plan` answers the
+same facts per card as JSON.
+
+- **Which read answered is per root**, parsed from chant's notes: `plan`,
+  `state` (the plan failed, for missing credentials or a provider error) or
+  `none` (declared only). A card in a root that fell back says `plan: not read`
+  and which read answered. Never "no changes" unless the plan said `no-op`.
+- **Sensitive values arrive redacted** by chant, at any depth and every copy;
+  behold copies plan facts only, never a block's other attributes.
+- **Floor**: `TERRAFORM_PLAN_CHANT_FLOOR` (0.124.46) for behold's chant and the
+  lexicon; below it the read is refused with the upgrade line.
+- **A planned create has a card**: it reads absent at the plan depth, so it
+  stays pending with no physical id, and chant carries its plan attributes
+  onto the declared node anyway (chant#4372). Its rows read `plan: create`,
+  `unknown: N until apply`, `read: plan`.
+- **choudoufu members read ownership and the plan through chant together**
+  (src/choudoufu-chant-read.ts, #924): src/choudoufu-plan.ts is gone, and a
+  re-check's `live-plan` is chant's, handed back to behold. See the choudoufu
+  section above.
 
 ### A lexicon behold draws but cannot aim (#430)
 

@@ -11,7 +11,8 @@
 import "./view-repo.js"; // behold#571: first, so every read carries the page's ?repo=
 import { createRefreshQueue } from "./refresh-queue.js";
 import { indexCompositeMembers } from "./composite-members.js";
-import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine, withOpening, defaultEnv } from "./view-url.js";
+import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine, withOpening, defaultEnv, restoreViewQuery, viewFromObject } from "./view-url.js";
+import { agentBanner, agentEntry, wholeQuestion } from "./agent-move.js";
 import { quietCardLines, readEmbed, selectMessage, viewFromMessage, wheelPx, wheelZoomsBare } from "./embed.js";
 import { WORDS as POP_WORDS, cardRoot as popCardRoot, placePopover, popReduce, popState, resourcePopover, rootPopover } from "./kiosk-popover.js";
 import { waveListKey, waveListOf } from "./kiosk-wave-list.js";
@@ -129,6 +130,8 @@ import { comparisonRow, comparisonSummary } from "./cross-env.js";
 // The marker-vs-derived mark on a choudoufu card: how its identity was found.
 import { identityMark, tagGlyphSvg } from "./identity-mark.js";
 import { shotFromMessage, shotViewBox, tweenViewBox, unionBox, sameViewBox, heldFrame, heldInsets, heldTarget, holdsStage, medianWidth, smallStage } from "./kiosk-shot.js"; // behold#571: Watch's camera
+import { SHOT_ATTR, SHOT_CAPTION_PX, SHOT_DIM, queryFrame, readShotFrame, shotCaption, shotLit, shotProvenance, shotState } from "./shot-frame.js"; // behold#915: the page `behold shot` photographs
+import { countsLine, groupLabel, groupMarks, queryLine, queryMarks, searchKey, searchUrl, stackIndex, uncapturedLine } from "./search-view.js"; // behold#913: `q` drawn; behold#922: groups
 // #712, #715: the dots layer, the zoom past the cards. Mounted for a live
 // carve when the estate has choudoufu roots or estate rosters
 // (/api/terragucci/carve, liveCarveGate below), or when /api/graph's meta
@@ -607,12 +610,14 @@ if (staticMode) {
 
 /** Canonical key for a read URL — path + the lens params (whitelisted, sorted)
  * that select a distinct snapshot. MUST match src/export.ts `canonicalKey`. */
-const LENS_PARAMS = ["alike", "collapse", "components", "detail", "env", "logical", "ops", "radial", "runtime", "stacks", "tier"];
+const LENS_PARAMS = ["alike", "collapse", "components", "countBy", "detail", "env", "logical", "ops", "plan", "q", "radial", "runtime", "snapshot", "stacks", "tier"]; // q, snapshot: behold#913's /api/search; countBy, plan: behold#922
 function canonicalKey(path, params) {
   // Components + logical + ops views ignore detail/radial — drop them so they
   // match the single captured snapshot (MUST match src/export.ts).
   const flat = params.get("components") === "1" || params.get("logical") === "1" || params.get("ops") === "1" || params.get("stacks") === "1";
-  const q = LENS_PARAMS.filter((k) => params.has(k) && !(flat && (k === "detail" || k === "radial")))
+  // behold#922: `plan` picks a snapshot of /api/graph (the cards' plan facts) and /api/search only; #404's one-shot plan on an overlay replays the overlay as captured.
+  const planned = path === "/api/graph" || path === "/api/search";
+  const q = LENS_PARAMS.filter((k) => params.has(k) && !(flat && (k === "detail" || k === "radial")) && !(k === "plan" && !planned))
     .map((k) => `${k}=${params.get(k)}`)
     .join("&");
   return q ? `${path}?${q}` : path;
@@ -1721,6 +1726,9 @@ let bulkDiffCache = null; // { env, nodes: { <id>: { observed, diff, health } } 
 // from its own cache on the loads that follow, so the drift stays on screen
 // without anyone paying for a second full pass over the account.
 let planDriftOnce = false;
+// #910: ONE-SHOT, the same way: set by "Read the plan on the Terraform roots",
+// consumed by the source-graph load that carries `plan=1`.
+let terraformPlanOnce = false;
 async function loadNodeDiff(id) {
   if (publicMode) return null; // #569: /api/diff is refused in a public view
   if (!bulkDiffCache || bulkDiffCache.env !== view.env) {
@@ -2012,7 +2020,9 @@ function wire(ir) {
 // member (#475) is the estate member the view is on: a host opens behold with
 // ?member=, and picking a card or a member box moves it. It changes no fetch;
 // the graph is the whole estate, framed on that member's box.
-const view = { member: null, env: null, gates: null, focus: null, run: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false, collapse: false, alike: true, compareTo: null };
+// q, snapshot (#913, #914): the question the view asks and the recorded snapshot it reads. Carried in the URL and
+// moved by an agent; nothing draws q until #913's search read lands.
+const view = { member: null, env: null, gates: null, focus: null, run: null, q: null, snapshot: null, plan: false, countBy: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false, collapse: false, alike: true, compareTo: null };
 
 // #182: `components` is the boot default, but a project that declares no
 // components renders it as ZERO nodes — the first screen was a blank graph
@@ -3000,6 +3010,7 @@ function applyWantedView(want) {
     zooms: availableZooms().map(([, z]) => z),
     tiers,
     lenses: COLOUR_MODES,
+    env: view.env, // a snapshot is of the env the view is on
   });
   urlRefusals.push(...first.refused, ...refused);
   if (apply.tier) view.tier = apply.tier;
@@ -3014,6 +3025,13 @@ function applyWantedView(want) {
   if ("focus" in apply) view.focus = apply.focus; // #569: drawn by drawTgReads, no new read
   if ("run" in apply) view.run = apply.run; // #569: which run the view draws; read in the message handler
   if ("pull" in apply) view.pull = apply.pull; // the cycle's pull request: a commit's run never draws another's plan
+  if ("q" in apply) view.q = apply.q; // #914 carries it; #913 draws it (drawQuery)
+  if ("snapshot" in apply) view.snapshot = apply.snapshot;
+  if (!view.env) view.snapshot = null; // a snapshot is of an env: the source graph has none
+  // behold#922: the plan read (the cards' plan facts, q at the plan depth) and q's grouping.
+  if ("plan" in apply) view.plan = apply.plan;
+  if (view.plan) view.snapshot = null; // settleView refuses the two together; a plan is now
+  if ("countBy" in apply) view.countBy = apply.countBy;
   if (want.member === null) {
     view.member = null;
     selectedNodeId = null;
@@ -3027,7 +3045,7 @@ function applyWantedView(want) {
   return fetchKey() !== before;
 }
 function fetchKey() {
-  return [view.env, zoomValue(), view.tier, view.radial, view.alike].join("|");
+  return [view.env, zoomValue(), view.tier, view.radial, view.alike, view.plan].join("|"); // plan: behold#922's plan facts on the cards
 }
 
 // #476: the host moves the view with a `behold:view` message carrying the same
@@ -3035,11 +3053,19 @@ function fetchKey() {
 window.addEventListener("message", (e) => {
   const want = viewFromMessage(e, embedOpts.host);
   if (!want) return;
+  moveViewTo(want);
+});
+
+/** Move the view the way a host's `behold:view` does: settle it, re-read what
+ * it changed, and say what couldn't be opened. An agent's move (#914) and Back
+ * from one come through here too. */
+function moveViewTo(want) {
   const lensBefore = colourMode;
   const gatesBefore = view.gates;
   const focusBefore = view.focus;
   const runBefore = view.run;
   const pullBefore = view.pull;
+  const queryBefore = searchKey(view);
   const moved = applyWantedView(want);
   if (view.run !== runBefore || view.pull !== pullBefore) {
     if (tgServed) void loadTgProgress({ fresh: true }); // #569: the run the narration is about
@@ -3059,13 +3085,89 @@ window.addEventListener("message", (e) => {
     return;
   }
   if (colourMode !== lensBefore) recolorNodesByCategory();
+  if (searchKey(view) !== queryBefore) void drawQuery(); // #913: a new question over the same graph
   if (pendingPlace && lastGraphIr) afterPaint(lastGraphIr);
   else if (want.member === null) fitGraph();
   const line = refusalLine(urlRefusals);
   urlRefusals = [];
   if (line) nowline(line);
   renderStatusbar();
+}
+
+// --- #914: an agent moved the tab --------------------------------------------
+// POST /api/view sends a `view` event on /api/events. The tab moves the way a
+// host's message moves it, says who asked and when, and pushes a history entry
+// so the banner's Back and the browser's Back both return to the view it left.
+// The person's own changes keep replacing the entry they are on (syncViewUrl).
+// An embedded frame with a host ignores the event: its view is the host's (#476).
+function agentMove(data) {
+  if (embedOpts.embed && embedOpts.host) return;
+  let ev;
+  try {
+    ev = JSON.parse(data);
+  } catch {
+    return;
+  }
+  if (!ev || typeof ev !== "object") return;
+  const want = wholeQuestion(viewFromObject(ev.view).want, view);
+  if (!Object.keys(want).length) return;
+  const move = { id: String(ev.id || ""), by: String(ev.by || "an agent"), movedAt: String(ev.movedAt || ""), q: typeof want.q === "string" ? want.q : "" };
+  syncViewUrl(); // the entry being left holds the view as it is now
+  const entry = agentEntry(history.state, move);
+  try {
+    // The new entry starts as a copy of the one being left; moveViewTo's syncViewUrl writes the new view into it.
+    if (entry.push) history.pushState(entry.state, "", location.href);
+    else history.replaceState(entry.state, "", location.href);
+  } catch {
+    /* a sandboxed frame may refuse; the move still happens */
+  }
+  moveViewTo(want);
+  showAgentBanner(move);
+}
+
+// Back, from the banner or the browser: the URL is the view to go back to.
+window.addEventListener("popstate", (e) => {
+  if (!viewUrlReady) return;
+  const defaults = { env: defaultEnv(manifest && manifest.opening, projectInfo && projectInfo.currentEnv), lens: savedColourMode };
+  moveViewTo(restoreViewQuery(location.search, defaults));
+  const move = e.state && e.state.beholdMove;
+  if (move) showAgentBanner(move);
+  else hideAgentBanner();
 });
+
+function showAgentBanner(move) {
+  let el = document.getElementById("agent-banner");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "agent-banner";
+    el.setAttribute("role", "status");
+    document.body.appendChild(el);
+  }
+  const b = agentBanner(move, new Date(move.movedAt));
+  el.innerHTML = "";
+  const text = document.createElement("span");
+  text.className = "agent-banner-text";
+  text.textContent = b.text;
+  el.appendChild(text);
+  const back = document.createElement("button");
+  back.className = "agent-banner-back";
+  back.textContent = "Back";
+  back.title = "Return to the view before this move";
+  back.addEventListener("click", () => history.back());
+  el.appendChild(back);
+  const close = document.createElement("button");
+  close.className = "agent-banner-close";
+  close.textContent = "×";
+  close.title = "Dismiss; Back in the browser still returns";
+  close.addEventListener("click", hideAgentBanner);
+  el.appendChild(close);
+  el.hidden = false;
+  el.dataset.request = move.id;
+}
+function hideAgentBanner() {
+  const el = document.getElementById("agent-banner");
+  if (el) el.hidden = true;
+}
 
 /** Tell the host what was picked: a card (member + node) or a member's box. */
 function embedSelected(member, node) {
@@ -3259,6 +3361,155 @@ function afterPaint(ir) {
   const line = refusalLine(urlRefusals);
   urlRefusals = [];
   if (line) nowline(line);
+  void drawQuery(); // #913: every paint draws the view's question over the new svg
+}
+
+// --- behold#913: `q` drawn ----------------------------------------------------
+// The view's query is read through GET /api/search (chant answers, behold
+// draws: src/search.ts), once per query, env and snapshot, and again after a
+// `changed` event. Each paint lights the matches, draws the edges on their
+// paths, dims the rest, and says the query and chant's provenance in one line
+// (web/search-view.js decides; this applies). A refused query lights and dims
+// nothing; no matches dims everything and outlines the near-misses.
+let queryAnswer = null; // {key, answer} once read
+let queryReading = null; // {key, promise} while a read is in flight
+async function readQuery(key) {
+  if (queryAnswer && queryAnswer.key === key) return queryAnswer.answer;
+  if (queryReading && queryReading.key === key) return queryReading.promise;
+  const promise = (async () => {
+    let answer;
+    try {
+      const res = await apiFetch(searchUrl(view));
+      answer = await res.json().catch(() => ({ error: `the search answered ${res.status}` }));
+      if (staticMode && res.status === 404) answer = { error: uncapturedLine(view.q, manifest && manifest.queries), uncaptured: true };
+    } catch (err) {
+      answer = { error: `the search failed: ${err.message}` };
+    }
+    if (searchKey(view) === key) queryAnswer = { key, answer };
+    return answer;
+  })();
+  queryReading = { key, promise };
+  try {
+    return await promise;
+  } finally {
+    if (queryReading && queryReading.key === key) queryReading = null;
+  }
+}
+/** The answer the shot frame draws: null while none is wanted, undefined while it is read. */
+function queryAnswerNow() {
+  const key = searchKey(view);
+  if (!key) return null;
+  return queryAnswer && queryAnswer.key === key ? queryAnswer.answer : undefined;
+}
+function clearQueryMarks(svg) {
+  if (!svg) return;
+  for (const el of svg.querySelectorAll("[data-q]")) el.removeAttribute("data-q");
+  for (const el of svg.querySelectorAll("[data-q-near]")) {
+    el.removeAttribute("data-q-near");
+    const t = el.querySelector(":scope > title.q-near-title");
+    if (t) t.remove();
+  }
+  for (const el of svg.querySelectorAll("[data-q-unobserved]")) el.removeAttribute("data-q-unobserved");
+  // behold#922: a counts answer's group colours and labels.
+  for (const el of svg.querySelectorAll("[data-q-group]")) {
+    el.removeAttribute("data-q-group");
+    el.style.removeProperty("--q-group");
+  }
+  for (const el of svg.querySelectorAll(".q-group-label")) el.remove();
+}
+async function drawQuery() {
+  const key = searchKey(view);
+  const lineEl = document.getElementById("q-line");
+  if (!key) {
+    clearQueryMarks(currentSvg());
+    if (lineEl) lineEl.hidden = true;
+    return;
+  }
+  const answer = await readQuery(key);
+  if (searchKey(view) !== key) return; // the view moved on while it was read
+  const svg = currentSvg();
+  clearQueryMarks(svg);
+  const cardEls = svg ? [...svg.querySelectorAll("[data-node-id]")] : [];
+  const edgeEls = svg ? [...svg.querySelectorAll("g[data-edge-from]")] : [];
+  const cardIds = new Set(cardEls.map((g) => g.getAttribute("data-node-id")));
+  const stackOf = stackIndex(lastGraphIr && lastGraphIr.nodes, cardIds);
+  const marks = queryMarks(
+    answer,
+    cardIds,
+    edgeEls.map((g) => ({ from: g.getAttribute("data-edge-from"), to: g.getAttribute("data-edge-to") })),
+    stackOf,
+  );
+  for (const g of cardEls) {
+    const id = g.getAttribute("data-node-id");
+    const m = marks.cardMarks.get(id);
+    if (m) g.setAttribute("data-q", m);
+    if (marks.unobserved.has(id)) g.setAttribute("data-q-unobserved", "1");
+    if (marks.near.has(id)) {
+      g.setAttribute("data-q-near", "1");
+      const t = document.createElementNS("http://www.w3.org/2000/svg", "title");
+      t.setAttribute("class", "q-near-title");
+      t.textContent = `near miss: fails ${marks.near.get(id)}`;
+      g.prepend(t);
+    }
+  }
+  edgeEls.forEach((g, i) => {
+    if (marks.edgeMarks[i]) g.setAttribute("data-q", marks.edgeMarks[i]);
+  });
+  drawGroups(svg, answer, cardEls, stackOf);
+  if (embedOpts.bare) return; // a bare frame has no chrome: the shot frame draws its own caption
+  const line = queryLine(view, answer, marks);
+  let el = lineEl;
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "q-line";
+    el.setAttribute("role", "status");
+    document.body.appendChild(el);
+  }
+  el.hidden = false;
+  el.dataset.tone = line.tone;
+  el.innerHTML = "";
+  const main = document.createElement("div");
+  main.className = "q-line-main";
+  main.textContent = line.text;
+  el.appendChild(main);
+  if (line.notSearched) {
+    const ns = document.createElement("div");
+    ns.className = "q-line-not-searched";
+    ns.textContent = line.notSearched;
+    el.appendChild(ns);
+  }
+}
+
+/**
+ * behold#922: a counts answer drawn: each group's cards outlined in the
+ * group's colour, and the group's first drawn card labelled with the group
+ * and chant's count (web/search-view.js groupMarks). The cards are already
+ * lit by drawQuery; this says which group each is in.
+ */
+function drawGroups(svg, answer, cardEls, stackOf) {
+  if (!svg) return;
+  const gm = groupMarks(answer, new Set(cardEls.map((g) => g.getAttribute("data-node-id"))), stackOf);
+  if (!gm.groups.length) return;
+  const byId = new Map(cardEls.map((g) => [g.getAttribute("data-node-id"), g]));
+  for (const [id, i] of gm.cardGroup) {
+    const g = byId.get(id);
+    g.setAttribute("data-q-group", gm.groups[i].group);
+    g.style.setProperty("--q-group", gm.groups[i].colour);
+  }
+  for (const grp of gm.groups) {
+    const g = grp.label && byId.get(grp.label);
+    const rect = g && g.querySelector(":scope > rect");
+    if (!rect) continue;
+    const x = Number(rect.getAttribute("x") || 0);
+    const y = Number(rect.getAttribute("y") || 0);
+    const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    t.setAttribute("class", "q-group-label");
+    t.setAttribute("x", String(x));
+    t.setAttribute("y", String(y - 4));
+    t.setAttribute("fill", grp.colour);
+    t.textContent = groupLabel(grp);
+    g.appendChild(t);
+  }
 }
 
 /** A card was picked (graph click, panel row, palette, the link). */
@@ -3336,6 +3587,10 @@ function syncViewUrl() {
     gates: view.gates,
     focus: view.focus,
     run: view.run,
+    q: view.q,
+    snapshot: view.snapshot,
+    plan: view.plan,
+    countBy: view.countBy,
   };
   const defaults = { env: defaultEnv(manifest && manifest.opening, projectInfo && projectInfo.currentEnv), lens: savedColourMode };
   const next = location.pathname + writeViewQuery(location.search, state, defaults) + location.hash;
@@ -6357,15 +6612,22 @@ function kioskTellBoxes() {
  * so the graph pane never shows an empty frame.
  */
 var drawnTold = false;
+/** Whether the graph has drawn with its marks: "failed" when it could not, true once drawn, false while it is still coming. */
+function graphDrawnState() {
+  const svg = currentSvg();
+  if (document.querySelector("#graph > .err")) return "failed";
+  if (!(svg && svg.querySelector("[data-node-id]"))) return false;
+  // The marks: terragucci's reports answered (or refused), or chant's loop has its own.
+  if (terragucciComponentsRepo && !tgAnswer && !chantPrDrawn()) return false;
+  // behold#631: a chant repo's loop: its first read of /api/chant/pr, answered or not.
+  if (!terragucciComponentsRepo && view.components && chantFacets && !staticMode && !chantPrRead) return false;
+  return true;
+}
 function kioskTellDrawn() {
   if (drawnTold || !embedOpts.host || window.parent === window) return;
-  const svg = currentSvg();
-  const failed = !!document.querySelector("#graph > .err");
-  if (!failed && !(svg && svg.querySelector("[data-node-id]"))) return;
-  // The marks: terragucci's reports answered (or refused), or chant's loop has its own.
-  if (!failed && terragucciComponentsRepo && !tgAnswer && !chantPrDrawn()) return;
-  // behold#631: a chant repo's loop: its first read of /api/chant/pr, answered or not.
-  if (!failed && !terragucciComponentsRepo && view.components && chantFacets && !staticMode && !chantPrRead) return;
+  const drawnState = graphDrawnState();
+  if (!drawnState) return;
+  const failed = drawnState === "failed";
   drawnTold = true;
   try {
     window.parent.postMessage({ type: "behold:drawn", failed }, embedOpts.host);
@@ -6375,6 +6637,97 @@ function kioskTellDrawn() {
 }
 // A graph that failed draws no svg and no reads: say so too, so the kiosk is never left waiting.
 if (embedOpts.bare) setInterval(kioskTellDrawn, 1000);
+
+// --- behold#915: the page `behold shot` photographs ---------------------------
+// `?embed=1&bare=1&frame=matches` (web/shot-frame.js). Once the graph has
+// drawn, the cards the view asks for are lit and the rest dimmed, the lit
+// cards are framed with the kiosk's arithmetic at once (no move), one caption
+// line says what was asked, from where and when, and <html> gets
+// `data-behold-shot`. A graph that never draws never sets it, so the driver
+// times out and writes nothing.
+const shotFrameOn = !!embedOpts.bare && readShotFrame(location.search) === "matches";
+// The link as loaded: the page rewrites its URL as it settles the view (a card it lacks drops out), and the shot answers what was asked.
+const shotAsked = new URLSearchParams(location.search);
+var shotFrameDone = false; // var: setupGraphViewBox reads it, and may run before this line is reached
+var shotQueryFailed = false; // behold#913: the query was refused, or its live read failed
+function shotFrameTick() {
+  if (!shotFrameOn || shotFrameDone) return;
+  const drawnState = graphDrawnState();
+  if (!drawnState) return;
+  // behold#913: a query is drawn once chant has answered it (drawQuery marks the cards first).
+  if (drawnState !== "failed" && queryAnswerNow() === undefined) return;
+  shotFrameDone = true;
+  const state = shotFrameApply(drawnState === "failed");
+  // Two frames, so what was set above is painted before the driver looks.
+  requestAnimationFrame(() => requestAnimationFrame(() => document.documentElement.setAttribute(SHOT_ATTR, state)));
+}
+/** Light, dim, frame and caption the graph as it is drawn now; the state the shot reports. */
+function shotFrameApply(failed = !!document.querySelector("#graph > .err")) {
+  const params = shotAsked;
+  const svg = currentSvg();
+  const host = document.getElementById("graph");
+  let lit = { ids: [], asked: false, label: null };
+  if (!failed && svg && host) {
+    const ownRect = (g) => g.querySelector(":scope > rect") || g;
+    const cards = [...svg.querySelectorAll("[data-node-id]")].map((g) => ({ id: g.getAttribute("data-node-id"), g, box: userBoxOf(svg, ownRect(g)) }));
+    const groups = [...svg.querySelectorAll("rect[data-group-id]")].map((r) => ({ id: r.getAttribute("data-group-id"), box: userBoxOf(svg, r) }));
+    // behold#913: the query's matched node ids (drawQuery has marked the cards and the path edges). Without a
+    // query, the link's own node and focus, as asked: a card the graph lacks is a question with no answer, never the whole graph.
+    const qa = queryAnswerNow();
+    // #908 stage 3: the matches and the frame come from drawQuery's marks, so a stack holding a match counts and the path is in the picture.
+    const qf = qa && qa.draw ? queryFrame(cards.map((c) => ({ id: c.id, mark: c.g.getAttribute("data-q") }))) : null;
+    lit = shotLit({ node: params.get("node"), focus: params.get("focus") }, cards, groups, qa ? (qf ? qf.lit : []) : null);
+    shotQueryFailed = !!qa && (!qa.draw || !!qa.draw.failure);
+    const on = new Set(lit.ids);
+    for (const c of cards) {
+      // A query's on-path cards stay at full weight; a refused query dims nothing.
+      const dim = qa ? c.g.getAttribute("data-q") === "dim" : lit.asked && !on.has(c.id);
+      c.g.style.opacity = dim ? String(SHOT_DIM) : "";
+      if (dim || (qa && !on.has(c.id))) c.g.setAttribute("data-shot-dim", "1");
+      else c.g.removeAttribute("data-shot-dim");
+    }
+    for (const e of svg.querySelectorAll("[data-edge-from]")) {
+      const mark = e.getAttribute("data-q");
+      const dim = qa ? mark === "dim" : lit.asked && !(on.has(e.getAttribute("data-edge-from")) && on.has(e.getAttribute("data-edge-to")));
+      e.style.opacity = dim ? String(SHOT_DIM) : "";
+    }
+    // The lit cards, or with none lit the whole graph as drawn (its boxes' titles and all).
+    const whole = vbInit && { x: vbInit[0], y: vbInit[1], x2: vbInit[0] + vbInit[2], y2: vbInit[1] + vbInit[3] };
+    const framed = qf ? new Set(qf.frame) : on;
+    const target = (lit.ids.length && unionBox(cards.filter((c) => framed.has(c.id)).map((c) => c.box))) || whole;
+    const pane = host.getBoundingClientRect();
+    const to = target && shotViewBox(target, { width: pane.width, height: pane.height }, { bottom: SHOT_CAPTION_PX });
+    if (to) {
+      vb = to;
+      vbAtFit = false;
+      applyVB();
+    }
+  }
+  const qa = queryAnswerNow();
+  const state = shotState({ failed: failed || shotQueryFailed, lit });
+  const err = document.querySelector("#graph > .err");
+  let cap = document.getElementById("shot-caption");
+  if (!cap) {
+    cap = document.createElement("div");
+    cap.id = "shot-caption";
+    cap.style.cssText = `position:fixed;left:0;right:0;bottom:0;height:${SHOT_CAPTION_PX}px;padding:0 12px;font:13px/1 system-ui,sans-serif;line-height:${SHOT_CAPTION_PX}px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:50;background:var(--bg, #0d1117);color:var(--fg, #e6edf3);border-top:1px solid var(--border, #30363d)`;
+    document.body.appendChild(cap);
+  }
+  cap.style.color = state === "failed" ? "var(--degraded, #f85149)" : "var(--fg, #e6edf3)";
+  // behold#913: chant's own provenance line, and its failure, when a query was asked.
+  const qFailure = qa ? (qa.draw ? qa.draw.failure && [qa.draw.failure.message, qa.draw.failure.hint].filter(Boolean).join(". ") : qa.error || "the search failed") : null;
+  cap.textContent = shotCaption({
+    query: params.get("q") || (params.get("countBy") ? "the whole graph" : null),
+    counts: qa && qa.draw && qa.draw.counts ? countsLine(qa.draw.counts) : null,
+    label: lit.label,
+    provenance: (qa && qa.draw && qa.draw.provenance) || shotProvenance({ env: view.env, snapshot: params.get("snapshot") }),
+    failure: state === "failed" ? (err ? (err.textContent || "the graph failed to draw").split("\n")[0] : qFailure || "the graph failed to draw") : null,
+    state,
+    plan: !!view.plan,
+  });
+  return state;
+}
+if (shotFrameOn) setInterval(shotFrameTick, 250);
 
 window.addEventListener("message", (e) => {
   if (!embedOpts.bare) return;
@@ -9200,6 +9553,8 @@ function setupGraphViewBox(svg) {
     applyVB();
     // behold#571: in the kiosk's Watch mode a re-render keeps the shot the kiosk asked for.
     if (kioskShot) queueMicrotask(() => applyKioskShot(false));
+    // behold#915: a re-render keeps the shot's lights and framing.
+    if (shotFrameDone) queueMicrotask(() => shotFrameApply());
   } else {
     vbInit = vb = null;
   }
@@ -10374,10 +10729,15 @@ async function loadOnce(opts = {}, isCurrent = () => true) {
       if (view.runtime) q.set("runtime", "1");
       // #404: the attribute-drift read, when this load is the one the person
       // asked for it on. Consumed here — the next load goes without it.
-      if (planDriftOnce) {
-        q.set("plan", "1");
+      if (planDriftOnce || view.plan) {
+        q.set("plan", "1"); // behold#922: a view with plan=1 reads the plan on every load
         planDriftOnce = false;
       }
+    } else if ((terraformPlanOnce || view.plan) && !view.components) {
+      // #910: the plan on the stock Terraform roots, read through chant onto
+      // the source graph's cards. One-shot, like #404's above.
+      q.set("plan", "1");
+      terraformPlanOnce = false;
     }
     // Radial layout (entity view only) — curl the wide DAG onto concentric rings.
     if (view.radial && !view.components && !view.logical && !view.ops) q.set("radial", "1");
@@ -10490,6 +10850,14 @@ function replayMemberFrames(load) {
  * of `GET /api/overlay`, which is where the drift read lives — so this row
  * goes through `load()`, the path that actually renders those cards.
  */
+async function readTerraformPlan() {
+  terraformPlanOnce = true;
+  nowline("↻ reading the plan on the Terraform roots…");
+  await load();
+  const note = lastMeta && lastMeta.note ? String(lastMeta.note).split(" · ").find((p) => p.startsWith("plan: ")) : null;
+  nowline(note ? `↻ ${note}` : "↻ the plan could not be read");
+}
+
 async function refreshWithPlan() {
   planDriftOnce = true;
   bulkDiffCache = null; // the pane's rows come from /api/diff — re-fetch them against the new plan
@@ -10632,7 +11000,11 @@ events.addEventListener("member", (e) => {
   renderStatusbar();
 });
 
+// #914: an agent's POST /api/view.
+events.addEventListener("view", (e) => agentMove(e.data));
+
 events.addEventListener("changed", () => {
+  queryAnswer = null; // #913: the source or the estate moved: the next paint asks again
   bulkDiffCache = null; // an op ran → per-node live state may have changed
   whyAnswers.clear(); // #471: a why read before the change may no longer hold
   load();
@@ -11591,6 +11963,10 @@ function paletteCommands() {
         ? ["Re-check live with plan (attribute drift) — a full read of the account", () => refreshWithPlan()]
         : ["Re-check live with plan (attribute drift) — pick an environment first", () => showToast("attribute drift is read from a plan, which needs an environment to plan against", false)],
     );
+  }
+  // #910: a stock Terraform root's plan, through chant, onto its cards.
+  if (!staticMode && !publicMode && !view.env && projectInfo && (projectInfo.memberKinds || []).includes("terraform")) {
+    c.push(["Read the plan on the Terraform roots (replaces, forcing attributes, unknowns, drift)", () => readTerraformPlan()]);
   }
   c.push(["Fit graph to view", () => fitGraph()]);
   c.push(["Export: current graph as SVG", () => exportSvg()]);

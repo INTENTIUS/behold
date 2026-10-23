@@ -16,8 +16,64 @@
  * `run` (#569) pins which terragucci run the view draws: a commit's run view,
  * `none` (no run view: the newest pull request's plan), `pull-<n>[-<sha>]`
  * (no run view, and only that pull request's plan, of that commit) or `base`
- * (nothing in flight); absent, the newest. */
-export const VIEW_KEYS = ["member", "zoom", "env", "tier", "lens", "node", "radial", "alike", "gates", "focus", "run", "pull"];
+ * (nothing in flight); absent, the newest. `plan` (behold#922) is the plan
+ * read: the cards carry each Terraform root's plan facts and `q` is answered
+ * at the plan depth. `countBy` (behold#922) groups `q`'s matches the way
+ * chant's `--count-by` does, and the view lights each group with its count. */
+export const VIEW_KEYS = ["member", "zoom", "env", "tier", "lens", "node", "radial", "alike", "gates", "focus", "run", "pull", "q", "snapshot", "plan", "countBy"];
+
+/** #914: the zooms behold has, whatever the estate. The server settles an
+ * agent's view against these (it doesn't know which the tab's estate offers);
+ * the tab settles it again against its own `availableZooms()`. */
+export const ZOOMS = ["components", "logical", "composites", "resources", "attributes", "runtime", "ops", "stacks"];
+
+/** #913/#914: the longest `q` behold passes on. */
+export const QUERY_MAX = 2000;
+
+/**
+ * #913/#914: `q`, a question in chant's search grammar. behold never parses
+ * the terms (a second parser would drift from chant's); it checks only what
+ * has to hold before the value reaches a process or the now line: a string,
+ * trimmed, 1 to QUERY_MAX characters, no control characters. null or "" clears
+ * it. Quotes, `!`, `->`, `<-`, `:` and `=` pass through untouched.
+ */
+export function checkQuery(v) {
+  if (v === null || v === undefined) return { ok: true, value: null };
+  if (typeof v !== "string") return { ok: false, reason: "q is a string" };
+  const t = v.trim();
+  if (!t) return { ok: true, value: null };
+  if (t.length > QUERY_MAX) return { ok: false, reason: `q is at most ${QUERY_MAX} characters` };
+  if (/[\u0000-\u001f\u007f]/.test(t)) return { ok: false, reason: "q holds no control characters" };
+  return { ok: true, value: t };
+}
+
+/**
+ * #914 (behold#908's read-contract ruling): `snapshot`, a recorded lifecycle
+ * snapshot to read the env at, `latest` or a snapshot ref. It is not `at`:
+ * `at` is a git revision of the workspace in chant's read contract. null or ""
+ * clears it.
+ */
+export function checkSnapshot(v) {
+  if (v === null || v === undefined || v === "") return { ok: true, value: null };
+  if (typeof v !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$/.test(v.trim())) return { ok: false, reason: "snapshot is latest or a snapshot ref (letters, digits, '.', '_', ':', '@' and '-')" };
+  return { ok: true, value: v.trim() };
+}
+
+/**
+ * behold#922: `countBy`, chant's `--count-by` grouping: `kind`, `module` or
+ * `attr:<name>`. A closed list of three spellings, so behold checks them (chant
+ * checks again and says the same). null or "" clears it.
+ */
+export function checkCountBy(v) {
+  if (v === null || v === undefined || v === "") return { ok: true, value: null };
+  if (typeof v !== "string") return { ok: false, reason: "countBy is kind, module or attr:<name>" };
+  const t = v.trim();
+  if (t === "kind" || t === "module" || /^attr:[A-Za-z0-9_.@-]{1,128}$/.test(t)) return { ok: true, value: t };
+  return { ok: false, reason: "countBy is kind, module or attr:<name>" };
+}
+
+/** behold#922: the refusal for a view that asks for the plan and a snapshot at once. */
+export const PLAN_SNAPSHOT_REASON = "plan and snapshot can't be asked together: a plan is read now, a snapshot replays what was recorded";
 
 /** An env name as the server takes one (src/workspace-gates.ts isEnvName). */
 export function isEnvName(env) {
@@ -39,7 +95,7 @@ export function readViewQuery(search) {
   for (const k of VIEW_KEYS) {
     if (!q.has(k)) continue;
     const v = (q.get(k) || "").trim();
-    if (k === "radial" || k === "alike") {
+    if (k === "radial" || k === "alike" || k === "plan") {
       if (/^(1|true|on|yes)$/i.test(v)) want[k] = true;
       else if (/^(0|false|off|no)$/i.test(v)) want[k] = false;
       else want[k] = v; // left for settleView to name
@@ -49,13 +105,72 @@ export function readViewQuery(search) {
       want.env = v || null;
       continue;
     }
-    if (k === "focus" || k === "run" || k === "pull") {
+    if (k === "focus" || k === "run" || k === "pull" || k === "q" || k === "snapshot" || k === "countBy") {
       want[k] = v || null;
       continue;
     }
     if (v) want[k] = v;
   }
   return want;
+}
+
+/**
+ * #914: the whole view a URL holds, for going back to it (popstate). Unlike
+ * readViewQuery, a key the URL leaves out is set to what its absence means,
+ * so a move back clears what the move forward set: no `q` is no question, no
+ * `env` is the default env, no `lens` is the saved lens. `defaults` is
+ * writeViewQuery's.
+ */
+export function restoreViewQuery(search, defaults = {}) {
+  const want = readViewQuery(search);
+  const out = { member: null, gates: null, focus: null, run: null, pull: null, q: null, snapshot: null, countBy: null, radial: false, plan: false, ...want };
+  if (!("env" in want)) out.env = defaults.env || null;
+  if (!("lens" in want)) out.lens = defaults.lens || "drift";
+  if (!("alike" in want)) out.alike = true;
+  return out;
+}
+
+/**
+ * #914: a view sent as JSON (POST /api/view's `view`, and the `view` event the
+ * tab receives), reduced to the view keys. Unlike a host's message, a key that
+ * isn't a view key, or a value of the wrong type, is named in `refused`
+ * rather than dropped. `at` gets its own reason, because the ruling on
+ * behold#908 keeps it for the git revision.
+ */
+export function viewFromObject(d) {
+  const want = {};
+  const refused = [];
+  if (!d || typeof d !== "object" || Array.isArray(d)) return { want, refused: [{ key: "view", value: String(d), reason: "the view is a JSON object of view keys" }] };
+  for (const [k, v] of Object.entries(d)) {
+    if (!VIEW_KEYS.includes(k)) {
+      const reason = k === "at" ? "at is a git revision; a recorded snapshot is `snapshot`" : `the view keys are ${VIEW_KEYS.join(", ")}`;
+      refused.push({ key: k, value: show(v), reason });
+      continue;
+    }
+    if (k === "radial" || k === "alike" || k === "plan") {
+      if (typeof v === "boolean") want[k] = v;
+      else refused.push({ key: k, value: show(v), reason: `${k} is true or false` });
+      continue;
+    }
+    if (k === "env" || k === "gates" || k === "focus" || k === "run" || k === "pull" || k === "member" || k === "q" || k === "snapshot" || k === "countBy") {
+      if (v === null || v === "") want[k] = null;
+      else if (typeof v === "string" || k === "q") want[k] = v; // a non-string q is checkQuery's to name
+      else refused.push({ key: k, value: show(v), reason: `${k} is a string or null` });
+      continue;
+    }
+    if (typeof v === "string" && v) want[k] = v;
+    else refused.push({ key: k, value: show(v), reason: `${k} is a non-empty string` });
+  }
+  return { want, refused };
+}
+
+function show(v) {
+  try {
+    const s = typeof v === "string" ? v : JSON.stringify(v);
+    return s === undefined ? String(v) : s.length > 80 ? s.slice(0, 80) + "..." : s;
+  } catch {
+    return String(v);
+  }
 }
 
 /**
@@ -85,6 +200,10 @@ export function writeViewQuery(search, state, defaults = {}) {
   if (s.focus) q.set("focus", s.focus);
   if (s.run) q.set("run", s.run);
   if (s.pull) q.set("pull", s.pull);
+  if (s.q) q.set("q", s.q);
+  if (s.snapshot) q.set("snapshot", s.snapshot);
+  if (s.plan) q.set("plan", "1");
+  if (s.countBy) q.set("countBy", s.countBy);
   const out = q.toString();
   return out ? `?${out}` : "";
 }
@@ -146,7 +265,35 @@ export function settleView(want, offer) {
     if (want.pull === null || /^\d+$/.test(String(want.pull))) apply.pull = want.pull;
     else refused.push({ key: "pull", value: want.pull, reason: "pull is a pull request's number" });
   }
-  if (want.member) apply.member = want.member;
+  if ("q" in want) {
+    const c = checkQuery(want.q);
+    if (c.ok) apply.q = c.value;
+    else refused.push({ key: "q", value: typeof want.q === "string" ? want.q.slice(0, 80) : String(want.q), reason: c.reason });
+  }
+  if ("snapshot" in want) {
+    const c = checkSnapshot(want.snapshot);
+    // A snapshot is of an env: on the source graph there is nothing recorded to read.
+    const env = "env" in want ? want.env : o.env;
+    if (!c.ok) refused.push({ key: "snapshot", value: want.snapshot, reason: c.reason });
+    else if (c.value && !env) refused.push({ key: "snapshot", value: want.snapshot, reason: "a snapshot is of an env; name one with env" });
+    else apply.snapshot = c.value;
+  }
+  if ("plan" in want) {
+    if (typeof want.plan !== "boolean") refused.push({ key: "plan", value: want.plan, reason: "plan is 1 or 0" });
+    // behold#922: the two observations are named together, and neither is applied.
+    else if (want.plan && apply.snapshot) {
+      refused.push({ key: "plan", value: "1", reason: PLAN_SNAPSHOT_REASON });
+      refused.push({ key: "snapshot", value: apply.snapshot, reason: PLAN_SNAPSHOT_REASON });
+      delete apply.snapshot;
+    } else apply.plan = want.plan;
+  }
+  if ("countBy" in want) {
+    const c = checkCountBy(want.countBy);
+    if (c.ok) apply.countBy = c.value;
+    else refused.push({ key: "countBy", value: typeof want.countBy === "string" ? want.countBy.slice(0, 80) : String(want.countBy), reason: c.reason });
+  }
+  if (want.member === null) apply.member = null;
+  else if (want.member) apply.member = want.member;
   if (want.node) apply.node = want.node;
   return { apply, refused };
 }

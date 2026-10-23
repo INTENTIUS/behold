@@ -11,7 +11,7 @@ import { startServer, beholdVersion } from "./server.ts";
 import { loadDemoRegistry, missingRequirements, demoTargetDir, loadDemo, type DemoCarve } from "./demos.ts";
 import { resolveChant, runChantRaw } from "./chant.ts";
 import { applyConversion, planConversion } from "./workspace-convert.ts";
-import { ExportRefusal, OPENING_ZOOMS, publishTarget, runExport, settleNote } from "./export.ts";
+import { ExportRefusal, OPENING_ZOOMS, publishTarget, runExport, settleCountBy, settleNote, settleQueries } from "./export.ts";
 import { DEFAULT_KEEP, publishSnapshot, resolveCommit, SNAPSHOT_REPORTS_BASE } from "./publish-snapshots.ts";
 import { hasEnvCredentials, S3Object, s3FromEnv } from "./s3-object.ts";
 import { diagnose, formatReport } from "./doctor.ts";
@@ -26,6 +26,8 @@ import { servesAsEstate } from "./member-kind.ts";
 import { setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
 import { readCarveReport } from "./carve-lens.ts";
 import { HCL_PARSER_PKG } from "./terraform-member.ts";
+import { runShot } from "./shot-cli.ts";
+import { runMcp } from "./mcp.ts";
 import { listCheckouts, type RepoTarget, type ViewRepos } from "./view-repos.ts";
 import {
   bootScratchFloci,
@@ -46,13 +48,17 @@ Usage:
   behold preview [project-dir] [--port <n>] [--emulator]
   behold export [project-dir] [--out <dir>] [--env <name>] [--name <worker>] [--emulator]
                 [--terragucci <src> [--terragucci-project <p>] [--reports-base <rel>]] [--no-source]
-                [--yodel-report <file|dir>] [--open-env <env>] [--open-zoom <zoom>] [--note <text>]
+                [--yodel-report <file|dir>] [--open-env <env>] [--open-zoom <zoom>] [--note <text>] [--q <query>…]
+                [--count-by <kind|module|attr:name>] [--plan]
                 [--publish s3://<bucket>/<prefix>/views/<name> [--commit <sha>] [--keep <n>]]
   behold serve <project-dir…> [--port <n>] [--host <addr>] [--allow-host <name,…>] [--hud <url>] [--env <name>] [--poll <secs>] [--local]
                 [--public] [--terragucci <src> [--terragucci-project <p>] [--terragucci-poll <secs>] [--terragucci-runs <src>]]
                 [--repos <parent>] [--yodel-report <file|dir>] [--chant-report-url <url>] [--chant-demo <src>]
                 [--ci-report-url <url>]
   behold carve <report.json> [--port <n>]
+  behold shot "<query>" [project-dir] [--env <name>] [--snapshot <ref>] [-o <out.png>] [--url <serve>]
+                [--width <px>] [--height <px>] [--link-base <url>] [--view <k=v&...>]   (behold shot --help)
+  behold mcp [project-dir] [--url <serve> | --port <n>]   (behold mcp --help)
 
   carve   Render a chant Terraform peelability report — the JSON from
           \`chant carve advise --from <tf-dir> --json\` — as a graph. One card
@@ -97,6 +103,14 @@ Usage:
           project to the current directory; pass a dir for someone else's, and
           --env for that project's live overlay. Bring the estate up first (e.g.
           behold preview, or your creds/env) so the snapshot reflects live state.
+
+  mcp     A stdio MCP server for a coding agent: capabilities returns
+          chant's capability catalog (read it first), ask returns chant's
+          answer to a query, show moves the open tab to a view, shot returns
+          a PNG of one and its link. It is a client of the running serve of
+          the project (found through --url, --port, or a per-user registry
+          under the OS temp directory). Nothing it does deploys, approves,
+          runs an Op, rolls back or writes.
 
   preview Serve one project's graph in a browser at a single port — the quick
           way to look at a chant project. Defaults the project to the current
@@ -306,6 +320,17 @@ Options:
   --note <text>       export only: one line the page shows at its foot, such
                       as how to run the estate yourself; a span in backticks
                       is drawn as code. At most 200 characters.
+  --q <query>         export only, repeatable: a chant search query the bundle
+                      answers with no backend (behold#913), captured for the
+                      source graph and every environment. A link's q that
+                      wasn't captured is named, and lights nothing.
+  --count-by <g>      export only: capture each --q grouped too, the way
+                      chant search --count-by groups it (kind, module or
+                      attr:<name>); with no --q, the whole graph's groups
+                      (behold#922). A link's countBy=<g> draws them.
+  --plan              export only: capture the plan read too, the cards'
+                      plan facts and each --q at the plan depth; it runs
+                      terraform plan -lock=false in each root (behold#922).
   -h, --help          This text.
   -v, --version       Print the behold version.
 `;
@@ -346,6 +371,16 @@ export async function run(argv: string[]): Promise<void> {
   if (cmd === "carve") {
     await runCarve(rest);
     return;
+  }
+
+  if (cmd === "shot") {
+    // Exit at once: the app a shot starts in-process may leave timers behind it.
+    process.exit(await runShot(rest));
+  }
+
+  if (cmd === "mcp") {
+    // The protocol owns stdout: nothing else is printed there.
+    process.exit(await runMcp(rest));
   }
 
   if (cmd !== "serve") {
@@ -1087,7 +1122,8 @@ async function runPreview(rest: string[]): Promise<void> {
   }
   if (!emulator) {
     warnIfNotChantProject(projectDir);
-    await startServer({ projectDir, port });
+    // #914: any preview refuses POST /api/view; only --emulator locks the rest (previewMode).
+    await startServer({ projectDir, port, preview: true });
     return;
   }
   injectEmulatorEnv("local");
@@ -1095,7 +1131,7 @@ async function runPreview(rest: string[]): Promise<void> {
     `behold preview --emulator — Loom on the local Floci emulator (read + local deploy only)\n  project: ${projectDir}\n` +
       `  If Floci isn't up yet, use "Bring up" on the Floci substrate pill (boots + deploys Loom).\n`,
   );
-  await startServer({ projectDir, port, env: "local", previewMode: true });
+  await startServer({ projectDir, port, env: "local", previewMode: true, preview: true });
 }
 
 /** `behold export` — capture the estate into a static interactive bundle.
@@ -1120,9 +1156,15 @@ async function runExportCmd(rest: string[]): Promise<void> {
   let openEnv: string | undefined;
   let openZoom: string | undefined;
   let note: string | undefined;
+  const queries: string[] = [];
+  let countBy: string | undefined;
+  let plan = false;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a === "--out") outDir = resolve(rest[++i]);
+    else if (a === "--q") queries.push(rest[++i] ?? "");
+    else if (a === "--count-by") countBy = rest[++i] ?? "";
+    else if (a === "--plan") plan = true;
     else if (a === "--note") note = rest[++i] ?? "";
     else if (a === "--open-env") openEnv = rest[++i] ?? "";
     else if (a === "--open-zoom") openZoom = rest[++i] ?? "";
@@ -1158,6 +1200,17 @@ async function runExportCmd(rest: string[]): Promise<void> {
   const settledNote = settleNote(note);
   if ("error" in settledNote) {
     process.stderr.write(`behold export: ${settledNote.error}\n`);
+    process.exit(2);
+  }
+  // behold#913: checked before the project is read, like the note.
+  const settledQueries = settleQueries(queries);
+  if ("error" in settledQueries) {
+    process.stderr.write(`behold export: ${settledQueries.error}\n`);
+    process.exit(2);
+  }
+  const settledCountBy = settleCountBy(countBy);
+  if ("error" in settledCountBy) {
+    process.stderr.write(`behold export: ${settledCountBy.error}\n`);
     process.exit(2);
   }
   if ((terragucciProject || reportsBase !== undefined) && !terragucci) {
@@ -1223,6 +1276,9 @@ async function runExportCmd(rest: string[]): Promise<void> {
       ...(reportsBase !== undefined ? { reportsBase } : destination ? { reportsBase: SNAPSHOT_REPORTS_BASE } : {}),
       ...(Object.keys(open).length ? { open } : {}),
       ...(settledNote.note ? { note: settledNote.note } : {}),
+      ...(settledQueries.queries ? { queries: settledQueries.queries } : {}),
+      ...(settledCountBy.countBy ? { countBy: settledCountBy.countBy } : {}),
+      ...(plan ? { plan } : {}),
     },
   ).catch((e: unknown) => {
     if (!(e instanceof ExportRefusal)) throw e;
