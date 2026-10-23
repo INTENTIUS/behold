@@ -19,6 +19,24 @@ export function agentEntry(state, move, max = AGENT_STACK_MAX) {
   return { push, state: { ...before, beholdMove: { ...move, depth: push ? prev + 1 : prev } } };
 }
 
+/** What clears each key of a question: q, its grouping and its plan depth. */
+export const QUESTION_KEYS = Object.freeze({ q: null, countBy: null, plan: false });
+
+/**
+ * An agent's move that asks a question (it carries q or countBy) asks it
+ * whole: a question key it leaves out, and the tab still holds, is cleared
+ * rather than kept from the view the tab was on. Found in #908's stage 3 run:
+ * step 3's countBy=module stayed on step 4's `cap:` query, so the tab showed
+ * chant's refusal while the agent's answer was right. env and the rest stay:
+ * they are where the tab is, not what it asks.
+ */
+export function wholeQuestion(want, current) {
+  if (!want || !("q" in want || "countBy" in want)) return want;
+  const out = { ...want };
+  for (const [k, clear] of Object.entries(QUESTION_KEYS)) if (!(k in out) && current && current[k]) out[k] = clear;
+  return out;
+}
+
 /** HH:MM:SS in the viewer's clock, or "" for a date that isn't one. */
 export function clockTime(d) {
   if (!(d instanceof Date) || Number.isNaN(d.getTime())) return "";
