@@ -54,7 +54,10 @@ export function releaseRows(release, now = Date.now()) {
   const why = unlinkedReason(release);
   if (why) rows.push(["", why]);
   rows.push(["commit", release.gitSha]);
-  rows.push(["digest", release.digest]);
+  // A plan or deploy-input digest names no artifact (chant#4274), so the row
+  // says which it is rather than letting it read as an image digest.
+  const kind = release.digestKind;
+  rows.push([kind ? `digest (${kind})` : "digest", release.digest]);
   const ago = release.timestamp ? waitingFor(release.timestamp, now) : null;
   rows.push(["recorded", ago ? `${release.timestamp} (${ago} ago)` : release.timestamp]);
   rows.push(["actor", release.actor]);
