@@ -55,6 +55,14 @@
     "ajv": "^8.20.0",
     "hono": "^4.13.13"
   },
+  "peerDependencies": {
+    "playwright-core": "^1.62.0"
+  },
+  "peerDependenciesMeta": {
+    "playwright-core": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@intentius/chant-lexicon-sql": "^0.124.13",
     "@types/node": "^26.4.1",

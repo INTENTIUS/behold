@@ -147,6 +147,7 @@ import { nodeDiff, nodeObserved, nodeFieldDrift, type LiveDiffJson } from "./dif
 import { classifyObservedHealth } from "./health.ts";
 import { OpRunner } from "./op-runner.ts";
 import { ReadOnlyRunner, publicRoutes, type Runner } from "./public-mode.ts";
+import { SHOT_VIEW_KEYS, ShotRefusal, shotQueue, takeShot, type ShotDeps } from "./shot.ts";
 import { detectSubstrates, projectLexicons } from "./substrates.ts";
 import { pickAutoSyncOps, splitForgeRouted, suspendedByRollback, type AutoSyncMode } from "./autosync.ts";
 import { sourceCommits, openRollbackBranches } from "./history.ts";
@@ -230,6 +231,8 @@ const execFileP = async (cmd: string, args: string[]): Promise<string> =>
 export interface ServerOptions {
   /** #712: the local dots preview's sources (scripts/dots-preview.ts); never set by the CLI. */
   dotsPreview?: DotsPreviewOptions;
+  /** behold#915: a stand-in for the headless-browser peer, for tests; never set by the CLI. */
+  shotDeps?: ShotDeps;
   /** The address to bind. 127.0.0.1 unless given (`--host`, BEHOLD_HOST). */
   host?: string;
   /** Names besides loopback that behold answers to (`--allow-host`,
@@ -2405,6 +2408,45 @@ export function createApp(
   app.use("/api/graph", bakeHandLayout);
   app.use("/api/overlay", bakeHandLayout);
 
+  // behold#915: a PNG of a view, and the link to it. One browser at a time per
+  // serve. Never a file path: the bytes are the answer, so the serve writes
+  // nothing. Refused on --public (src/public-mode.ts refuses it first): anyone
+  // could make this machine start browsers.
+  const shotOneAtATime = shotQueue();
+  app.get("/api/shot", async (c) => {
+    if (cfg.public) return c.json({ error: "a public view takes no shots: each one starts a browser on this machine", code: "public", remedy: "Take the shot with behold shot against a serve of your own." }, 403);
+    const q = new URL(c.req.url).searchParams;
+    const view: Record<string, string> = {};
+    for (const k of SHOT_VIEW_KEYS) if (q.has(k)) view[k] = q.get(k) ?? "";
+    const origin = new URL(c.req.url).origin;
+    // The browser loads this serve where it listens; the link names it the way the caller reached it.
+    const bound = cfg.host && !["0.0.0.0", "::", "[::]"].includes(cfg.host) ? cfg.host : "127.0.0.1";
+    const base = cfg.port > 0 ? `http://${bound.includes(":") && !bound.startsWith("[") ? `[${bound}]` : bound}:${cfg.port}` : origin;
+    try {
+      const shot = await shotOneAtATime(() =>
+        takeShot(
+          base,
+          {
+            ...(q.has("q") ? { query: q.get("q") ?? "" } : {}),
+            ...(q.has("env") ? { env: q.get("env") ?? "" } : {}),
+            ...(q.has("snapshot") ? { snapshot: q.get("snapshot") ?? "" } : {}),
+            ...(q.has("width") ? { width: Number(q.get("width")) } : {}),
+            ...(q.has("height") ? { height: Number(q.get("height")) } : {}),
+            view,
+          },
+          { linkBase: origin, ...(cfg.shotDeps ? { deps: cfg.shotDeps } : {}) },
+        ),
+      );
+      return new Response(new Uint8Array(shot.png), {
+        status: 200,
+        headers: { "content-type": "image/png", "cache-control": "no-store", "behold-view-link": shot.link, "behold-shot-state": shot.state },
+      });
+    } catch (e) {
+      if (e instanceof ShotRefusal) return c.json(e.body, e.status as 400 | 403 | 501 | 504);
+      throw e;
+    }
+  });
+
   // #193: the API's front door, for agents. Everything the SPA can see is
   // plain JSON over these routes — this index makes them discoverable without
   // reading source. Shapes and the read/act loop: AGENTS.md (shipped in the
@@ -2424,6 +2466,11 @@ export function createApp(
           method: "POST",
           path: "/api/demos/open",
           desc: "load a demo and serve it: JSON body {name} (a catalog name, never a path) — copies/clones, installs, runs its setup, then switches (preview-locked)",
+        },
+        {
+          method: "GET",
+          path: "/api/shot",
+          desc: "a PNG of a view (behold#915): ?q=&env=&snapshot=&width=&height= plus view keys (node, focus, member, zoom, ...) -> image/png bytes, the view's link in the Behold-View-Link header and drawn|no-matches|failed in Behold-Shot-State; 501 no-browser without the playwright-core peer, 403 on --public, 504 not-ready when the page never draws; a query answers 501 no-search until behold#913",
         },
         { method: "GET", path: "/api/graph", desc: "the graph {ir, svg, meta} — params: detail=0..3, components=1, logical=1, ops=1 (+entities=1 to link steps to the estate), env, stack, tier, target, lens, up=1, down=1, radial=1, layout=1" },
         ...(cfg.carveReport
