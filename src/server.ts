@@ -148,6 +148,7 @@ import { classifyObservedHealth } from "./health.ts";
 import { OpRunner } from "./op-runner.ts";
 import { ReadOnlyRunner, publicRoutes, type Runner } from "./public-mode.ts";
 import { SHOT_VIEW_KEYS, ShotRefusal, shotQueue, takeShot, type ShotDeps } from "./shot.ts";
+import { removeServeEntry, writeServeEntry } from "./serve-registry.ts";
 import { detectSubstrates, projectLexicons } from "./substrates.ts";
 import { pickAutoSyncOps, splitForgeRouted, suspendedByRollback, type AutoSyncMode } from "./autosync.ts";
 import { sourceCommits, openRollbackBranches } from "./history.ts";
@@ -4758,16 +4759,29 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
     stopPoll();
     stopPoll = () => {};
     process.stdout.write(`  switched → ${dir}\n`);
+    registerServe(); // behold#916: the registry names the project now served
     void capture(); // baseline keyframe for the new project
   };
   if (!carve) void capture(); // baseline keyframe at startup
   // Clean shutdown on both Ctrl-C (SIGINT) and `kill` (SIGTERM) — otherwise a
   // `kill`ed instance leaves its emulator container running, which the next launch
   // silently reuses (a stale-state trap). Guard against double-fire.
+  // behold#916: this serve's entry in the per-user registry under the OS temp
+  // dir (src/serve-registry.ts), so `behold mcp` finds it. Written once the
+  // port is known, rewritten on a project switch, removed at exit. Nothing
+  // goes in the project.
+  let listening: string | undefined;
+  const registerServe = (): void => {
+    if (!listening) return;
+    writeServeEntry({ url: listening, pid: process.pid, projectDir: cfg.workspace?.root ?? cfg.projectDir, version: beholdVersion(), startedAt });
+  };
+  const startedAt = new Date().toISOString();
+  process.on("exit", () => removeServeEntry());
   let shuttingDown = false;
   const shutdown = (): void => {
     if (shuttingDown) return;
     shuttingDown = true;
+    removeServeEntry();
     stopWatch();
     stopPoll();
     // Local mode (#46): tear the emulator(s) down so nothing is left running.
@@ -4786,6 +4800,9 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   process.on("SIGTERM", shutdown);
   const hostname = cfg.host ?? process.env.BEHOLD_HOST ?? "127.0.0.1";
   const server = serve({ fetch: app.fetch, port: cfg.port, hostname }, (info) => {
+    const reach = ["0.0.0.0", "::", "[::]"].includes(hostname) ? "127.0.0.1" : hostname;
+    listening = `http://${reach.includes(":") && !reach.startsWith("[") ? `[${reach}]` : reach}:${info.port}`;
+    registerServe();
     if (cfg.terralithDemo) {
       process.stdout.write(
         `behold → http://localhost:${info.port}/terralith\n` +
