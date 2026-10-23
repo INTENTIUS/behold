@@ -27,6 +27,7 @@ import { setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
 import { readCarveReport } from "./carve-lens.ts";
 import { HCL_PARSER_PKG } from "./terraform-member.ts";
 import { runShot } from "./shot-cli.ts";
+import { runMcp } from "./mcp.ts";
 import { listCheckouts, type RepoTarget, type ViewRepos } from "./view-repos.ts";
 import {
   bootScratchFloci,
@@ -56,6 +57,7 @@ Usage:
   behold carve <report.json> [--port <n>]
   behold shot "<query>" [project-dir] [--env <name>] [--snapshot <ref>] [-o <out.png>] [--url <serve>]
                 [--width <px>] [--height <px>] [--link-base <url>] [--view <k=v&...>]   (behold shot --help)
+  behold mcp [project-dir] [--url <serve> | --port <n>]   (behold mcp --help)
 
   carve   Render a chant Terraform peelability report — the JSON from
           \`chant carve advise --from <tf-dir> --json\` — as a graph. One card
@@ -100,6 +102,13 @@ Usage:
           project to the current directory; pass a dir for someone else's, and
           --env for that project's live overlay. Bring the estate up first (e.g.
           behold preview, or your creds/env) so the snapshot reflects live state.
+
+  mcp     A stdio MCP server for a coding agent: show moves the open tab to
+          a view, shot returns a PNG of one and its link. It is a client of
+          the running serve of the project (found through --url, --port, or
+          a per-user registry under the OS temp directory). Answers come from
+          chant's own MCP tool workspace-search. Nothing it does deploys,
+          approves, runs an Op, rolls back or writes.
 
   preview Serve one project's graph in a browser at a single port — the quick
           way to look at a chant project. Defaults the project to the current
@@ -354,6 +363,11 @@ export async function run(argv: string[]): Promise<void> {
   if (cmd === "shot") {
     // Exit at once: the app a shot starts in-process may leave timers behind it.
     process.exit(await runShot(rest));
+  }
+
+  if (cmd === "mcp") {
+    // The protocol owns stdout: nothing else is printed there.
+    process.exit(await runMcp(rest));
   }
 
   if (cmd !== "serve") {

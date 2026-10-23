@@ -967,6 +967,33 @@ Until behold#913 lights a query's matches, a query answers 501 `code:
 "no-search"`, and a shot frames the view's own `node` or `focus` instead
 (`behold shot "" --view node=<id>`).
 
+## Over MCP: `behold mcp` (#916)
+
+`behold mcp [project-dir] [--url <serve> | --port <n>]` is a stdio MCP server
+with two tools, both clients of a running serve's HTTP API: `show` calls
+`POST /api/view` (its `by` is the MCP client's name plus "via behold mcp"),
+and `shot` calls `GET /api/shot` and returns the PNG as MCP `image` content
+followed by a text block `{link, state, serve}`. They take `query`, `env`,
+`snapshot`, `member`, `zoom`, `focus` and `node`; `shot` also takes `width`
+and `height`. Answers to estate questions come from chant's MCP tool
+`workspace-search` (INTENTIUS/chant#4374), not from behold.
+
+It finds the serve through `--url`/`--port`, then the per-user registry at
+`<os.tmpdir()>/behold/serves/<pid>.json` (`{url, pid, projectDir, version,
+startedAt}`, written by every serve at start, rewritten on a project switch,
+removed at exit, a dead pid ignored; `BEHOLD_SERVES_DIR` moves it), then
+`http://127.0.0.1:4600`. It confirms the serve through `GET /api/project`.
+`show` refuses a serve of another project, naming both, and refuses with the
+serve command when none runs. `shot` with no serve of the project starts
+behold in its own process for the shot (`src/shot-cli.ts`).
+
+Arguments are checked against each tool's schema (`additionalProperties:
+false`), a credential-named one is refused by name, and a refusal is an
+`isError` result carrying the route's `{error, code, remedy}`. The server
+refuses to start with a tool whose name holds a write word (deploy, apply,
+approve, run, op, rollback, write and kin), and a call to an unlisted tool is
+refused with the same words.
+
 ## The act loop (delegated, never direct)
 
 behold does not apply. To change the estate:
