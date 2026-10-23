@@ -10,7 +10,7 @@
  * instead of 301. A toggle should be a re-render.
  *
  * So a member's live read is cached, exactly the way #404 caches its plan
- * (src/choudoufu-plan.ts's own header states the argument): under the member's
+ * (src/choudoufu-chant-read.ts states the argument): under the member's
  * SOURCE STAMP — every file under the member root by path, mtime and size,
  * `memberSourceStamp` from src/member-ir.ts — together with the read's own
  * options, which is where the env lives. An unstampable member caches nothing,
@@ -87,7 +87,11 @@ export function resetOverlayCache(): void {
 /** `GraphOptions` keys sorted, so two equal option sets built in different
  * orders are one key — `cacheKey` in src/member-ir.ts, same reasoning. */
 function optionsKey(opts: GraphOptions, via: MemberVia, dir: string): string {
-  return `${via.tool(dir)}\0${JSON.stringify(opts, Object.keys(opts).sort())}`;
+  // `plan` (#924) is how a re-check reads, not what it reads: the ownership
+  // document is the same either way, so the ordinary reload after a re-check
+  // is served the document the re-check read.
+  const { plan: _plan, ...rest } = opts;
+  return `${via.tool(dir)}\0${JSON.stringify(rest, Object.keys(rest).sort())}`;
 }
 
 /**
