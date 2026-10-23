@@ -149,6 +149,14 @@ export const TERRAFORM_PLAN_CHANT_FLOOR = "0.124.46";
  * a bare Terraform folder sets it. Below it chant ignores the key, and an
  * estate with an error-severity finding is refused as before. */
 export const GRAPH_LINT_REPORT_CHANT_FLOOR = "0.124.46";
+/** The first chant whose `search --json` prints the read contract's `search`
+ * document (contract 1, `$schema`, coded failures, search.schema.json) and
+ * that has `chant workspace search`, which composes a declared workspace's
+ * members with `workspace graph`'s `<member>/<id>` ids (INTENTIUS/chant#4374,
+ * on chant's epic/908-ask-your-agent at d239908c7). behold#913 draws `q`
+ * through it. Below it a query is refused: an older `search --json` has no
+ * contract head, and an older chant has no workspace form to read. */
+export const SEARCH_CONTRACT_CHANT_FLOOR = "0.124.46";
 
 export interface ChantFloor {
   /** The read, in words: `the why of a member or a card`. */
@@ -186,6 +194,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "runtime health", floor: HEALTH_CHANT_FLOOR, adds: "chant lifecycle health --json, a chant-health/v1 document (chant#4177)", degraded: "the graph draws no health marks and no record out of rotation" },
   { read: "search over a Terraform folder", floor: SEARCH_TERRAFORM_ROOTS_CHANT_FLOOR, adds: "chant search reads terraform.roots, as graph does (chant#4365)" },
   { read: "plan read on a Terraform root", floor: TERRAFORM_PLAN_CHANT_FLOOR, adds: "the terraform lexicon reads a saved plan as an observation depth, CHANT_TERRAFORM_OBSERVE=plan (chant#4358)" },
+  { read: "search", floor: SEARCH_CONTRACT_CHANT_FLOOR, adds: "the read contract's search document, from chant search --json and chant workspace search (chant#4374)" },
   { read: "a Terraform folder with lint errors", floor: GRAPH_LINT_REPORT_CHANT_FLOOR, adds: "graph.lint: \"report\" draws it, the findings on meta.lint (behold#919)", degraded: "a bare Terraform estate that lint finds errors in is refused, and the refusal says which chant draws it" },
   { read: "decision points", floor: DECISION_POINTS_CHANT_FLOOR, adds: "a gate that asks a decision point, read with chant workspace points --open (chant#3170)", degraded: "the gate strip draws no open decision points, and says which chant adds them" },
 ];

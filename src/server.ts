@@ -215,6 +215,9 @@ import { COLLISION_READ, collisionsFloorRefusal, readCollisions } from "./collis
 import { sqlYodelerLaneRoute } from "./sql-yodeler-lane.ts";
 import { cachedHealth, invalidateHealth, readHealthOverlay, rememberHealth, type HealthMember } from "./health-overlay.ts";
 import { rootReader } from "./workspace-reader.ts";
+import { SearchAskError, checkAsk, drawnOf, drawnUnder, runSearch, searchTarget, type SearchTarget } from "./search.ts";
+import { resolvedVersion } from "./terraform-member.ts";
+import { writeViewQuery } from "../web/view-url.js";
 import { controlRepoInfo, terragucciEstateRoutes } from "./terragucci-estate.ts";
 import { yodelReportRoute } from "./yodel-report.ts";
 import { viewMoveRoute } from "./view-move.ts";
@@ -2448,6 +2451,57 @@ export function createApp(
     }
   });
 
+  // behold#913: `q`. chant answers, behold draws: one search through the
+  // workspace reader (src/search.ts), `chant workspace search` on a declared
+  // workspace and plain `chant search --json` on one project or a bare
+  // Terraform folder's scratch project. The answer is chant's document,
+  // unchanged, plus what the page draws from it (`draw`) and the link to the
+  // view. A --public serve answers a declared query only (src/public-mode.ts
+  // refuses env and snapshot before this runs).
+  const searchTargetNow = (): SearchTarget =>
+    searchTarget({
+      // A declared workspace with members is searched whole, at its root, by chant.
+      workspace: cfg.workspace?.members.length ? { root: cfg.workspace.root, chant: cfg.workspace.chant } : undefined,
+      dirs: cfg.projectDirs ?? [cfg.projectDir],
+      kindOf: (dir) => memberKindOf(dir),
+      chantOf: (dir) => resolveChant(dir).version,
+      terraformProject: (dir) => ({ project: terraformMemberProject(dir).project, chant: resolvedVersion("@intentius/chant") }),
+    });
+  app.get("/api/search", async (c) => {
+    const url = new URL(c.req.url);
+    const p = url.searchParams;
+    let ask;
+    try {
+      ask = checkAsk({ q: p.get("q"), env: p.get("env"), snapshot: p.get("snapshot"), show: p.get("show") });
+    } catch (e) {
+      if (e instanceof SearchAskError) return c.json({ ...e.refusal, q: p.get("q") }, 400);
+      throw e;
+    }
+    if (cfg.public && (ask.env || ask.snapshot)) {
+      return c.json({ error: "a public view answers a query over the declared source only; a live read uses behold's own credentials", code: "public", remedy: "Drop env and snapshot.", q: ask.q }, 403);
+    }
+    const link = `${url.origin}/${writeViewQuery("", { q: ask.q, env: ask.env ?? null, snapshot: ask.snapshot ?? null })}`;
+    const view = { q: ask.q, env: ask.env ?? null, snapshot: ask.snapshot ?? null };
+    let target: SearchTarget;
+    try {
+      target = searchTargetNow();
+    } catch (e) {
+      if (e instanceof TerraformReadError) return c.json({ ...e.refusal, ...view, link }, 422);
+      throw e;
+    }
+    const read = await runSearch(target, ask, (root) => rootReader(root));
+    if (!read.ok) return c.json({ ...read.refusal, ...view, link }, 422);
+    // A lone Terraform folder is drawn as a one-member estate: its cards' ids are under the member's name.
+    const lone = target.kind === "terraform" && cfg.projectDirs?.length === 1 ? estateMembers(cfg.projectDirs)[0]?.name : undefined;
+    const drawn = drawnUnder(drawnOf(read.document), lone);
+    // A query chant's grammar refuses is the asker's to fix: 400, chant's message and hint verbatim.
+    if (drawn.failure?.kind === "query") {
+      const code = drawn.failure.code === "query-invalid" ? "query" : (drawn.failure.code ?? "query");
+      return c.json({ error: drawn.failure.message, code, remedy: drawn.failure.hint ?? "See https://intentius.io/chant/cli/search/ for the grammar.", ...view, document: read.document, draw: drawn, link }, 400);
+    }
+    return c.json({ ...view, document: read.document, draw: drawn, link });
+  });
+
   // #193: the API's front door, for agents. Everything the SPA can see is
   // plain JSON over these routes — this index makes them discoverable without
   // reading source. Shapes and the read/act loop: AGENTS.md (shipped in the
@@ -2471,7 +2525,12 @@ export function createApp(
         {
           method: "GET",
           path: "/api/shot",
-          desc: "a PNG of a view (behold#915): ?q=&env=&snapshot=&width=&height= plus view keys (node, focus, member, zoom, ...) -> image/png bytes, the view's link in the Behold-View-Link header and drawn|no-matches|failed in Behold-Shot-State; 501 no-browser without the playwright-core peer, 403 on --public, 504 not-ready when the page never draws; a query answers 501 no-search until behold#913",
+          desc: "a PNG of a view (behold#915): ?q=&env=&snapshot=&width=&height= plus view keys (node, focus, member, zoom, ...) -> image/png bytes, the view's link in the Behold-View-Link header and drawn|no-matches|failed in Behold-Shot-State, the query's matches lit and framed (behold#913); 501 no-browser without the playwright-core peer, 403 on --public, 504 not-ready when the page never draws",
+        },
+        {
+          method: "GET",
+          path: "/api/search",
+          desc: "a chant search query over the served estate (behold#913): ?q=<query>&env=&snapshot=&show= -> {q, env, snapshot, document: chant's read-contract search document unchanged (chant workspace search on a declared workspace, chant search --json on one project or a Terraform folder), draw: what the page draws from it {lit, onPath, edges, unobserved, nearMisses, provenance, failure, notSearched}, link}; no env is the declared source, env is a live read, env+snapshot replays a recorded snapshot; --explain always on; 400 code query with chant's hint for a query chant refuses; 422 chant-too-old below chant 0.124.46; --public answers declared queries only",
         },
         { method: "GET", path: "/api/graph", desc: "the graph {ir, svg, meta} — params: detail=0..3, components=1, logical=1, ops=1 (+entities=1 to link steps to the estate), env, stack, tier, target, lens, up=1, down=1, radial=1, layout=1" },
         ...(cfg.carveReport

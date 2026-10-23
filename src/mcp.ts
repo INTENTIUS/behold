@@ -3,10 +3,14 @@
  * what it found in the person's open behold tab.
  *
  * chant answers, behold draws (the read-contract ruling on behold#908): an
- * agent asks its estate questions through chant's own MCP tool
+ * agent can ask its estate questions through chant's own MCP tool
  * `workspace-search` (INTENTIUS/chant#4374), and this server keeps the two
- * tools that draw:
+ * tools that draw, plus `ask`, which hands back chant's answer as it is:
  *
+ * - `ask` returns chant's read-contract `search` document verbatim, with
+ *   `link` (the view that draws it) and `drawn: false` added, through the
+ *   serve's `GET /api/search` (#913), or, with no serve running, through
+ *   behold's app started in this process for the one request;
  * - `show` moves the person's open tab to a view, through the serve's
  *   `POST /api/view` (#914);
  * - `shot` returns a PNG of a view and its link, through the serve's
@@ -36,7 +40,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findServe, realDir, within } from "./serve-registry.ts";
-import { DEFAULT_LINK_BASE, shotFromArgs } from "./shot-cli.ts";
+import { DEFAULT_LINK_BASE, localSearch, shotFromArgs } from "./shot-cli.ts";
 import type { ShotRefusalBody, ShotRequest, ShotResult } from "./shot.ts";
 
 /** The serve `behold serve` starts when no port is given. */
@@ -112,7 +116,7 @@ export function refusal(name: string): string {
   const w = writeWord(name);
   const what = w ? `${name} would ${w}, and ` : `there is no tool ${name}; `;
   return (
-    `behold mcp draws and never changes anything: ${what}it serves show and shot only. ` +
+    `behold mcp draws and never changes anything: ${what}it serves ask, show and shot only. ` +
     "Deploys, approvals, Ops and rollbacks belong to a person in behold's panel or at a shell. " +
     "Ask estate questions through chant's MCP tool workspace-search."
   );
@@ -176,6 +180,8 @@ export interface Context {
   findServe(): Promise<FoundServe | undefined>;
   /** A shot with no serve: behold started in this process for the project (src/shot-cli.ts). */
   localShot(req: ShotRequest): Promise<ShotResult>;
+  /** behold#916: GET /api/search with no serve: behold started in this process for the one request (src/shot-cli.ts). */
+  localSearch(query: URLSearchParams): Promise<{ status: number; body: Record<string, unknown> }>;
 }
 
 const trimUrl = (u: string): string => u.replace(/\/+$/, "");
@@ -247,7 +253,63 @@ function viewOf(a: Record<string, unknown>): Record<string, string> {
 
 const READ_ONLY: ToolAnnotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
+/**
+ * behold#916: what `ask` returns, from what GET /api/search answered: chant's
+ * document as it is, with `link` and `drawn: false` added after its own
+ * fields. Nothing else of the route's answer goes in. A route refusal with no
+ * document is a refusal.
+ */
+export function askAnswer(status: number, body: Record<string, unknown>): { doc: Record<string, unknown>; failed: boolean } {
+  const doc = body.document;
+  if (!doc || typeof doc !== "object" || Array.isArray(doc)) {
+    throw new ToolError(typeof body.error === "string" ? body.error : `GET /api/search answered ${status}`, { status, ...body });
+  }
+  const failed = "error" in (doc as Record<string, unknown>);
+  return { doc: { ...(doc as Record<string, unknown>), link: typeof body.link === "string" ? body.link : null, drawn: false }, failed };
+}
+
 export const TOOLS: Tool[] = [
+  {
+    name: "ask",
+    description:
+      "Ask a chant search query of the estate behold serves, and get chant's answer: its read-contract search document, verbatim, " +
+      "with `link` (the behold view that draws it) and `drawn: false` added. ask never moves the person's tab; use show for that. " +
+      "On a declared workspace the document is chant workspace search's, with every member's rows as <member>/<id>; on one project or a Terraform folder it is chant search --json's. " +
+      "Uses the running behold serve of this project; with none, behold answers in this process. Needs chant 0.124.46 or newer. " +
+      SEARCH_OPTIONS,
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: VIEW_PROPS.query!,
+        env: VIEW_PROPS.env!,
+        snapshot: VIEW_PROPS.snapshot!,
+        show: { type: "string", description: "Comma-separated attributes to carry on each row (chant search --show)." },
+      },
+      required: ["query"],
+      additionalProperties: false,
+    },
+    annotations: READ_ONLY,
+    async run(a, ctx) {
+      const view = viewOf(a);
+      if (!view.q) throw new ToolError("ask needs a query");
+      const q = new URLSearchParams({ q: view.q, ...(view.env ? { env: view.env } : {}), ...(view.snapshot ? { snapshot: view.snapshot } : {}), ...(typeof a.show === "string" && a.show ? { show: a.show } : {}) });
+      const serve = await ctx.findServe();
+      let status: number;
+      let body: Record<string, unknown>;
+      if (serve?.ours) {
+        const res = await ctx.fetch(`${serve.url}/api/search?${q}`, { headers: { accept: "application/json" } });
+        status = res.status;
+        body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      } else {
+        ({ status, body } = await ctx.localSearch(q));
+      }
+      const { doc, failed: refused } = askAnswer(status, body);
+      const note = serve?.ours
+        ? `Nothing is drawn: ask never moves the tab. show with the same query draws it in the open tab at ${serve.url}.`
+        : `Nothing is drawn: no behold serve of ${ctx.projectDir} was running${serve ? ` (the one at ${serve.url} serves ${serve.serves})` : ""}, so behold answered in this process. Start \`${serveCommand(ctx.projectDir)}\` to see it.`;
+      return { ...(refused ? { isError: true } : {}), content: [{ type: "text", text: JSON.stringify(doc) }, { type: "text", text: note }] };
+    },
+  },
   {
     name: "show",
     description:
@@ -293,7 +355,7 @@ export const TOOLS: Tool[] = [
       "A PNG of a view, framed on the query's matches, and the link to the same view. Returns the image inline. " +
       "Uses the running behold serve of this project; with none, it starts behold in this process for the shot and stops it after. " +
       "Needs the optional peer playwright-core and a browser; without them it refuses with the install line. Writes no file. " +
-      "Until behold#913 lands, a query is refused and node or focus frames the view's own selection. " +
+      "Without a query, node or focus frames the view's own selection. " +
       SEARCH_OPTIONS,
     inputSchema: {
       type: "object",
@@ -381,10 +443,11 @@ export interface McpOptions {
   /** For tests: the registry lookup and the no-serve shot. */
   registry?: (dir: string) => { url: string; projectDir: string } | undefined;
   localShot?: (req: ShotRequest) => Promise<ShotResult>;
+  localSearch?: Context["localSearch"];
 }
 
 export const INSTRUCTIONS =
-  "behold draws a Terraform or chant estate in the person's browser. Ask estate questions through chant's MCP tool workspace-search; " +
+  "behold draws a Terraform or chant estate in the person's browser. ask returns chant's answer to an estate question (its search document, the one chant's own MCP tool workspace-search returns, verbatim, plus the link to the view); " +
   "then use show to move the person's open behold tab to the matches, or shot to get a PNG of them and the link. " +
   "Nothing here deploys, approves, runs an Op, rolls back or writes; a person does that.";
 
@@ -403,6 +466,7 @@ export async function serveMcp(o: McpOptions, transport: Transport): Promise<Ser
     clientName: () => server.getClientVersion()?.name,
     findServe: () => locateServe({ projectDir, projectGiven: o.projectGiven ?? true, ...(o.url ? { url: o.url } : {}), fetch, ...(o.registry ? { registry: o.registry } : {}) }),
     localShot: o.localShot ?? ((req) => shotFromArgs({ req, projectDir, linkBase: DEFAULT_LINK_BASE })),
+    localSearch: o.localSearch ?? ((query) => localSearch(projectDir, query)),
   };
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, annotations: t.annotations })),
@@ -414,17 +478,18 @@ export async function serveMcp(o: McpOptions, transport: Transport): Promise<Ser
 
 export const MCP_USAGE = `Usage: behold mcp [project-dir] [--url <serve> | --port <n>]
 
-  A stdio MCP server with two tools that draw: show moves the open behold
-  tab to a view, and shot returns a PNG of one with its link. Answers come
-  from chant's own MCP server (workspace-search). Configure it in the agent,
+  A stdio MCP server with three tools: ask returns chant's search document
+  for a query, verbatim, with the link to the view that draws it; show moves
+  the open behold tab to a view; shot returns a PNG of one with its link.
+  chant answers and behold draws. Configure it in the agent,
   for example: claude mcp add behold -- npx @intentius/behold mcp <dir>
 
   It reaches the serve at --url (or http://127.0.0.1:--port), else the serve
   of project-dir (default: the current directory) that the per-user registry
   under the OS temp directory names, else http://127.0.0.1:4600. With no serve
-  running, show refuses with the command that starts one, and shot starts
-  behold in its own process. Nothing it does deploys, approves, runs an Op,
-  rolls back or writes.
+  running, show refuses with the command that starts one, and ask and shot
+  start behold in their own process. Nothing it does deploys, approves,
+  runs an Op, rolls back or writes.
 `;
 
 /** The command line, read. Throws a message on a usage error. */

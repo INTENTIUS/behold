@@ -11,7 +11,7 @@ import { startServer, beholdVersion } from "./server.ts";
 import { loadDemoRegistry, missingRequirements, demoTargetDir, loadDemo, type DemoCarve } from "./demos.ts";
 import { resolveChant, runChantRaw } from "./chant.ts";
 import { applyConversion, planConversion } from "./workspace-convert.ts";
-import { ExportRefusal, OPENING_ZOOMS, publishTarget, runExport, settleNote } from "./export.ts";
+import { ExportRefusal, OPENING_ZOOMS, publishTarget, runExport, settleNote, settleQueries } from "./export.ts";
 import { DEFAULT_KEEP, publishSnapshot, resolveCommit, SNAPSHOT_REPORTS_BASE } from "./publish-snapshots.ts";
 import { hasEnvCredentials, S3Object, s3FromEnv } from "./s3-object.ts";
 import { diagnose, formatReport } from "./doctor.ts";
@@ -48,7 +48,7 @@ Usage:
   behold preview [project-dir] [--port <n>] [--emulator]
   behold export [project-dir] [--out <dir>] [--env <name>] [--name <worker>] [--emulator]
                 [--terragucci <src> [--terragucci-project <p>] [--reports-base <rel>]] [--no-source]
-                [--yodel-report <file|dir>] [--open-env <env>] [--open-zoom <zoom>] [--note <text>]
+                [--yodel-report <file|dir>] [--open-env <env>] [--open-zoom <zoom>] [--note <text>] [--q <query>…]
                 [--publish s3://<bucket>/<prefix>/views/<name> [--commit <sha>] [--keep <n>]]
   behold serve <project-dir…> [--port <n>] [--host <addr>] [--allow-host <name,…>] [--hud <url>] [--env <name>] [--poll <secs>] [--local]
                 [--public] [--terragucci <src> [--terragucci-project <p>] [--terragucci-poll <secs>] [--terragucci-runs <src>]]
@@ -318,6 +318,10 @@ Options:
   --note <text>       export only: one line the page shows at its foot, such
                       as how to run the estate yourself; a span in backticks
                       is drawn as code. At most 200 characters.
+  --q <query>         export only, repeatable: a chant search query the bundle
+                      answers with no backend (behold#913), captured for the
+                      source graph and every environment. A link's q that
+                      wasn't captured is named, and lights nothing.
   -h, --help          This text.
   -v, --version       Print the behold version.
 `;
@@ -1143,9 +1147,11 @@ async function runExportCmd(rest: string[]): Promise<void> {
   let openEnv: string | undefined;
   let openZoom: string | undefined;
   let note: string | undefined;
+  const queries: string[] = [];
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a === "--out") outDir = resolve(rest[++i]);
+    else if (a === "--q") queries.push(rest[++i] ?? "");
     else if (a === "--note") note = rest[++i] ?? "";
     else if (a === "--open-env") openEnv = rest[++i] ?? "";
     else if (a === "--open-zoom") openZoom = rest[++i] ?? "";
@@ -1181,6 +1187,12 @@ async function runExportCmd(rest: string[]): Promise<void> {
   const settledNote = settleNote(note);
   if ("error" in settledNote) {
     process.stderr.write(`behold export: ${settledNote.error}\n`);
+    process.exit(2);
+  }
+  // behold#913: checked before the project is read, like the note.
+  const settledQueries = settleQueries(queries);
+  if ("error" in settledQueries) {
+    process.stderr.write(`behold export: ${settledQueries.error}\n`);
     process.exit(2);
   }
   if ((terragucciProject || reportsBase !== undefined) && !terragucci) {
@@ -1246,6 +1258,7 @@ async function runExportCmd(rest: string[]): Promise<void> {
       ...(reportsBase !== undefined ? { reportsBase } : destination ? { reportsBase: SNAPSHOT_REPORTS_BASE } : {}),
       ...(Object.keys(open).length ? { open } : {}),
       ...(settledNote.note ? { note: settledNote.note } : {}),
+      ...(settledQueries.queries ? { queries: settledQueries.queries } : {}),
     },
   ).catch((e: unknown) => {
     if (!(e instanceof ExportRefusal)) throw e;

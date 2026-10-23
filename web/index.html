@@ -1049,6 +1049,23 @@
         box-shadow: 0 6px 20px color-mix(in srgb, var(--shadow) 60%, transparent); font: var(--t-body)/1.45 var(--font-ui);
         white-space: pre-line; overflow-wrap: anywhere; pointer-events: none; }
       #b-tip[hidden] { display: none; }
+      /* behold#913: `q`, a chant search query drawn over the graph (web/search-view.js). The matches lit, the
+         cards and edges on their paths at full weight, the rest dimmed; nothing hidden. A no-matches view
+         outlines the near-misses; a row a live read could not observe wears a dashed ring. */
+      #graph [data-node-id][data-q="dim"], #graph g[data-edge-from][data-q="dim"] { opacity: .22; transition: opacity .15s; }
+      #graph [data-node-id][data-q="lit"] rect:first-of-type { stroke: var(--pending); stroke-width: 3; }
+      #graph [data-node-id][data-q="path"] rect:first-of-type { stroke: var(--pending); stroke-width: 1.5; }
+      #graph g[data-edge-from][data-q="path"] path:first-of-type { stroke: var(--pending); stroke-width: 2.5; }
+      #graph [data-node-id][data-q-near] { opacity: .6; }
+      #graph [data-node-id][data-q-near] rect:first-of-type { stroke: var(--ink2); stroke-width: 1.5; stroke-dasharray: 3 2; }
+      #graph [data-node-id][data-q-unobserved] rect:first-of-type { stroke: var(--degraded); stroke-dasharray: 5 3; }
+      #q-line { position: fixed; top: 12px; left: 12px; z-index: 54; max-width: min(640px, calc(100vw - 32px)); padding: 6px 10px;
+        border: 1px solid var(--rule); border-left: 4px solid var(--pending); border-radius: 6px; background: var(--panel); color: var(--fg);
+        font: 12px/1.4 var(--font-mono); overflow-wrap: anywhere; box-shadow: 0 4px 16px color-mix(in srgb, var(--shadow) 40%, transparent); }
+      #q-line[hidden] { display: none; }
+      #q-line[data-tone="empty"] { border-left-color: var(--neutral); }
+      #q-line[data-tone="failed"] { border-left-color: var(--degraded); color: var(--degraded); }
+      #q-line .q-line-not-searched { color: var(--muted); margin-top: 2px; }
       /* #914: an agent moved this tab (POST /api/view). Says who asked what, and when, with Back. */
       #agent-banner { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 55; display: flex; align-items: center; gap: 10px;
         max-width: min(720px, calc(100vw - 32px)); padding: 8px 12px; border: 1px solid var(--rule); border-radius: 6px;

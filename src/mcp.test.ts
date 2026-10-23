@@ -64,7 +64,7 @@ const nothingListens: Fetch = async (url) => {
   throw new TypeError(`fetch failed: connect ECONNREFUSED ${new URL(url).host}`);
 };
 
-function ctxOf(o: { projectDir: string; fetch: Fetch; url?: string; projectGiven?: boolean; registry?: McpOptions["registry"]; localShot?: Context["localShot"]; client?: string }): Context {
+function ctxOf(o: { projectDir: string; fetch: Fetch; url?: string; projectGiven?: boolean; registry?: McpOptions["registry"]; localShot?: Context["localShot"]; localSearch?: Context["localSearch"]; client?: string }): Context {
   return {
     projectDir: o.projectDir,
     projectGiven: o.projectGiven ?? true,
@@ -72,6 +72,7 @@ function ctxOf(o: { projectDir: string; fetch: Fetch; url?: string; projectGiven
     clientName: () => o.client ?? "claude-code",
     findServe: () => locateServe({ projectDir: o.projectDir, projectGiven: o.projectGiven ?? true, fetch: o.fetch, registry: o.registry ?? (() => undefined), ...(o.url ? { url: o.url } : {}) }),
     localShot: o.localShot ?? (async () => { throw new Error("no local shot expected"); }),
+    localSearch: o.localSearch ?? (async () => { throw new Error("no local search expected"); }),
   };
 }
 
@@ -79,8 +80,8 @@ const textOf = (r: CallToolResult): string => (r.content.find((c) => c.type === 
 const jsonOf = (r: CallToolResult): Record<string, unknown> => JSON.parse(textOf(r)) as Record<string, unknown>;
 
 describe("the tools behold mcp serves", () => {
-  it("are show and shot, and nothing else: a new tool fails here until it is read for writes and listed", () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(["show", "shot"]);
+  it("are ask, show and shot, and nothing else: a new tool fails here until it is read for writes and listed", () => {
+    expect(TOOLS.map((t) => t.name)).toEqual(["ask", "show", "shot"]);
   });
 
   it("each lists every argument, takes no other, carries annotations, and is never destructive", () => {
@@ -94,6 +95,7 @@ describe("the tools behold mcp serves", () => {
     }
     expect(TOOLS.find((t) => t.name === "show")!.annotations).toEqual({ readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false });
     expect(TOOLS.find((t) => t.name === "shot")!.annotations.readOnlyHint).toBe(true);
+    expect(TOOLS.find((t) => t.name === "ask")!.annotations.readOnlyHint).toBe(true);
   });
 
   it("each description says which chant search options it takes and which it doesn't", () => {
@@ -127,8 +129,8 @@ describe("the write guard", () => {
     const r = await callTool(TOOLS, "approve", {}, ctxOf({ projectDir: tmpdir(), fetch: nothingListens }));
     expect(r.isError).toBe(true);
     expect(textOf(r)).toContain("approve would approve");
-    expect(refusal("ask")).toContain("there is no tool ask");
-    expect(refusal("ask")).toContain("workspace-search");
+    expect(refusal("search_all")).toContain("there is no tool search_all");
+    expect(refusal("search_all")).toContain("workspace-search");
   });
 });
 
@@ -194,6 +196,58 @@ describe("finding the serve", () => {
   it("with --url and no project named, takes the serve's project", async () => {
     const s = serveOf(project());
     expect(await locateServe({ projectDir: project(), projectGiven: false, url: SERVE, fetch: s.fetch })).toMatchObject({ ours: true });
+  });
+});
+
+describe("ask: GET /api/search (behold#913, #916)", () => {
+  const document = { $schema: "https://intentius.io/chant/schemas/workspace/search/v1/search.schema.json", contract: 1, chant: "0.124.46", at: null, query: "->kind:aws_vpc", source: { kind: "declared" }, matches: [{ id: "web", displayId: "web", kind: "K", paths: [] }], provenance: "declared only" };
+  const answer = { q: "->kind:aws_vpc", env: null, snapshot: null, document, draw: { lit: ["web"] }, link: `${SERVE}/?q=-%3Ekind%3Aaws_vpc` };
+  /** A serve of `dir` whose search route answers `body` with `status`, recording what it was asked. */
+  const searchServe = (dir: string, status = 200, body: Record<string, unknown> = answer) => {
+    const asked: string[] = [];
+    const fetch: Fetch = async (url) => {
+      const u = new URL(url);
+      if (u.pathname === "/api/project") return Response.json({ projectDir: dir, projectDirs: [] });
+      if (u.pathname === "/api/search") return asked.push(u.search), Response.json(body, { status });
+      return new Response("{}", { status: 404 });
+    };
+    return { fetch, asked };
+  };
+
+  it("returns what the route answers: chant's document as it is, then link and drawn false", async () => {
+    const dir = project();
+    const s = searchServe(dir);
+    const r = await callTool(TOOLS, "ask", { query: "->kind:aws_vpc", env: "prod", show: "cidr" }, ctxOf({ projectDir: dir, fetch: s.fetch, url: SERVE }));
+    expect(r.isError).toBeUndefined();
+    expect(s.asked).toEqual(["?q=-%3Ekind%3Aaws_vpc&env=prod&show=cidr"]);
+    expect(textOf(r)).toBe(JSON.stringify({ ...document, link: answer.link, drawn: false }));
+    expect((r.content[1] as { text: string }).text).toMatch(/ask never moves the tab/);
+  });
+
+  it("with no serve, asks the same route of behold started in this process", async () => {
+    const dir = project();
+    const asked: string[] = [];
+    const r = await callTool(TOOLS, "ask", { query: "a" }, ctxOf({ projectDir: dir, fetch: nothingListens, localSearch: async (q) => (asked.push(q.toString()), { status: 200, body: answer }) }));
+    expect(asked).toEqual(["q=a"]);
+    expect(jsonOf(r)).toEqual({ ...document, link: answer.link, drawn: false });
+    expect((r.content[1] as { text: string }).text).toContain(serveCommand(dir));
+  });
+
+  it("a query chant refuses is chant's document, marked as an error; a refusal with no document is the route's", async () => {
+    const dir = project();
+    const refused = { ...document, matches: undefined, error: { code: "query-invalid", message: "not a term", hint: "say attr:" } };
+    const r = await callTool(TOOLS, "ask", { query: "x:y" }, ctxOf({ projectDir: dir, fetch: searchServe(dir, 400, { error: "not a term", code: "query", document: refused, link: "l" }).fetch, url: SERVE }));
+    expect(r.isError).toBe(true);
+    expect(jsonOf(r)).toMatchObject({ error: { code: "query-invalid" }, link: "l", drawn: false });
+    const old = await callTool(TOOLS, "ask", { query: "a" }, ctxOf({ projectDir: dir, fetch: searchServe(dir, 422, { error: "Search needs chant 0.124.46 or newer.", code: "chant-too-old", remedy: "Upgrade." }).fetch, url: SERVE }));
+    expect(old.isError).toBe(true);
+    expect(jsonOf(old)).toMatchObject({ code: "chant-too-old", status: 422 });
+  });
+
+  it("needs a query, and takes no at", async () => {
+    const dir = project();
+    expect((await callTool(TOOLS, "ask", {}, ctxOf({ projectDir: dir, fetch: nothingListens }))).isError).toBe(true);
+    expect(textOf(await callTool(TOOLS, "ask", { query: "a", at: "HEAD" }, ctxOf({ projectDir: dir, fetch: nothingListens })))).toMatch(/takes no argument at/);
   });
 });
 
@@ -316,7 +370,7 @@ describe("over the protocol", () => {
     const client = new Client({ name: "test-agent", version: "1" });
     await client.connect(clientSide);
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name)).toEqual(["show", "shot"]);
+    expect(tools.map((t) => t.name)).toEqual(["ask", "show", "shot"]);
     expect(tools[0].annotations).toMatchObject({ destructiveHint: false });
     expect(client.getInstructions()).toContain("workspace-search");
     const r = (await client.callTool({ name: "show", arguments: { node: "a" } })) as CallToolResult;

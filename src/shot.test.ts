@@ -59,18 +59,9 @@ function fakeBrowser({ fail = [] as string[], ready = true, state = "drawn", car
 const noPeer: ShotDeps = { chromium: () => null };
 
 describe("queryView: the query -> view step (behold#915, filled in by #913)", () => {
-  it("refuses a query until behold#913 lights matches, naming the stand-in", () => {
-    const e = (() => {
-      try {
-        queryView({ query: "kind:Bucket" });
-      } catch (err) {
-        return err as ShotRefusal;
-      }
-    })();
-    expect(e).toBeInstanceOf(ShotRefusal);
-    expect(e!.code).toBe("no-search");
-    expect(e!.status).toBe(501);
-    expect(e!.body.remedy).toContain("--view node=");
+  it("passes a query through as the view's q (behold#913), a leading -> included", () => {
+    expect(queryView({ query: "kind:Bucket" })).toEqual({ q: "kind:Bucket" });
+    expect(queryView({ query: "->kind:aws_kms_key", env: "prod", view: { zoom: "resources" } })).toEqual({ zoom: "resources", env: "prod", q: "->kind:aws_kms_key" });
   });
 
   it("passes the stand-in selection, env and snapshot through", () => {
@@ -163,7 +154,7 @@ describe("takeShot", () => {
 
   it("never launches a browser for a request it refuses", async () => {
     const f = fakeBrowser();
-    await expect(takeShot("http://x", { query: "kind:Bucket" }, { deps: f.deps })).rejects.toBeInstanceOf(ShotRefusal);
+    await expect(takeShot("http://x", { query: "", env: "prod", snapshot: "latest", view: {} }, { deps: f.deps })).rejects.toBeInstanceOf(ShotRefusal);
     expect(f.launches).toEqual([]);
   });
 });
@@ -259,14 +250,17 @@ describe("GET /api/shot", () => {
     expect(body.remedy).toContain("npm i -g playwright-core@");
   });
 
-  it("answers 501 no-search for a query until behold#913, and 400 for nothing to frame", async () => {
+  it("photographs a query's view (behold#913), and answers 400 for nothing to frame", async () => {
     const f = fakeBrowser();
     const a = app({ shotDeps: f.deps });
     const q = await a.request("http://localhost/api/shot?q=kind%3ABucket");
-    expect(q.status).toBe(501);
-    expect(((await q.json()) as { code: string }).code).toBe("no-search");
+    expect(q.status).toBe(200);
+    expect(q.headers.get("behold-view-link")).toContain("q=kind%3ABucket");
+    expect(f.pages[0]).toContain("q=kind%3ABucket");
+    expect(f.pages[0]).toContain("frame=matches");
+    expect(f.launches.length).toBe(1);
     expect((await a.request("http://localhost/api/shot")).status).toBe(400);
-    expect(f.launches).toEqual([]);
+    expect(f.launches.length).toBe(1);
   });
 
   it("is refused on a --public serve, before any browser starts", async () => {

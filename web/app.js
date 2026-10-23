@@ -131,6 +131,7 @@ import { comparisonRow, comparisonSummary } from "./cross-env.js";
 import { identityMark, tagGlyphSvg } from "./identity-mark.js";
 import { shotFromMessage, shotViewBox, tweenViewBox, unionBox, sameViewBox, heldFrame, heldInsets, heldTarget, holdsStage, medianWidth, smallStage } from "./kiosk-shot.js"; // behold#571: Watch's camera
 import { SHOT_ATTR, SHOT_CAPTION_PX, SHOT_DIM, readShotFrame, shotCaption, shotLit, shotProvenance, shotState } from "./shot-frame.js"; // behold#915: the page `behold shot` photographs
+import { queryLine, queryMarks, searchKey, searchUrl, uncapturedLine } from "./search-view.js"; // behold#913: `q` drawn
 // #712, #715: the dots layer, the zoom past the cards. Mounted for a live
 // carve when the estate has choudoufu roots or estate rosters
 // (/api/terragucci/carve, liveCarveGate below), or when /api/graph's meta
@@ -609,7 +610,7 @@ if (staticMode) {
 
 /** Canonical key for a read URL — path + the lens params (whitelisted, sorted)
  * that select a distinct snapshot. MUST match src/export.ts `canonicalKey`. */
-const LENS_PARAMS = ["alike", "collapse", "components", "detail", "env", "logical", "ops", "radial", "runtime", "stacks", "tier"];
+const LENS_PARAMS = ["alike", "collapse", "components", "detail", "env", "logical", "ops", "q", "radial", "runtime", "snapshot", "stacks", "tier"]; // q, snapshot: behold#913's /api/search
 function canonicalKey(path, params) {
   // Components + logical + ops views ignore detail/radial — drop them so they
   // match the single captured snapshot (MUST match src/export.ts).
@@ -3022,7 +3023,7 @@ function applyWantedView(want) {
   if ("focus" in apply) view.focus = apply.focus; // #569: drawn by drawTgReads, no new read
   if ("run" in apply) view.run = apply.run; // #569: which run the view draws; read in the message handler
   if ("pull" in apply) view.pull = apply.pull; // the cycle's pull request: a commit's run never draws another's plan
-  if ("q" in apply) view.q = apply.q; // #914: carried; #913 draws it
+  if ("q" in apply) view.q = apply.q; // #914 carries it; #913 draws it (drawQuery)
   if ("snapshot" in apply) view.snapshot = apply.snapshot;
   if (!view.env) view.snapshot = null; // a snapshot is of an env: the source graph has none
   if (want.member === null) {
@@ -3058,6 +3059,7 @@ function moveViewTo(want) {
   const focusBefore = view.focus;
   const runBefore = view.run;
   const pullBefore = view.pull;
+  const queryBefore = searchKey(view);
   const moved = applyWantedView(want);
   if (view.run !== runBefore || view.pull !== pullBefore) {
     if (tgServed) void loadTgProgress({ fresh: true }); // #569: the run the narration is about
@@ -3077,6 +3079,7 @@ function moveViewTo(want) {
     return;
   }
   if (colourMode !== lensBefore) recolorNodesByCategory();
+  if (searchKey(view) !== queryBefore) void drawQuery(); // #913: a new question over the same graph
   if (pendingPlace && lastGraphIr) afterPaint(lastGraphIr);
   else if (want.member === null) fitGraph();
   const line = refusalLine(urlRefusals);
@@ -3352,6 +3355,113 @@ function afterPaint(ir) {
   const line = refusalLine(urlRefusals);
   urlRefusals = [];
   if (line) nowline(line);
+  void drawQuery(); // #913: every paint draws the view's question over the new svg
+}
+
+// --- behold#913: `q` drawn ----------------------------------------------------
+// The view's query is read through GET /api/search (chant answers, behold
+// draws: src/search.ts), once per query, env and snapshot, and again after a
+// `changed` event. Each paint lights the matches, draws the edges on their
+// paths, dims the rest, and says the query and chant's provenance in one line
+// (web/search-view.js decides; this applies). A refused query lights and dims
+// nothing; no matches dims everything and outlines the near-misses.
+let queryAnswer = null; // {key, answer} once read
+let queryReading = null; // {key, promise} while a read is in flight
+async function readQuery(key) {
+  if (queryAnswer && queryAnswer.key === key) return queryAnswer.answer;
+  if (queryReading && queryReading.key === key) return queryReading.promise;
+  const promise = (async () => {
+    let answer;
+    try {
+      const res = await apiFetch(searchUrl(view));
+      answer = await res.json().catch(() => ({ error: `the search answered ${res.status}` }));
+      if (staticMode && res.status === 404) answer = { error: uncapturedLine(view.q, manifest && manifest.queries), uncaptured: true };
+    } catch (err) {
+      answer = { error: `the search failed: ${err.message}` };
+    }
+    if (searchKey(view) === key) queryAnswer = { key, answer };
+    return answer;
+  })();
+  queryReading = { key, promise };
+  try {
+    return await promise;
+  } finally {
+    if (queryReading && queryReading.key === key) queryReading = null;
+  }
+}
+/** The answer the shot frame draws: null while none is wanted, undefined while it is read. */
+function queryAnswerNow() {
+  const key = searchKey(view);
+  if (!key) return null;
+  return queryAnswer && queryAnswer.key === key ? queryAnswer.answer : undefined;
+}
+function clearQueryMarks(svg) {
+  if (!svg) return;
+  for (const el of svg.querySelectorAll("[data-q]")) el.removeAttribute("data-q");
+  for (const el of svg.querySelectorAll("[data-q-near]")) {
+    el.removeAttribute("data-q-near");
+    const t = el.querySelector(":scope > title.q-near-title");
+    if (t) t.remove();
+  }
+  for (const el of svg.querySelectorAll("[data-q-unobserved]")) el.removeAttribute("data-q-unobserved");
+}
+async function drawQuery() {
+  const key = searchKey(view);
+  const lineEl = document.getElementById("q-line");
+  if (!key) {
+    clearQueryMarks(currentSvg());
+    if (lineEl) lineEl.hidden = true;
+    return;
+  }
+  const answer = await readQuery(key);
+  if (searchKey(view) !== key) return; // the view moved on while it was read
+  const svg = currentSvg();
+  clearQueryMarks(svg);
+  const cardEls = svg ? [...svg.querySelectorAll("[data-node-id]")] : [];
+  const edgeEls = svg ? [...svg.querySelectorAll("g[data-edge-from]")] : [];
+  const marks = queryMarks(
+    answer,
+    new Set(cardEls.map((g) => g.getAttribute("data-node-id"))),
+    edgeEls.map((g) => ({ from: g.getAttribute("data-edge-from"), to: g.getAttribute("data-edge-to") })),
+  );
+  for (const g of cardEls) {
+    const id = g.getAttribute("data-node-id");
+    const m = marks.cardMarks.get(id);
+    if (m) g.setAttribute("data-q", m);
+    if (marks.unobserved.has(id)) g.setAttribute("data-q-unobserved", "1");
+    if (marks.near.has(id)) {
+      g.setAttribute("data-q-near", "1");
+      const t = document.createElementNS("http://www.w3.org/2000/svg", "title");
+      t.setAttribute("class", "q-near-title");
+      t.textContent = `near miss: fails ${marks.near.get(id)}`;
+      g.prepend(t);
+    }
+  }
+  edgeEls.forEach((g, i) => {
+    if (marks.edgeMarks[i]) g.setAttribute("data-q", marks.edgeMarks[i]);
+  });
+  if (embedOpts.bare) return; // a bare frame has no chrome: the shot frame draws its own caption
+  const line = queryLine(view, answer, marks);
+  let el = lineEl;
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "q-line";
+    el.setAttribute("role", "status");
+    document.body.appendChild(el);
+  }
+  el.hidden = false;
+  el.dataset.tone = line.tone;
+  el.innerHTML = "";
+  const main = document.createElement("div");
+  main.className = "q-line-main";
+  main.textContent = line.text;
+  el.appendChild(main);
+  if (line.notSearched) {
+    const ns = document.createElement("div");
+    ns.className = "q-line-not-searched";
+    ns.textContent = line.notSearched;
+    el.appendChild(ns);
+  }
 }
 
 /** A card was picked (graph click, panel row, palette, the link). */
@@ -6489,10 +6599,13 @@ const shotFrameOn = !!embedOpts.bare && readShotFrame(location.search) === "matc
 // The link as loaded: the page rewrites its URL as it settles the view (a card it lacks drops out), and the shot answers what was asked.
 const shotAsked = new URLSearchParams(location.search);
 var shotFrameDone = false; // var: setupGraphViewBox reads it, and may run before this line is reached
+var shotQueryFailed = false; // behold#913: the query was refused, or its live read failed
 function shotFrameTick() {
   if (!shotFrameOn || shotFrameDone) return;
   const drawnState = graphDrawnState();
   if (!drawnState) return;
+  // behold#913: a query is drawn once chant has answered it (drawQuery marks the cards first).
+  if (drawnState !== "failed" && queryAnswerNow() === undefined) return;
   shotFrameDone = true;
   const state = shotFrameApply(drawnState === "failed");
   // Two frames, so what was set above is painted before the driver looks.
@@ -6508,18 +6621,22 @@ function shotFrameApply(failed = !!document.querySelector("#graph > .err")) {
     const ownRect = (g) => g.querySelector(":scope > rect") || g;
     const cards = [...svg.querySelectorAll("[data-node-id]")].map((g) => ({ id: g.getAttribute("data-node-id"), g, box: userBoxOf(svg, ownRect(g)) }));
     const groups = [...svg.querySelectorAll("rect[data-group-id]")].map((r) => ({ id: r.getAttribute("data-group-id"), box: userBoxOf(svg, r) }));
-    // behold#913 passes the query's matched node ids as the fourth argument; until then the view's node or focus stands in.
-    // The link's own node and focus, as asked: a card the graph lacks is a question with no answer, never the whole graph.
-    lit = shotLit({ node: params.get("node"), focus: params.get("focus") }, cards, groups, null);
+    // behold#913: the query's matched node ids (drawQuery has marked the cards and the path edges). Without a
+    // query, the link's own node and focus, as asked: a card the graph lacks is a question with no answer, never the whole graph.
+    const qa = queryAnswerNow();
+    lit = shotLit({ node: params.get("node"), focus: params.get("focus") }, cards, groups, qa ? (qa.draw ? qa.draw.lit || [] : []) : null);
+    shotQueryFailed = !!qa && (!qa.draw || !!qa.draw.failure);
     const on = new Set(lit.ids);
     for (const c of cards) {
-      const dim = lit.asked && !on.has(c.id);
+      // A query's on-path cards stay at full weight; a refused query dims nothing.
+      const dim = qa ? c.g.getAttribute("data-q") === "dim" : lit.asked && !on.has(c.id);
       c.g.style.opacity = dim ? String(SHOT_DIM) : "";
-      if (dim) c.g.setAttribute("data-shot-dim", "1");
+      if (dim || (qa && !on.has(c.id))) c.g.setAttribute("data-shot-dim", "1");
       else c.g.removeAttribute("data-shot-dim");
     }
     for (const e of svg.querySelectorAll("[data-edge-from]")) {
-      const dim = lit.asked && !(on.has(e.getAttribute("data-edge-from")) && on.has(e.getAttribute("data-edge-to")));
+      const mark = e.getAttribute("data-q");
+      const dim = qa ? mark === "dim" : lit.asked && !(on.has(e.getAttribute("data-edge-from")) && on.has(e.getAttribute("data-edge-to")));
       e.style.opacity = dim ? String(SHOT_DIM) : "";
     }
     // The lit cards, or with none lit the whole graph as drawn (its boxes' titles and all).
@@ -6533,7 +6650,8 @@ function shotFrameApply(failed = !!document.querySelector("#graph > .err")) {
       applyVB();
     }
   }
-  const state = shotState({ failed, lit });
+  const qa = queryAnswerNow();
+  const state = shotState({ failed: failed || shotQueryFailed, lit });
   const err = document.querySelector("#graph > .err");
   let cap = document.getElementById("shot-caption");
   if (!cap) {
@@ -6543,11 +6661,13 @@ function shotFrameApply(failed = !!document.querySelector("#graph > .err")) {
     document.body.appendChild(cap);
   }
   cap.style.color = state === "failed" ? "var(--degraded, #f85149)" : "var(--fg, #e6edf3)";
+  // behold#913: chant's own provenance line, and its failure, when a query was asked.
+  const qFailure = qa ? (qa.draw ? qa.draw.failure && [qa.draw.failure.message, qa.draw.failure.hint].filter(Boolean).join(". ") : qa.error || "the search failed") : null;
   cap.textContent = shotCaption({
     query: params.get("q"),
     label: lit.label,
-    provenance: shotProvenance({ env: view.env, snapshot: params.get("snapshot") }),
-    failure: state === "failed" ? ((err && err.textContent) || "the graph failed to draw").split("\n")[0] : null,
+    provenance: (qa && qa.draw && qa.draw.provenance) || shotProvenance({ env: view.env, snapshot: params.get("snapshot") }),
+    failure: state === "failed" ? (err ? (err.textContent || "the graph failed to draw").split("\n")[0] : qFailure || "the graph failed to draw") : null,
     state,
   });
   return state;
@@ -10829,6 +10949,7 @@ events.addEventListener("member", (e) => {
 events.addEventListener("view", (e) => agentMove(e.data));
 
 events.addEventListener("changed", () => {
+  queryAnswer = null; // #913: the source or the estate moved: the next paint asks again
   bulkDiffCache = null; // an op ran → per-node live state may have changed
   whyAnswers.clear(); // #471: a why read before the change may no longer hold
   load();

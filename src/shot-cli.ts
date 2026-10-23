@@ -13,6 +13,8 @@ import { serve } from "@hono/node-server";
 import type { AddressInfo } from "node:net";
 import { createApp, type ServerOptions } from "./server.ts";
 import { SHOT_HEIGHT, SHOT_WIDTH, ShotRefusal, takeShot, type ShotDeps, type ShotRequest, type ShotResult } from "./shot.ts";
+import { drawnMembers, hasDeclaration, readWorkspace } from "./workspace.ts";
+import { servesAsEstate } from "./member-kind.ts";
 
 export const SHOT_USAGE = `Usage: behold shot "<query>" [project-dir] [--env <name>] [--snapshot <ref>] [-o <out.png>]
                   [--url <serve>] [--width <px>] [--height <px>] [--link-base <url>] [--view <k=v&...>]
@@ -26,7 +28,8 @@ export const SHOT_USAGE = `Usage: behold shot "<query>" [project-dir] [--env <na
   nothing. Writes nothing in the served project: -o defaults to a file under
   the OS temp directory.
 
-  Until behold#913 lands a query is refused, and --view frames the view's own
+  The query is chant's search grammar (behold#913): its matches are lit and
+  framed, the rest dimmed. With "" as the query, --view frames the view's own
   selection instead: behold shot "" --view node=<id> (or focus=<box,...>).
 
   --env <name>        the env's live view; --snapshot <ref> replays a recorded
@@ -80,7 +83,7 @@ export function parseShotArgs(rest: string[], cwd = process.cwd()): ShotArgs | "
     } else if (a.startsWith("-") && a !== "-" && !a.startsWith("->")) throw new Error(`unexpected argument '${a}'`);
     else positional.push(a);
   }
-  if (positional.length < 1) throw new Error('give the query (use "" with --view until behold#913)');
+  if (positional.length < 1) throw new Error('give the query (or "" with --view node=<id>)');
   if (positional.length > 2) throw new Error(`unexpected argument '${positional[2]}'`);
   req.query = positional[0];
   if (url) {
@@ -112,11 +115,47 @@ export async function withLocalServe<T>(cfg: ServerOptions, fn: (base: string) =
   }
 }
 
+/**
+ * The app's options for `dir` the way `behold serve <dir>` reads it: a
+ * declared workspace with members is served whole (so a search is chant
+ * workspace search at its root, behold#913), and a directory of a kind chant
+ * cannot read composes as a one-member estate. Quiet: no startup lines.
+ */
+export async function localServeOptions(dir: string): Promise<ServerOptions> {
+  if (hasDeclaration(dir)) {
+    const read = await readWorkspace(dir);
+    if (read.ok && read.workspace.members.length) {
+      const drawn = drawnMembers(read.workspace).map((m) => m.abs);
+      return { projectDir: drawn[0] ?? read.workspace.root, projectDirs: drawn, workspace: read.workspace, port: 0 };
+    }
+  }
+  return { projectDir: dir, port: 0, ...(servesAsEstate([dir]) ? { projectDirs: [dir] } : {}) };
+}
+
 /** Take the shot the arguments ask for. Refusals come back as ShotRefusal; nothing is written here. */
 export async function shotFromArgs(args: ShotArgs, deps?: ShotDeps): Promise<ShotResult> {
   if (args.url) return takeShot(args.url, args.req, { linkBase: args.linkBase ?? args.url, ...(deps ? { deps } : {}) });
   if (!existsSync(args.projectDir)) throw new Error(`project not found at ${args.projectDir}`);
-  return withLocalServe({ projectDir: args.projectDir, port: 0, ...(args.req.env ? { env: args.req.env } : {}) }, (base) => takeShot(base, args.req, { linkBase: args.linkBase ?? DEFAULT_LINK_BASE, ...(deps ? { deps } : {}) }));
+  const cfg = await localServeOptions(args.projectDir);
+  return withLocalServe({ ...cfg, ...(args.req.env ? { env: args.req.env } : {}) }, (base) => takeShot(base, args.req, { linkBase: args.linkBase ?? DEFAULT_LINK_BASE, ...(deps ? { deps } : {}) }));
+}
+
+/**
+ * behold#916: `ask` with no serve running. behold's app for the project,
+ * started in this process for the one request, answers GET /api/search: the
+ * same route a running serve answers, so no rows are computed anywhere else.
+ * `query` is the route's query string. Answers the status and the body.
+ */
+export async function localSearch(projectDir: string, query: URLSearchParams): Promise<{ status: number; body: Record<string, unknown> }> {
+  if (!existsSync(projectDir)) throw new Error(`project not found at ${projectDir}`);
+  const cfg = await localServeOptions(projectDir);
+  return withLocalServe(cfg, async (base) => {
+    const res = await fetch(`${base}/api/search?${query}`, { headers: { accept: "application/json" } });
+    const body = (await res.json()) as Record<string, unknown>;
+    // The app is gone once this returns: the link points where a serve of the project opens by default.
+    if (typeof body.link === "string") body.link = body.link.replace(base, DEFAULT_LINK_BASE);
+    return { status: res.status, body };
+  });
 }
 
 /** The default file: under the OS temp directory, never in the project. */
