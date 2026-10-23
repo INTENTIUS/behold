@@ -128,6 +128,12 @@ export const CI_RUN_LOCAL_CHANT_FLOOR = "0.124.32";
  * it could not read (INTENTIUS/chant#4177, chant PR #4188). Health and
  * rotation on the graph (#825). Below it the graph draws no health marks. */
 export const HEALTH_CHANT_FLOOR = "0.124.33";
+/** The first chant whose `search` reads the entities a lexicon contributes
+ * from build roots, as `graph` does: a Terraform folder's `terraform.roots`
+ * in behold's generated scratch config (INTENTIUS/chant#4365, found by #911).
+ * Below it `chant search` answers `(no matches)` there for every query, so a
+ * question asked of a bare Terraform folder (#908) has no rows to draw. */
+export const SEARCH_TERRAFORM_ROOTS_CHANT_FLOOR = "0.124.46";
 
 export interface ChantFloor {
   /** The read, in words: `the why of a member or a card`. */
@@ -163,6 +169,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "declared CI report URL", floor: CI_REPORT_URL_CHANT_FLOOR, adds: "workspace ls ci.reportUrl, the declaration's report URL (chant#4160)", degraded: "the runs pane reads chant's run index only when serve is given --ci-report-url" },
   { read: "local CI run", floor: CI_RUN_LOCAL_CHANT_FLOOR, adds: "chant ci run --local (chant#4161)" },
   { read: "runtime health", floor: HEALTH_CHANT_FLOOR, adds: "chant lifecycle health --json, a chant-health/v1 document (chant#4177)", degraded: "the graph draws no health marks and no record out of rotation" },
+  { read: "search over a Terraform folder", floor: SEARCH_TERRAFORM_ROOTS_CHANT_FLOOR, adds: "chant search reads terraform.roots, as graph does (chant#4365)" },
   { read: "decision points", floor: DECISION_POINTS_CHANT_FLOOR, adds: "a gate that asks a decision point, read with chant workspace points --open (chant#3170)", degraded: "the gate strip draws no open decision points, and says which chant adds them" },
 ];
 
