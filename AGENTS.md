@@ -2015,8 +2015,10 @@ same facts per card as JSON.
   behold copies plan facts only, never a block's other attributes.
 - **Floor**: `TERRAFORM_PLAN_CHANT_FLOOR` (0.124.46) for behold's chant and the
   lexicon; below it the read is refused with the upgrade line.
-- **A planned create has no facts**: it reads absent at the plan depth
-  (chant#4372), so its card carries nothing from the plan.
+- **A planned create has a card**: it reads absent at the plan depth, so it
+  stays pending with no physical id, and chant carries its plan attributes
+  onto the declared node anyway (chant#4372). Its rows read `plan: create`,
+  `unknown: N until apply`, `read: plan`.
 - **choudoufu members keep #404's read** (src/choudoufu-plan.ts): chant's plan
   depth leaves a live root on `live-plan -json` (chant#4371).
 

@@ -142,6 +142,27 @@ describe("the plan read on a stock root, real terraform (#910)", () => {
     }
   });
 
+  it.skipIf(skip)(`a block added after the apply is a planned create, with a card of its own (chant#4372) (${why})`, { timeout: 180_000 }, async () => {
+    const { dir, spawnEnv } = estate();
+    // A resource the applied state has never seen, reading another block's
+    // new id, so its own id and its input are unknown until apply.
+    writeFileSync(join(dir, "created.tf"), 'resource "terraform_data" "created" {\n  input = terraform_data.replaced.id\n}\n');
+    const res = await readTerraformPlan(dir, { spawnEnv });
+    expect(res.ok, JSON.stringify(res)).toBe(true);
+    if (!res.ok) return;
+    const created = res.read.cards["estate/terraform_data.created"]!;
+    expect(created).toMatchObject({ source: "plan", action: "create", actions: { "terraform_data.created": ["create"] } });
+    expect(created.afterUnknown).toEqual(expect.arrayContaining(["id", "input"]));
+
+    const app = served(dir, spawnEnv);
+    const graph = (await (await app.request("/api/graph?plan=1&alike=0")).json()) as { ir: GraphIR; svg: string };
+    const card = graph.ir.nodes.find((n) => n.id.endsWith("/terraform_data.created"))!;
+    expect((card.attrs._plan as PlanCardFacts).action).toBe("create");
+    // Still not deployed: the plan's facts never give it a physical id.
+    expect(card.physicalId).toBeUndefined();
+    expect(graph.svg).toContain("until apply");
+  });
+
   it.skipIf(skip)(`without provider credentials falls back to the state read and says so, never "no changes" (${why})`, { timeout: 180_000 }, async () => {
     const { dir, spawnEnv } = estate();
     const app = served(dir, { ...spawnEnv, BEHOLD_SHIM_FAIL_PLAN: "1" });
