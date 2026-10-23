@@ -2619,8 +2619,9 @@ export function createApp(
   /**
    * #910: the plan read on each stock Terraform member served, through chant
    * (src/terraform-plan.ts). A choudoufu member is not one: its live roots
-   * keep #404's plan read (src/choudoufu-plan.ts), since chant's plan depth
-   * covers stock roots only (INTENTIUS/chant#4371).
+   * keep #404's plan read (src/choudoufu-plan.ts) beside behold's own
+   * ownership read; moving both onto chant's live+plan read
+   * (INTENTIUS/chant#4371) is #924.
    */
   const terraformPlans = async (multi: boolean): Promise<Array<MemberPlanAnswer & { dir: string; read?: TerraformPlanRead }>> => {
     const members = multi

@@ -2017,8 +2017,13 @@ same facts per card as JSON.
   lexicon; below it the read is refused with the upgrade line.
 - **A planned create has no facts**: it reads absent at the plan depth
   (chant#4372), so its card carries nothing from the plan.
-- **choudoufu members keep #404's read** (src/choudoufu-plan.ts): chant's plan
-  depth leaves a live root on `live-plan -json` (chant#4371).
+- **choudoufu members keep #404's read** (src/choudoufu-plan.ts). chant reads a
+  live root at the plan depth since chant#4371 (`sources: "live+plan"`), but
+  behold reads choudoufu ownership itself (src/choudoufu-live.ts), and taking
+  only the plan from chant would add a third refresh and a second `live-plan`.
+  Both move together in #924. A path flagged sensitive on either side is
+  redacted on both, and so is any attribute holding a flagged string: a
+  choudoufu plan flags a sensitive variable's value on `after` only.
 
 ### A lexicon behold draws but cannot aim (#430)
 

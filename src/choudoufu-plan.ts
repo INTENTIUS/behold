@@ -57,6 +57,11 @@
  * `after_sensitive`) are reported as changed by NAME and their values are
  * replaced with `(sensitive)`. behold shows truth, but it has no business
  * printing a secret into an inspect pane because a plan happened to read one.
+ * A flag on either side redacts both sides, and any attribute holding a string
+ * found under a flag anywhere in the document is redacted too: choudoufu
+ * flags a `sensitive` variable's value on `after` only, with the previous
+ * secret unflagged in `before` and both values unflagged in `tags_all`
+ * (INTENTIUS/chant#4371 recorded it).
  * An attribute the plan cannot know until apply (`after_unknown`) reports its
  * after side as `(known after apply)`, which is OpenTofu's own phrase.
  *
@@ -65,15 +70,19 @@
  * "internal" attribute names would differ per provider and guessing it is
  * worse than showing what the plan says.
  *
- * ## Why this stays beside chant's plan read (#910)
+ * ## Why this stays beside chant's plan read (#910, #924)
  *
- * A stock Terraform root's plan now comes through chant's terraform lexicon
- * (INTENTIUS/chant#4358, src/terraform-plan.ts). This module is not retired
- * for it: chant's plan depth covers stock roots only. A choudoufu live root
- * asked for the plan depth keeps its `live-plan -json` read and gets a note
- * saying so, and merging the plan's attributes onto a live root's ownership
- * verdicts is filed as INTENTIUS/chant#4371. Until that lands, a choudoufu
- * member's attribute drift is read here, and its tests stay here.
+ * A stock Terraform root's plan comes through chant's terraform lexicon
+ * (INTENTIUS/chant#4358, src/terraform-plan.ts). chant now reads a choudoufu
+ * live root at the plan depth too (INTENTIUS/chant#4371): `live-plan -json`
+ * for ownership, then this same `plan -out` + `show -json`, merged on the
+ * blocks `live-plan` bound. This module still stays, because behold reads a
+ * choudoufu member's ownership itself (src/choudoufu-live.ts, its own
+ * `live-ls` and `live-plan`). Taking only the plan from chant would run a
+ * third refresh of the estate per re-check, attach the plan to ownership from
+ * a different `live-plan` than the one on the card, and leave this module's
+ * stamp cache and its recorded IAM/ECR tests with nothing to move to. Reading
+ * the member's ownership and plan through chant together is #924.
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -187,6 +196,30 @@ const flagged = (tree: unknown, key: string): boolean => {
   return v === true || (isRecord(v) && Object.values(v).some((x) => x === true)) || (Array.isArray(v) && v.some((x) => x === true));
 };
 
+/** Every string under a `true` node of `flags`, into `out`. */
+function collectFlagged(value: unknown, flags: unknown, out: Set<string>): void {
+  if (flags === true) {
+    const walk = (v: unknown): void => {
+      if (typeof v === "string" && v.length > 0) out.add(v);
+      else if (Array.isArray(v)) v.forEach(walk);
+      else if (isRecord(v)) Object.values(v).forEach(walk);
+    };
+    walk(value);
+    return;
+  }
+  const child = (k: string | number): unknown => (Array.isArray(flags) ? flags[k as number] : isRecord(flags) ? flags[String(k)] : undefined);
+  if (Array.isArray(value)) value.forEach((v, i) => collectFlagged(v, child(i), out));
+  else if (isRecord(value)) for (const [k, v] of Object.entries(value)) collectFlagged(v, child(k), out);
+}
+
+/** True when `value` is, or holds anywhere inside it, one of `secrets`. */
+function holdsSecret(value: unknown, secrets: ReadonlySet<string>): boolean {
+  if (typeof value === "string") return secrets.has(value);
+  if (Array.isArray(value)) return value.some((v) => holdsSecret(v, secrets));
+  if (isRecord(value)) return Object.values(value).some((v) => holdsSecret(v, secrets));
+  return false;
+}
+
 /** Deep structural equality, enough for plan attribute values (JSON scalars,
  * objects and arrays — no cycles, no class instances). */
 function same(a: unknown, b: unknown): boolean {
@@ -214,6 +247,20 @@ function same(a: unknown, b: unknown): boolean {
  */
 export function planDrift(doc: PlanShowDocument): Map<string, PlanResourceDrift> {
   const out = new Map<string, PlanResourceDrift>();
+  // Every string under a sensitive flag anywhere in the document, each side
+  // read under both sides' flags. choudoufu rebuilds prior state from the
+  // account, so a value from a `sensitive` variable is flagged on `after`
+  // only and the previous secret sits unflagged in `before`; a provider's
+  // `tags_all` copy is flagged on neither side. Any attribute holding one of
+  // these strings is redacted, whichever side it is on.
+  const secrets = new Set<string>();
+  for (const rc of doc.resource_changes ?? []) {
+    if (!rc || !isRecord(rc.change)) continue;
+    for (const flags of [rc.change.before_sensitive, rc.change.after_sensitive]) {
+      collectFlagged(rc.change.before, flags, secrets);
+      collectFlagged(rc.change.after, flags, secrets);
+    }
+  }
   for (const rc of doc.resource_changes ?? []) {
     if (!rc || typeof rc.address !== "string" || !isRecord(rc.change)) continue;
     const { actions, before, after } = rc.change;
@@ -225,10 +272,12 @@ export function planDrift(doc: PlanShowDocument): Map<string, PlanResourceDrift>
     for (const key of [...new Set([...Object.keys(before), ...Object.keys(after)])].sort()) {
       const unknownAfter = flagged(rc.change.after_unknown, key);
       if (!unknownAfter && same(before[key], after[key])) continue;
+      // A flag on either side redacts both: see `secrets` above.
+      const secret = flagged(rc.change.before_sensitive, key) || flagged(rc.change.after_sensitive, key);
       changes.push({
         path: key,
-        oldValue: flagged(rc.change.before_sensitive, key) ? SENSITIVE : before[key],
-        newValue: unknownAfter ? KNOWN_AFTER_APPLY : flagged(rc.change.after_sensitive, key) ? SENSITIVE : after[key],
+        oldValue: secret || holdsSecret(before[key], secrets) ? SENSITIVE : before[key],
+        newValue: unknownAfter ? KNOWN_AFTER_APPLY : secret || holdsSecret(after[key], secrets) ? SENSITIVE : after[key],
       });
     }
     if (changes.length) out.set(rc.address, { address: rc.address, actions, changes });
