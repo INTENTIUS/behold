@@ -37,11 +37,12 @@
  * each group's cards and labels the group with its count.
  *
  * What is drawn from the document ({@link drawnOf}) is a projection of it,
- * not a join: the ids chant matched, the hop ends and edges on their paths,
+ * not a join: the ids chant matched, the hop ends and edges on their paths
+ * (a capability's from its `because` hops too),
  * the rows a live read could not observe, and whether the answer is a
  * failure. The page and `behold shot` both draw from it.
  */
-import { SEARCH_CONTRACT_CHANT_FLOOR, SEARCH_TERRAFORM_ROOTS_CHANT_FLOOR, floorFor, floorRefusal } from "./chant-floors.ts";
+import { CAPABILITIES_CHANT_FLOOR, SEARCH_CONTRACT_CHANT_FLOOR, SEARCH_TERRAFORM_ROOTS_CHANT_FLOOR, floorFor, floorRefusal } from "./chant-floors.ts";
 import { meetsFloor } from "./floor.ts";
 import { checkQuery, checkSnapshot, isEnvName } from "../web/view-url.js";
 import { checkCountBy } from "../web/view-url.js";
@@ -193,7 +194,7 @@ export interface Drawn {
   lit: string[];
   /** The ids on a match's path that aren't matches themselves. */
   onPath: string[];
-  /** Every hop of every path, deduplicated by its ends and attrs. */
+  /** Every hop of every path, a `cap:` term's `because` hops included, each end on its card, deduplicated by its ends and attrs. */
   edges: Hop[];
   /** Matched ids a live read could not observe, with chant's reason. */
   unobserved: Record<string, string>;
@@ -215,6 +216,29 @@ export interface Drawn {
 }
 
 const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
+
+/**
+ * behold#926: every hop on one path. An edge term's route is the path's own
+ * `hops`; a `cap:` term's (INTENTIUS/chant#4375) is also in `because`, one
+ * entry per set the match relied on, each with the hops that proved it.
+ * chant prints `because` flat, and this reads a `because` nested in an entry
+ * too, at any depth.
+ */
+function pathHops(p: Record<string, unknown>, out: unknown[] = []): unknown[] {
+  if (Array.isArray(p.hops)) out.push(...p.hops);
+  for (const b of Array.isArray(p.because) ? p.because : []) if (isRecord(b)) pathHops(b, out);
+  return out;
+}
+
+/**
+ * The card a hop end is drawn on. A capability's hop can end on a node
+ * inside a resource, `<id>#<attr>[n]...` (a security group's ingress rule, a
+ * policy's statement); it is drawn on the resource that holds it.
+ */
+const cardOf = (id: string): string => {
+  const i = id.indexOf("#");
+  return i === -1 ? id : id.slice(0, i);
+};
 
 /** The drawing a search document asks for. A projection of chant's fields; it joins nothing. */
 export function drawnOf(doc: WorkspaceDocument): Drawn {
@@ -246,12 +270,16 @@ export function drawnOf(doc: WorkspaceDocument): Drawn {
     if (typeof m.unobserved === "string") out.unobserved[m.id] = m.unobserved;
     for (const p of Array.isArray(m.paths) ? m.paths : []) {
       if (!isRecord(p)) continue;
-      for (const h of Array.isArray(p.hops) ? p.hops : []) {
+      for (const h of pathHops(p)) {
         if (!isRecord(h) || typeof h.from !== "string" || typeof h.to !== "string") continue;
-        const hop: Hop = { from: h.from, to: h.to, ...(str(h.fromAttr) ? { fromAttr: str(h.fromAttr)! } : {}), ...(str(h.toAttr) ? { toAttr: str(h.toAttr)! } : {}) };
+        const from = cardOf(h.from);
+        const to = cardOf(h.to);
+        onPath.add(from);
+        onPath.add(to);
+        // A hop into a node inside a resource (a security group's ingress rule) ends on its own card: nothing to draw.
+        if (from === to) continue;
+        const hop: Hop = { from, to, ...(str(h.fromAttr) ? { fromAttr: str(h.fromAttr)! } : {}), ...(str(h.toAttr) ? { toAttr: str(h.toAttr)! } : {}) };
         edges.set(`${hop.from}\u0000${hop.to}\u0000${hop.fromAttr ?? ""}\u0000${hop.toAttr ?? ""}`, hop);
-        onPath.add(hop.from);
-        onPath.add(hop.to);
       }
     }
   }
@@ -356,3 +384,23 @@ export function drawnUnder(d: Drawn, prefix: string | undefined): Drawn {
   };
 }
 
+
+/**
+ * behold#926: the capability catalog of the estate a search would ask, as
+ * chant printed it (`chant search --capabilities --json`, chant#4375). The
+ * same target as a search: `chant workspace search --capabilities` at a
+ * declared workspace's root, plain `chant search --capabilities` in one
+ * project's directory or a bare Terraform folder's scratch project. One chant
+ * call, through the reader, behind {@link CAPABILITIES_CHANT_FLOOR}.
+ */
+export async function runCapabilities(target: SearchTarget, reader: (root: string) => WorkspaceReader): Promise<{ ok: true; document: WorkspaceDocument } | { ok: false; refusal: WorkspaceRefusal }> {
+  if (target.kind === "refused") return { ok: false, refusal: target.refusal };
+  if (!meetsFloor(target.chant, CAPABILITIES_CHANT_FLOOR)) return { ok: false, refusal: floorRefusal(floorFor("capability catalog"), target.chant) };
+  try {
+    if (target.kind === "workspace") return { ok: true, document: await reader(target.root).readCapabilities("workspace") };
+    return { ok: true, document: await reader(target.kind === "terraform" ? target.project : target.dir).readCapabilities("project") };
+  } catch (e) {
+    if (e instanceof WorkspaceReadError) return { ok: false, refusal: e.refusal };
+    throw e;
+  }
+}

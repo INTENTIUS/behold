@@ -104,12 +104,13 @@ Usage:
           --env for that project's live overlay. Bring the estate up first (e.g.
           behold preview, or your creds/env) so the snapshot reflects live state.
 
-  mcp     A stdio MCP server for a coding agent: show moves the open tab to
-          a view, shot returns a PNG of one and its link. It is a client of
-          the running serve of the project (found through --url, --port, or
-          a per-user registry under the OS temp directory). Answers come from
-          chant's own MCP tool workspace-search. Nothing it does deploys,
-          approves, runs an Op, rolls back or writes.
+  mcp     A stdio MCP server for a coding agent: capabilities returns
+          chant's capability catalog (read it first), ask returns chant's
+          answer to a query, show moves the open tab to a view, shot returns
+          a PNG of one and its link. It is a client of the running serve of
+          the project (found through --url, --port, or a per-user registry
+          under the OS temp directory). Nothing it does deploys, approves,
+          runs an Op, rolls back or writes.
 
   preview Serve one project's graph in a browser at a single port — the quick
           way to look at a chant project. Defaults the project to the current

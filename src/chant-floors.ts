@@ -172,6 +172,15 @@ export const SEARCH_CONTRACT_CHANT_FLOOR = "0.124.46";
  * at ab5b422fc). behold#922 lights each group's cards from them. Below it the
  * groups and the total are still shown, and nothing is lit. */
 export const SEARCH_COUNT_BY_IDS_CHANT_FLOOR = "0.124.46";
+/** The first chant that prints its capability catalog as a read-contract
+ * document: `chant search --capabilities --json` in a project and `chant
+ * workspace search --capabilities --json` at a workspace root write the
+ * contract 1 `capabilities` document, each capability's name, meaning,
+ * parameters, rule and lexicon support (capabilities.schema.json,
+ * INTENTIUS/chant#4375). behold's `GET /api/capabilities` and behold mcp's
+ * `capabilities` tool pass it through (behold#926). Below it the catalog is
+ * refused: an older chant has no `--capabilities` and no `cap:` terms. */
+export const CAPABILITIES_CHANT_FLOOR = "0.124.46";
 
 export interface ChantFloor {
   /** The read, in words: `the why of a member or a card`. */
@@ -212,6 +221,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "groups lit by count", floor: SEARCH_COUNT_BY_IDS_CHANT_FLOOR, adds: "chant search --count-by --json lists each group's ids (chant#4382)", degraded: "the groups and the total are listed and no card is lit" },
   { read: "search", floor: SEARCH_CONTRACT_CHANT_FLOOR, adds: "the read contract's search document, from chant search --json and chant workspace search (chant#4374)" },
   { read: "plan read on a choudoufu member", floor: CHOUDOUFU_PLAN_CHANT_FLOOR, adds: "the plan depth on a live choudoufu root (chant#4371) and its live-plan document handed back (chant#4383)", degraded: "Re-check live with plan re-reads ownership and draws no plan marks on a choudoufu member" },
+  { read: "capability catalog", floor: CAPABILITIES_CHANT_FLOOR, adds: "the capabilities document, from chant search --capabilities --json and chant workspace search --capabilities --json (chant#4375)" },
   { read: "a Terraform folder with lint errors", floor: GRAPH_LINT_REPORT_CHANT_FLOOR, adds: "graph.lint: \"report\" draws it, the findings on meta.lint (behold#919)", degraded: "a bare Terraform estate that lint finds errors in is refused, and the refusal says which chant draws it" },
   { read: "decision points", floor: DECISION_POINTS_CHANT_FLOOR, adds: "a gate that asks a decision point, read with chant workspace points --open (chant#3170)", degraded: "the gate strip draws no open decision points, and says which chant adds them" },
 ];

@@ -892,7 +892,8 @@ back the runbook's commands as text.
 `q` is a view key holding a query in chant's search grammar. In a link
 (`?q=...`), a `behold:view` message, `POST /api/view` and `behold shot`, it
 draws the same way: the cards chant matched are lit, the cards and edges on
-each match's path (chant's `paths[].hops`) are drawn at full weight, and the
+each match's path (chant's `paths[].hops`, and for a `cap:` term the hops
+in `paths[].because[]` too, INTENTIUS/chant#4375) are drawn at full weight, and the
 rest is dimmed, with nothing hidden. One line at the top left says the query,
 the match count and chant's provenance line. A query with no matches dims
 the whole graph, says "no matches" with the universe count, and outlines the
@@ -969,6 +970,34 @@ GET /api/search?q=attr:planAction=replace&plan=1&show=planActions,planReplacePat
 `behold export --count-by <g>` captures each `--q` grouped too (with no
 `--q`, the whole graph's groups); `behold export --plan` captures the plan
 cards on the source graph and each `--q` at the plan depth.
+
+A `cap:` term (INTENTIUS/chant#4375) asks a capability, such as
+`cap:internet-reachable(22)`. Its route is in the path's `because`, one
+entry per capability the match relied on, each with the hops that proved it,
+and `draw.edges` and `draw.onPath` include them (#926). A hop that ends on a
+node inside a resource, `<id>#<attr>[n]` (a security group's ingress rule),
+is drawn on the resource's card.
+
+### The capability catalog: `GET /api/capabilities` (#926)
+
+Read it before asking a `cap:` question. It answers chant's capabilities
+document byte for byte (capabilities.schema.json, contract 1), read through
+the workspace reader from the same target a search asks:
+`chant workspace search --capabilities --json` at a declared workspace's
+root, `chant search --capabilities --json` in one project or a Terraform
+folder's scratch project. Each capability has its `name`, `meaning`,
+`params`, the `search` term that asks it, the questions it `answers`, what
+it leaves `notEvaluated`, its `rule`, and per lexicon whether it is
+supplied. A chant below 0.124.46 answers 422 `code: "chant-too-old"`
+(`CAPABILITIES_CHANT_FLOOR`). behold mcp's `capabilities` tool returns the
+same text.
+
+```
+GET /api/capabilities
+-> 200 {"$schema":".../capabilities/v1/capabilities.schema.json","contract":1,"chant":"0.124.46",
+        "capabilities":[{"name":"internet-facing","meaning":...,"search":"cap:internet-facing",...}],
+        "helpers":[...]}
+```
 
 ## Moving the person's open tab (#914)
 
@@ -1053,7 +1082,13 @@ the view's own `node` or `focus` (`behold shot "" --view node=<id>`).
 ## Over MCP: `behold mcp` (#916)
 
 `behold mcp [project-dir] [--url <serve> | --port <n>]` is a stdio MCP server
-with three tools, all clients of a running serve's HTTP API. `ask` calls
+with four tools, all clients of a running serve's HTTP API. An agent reads
+`capabilities` first (#926): it calls `GET /api/capabilities` and returns
+chant's capability catalog, the read contract's `capabilities` document
+(`chant search --capabilities --json`, INTENTIUS/chant#4375), byte for byte.
+It names each capability a `cap:` term asks, what it means, its parameters,
+the search term, the questions it answers, what it does not evaluate, its
+rule and which lexicons supply it, and it takes no arguments. `ask` calls
 `GET /api/search` and returns chant's search document verbatim, with `link`
 and `drawn: false` added after its own fields (a test holds it byte for byte
 to what chant prints); it takes `query`, `env`, `snapshot` and `show`, and
@@ -1062,8 +1097,8 @@ never moves the tab. `show` calls
 and `shot` calls `GET /api/shot` and returns the PNG as MCP `image` content
 followed by a text block `{link, state, serve}`. They take `query`, `env`,
 `snapshot`, `member`, `zoom`, `focus` and `node`; `shot` also takes `width`
-and `height`. Answers to estate questions come from chant's MCP tool
-`workspace-search` (INTENTIUS/chant#4374), not from behold.
+and `height`. The answers are chant's: behold passes chant's documents
+through and computes none of its own.
 
 It finds the serve through `--url`/`--port`, then the per-user registry at
 `<os.tmpdir()>/behold/serves/<pid>.json` (`{url, pid, projectDir, version,
@@ -1071,7 +1106,7 @@ startedAt}`, written by every serve at start, rewritten on a project switch,
 removed at exit, a dead pid ignored; `BEHOLD_SERVES_DIR` moves it), then
 `http://127.0.0.1:4600`. It confirms the serve through `GET /api/project`.
 `show` refuses a serve of another project, naming both, and refuses with the
-serve command when none runs. `ask` and `shot` with no serve of the project
+serve command when none runs. `capabilities`, `ask` and `shot` with no serve of the project
 start behold in their own process for the call (`src/shot-cli.ts`), and the
 answer comes from the same route.
 

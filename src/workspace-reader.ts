@@ -62,6 +62,15 @@ export const PROJECT_SEARCH_READ = "search";
 /** How the plain search names itself to the contract check, apart from the workspace form. */
 const PLAIN_SEARCH = "plain search";
 
+/**
+ * behold#926: the capability catalog, `chant search --capabilities --json`
+ * in a project's directory or `chant workspace search --capabilities --json`
+ * at a workspace root (capabilities.schema.json, INTENTIUS/chant#4375). It is
+ * a contract 1 document, handed back as chant printed it. Its floor is in
+ * src/chant-floors.ts (`CAPABILITIES_CHANT_FLOOR`).
+ */
+export const CAPABILITIES_READ = "search --capabilities";
+
 /** Why behold will not use a workspace document, in the #193 refusal shape. */
 export interface WorkspaceRefusal {
   error: string;
@@ -165,6 +174,12 @@ export interface WorkspaceReader {
    * is returned: it says what went wrong.
    */
   readProjectSearch(args: string[], dir?: string): Promise<WorkspaceDocument>;
+  /**
+   * behold#926: the capability catalog chant answers `cap:` terms with, as
+   * chant printed it: the workspace form at a workspace root, the plain form
+   * in a project's directory (or `dir`, when given).
+   */
+  readCapabilities(form: "workspace" | "project", dir?: string): Promise<WorkspaceDocument>;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -190,6 +205,11 @@ export function projectSearchArgv(args: readonly string[]): string[] {
   return [PROJECT_SEARCH_READ, ...withFlagsBeforeOperands(args, ["--json"])];
 }
 
+/** behold#926: the argv the catalog read runs: `[workspace] search --capabilities --json`. */
+export function capabilitiesArgv(form: "workspace" | "project"): string[] {
+  return [...(form === "workspace" ? ["workspace"] : []), ...CAPABILITIES_READ.split(" "), "--json"];
+}
+
 /**
  * The contract check every workspace document gets, or undefined when the
  * document is written to the contract behold reads.
@@ -198,7 +218,7 @@ export function contractRefusal(doc: Record<string, unknown>, command: string): 
   if (doc.contract === WORKSPACE_CONTRACT) return undefined;
   const said = doc.contract === undefined ? "no contract version" : `contract ${JSON.stringify(doc.contract)}`;
   return {
-    error: `chant ${OUTSIDE_WORKSPACE.includes(command) ? command : command === PLAIN_SEARCH ? PROJECT_SEARCH_READ : `workspace ${command}`} wrote a document with ${said}; behold reads contract ${WORKSPACE_CONTRACT}.`,
+    error: `chant ${OUTSIDE_WORKSPACE.includes(command) || command === CAPABILITIES_READ ? command : command === PLAIN_SEARCH ? PROJECT_SEARCH_READ : `workspace ${command}`} wrote a document with ${said}; behold reads contract ${WORKSPACE_CONTRACT}.`,
     code: "workspace-contract",
     remedy:
       doc.contract === undefined
@@ -327,6 +347,11 @@ export function workspaceReader(chant: ChantTransport): WorkspaceReader {
       const argv = projectSearchArgv(args);
       const run = await chant.run(argv, dir !== undefined ? { dir } : undefined);
       return documentOf(run, `chant ${argv.join(" ")}${dir !== undefined ? ` (in ${dir})` : ""}`, "search", PLAIN_SEARCH);
+    },
+    async readCapabilities(form, dir) {
+      const argv = capabilitiesArgv(form);
+      const run = await chant.run(argv, dir !== undefined ? { dir } : undefined);
+      return documentOf(run, `chant ${argv.join(" ")}${dir !== undefined ? ` (in ${dir})` : ""}`, "capabilities", CAPABILITIES_READ);
     },
   };
 }
