@@ -174,6 +174,11 @@ describe("the scratch project (#384)", () => {
     expect(terraformScratchConfig({ roots: [{ name: "prod", dir: "." }], skipped: [] }, ESTATE_LINK)).toContain(`"prod": { dir: "${ESTATE_LINK}" }`);
   });
 
+  it("asks chant to draw the estate when lint finds errors, with the findings on meta.lint (#919)", () => {
+    const scan = { roots: [{ name: "prod", dir: "." }], skipped: [] };
+    for (const flavour of ["tf", "chdf"] as const) expect(terraformScratchConfig(scan, ESTATE_LINK, flavour)).toContain('graph: { lint: "report" },');
+  });
+
   it("names choudoufu as the binary for the predictor's project and for no other, in a directory of its own (#402)", () => {
     const scan = { roots: [{ name: "prod", dir: "." }], skipped: [] };
     expect(terraformScratchConfig(scan, ESTATE_LINK, "chdf")).toContain('binary: "choudoufu"');

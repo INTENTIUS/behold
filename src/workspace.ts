@@ -33,6 +33,7 @@ import { envOverridesFor, resolveChant, type GraphOptions } from "./chant.ts";
 import { CI_REPORT_URL_CHANT_FLOOR } from "./chant-floors.ts";
 import type { MemberVia } from "./member-ir.ts";
 import { meetsFloor } from "./floor.ts";
+import { attachLintFindings } from "./terraform-lint.ts";
 import { setStampExclusions } from "./member-source.ts";
 import {
   contractRefusal,
@@ -385,6 +386,11 @@ export function memberIrFromGraphDocument(doc: WorkspaceDocument, member: string
   if (isRecord(entry.meta)) ir.meta = entry.meta;
   if (entry.pipeline !== undefined) ir.pipeline = entry.pipeline;
   if (isRecord(doc.derivedAttrs)) ir.derivedAttrs = doc.derivedAttrs;
+  // #919: a terraform or choudoufu member that lint finds errors in is composed
+  // since chant 0.124.46, its findings on the member's meta.lint. Put them on
+  // the cards now, while the ids are the member's own: estate composition
+  // keeps the nodes and drops meta, and the bare-folder read does the same.
+  attachLintFindings(ir as unknown as GraphIR);
   return ir as unknown as GraphIR;
 }
 

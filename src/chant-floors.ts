@@ -142,6 +142,13 @@ export const SEARCH_TERRAFORM_ROOTS_CHANT_FLOOR = "0.124.46";
  * on a stock Terraform root (#910). Below it `?plan=1` is refused for a
  * terraform member and the cards show the configuration only. */
 export const TERRAFORM_PLAN_CHANT_FLOOR = "0.124.46";
+/** The first chant whose `graph` honours `graph.lint: "report"` in a project's
+ * config: it draws source that lint finds errors in and carries the findings
+ * on `meta.lint`, each with the `entity` it is about (INTENTIUS/chant commit
+ * 010c3f99c on epic/908-ask-your-agent, for #919). behold's scratch config for
+ * a bare Terraform folder sets it. Below it chant ignores the key, and an
+ * estate with an error-severity finding is refused as before. */
+export const GRAPH_LINT_REPORT_CHANT_FLOOR = "0.124.46";
 
 export interface ChantFloor {
   /** The read, in words: `the why of a member or a card`. */
@@ -179,6 +186,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "runtime health", floor: HEALTH_CHANT_FLOOR, adds: "chant lifecycle health --json, a chant-health/v1 document (chant#4177)", degraded: "the graph draws no health marks and no record out of rotation" },
   { read: "search over a Terraform folder", floor: SEARCH_TERRAFORM_ROOTS_CHANT_FLOOR, adds: "chant search reads terraform.roots, as graph does (chant#4365)" },
   { read: "plan read on a Terraform root", floor: TERRAFORM_PLAN_CHANT_FLOOR, adds: "the terraform lexicon reads a saved plan as an observation depth, CHANT_TERRAFORM_OBSERVE=plan (chant#4358)" },
+  { read: "a Terraform folder with lint errors", floor: GRAPH_LINT_REPORT_CHANT_FLOOR, adds: "graph.lint: \"report\" draws it, the findings on meta.lint (behold#919)", degraded: "a bare Terraform estate that lint finds errors in is refused, and the refusal says which chant draws it" },
   { read: "decision points", floor: DECISION_POINTS_CHANT_FLOOR, adds: "a gate that asks a decision point, read with chant workspace points --open (chant#3170)", degraded: "the gate strip draws no open decision points, and says which chant adds them" },
 ];
 

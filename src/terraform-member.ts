@@ -116,6 +116,9 @@ import {
   terraformElisionNoteShort,
 } from "./terraform-lens.ts";
 import { SCRATCH_PREFIX, assertScratch } from "./scratch.ts";
+import { attachLintFindings, terraformLintNote } from "./terraform-lint.ts";
+import { GRAPH_LINT_REPORT_CHANT_FLOOR } from "./chant-floors.ts";
+import { meetsFloor } from "./floor.ts";
 import {
   TERRAGUCCI_COMPONENT_MODULE,
   declaredRootScan,
@@ -520,6 +523,9 @@ export function terraformScratchConfig(scan: TerraformRootScan, estateLink: stri
     ...entries,
     "    },",
     "  },",
+    // #919: draw the estate when lint finds errors, with the findings on
+    // meta.lint. A chant older than GRAPH_LINT_REPORT_CHANT_FLOOR ignores it.
+    '  graph: { lint: "report" },',
     "} satisfies ChantConfig;",
     "",
   ].join("\n");
@@ -679,8 +685,21 @@ export async function readTerraformMember(dir: string, opts: GraphOptions, state
   // load-time edge back into src/chant.ts from here is the cycle that module's
   // header refuses. A dynamic import inside the read is not one, and a test's
   // mock of ./chant.ts still answers it.
-  const { graphIr } = await import("./chant.ts");
-  const ir = await graphIr(project, { ...source, detail });
+  const { graphIr, ChantCliError } = await import("./chant.ts");
+  let ir: GraphIR;
+  try {
+    ir = await graphIr(project, { ...source, detail });
+  } catch (err) {
+    // #919: a chant below the floor ignores `graph.lint` and still refuses an
+    // estate lint finds errors in. Say which chant draws it.
+    const chant = resolvedVersion("@intentius/chant");
+    if (err instanceof ChantCliError && err.failure.code === "lint" && !meetsFloor(chant, GRAPH_LINT_REPORT_CHANT_FLOOR)) {
+      err.failure.remedy = `chant ${GRAPH_LINT_REPORT_CHANT_FLOOR} draws a Terraform estate that lint finds errors in, and lists the findings. behold resolves chant ${chant ?? "(unknown version)"}: upgrade @intentius/chant beside behold, then reload.`;
+    }
+    throw err;
+  }
+  // Before composition, which keeps nodes and nothing above them.
+  attachLintFindings(ir);
   return terragrunt ? addTerragruntUnits(ir, terragrunt) : ir;
 }
 
@@ -697,6 +716,9 @@ export async function readTerraformMember(dir: string, opts: GraphOptions, state
  */
 const terraformPasses: MemberPasses = {
   apply(ir, { detail }) {
+    // #919: before the elision, so a finding on a block this zoom does not draw is still named.
+    attachLintFindings(ir);
+    const lint = terraformLintNote(ir);
     const elision = hasTerraformEntities(ir)
       ? (groupTerraformByRoot(normalizeTerraformNodes(ir)), filterTerraformCards(ir, detail))
       : { dropped: {}, total: 0 };
@@ -711,8 +733,8 @@ const terraformPasses: MemberPasses = {
         // behold#571: a Terragrunt repo says which units it drew, and from what.
         const units = dirs.map((d) => terragruntOf(d)).filter((p): p is TerragruntPicture => !!p);
         const unitShort = (p: TerragruntPicture) => `${p.units.length} unit${p.units.length === 1 ? "" : "s"}`;
-        const note = [...scans.map(terraformRootsNote), ...units.map(terragruntNote), terraformElisionNote(elision, detail)].filter(Boolean).join("; ");
-        const short = [...scans.map(terraformRootsNoteShort), ...units.map(unitShort), terraformElisionNoteShort(elision)].filter(Boolean).join(" · ");
+        const note = [...scans.map(terraformRootsNote), ...units.map(terragruntNote), terraformElisionNote(elision, detail), lint.note].filter(Boolean).join("; ");
+        const short = [...scans.map(terraformRootsNoteShort), ...units.map(unitShort), terraformElisionNoteShort(elision), lint.noteShort].filter(Boolean).join(" · ");
         return note ? { note, ...(short && short !== note ? { noteShort: short } : {}) } : {};
       },
     };

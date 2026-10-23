@@ -208,6 +208,16 @@ describe("memberIrFromWorkspaceGraph", () => {
     expect((memberIrFromWorkspaceGraph(doc(), "api") as unknown as Record<string, unknown>).dangling).toBeUndefined();
   });
 
+  // #919: chant 0.124.46 composes a terraform member that lint finds errors
+  // in, with the findings on its meta.lint, each naming the member's own id.
+  it("puts a composed member's lint errors on its cards, in the member's own ids", () => {
+    const lint = { errors: 1, warnings: 0, findings: [{ ruleId: "TF033", severity: "error", message: "[Table] unencrypted", entity: "Table" }] };
+    const text = doc({ members: [{ name: "db", dir: "db", kind: "terraform", status: "composed", reason: null, chant: "0.124.46", irVersion: 1, meta: { lint } }] });
+    const ir = memberIrFromWorkspaceGraph(text, "db") as unknown as Record<string, any>;
+    expect(ir.nodes[0].attrs._lint).toEqual([{ ruleId: "TF033", message: "[Table] unencrypted" }]);
+    expect(ir.meta.lint).toEqual(lint);
+  });
+
   it("carries chant's reason for a member it could not read", () => {
     expect(() => memberIrFromWorkspaceGraph(doc(), "net")).toThrow(WorkspaceMemberError);
     expect(() => memberIrFromWorkspaceGraph(doc(), "net")).toThrow(/command-failed: no lexicon/);
