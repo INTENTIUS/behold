@@ -227,6 +227,28 @@ describe("behold shot (the CLI)", () => {
     expect(() => parseShotArgs(["q", "--url", "file:///etc"])).toThrow(/http/);
   });
 
+  it("publishes only with --publish (behold#923), and reads its target", () => {
+    expect(parseShotArgs(["q"], "/w")).not.toHaveProperty("publish");
+    expect(parseShotArgs(["q", "--publish", "origin"], "/w")).toMatchObject({ publish: { remote: "origin", branch: "behold-shots" }, publishRepo: "/w" });
+    expect(parseShotArgs(["q", "--publish", "up/shots", "--publish-repo", "r"], "/w")).toMatchObject({ publish: { remote: "up", branch: "shots" }, publishRepo: "/w/r" });
+    expect(() => parseShotArgs(["q", "--publish"])).toThrow(/--publish needs a value/);
+    expect(() => parseShotArgs(["q", "--publish", "origin/a..b"])).toThrow(/branch git does not take/);
+    expect(() => parseShotArgs(["q", "--publish-repo", "r"])).toThrow(/goes with --publish/);
+  });
+
+  it("keeps the local PNG and exits 1 when the publish is refused", async () => {
+    const d = mkdtempSync(join(tmpdir(), "behold-shot-cli-"));
+    dirs.push(d);
+    const o = io();
+    const out = join(d, "out.png");
+    const noLfs = () => ({ status: 127, stdout: "", stderr: "not a git command" });
+    expect(await runShot(["", "--view", "node=a", "--url", "http://127.0.0.1:9", "-o", out, "--publish", "origin", "--publish-repo", d], o.io, fakeBrowser().deps, noLfs)).toBe(1);
+    expect(existsSync(out)).toBe(true);
+    expect(o.out.join("")).toBe(`${out}\nhttp://127.0.0.1:9/?node=a\n`);
+    expect(o.err.join("")).toContain("not published: git-lfs is not installed");
+    expect(o.err.join("")).toContain("git lfs install");
+  });
+
   it("refuses without the peer: the install line, a non-zero exit and no file", async () => {
     const d = mkdtempSync(join(tmpdir(), "behold-shot-cli-"));
     dirs.push(d);
