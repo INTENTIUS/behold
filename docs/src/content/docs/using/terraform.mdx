@@ -124,6 +124,52 @@ here:
 Painting a Terraform estate green would be claiming an observation behold never
 made.
 
+## The plan, when you ask for it
+
+One read is about the cloud and still belongs here, because chant makes it from
+the root's own state and providers: the plan. Press ⌘K and pick **Read the plan
+on the Terraform roots** (or `GET /api/graph?plan=1`), and behold asks its own
+chant to read each stock root at the plan depth chant's terraform lexicon adds
+in 0.124.46 (chant#4358):
+
+```sh
+CHANT_TERRAFORM_OBSERVE=plan chant graph . --live --overlay --env behold-plan --format ir --detail 3
+```
+
+That runs `terraform plan -input=false -lock=false -out=<tmp>/plan.tfplan` and
+`terraform show -json` over the file, in each root, with the plan file under the
+OS temp directory and removed afterwards. `-lock=false` means the read never
+takes the backend's state lock. Nothing is written in the root, and `init` is
+never run: a root that has not been initialised is refused with the line to run.
+
+Each card then leads with what the plan says about it:
+
+| row | what it says |
+| --- | --- |
+| `plan` | what the next apply does: `replace`, `update`, `delete`, or `no changes` |
+| `forced by` | the attribute that forces a replace, with its value before and after |
+| `from` | where that value comes from in the configuration, such as `var.generation` |
+| `read` | which read answered: `plan`, or the fallback below |
+
+When a root cannot be planned, for missing provider credentials or any other
+provider error, chant falls back to the state read, and the card says `plan: not
+read` and `read: state, no provider credentials`. A card is never shown as "no
+changes" unless the plan itself said so. A root whose backend cannot be reached
+is declared only.
+
+Values the plan marks sensitive, and any copy of one, arrive as `(sensitive)`.
+Only the plan's facts are added to a card; the plan document never leaves
+chant.
+
+`GET /api/terraform/plan` gives the same facts per card as JSON for an agent:
+the action, the replace reason and paths, where each forcing value comes from,
+the values unknown until apply, the changes and the drift.
+
+A chant or lexicon older than 0.124.46 is refused with the version to upgrade
+to, and `behold doctor` lists the floor. A choudoufu member keeps its own plan
+read (see [choudoufu](/behold/using/choudoufu/)): chant's plan depth covers
+stock roots, and a live root keeps its `live-plan -json` read (chant#4371).
+
 ## Not the carve lens
 
 Both involve Terraform and they answer different questions.
