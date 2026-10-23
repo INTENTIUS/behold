@@ -136,6 +136,36 @@ describe("planDrift — what counts as attribute drift (#404)", () => {
     expect(drift.get("aws_db_instance.a")!.changes).toEqual([{ path: "password", oldValue: SENSITIVE, newValue: SENSITIVE }]);
   });
 
+  it("redacts both sides when choudoufu flags only the declared one, and every copy of the secret", () => {
+    // The shape choudoufu v0.30.0 writes for a tag set from a `sensitive`
+    // variable whose value changed (recorded in chant's
+    // lexicons/terraform/src/__fixtures__/live-plan-depth/show-plan-sensitive.json):
+    // prior state is rebuilt from the account, so `before` holds the previous
+    // secret with no flag, and `tags_all` carries both values unflagged.
+    const drift = planDrift({
+      format_version: "1.2",
+      resource_changes: [
+        {
+          address: "aws_vpc.main",
+          change: {
+            actions: ["update"],
+            before: { tags: { token: "hunter2", Name: "main" }, tags_all: { token: "hunter2", Name: "main" }, cidr_block: "10.0.0.0/16" },
+            after: { tags: { token: "hunter3", Name: "main" }, tags_all: { token: "hunter3", Name: "main" }, cidr_block: "10.1.0.0/16" },
+            before_sensitive: { tags: {}, tags_all: {} },
+            after_sensitive: { tags: { token: true }, tags_all: {} },
+          },
+        },
+      ],
+    });
+    const changes = drift.get("aws_vpc.main")!.changes;
+    expect(JSON.stringify(changes)).not.toMatch(/hunter[23]/);
+    expect(changes).toEqual([
+      { path: "cidr_block", oldValue: "10.0.0.0/16", newValue: "10.1.0.0/16" },
+      { path: "tags", oldValue: SENSITIVE, newValue: SENSITIVE },
+      { path: "tags_all", oldValue: SENSITIVE, newValue: SENSITIVE },
+    ]);
+  });
+
   it("says `(known after apply)` where the plan cannot know the value yet", () => {
     const drift = planDrift({
       format_version: "1.2",
