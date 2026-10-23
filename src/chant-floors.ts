@@ -134,6 +134,14 @@ export const HEALTH_CHANT_FLOOR = "0.124.33";
  * Below it `chant search` answers `(no matches)` there for every query, so a
  * question asked of a bare Terraform folder (#908) has no rows to draw. */
 export const SEARCH_TERRAFORM_ROOTS_CHANT_FLOOR = "0.124.46";
+/** The first chant whose terraform lexicon reads a saved plan as an
+ * observation depth: `CHANT_TERRAFORM_OBSERVE=plan` puts each block's planned
+ * action, replace reason and forcing attribute paths, unknown-until-apply
+ * paths, changes and drift on the IR, with sensitive values redacted, and the
+ * plan runs with `-lock=false` (INTENTIUS/chant#4358). The cards' plan facts
+ * on a stock Terraform root (#910). Below it `?plan=1` is refused for a
+ * terraform member and the cards show the configuration only. */
+export const TERRAFORM_PLAN_CHANT_FLOOR = "0.124.46";
 
 export interface ChantFloor {
   /** The read, in words: `the why of a member or a card`. */
@@ -170,6 +178,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "local CI run", floor: CI_RUN_LOCAL_CHANT_FLOOR, adds: "chant ci run --local (chant#4161)" },
   { read: "runtime health", floor: HEALTH_CHANT_FLOOR, adds: "chant lifecycle health --json, a chant-health/v1 document (chant#4177)", degraded: "the graph draws no health marks and no record out of rotation" },
   { read: "search over a Terraform folder", floor: SEARCH_TERRAFORM_ROOTS_CHANT_FLOOR, adds: "chant search reads terraform.roots, as graph does (chant#4365)" },
+  { read: "plan read on a Terraform root", floor: TERRAFORM_PLAN_CHANT_FLOOR, adds: "the terraform lexicon reads a saved plan as an observation depth, CHANT_TERRAFORM_OBSERVE=plan (chant#4358)" },
   { read: "decision points", floor: DECISION_POINTS_CHANT_FLOOR, adds: "a gate that asks a decision point, read with chant workspace points --open (chant#3170)", degraded: "the gate strip draws no open decision points, and says which chant adds them" },
 ];
 

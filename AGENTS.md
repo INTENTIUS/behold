@@ -1877,6 +1877,32 @@ every resource, one provider read per card, 301 of them on `terralith-4`. So:
   drifted: n}`. The two are different answers — "nobody looked" versus "looked,
   nothing drifted", and the legend prints a count only for the second.
 
+### A stock Terraform root's plan comes from chant (#910)
+
+`GET /api/graph?plan=1` (palette: **"Read the plan on the Terraform roots"**)
+reads each stock Terraform member's roots at chant's plan depth
+(INTENTIUS/chant#4358): behold's own chant over the member's scratch project,
+`CHANT_TERRAFORM_OBSERVE=plan chant graph . --live --overlay --env behold-plan
+--format ir --detail 3` (src/terraform-plan.ts). The plan runs with
+`-lock=false`, its file under the OS temp directory. Each resource or data card
+gains `attrs._plan` (`source`, `action`, `reason`, `replacePaths`,
+`forcedFrom`, `afterUnknown`, `changes`, `drift`), and the card's rows lead with
+`plan`, `forced by`, `from` and `read`. `GET /api/terraform/plan` answers the
+same facts per card as JSON.
+
+- **Which read answered is per root**, parsed from chant's notes: `plan`,
+  `state` (the plan failed, for missing credentials or a provider error) or
+  `none` (declared only). A card in a root that fell back says `plan: not read`
+  and which read answered. Never "no changes" unless the plan said `no-op`.
+- **Sensitive values arrive redacted** by chant, at any depth and every copy;
+  behold copies plan facts only, never a block's other attributes.
+- **Floor**: `TERRAFORM_PLAN_CHANT_FLOOR` (0.124.46) for behold's chant and the
+  lexicon; below it the read is refused with the upgrade line.
+- **A planned create has no facts**: it reads absent at the plan depth
+  (chant#4372), so its card carries nothing from the plan.
+- **choudoufu members keep #404's read** (src/choudoufu-plan.ts): chant's plan
+  depth leaves a live root on `live-plan -json` (chant#4371).
+
 ### A lexicon behold draws but cannot aim (#430)
 
 `behold doctor`'s **targets** line. `SUBSTRATE_TARGET_VARS` (src/targets.ts)

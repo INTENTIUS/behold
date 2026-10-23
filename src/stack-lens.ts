@@ -53,6 +53,12 @@ export interface StackResult {
   hubs: number;
 }
 
+/** A card whose plan read (#910) says the next apply changes it. */
+function plannedChange(n: IRNode): boolean {
+  const p = n.attrs?._plan as { source?: unknown; action?: unknown } | undefined;
+  return !!p && p.source === "plan" && typeof p.action === "string" && p.action !== "no-op" && p.action !== "read";
+}
+
 /** Plain references: not a CI edge, and not the traffic path. */
 function mereReference(e: IREdge): boolean {
   return (!e.kind || e.kind === "ref") && !isWired(e);
@@ -78,6 +84,9 @@ export function stackAlike(ir: GraphIR, opts: { min?: number; hubMin?: number } 
   const sets = new Map<string, IRNode[]>();
   for (const n of ir.nodes) {
     if (!n.kind || n.lexicon === SUMMARY_LEXICON || typeof n.attrs?.members === "number") continue;
+    // #910: a card the plan would change keeps its own face, so its plan rows
+    // (what the apply does, what forces a replace) stay on the canvas.
+    if (plannedChange(n)) continue;
     const key = `${boxOf.get(n.id) ?? ""}\u0000${n.lexicon ?? ""}\u0000${n.kind}`;
     (sets.get(key) ?? sets.set(key, []).get(key)!).push(n);
   }

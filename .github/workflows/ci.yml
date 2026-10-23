@@ -89,4 +89,4 @@ jobs:
       - name: the tests that need them
         env:
           BEHOLD_REQUIRE_PEERS: '1'
-        run: npx vitest run src/choudoufu-workspace.test.ts src/demo-pins.test.ts src/example-workspaces.test.ts src/terraform-search.test.ts
+        run: npx vitest run src/choudoufu-workspace.test.ts src/demo-pins.test.ts src/example-workspaces.test.ts src/terraform-search.test.ts src/terraform-plan.acceptance.test.ts
