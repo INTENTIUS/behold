@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentBanner, agentEntry, clockTime, AGENT_STACK_MAX } from "./agent-move.js";
+import { AGENT_STACK_MAX, agentBanner, agentEntry, clockTime, wholeQuestion } from "./agent-move.js";
 
 describe("agentBanner (#914)", () => {
   const at = new Date(2026, 9, 23, 14, 2, 11);
@@ -35,5 +35,21 @@ describe("agentEntry (#914)", () => {
     expect(AGENT_STACK_MAX).toBe(20);
     expect(pushes).toBe(20);
     expect(state.beholdMove).toEqual({ id: "29", depth: 20 });
+  });
+});
+
+describe("wholeQuestion (#908 stage 3)", () => {
+  it("clears the question keys a question move leaves out and the tab holds", () => {
+    const tab = { q: "kind:aws_", countBy: "module", plan: true, env: "prod", zoom: "resources" };
+    expect(wholeQuestion({ q: "cap:internet-reachable(22)" }, tab)).toEqual({ q: "cap:internet-reachable(22)", countBy: null, plan: false });
+    expect(wholeQuestion({ countBy: "kind" }, tab)).toEqual({ countBy: "kind", q: null, plan: false });
+    expect(wholeQuestion({ q: "a", plan: true }, { q: "b", countBy: "kind" })).toEqual({ q: "a", plan: true, countBy: null });
+  });
+
+  it("leaves a move that asks no question, and keys the tab doesn't hold, as they are", () => {
+    const tab = { q: "kind:aws_", countBy: "module" };
+    expect(wholeQuestion({ zoom: "attributes" }, tab)).toEqual({ zoom: "attributes" });
+    expect(wholeQuestion({ q: "a" }, { zoom: "resources" })).toEqual({ q: "a" });
+    expect(wholeQuestion({ q: "a" }, undefined)).toEqual({ q: "a" });
   });
 });

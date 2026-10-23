@@ -12,7 +12,7 @@ import "./view-repo.js"; // behold#571: first, so every read carries the page's 
 import { createRefreshQueue } from "./refresh-queue.js";
 import { indexCompositeMembers } from "./composite-members.js";
 import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine, withOpening, defaultEnv, restoreViewQuery, viewFromObject } from "./view-url.js";
-import { agentBanner, agentEntry } from "./agent-move.js";
+import { agentBanner, agentEntry, wholeQuestion } from "./agent-move.js";
 import { quietCardLines, readEmbed, selectMessage, viewFromMessage, wheelPx, wheelZoomsBare } from "./embed.js";
 import { WORDS as POP_WORDS, cardRoot as popCardRoot, placePopover, popReduce, popState, resourcePopover, rootPopover } from "./kiosk-popover.js";
 import { waveListKey, waveListOf } from "./kiosk-wave-list.js";
@@ -3109,7 +3109,7 @@ function agentMove(data) {
     return;
   }
   if (!ev || typeof ev !== "object") return;
-  const { want } = viewFromObject(ev.view);
+  const want = wholeQuestion(viewFromObject(ev.view).want, view);
   if (!Object.keys(want).length) return;
   const move = { id: String(ev.id || ""), by: String(ev.by || "an agent"), movedAt: String(ev.movedAt || ""), q: typeof want.q === "string" ? want.q : "" };
   syncViewUrl(); // the entry being left holds the view as it is now
