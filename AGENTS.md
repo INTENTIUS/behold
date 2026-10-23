@@ -934,6 +934,39 @@ without `--emulator` (403 `code: "preview"`). A terragucci or SQL Yodeler
 repo allows it, since it writes nothing. A static export has no server, so no
 route.
 
+## A picture of a view (#915)
+
+`behold shot "<query>" [project-dir] -o out.png` and `GET /api/shot` take a
+PNG of a view and give the link to the same view. Both call `src/shot.ts`.
+The page is behold's own, loaded in a headless browser with
+`embed=1&bare=1&frame=matches`: it lights what the view asks for, dims the
+rest, frames the lit cards with the kiosk's arithmetic (`web/kiosk-shot.js`),
+draws one caption line (what was asked, from where, when), and sets
+`data-behold-shot` on `<html>` to `drawn`, `no-matches` or `failed`. Nothing
+is photographed until it does: a page that never reports ready within 60 s,
+or one that draws no cards, is refused and no file is written.
+
+```
+GET /api/shot?node=aws_vpc.main&env=prod&width=1600&height=1000
+-> 200 image/png, Behold-View-Link: http://127.0.0.1:4600/?env=prod&node=aws_vpc.main,
+   Behold-Shot-State: drawn | no-matches | failed
+```
+
+The browser comes from `playwright-core`, an optional peer behold does not
+install: the system Chrome first, then Playwright's `chromium-headless-shell`.
+Without either the CLI exits 1 with the install line and the route answers
+501 `code: "no-browser"`. `--env`/`env=` draws the env's live view, and
+`--snapshot <ref>`/`snapshot=` a recorded snapshot of it (`at` is a git
+revision and is not taken). The route answers bytes, never a path, and is
+refused on `serve --public` (403), since each shot starts a browser. The CLI
+uses the serve at `--url`, or starts behold's app for the project on a free
+loopback port and stops it after; without `-o` the PNG goes under the OS temp
+directory. Nothing is written in the served project.
+
+Until behold#913 lights a query's matches, a query answers 501 `code:
+"no-search"`, and a shot frames the view's own `node` or `focus` instead
+(`behold shot "" --view node=<id>`).
+
 ## The act loop (delegated, never direct)
 
 behold does not apply. To change the estate:
