@@ -6723,6 +6723,7 @@ function shotFrameApply(failed = !!document.querySelector("#graph > .err")) {
     provenance: (qa && qa.draw && qa.draw.provenance) || shotProvenance({ env: view.env, snapshot: params.get("snapshot") }),
     failure: state === "failed" ? (err ? (err.textContent || "the graph failed to draw").split("\n")[0] : qFailure || "the graph failed to draw") : null,
     state,
+    plan: !!view.plan,
   });
   return state;
 }
