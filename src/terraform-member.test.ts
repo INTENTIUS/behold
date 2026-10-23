@@ -15,8 +15,10 @@ import {
   terraformReadDetail,
   terraformRootsNote,
   terraformScratchConfig,
+  terraformScratchDeclaration,
   terraformScratchDir,
   writeTerraformScratchProject,
+  writeTerraformScratchWorkspace,
 } from "./terraform-member.ts";
 
 // Fixture provenance (#384). `src/__fixtures__/terraform-estate/` is water
@@ -254,5 +256,37 @@ describe("the tier the reader is asked for (#396 finding 3)", () => {
     // zoom. What a zoom DRAWS is `filterTerraformCards` at the caller's own
     // detail and is untouched by this.
     expect([undefined, 0, 1, 2, 3].map(terraformReadDetail)).toEqual([2, 2, 2, 2, 3]);
+  });
+});
+
+// #925: a bare folder is searched as a declared workspace of one member, named
+// what behold names the folder's box, so chant composes the ids. The
+// declaration lives in a scratch dir of its own, never in the folder.
+describe("the one-member scratch workspace (#925)", () => {
+  it("declares one chant member at a link to the scratch project, outside the estate, and rewrites nothing on a reload", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "behold-925-"));
+    made.push(tmp);
+    const project = writeTerraformScratchProject(ESTATE, discoverTerraformRoots(ESTATE), tmp);
+    const root = writeTerraformScratchWorkspace(ESTATE, "terraform-estate", project, tmp);
+    expect(root).toBe(terraformScratchDir(ESTATE, tmp, "tfws"));
+    expect(root).not.toBe(project);
+    expect(root.startsWith(ESTATE + sep)).toBe(false);
+    const declared = JSON.parse(readFileSync(join(root, "chant.workspace.json"), "utf8")) as { name: string; schema: number; members: unknown[] };
+    expect(declared).toMatchObject({ name: "terraform-estate", schema: 1, members: [{ name: "terraform-estate", dir: "terraform-estate", kind: "chant" }] });
+    expect(lstatSync(join(root, "terraform-estate")).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(join(root, "terraform-estate"))).toBe(project);
+    expect(lstatSync(join(root, "node_modules")).isSymbolicLink()).toBe(true);
+    const mtime = lstatSync(join(root, "chant.workspace.json")).mtimeMs;
+    writeTerraformScratchWorkspace(ESTATE, "terraform-estate", project, tmp);
+    expect(lstatSync(join(root, "chant.workspace.json")).mtimeMs).toBe(mtime);
+    expect(existsSync(join(ESTATE, "chant.workspace.json"))).toBe(false);
+  });
+
+  it("refuses a member name chant's declaration would refuse, before writing", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "behold-925-"));
+    made.push(tmp);
+    expect(() => writeTerraformScratchWorkspace(ESTATE, "Terraform_Estate", "/nowhere", tmp)).toThrow(/member name/);
+    expect(existsSync(terraformScratchDir(ESTATE, tmp, "tfws"))).toBe(false);
+    expect(terraformScratchDeclaration("a")).toBe(terraformScratchDeclaration("a"));
   });
 });

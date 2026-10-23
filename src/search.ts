@@ -12,9 +12,13 @@
  *   reason code, and behold says so in a "not searched" line;
  * - a single chant project is read with plain `chant search --json` in its
  *   directory, which prints the same contract 1 document without `members`;
- * - a bare Terraform folder is read with plain `chant search --json` in the
- *   scratch project behold already graphs it through (src/terraform-member.ts),
- *   where `chant graph` runs too.
+ * - a bare Terraform folder is read with `chant workspace search` too, at a
+ *   scratch workspace of one member (behold#925, src/terraform-member.ts):
+ *   the member is named what behold names the folder's box, and its directory
+ *   is the scratch project behold graphs the folder through. chant composes
+ *   the `<member>/<id>` ids the cards carry, so behold prefixes nothing here
+ *   either. The workspace is written under the OS temp directory, never in
+ *   the served folder.
  *
  * behold never parses the grammar. The query is checked the way
  * `web/view-url.js` `checkQuery` checks it, and goes to chant as one argv
@@ -30,9 +34,10 @@
  * the rows a live read could not observe, and whether the answer is a
  * failure. The page and `behold shot` both draw from it.
  */
-import { SEARCH_CONTRACT_CHANT_FLOOR, SEARCH_TERRAFORM_ROOTS_CHANT_FLOOR, floorFor, floorRefusal } from "./chant-floors.ts";
+import { SEARCH_CONTRACT_CHANT_FLOOR, SEARCH_TERRAFORM_WORKSPACE_CHANT_FLOOR, floorFor, floorRefusal } from "./chant-floors.ts";
 import { meetsFloor } from "./floor.ts";
 import { checkQuery, checkSnapshot, isEnvName } from "../web/view-url.js";
+import { WORKSPACE_NAME } from "./terraform-member.ts";
 import { WorkspaceReadError, type WorkspaceDocument, type WorkspaceReader, type WorkspaceRefusal } from "./workspace-reader.ts";
 
 /** What a view asks search for. */
@@ -48,7 +53,8 @@ export interface SearchAsk {
 export type SearchTarget =
   | { kind: "workspace"; root: string; chant: string | undefined }
   | { kind: "project"; dir: string; chant: string | undefined }
-  | { kind: "terraform"; dir: string; project: string; chant: string | undefined }
+  /** A bare Terraform folder: `root` is its one-member scratch workspace (behold#925). */
+  | { kind: "terraform"; dir: string; root: string; chant: string | undefined }
   | { kind: "refused"; refusal: WorkspaceRefusal };
 
 /** A request that can't be sent to chant, with the reason. */
@@ -91,7 +97,7 @@ export function searchFloorRefusal(target: SearchTarget): WorkspaceRefusal | und
   if (target.kind === "refused") return undefined;
   const f = floorFor("search");
   if (!meetsFloor(target.chant, SEARCH_CONTRACT_CHANT_FLOOR)) return floorRefusal(f, target.chant);
-  if (target.kind === "terraform" && !meetsFloor(target.chant, SEARCH_TERRAFORM_ROOTS_CHANT_FLOOR)) return floorRefusal(floorFor("search over a Terraform folder"), target.chant);
+  if (target.kind === "terraform" && !meetsFloor(target.chant, SEARCH_TERRAFORM_WORKSPACE_CHANT_FLOOR)) return floorRefusal(floorFor("search over a Terraform folder"), target.chant);
   return undefined;
 }
 
@@ -105,9 +111,8 @@ export async function runSearch(target: SearchTarget, ask: SearchAsk, reader: (r
   const tooOld = searchFloorRefusal(target);
   if (tooOld) return { ok: false, refusal: tooOld };
   try {
-    if (target.kind === "workspace") return { ok: true, document: await reader(target.root).read("search", searchArgs(ask)) };
-    const dir = target.kind === "terraform" ? target.project : target.dir;
-    return { ok: true, document: await reader(dir).readProjectSearch(searchArgs(ask)) };
+    if (target.kind === "workspace" || target.kind === "terraform") return { ok: true, document: await reader(target.root).read("search", searchArgs(ask)) };
+    return { ok: true, document: await reader(target.dir).readProjectSearch(searchArgs(ask)) };
   } catch (e) {
     if (e instanceof WorkspaceReadError) return { ok: false, refusal: e.refusal };
     throw e;
@@ -223,15 +228,17 @@ export function drawnOf(doc: WorkspaceDocument): Drawn {
  * The search a served project gets. `workspace`: the served declared
  * workspace, when the served dirs are its members. `dirs`: the dirs served
  * (one, or a loose estate). `kindOf` and `chantOf` are the server's own
- * probes, and `terraformProject` the scratch project a bare Terraform folder
- * is graphed through.
+ * probes. `memberOf` is the name a lone dir's box is drawn under, and
+ * `terraformWorkspace` writes the one-member scratch workspace a bare
+ * Terraform folder is searched at (behold#925).
  */
 export function searchTarget(o: {
   workspace: { root: string; chant: string } | undefined;
   dirs: readonly string[];
   kindOf: (dir: string) => string | undefined;
   chantOf: (dir: string) => string | undefined;
-  terraformProject: (dir: string) => { project: string; chant: string | undefined };
+  memberOf: (dir: string) => string;
+  terraformWorkspace: (dir: string, member: string) => { root: string; chant: string | undefined };
 }): SearchTarget {
   if (o.workspace) return { kind: "workspace", root: o.workspace.root, chant: o.workspace.chant || o.chantOf(o.workspace.root) };
   if (o.dirs.length > 1) {
@@ -248,8 +255,19 @@ export function searchTarget(o: {
   const kind = o.kindOf(dir) ?? "chant";
   if (kind === "chant") return { kind: "project", dir, chant: o.chantOf(dir) };
   if (kind === "terraform") {
-    const tf = o.terraformProject(dir);
-    return { kind: "terraform", dir, project: tf.project, chant: tf.chant };
+    const member = o.memberOf(dir);
+    if (!WORKSPACE_NAME.test(member)) {
+      return {
+        kind: "refused",
+        refusal: {
+          error: `this folder is drawn as the member ${JSON.stringify(member)}, which isn't a workspace member name chant accepts (${WORKSPACE_NAME.source}), so chant can't search it under the ids its cards carry.`,
+          code: "search-member-name",
+          remedy: "Serve it from a directory whose name is lowercase letters, digits and dashes, or declare it in a chant.workspace.json and serve that root.",
+        },
+      };
+    }
+    const ws = o.terraformWorkspace(dir, member);
+    return { kind: "terraform", dir, root: ws.root, chant: ws.chant };
   }
   return {
     kind: "refused",
@@ -260,26 +278,3 @@ export function searchTarget(o: {
     },
   };
 }
-
-/**
- * The drawing with every id put in the namespace of the graph behold draws.
- * A bare Terraform folder is served as a one-member estate (#389), whose node
- * ids behold composes as `<name>/<id>` (src/estate.ts); chant's scratch
- * project knows nothing of that name, so its ids are put under it here. This
- * is behold naming its own composition, not a join of chant's members: a
- * declared workspace's ids come from chant already composed. chant's
- * document itself is never changed.
- */
-export function drawnUnder(d: Drawn, prefix: string | undefined): Drawn {
-  if (!prefix) return d;
-  const p = (id: string): string => `${prefix}/${id}`;
-  return {
-    ...d,
-    lit: d.lit.map(p),
-    onPath: d.onPath.map(p),
-    edges: d.edges.map((h) => ({ ...h, from: p(h.from), to: p(h.to) })),
-    unobserved: Object.fromEntries(Object.entries(d.unobserved).map(([k, v]) => [p(k), v])),
-    nearMisses: d.nearMisses.map((n) => ({ ...n, id: p(n.id) })),
-  };
-}
-
