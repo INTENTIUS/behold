@@ -196,10 +196,25 @@ export function declaredPeerRange(pkg: string, manifestDir = join(here(), ".."))
   }
 }
 
-/** The peer as installed beside behold: the range behold declares and the version found, if any. */
-export function shotPeer(from = here()): { pkg: string; range?: string; version?: string; dir?: string } {
+/**
+ * Where `npm i -g` puts a package: `<prefix>/lib/node_modules`
+ * (`<prefix>/node_modules` on Windows). The prefix is `npm_config_prefix` when
+ * set, then npm's default, the directory above node's own `bin`. Node never
+ * looks there when it resolves, so a behold run through `npx` (its install
+ * sits in npm's `_npx` cache) would not find a peer the install line put
+ * there without this.
+ */
+export function globalNodeModules(env: Record<string, string | undefined> = process.env, execPath = process.execPath, platform: string = process.platform): string[] {
+  const win = platform === "win32";
+  const prefixes = [env.npm_config_prefix, win ? dirname(execPath) : dirname(dirname(execPath))].filter((p): p is string => !!p);
+  return [...new Set(prefixes.map((p) => (win ? join(p, "node_modules") : join(p, "lib", "node_modules"))))];
+}
+
+/** The peer as installed: beside behold first, then where `npm i -g` (the install line) puts it. The range behold declares and the version found, if any. */
+export function shotPeer(from = here(), globals: string[] = globalNodeModules()): { pkg: string; range?: string; version?: string; dir?: string } {
   const range = declaredPeerRange(SHOT_PEER_PKG, join(from, ".."));
-  const found = resolvedPackage(SHOT_PEER_PKG, from);
+  let found = resolvedPackage(SHOT_PEER_PKG, from);
+  for (const g of globals) found ??= resolvedPackage(SHOT_PEER_PKG, g);
   return { pkg: SHOT_PEER_PKG, ...(range ? { range } : {}), ...(found ? { version: found.version, dir: found.dir } : {}) };
 }
 
@@ -208,12 +223,13 @@ export function installLines(range = shotPeer().range): string {
   return `npm i -g ${SHOT_PEER_PKG}@${range ?? "latest"}, then install Google Chrome or run npx ${SHOT_PEER_PKG} install chromium-headless-shell`;
 }
 
-/** playwright-core's `chromium`, loaded from beside behold, or null when it is not installed. */
-export function loadChromium(from = here()): ShotChromium | null {
-  const peer = shotPeer(from);
-  if (!peer.version) return null;
+/** playwright-core's `chromium`, loaded from beside behold or the global root, or null when it is not installed. */
+export function loadChromium(from = here(), globals: string[] = globalNodeModules()): ShotChromium | null {
+  const peer = shotPeer(from, globals);
+  if (!peer.version || !peer.dir) return null;
   try {
-    const mod = createRequire(join(resolve(from), "noop.js"))(SHOT_PEER_PKG) as { chromium?: ShotChromium };
+    // By the directory found, which may be the global root rather than beside behold.
+    const mod = createRequire(join(resolve(from), "noop.js"))(peer.dir) as { chromium?: ShotChromium };
     return mod.chromium ?? null;
   } catch {
     return null;
@@ -230,7 +246,7 @@ export async function launchShotBrowser(deps: ShotDeps = {}): Promise<{ browser:
   const chromium = (deps.chromium ?? (() => loadChromium()))();
   if (!chromium) {
     throw new ShotRefusal({
-      error: `A shot needs a headless browser, which behold does not install: ${SHOT_PEER_PKG} is not resolvable from ${here()}.`,
+      error: `A shot needs a headless browser, which behold does not install: ${SHOT_PEER_PKG} is not resolvable from ${here()}, nor installed globally (${globalNodeModules().join(", ")}).`,
       code: "no-browser",
       remedy: `Install it beside behold: ${installLines()}.`,
     });

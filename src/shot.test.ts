@@ -1,13 +1,15 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "./server.ts";
 import {
   SHOT_PEER_PKG,
   ShotRefusal,
+  globalNodeModules,
   installLines,
   launchShotBrowser,
+  loadChromium,
   queryView,
   shotPeer,
   shotQueue,
@@ -99,6 +101,36 @@ describe("the headless-browser peer", () => {
     expect(peer.range).toMatch(/^\^1\./);
     expect(installLines(peer.range)).toContain(`npm i -g playwright-core@${peer.range}`);
     expect(installLines(peer.range)).toContain("npx playwright-core install chromium-headless-shell");
+  });
+
+  it("names where npm i -g installs: npm_config_prefix, then the directory above node's bin", () => {
+    expect(globalNodeModules({}, "/opt/node/bin/node", "darwin")).toEqual(["/opt/node/lib/node_modules"]);
+    expect(globalNodeModules({ npm_config_prefix: "/p" }, "/opt/node/bin/node", "linux")).toEqual(["/p/lib/node_modules", "/opt/node/lib/node_modules"]);
+    expect(globalNodeModules({ npm_config_prefix: "/opt/node" }, "/opt/node/bin/node", "linux")).toEqual(["/opt/node/lib/node_modules"]);
+    expect(globalNodeModules({}, join("C:", "node", "node.exe"), "win32")).toEqual([join("C:", "node", "node_modules")]);
+  });
+
+  it("finds the peer the install line put in the global root when behold runs from npx's cache", () => {
+    // stage 3 of #908: behold run by `npx @intentius/behold` sits in npm's _npx
+    // cache, and node's resolution never looks in <prefix>/lib/node_modules.
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "behold-shot-peer-")));
+    try {
+      const from = join(root, "_npx", "abc", "node_modules", "@intentius", "behold", "dist");
+      mkdirSync(from, { recursive: true });
+      const global = join(root, "prefix", "lib", "node_modules");
+      const pkg = join(global, SHOT_PEER_PKG);
+      mkdirSync(pkg, { recursive: true });
+      writeFileSync(join(pkg, "package.json"), JSON.stringify({ name: SHOT_PEER_PKG, version: "1.62.9", main: "index.js" }));
+      writeFileSync(join(pkg, "index.js"), "exports.chromium = { launch: async () => { throw new Error('stand-in'); } };\n");
+      expect(shotPeer(from, []).version).toBeUndefined();
+      expect(loadChromium(from, [])).toBeNull();
+      const peer = shotPeer(from, [global]);
+      expect(peer.version).toBe("1.62.9");
+      expect(peer.dir).toBe(pkg);
+      expect(typeof loadChromium(from, [global])?.launch).toBe("function");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("is refused with the install lines when the peer is missing", async () => {
