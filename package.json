@@ -1,6 +1,6 @@
 {
   "name": "@intentius/behold",
-  "version": "0.29.57",
+  "version": "0.30.0",
   "license": "Apache-2.0",
   "type": "module",
   "description": "behold — a live control plane on chant. See your whole estate (every substrate in one graph), coloured by drift; act through delegated, gated Ops.",
@@ -48,9 +48,9 @@
   "dependencies": {
     "@cdktn/hcl2json": "^0.24.0",
     "@hono/node-server": "^2.0.5",
-    "@intentius/chant": "^0.124.38",
+    "@intentius/chant": "^0.124.46",
     "@intentius/chant-k8s-client": "^0.124.24",
-    "@intentius/chant-lexicon-terraform": "^0.124.38",
+    "@intentius/chant-lexicon-terraform": "^0.124.46",
     "@intentius/pinhole": "^0.5.0",
     "@modelcontextprotocol/sdk": "1.30.1",
     "ajv": "^8.20.0",
