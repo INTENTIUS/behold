@@ -15,14 +15,15 @@ export const beholdImage = new Dockerfile({
     // The whole tree first: npm ci runs the prepare script, which is the build.
     { copy: ". ." },
     { run: "npm ci --no-audit --no-fund && test -x dist/cli.js" },
-    // Reading a Terraform estate needs chant's terraform lexicon, which behold
-    // doesn't install itself (it says so and names these): beside behold, so
-    // the view draws the demo's roots instead of the error. They are behold's
-    // optional peers, and npm crashes adding them to its own tree
-    // ("Cannot read properties of null (reading 'edgesOut')"), so they install
-    // in a directory of their own and are copied in, chant at the version the
-    // lexicon asks for included.
-    { run: "mkdir /opt/lexicon && cd /opt/lexicon && npm init -y >/dev/null && npm install --no-audit --no-fund @intentius/chant-lexicon-terraform@^0.124.0 @intentius/chant-lexicon-aws@^0.124.0 @cdktn/hcl2json@^0.24.0 && cp -R /opt/lexicon/node_modules/. /app/node_modules/ && test -d /app/node_modules/@intentius/chant-lexicon-terraform && test -d /app/node_modules/@intentius/chant-lexicon-aws && test -d /app/node_modules/@cdktn/hcl2json" },
+    // Reading a Terraform estate needs chant's terraform lexicon and
+    // @cdktn/hcl2json; both are behold dependencies since #909, so npm ci above
+    // installs them at the lockfile's versions. Only the aws lexicon is added here,
+    // as an image install and not a behold dependency, so behold's package.json
+    // stays as #909 left it. npm crashes adding it to behold's own tree ("Cannot read properties of null
+    // (reading 'edgesOut')"), so it installs in a directory of its own and is
+    // copied in with cp -n, which leaves behold's locked chant, lexicon and
+    // parser in place. The test -d checks cover all three packages.
+    { run: "mkdir /opt/lexicon && cd /opt/lexicon && npm init -y >/dev/null && npm install --no-audit --no-fund @intentius/chant-lexicon-aws@^0.124.0 && cp -Rn /opt/lexicon/node_modules/. /app/node_modules/ && test -d /app/node_modules/@intentius/chant-lexicon-terraform && test -d /app/node_modules/@intentius/chant-lexicon-aws && test -d /app/node_modules/@cdktn/hcl2json" },
     { user: "node" },
     { expose: 4600 },
   ],

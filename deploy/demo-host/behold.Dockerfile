@@ -7,6 +7,6 @@ RUN apt-get update \
 WORKDIR /app
 COPY . .
 RUN npm ci --no-audit --no-fund && test -x dist/cli.js
-RUN mkdir /opt/lexicon && cd /opt/lexicon && npm init -y >/dev/null && npm install --no-audit --no-fund @intentius/chant-lexicon-terraform@^0.124.0 @intentius/chant-lexicon-aws@^0.124.0 @cdktn/hcl2json@^0.24.0 && cp -R /opt/lexicon/node_modules/. /app/node_modules/ && test -d /app/node_modules/@intentius/chant-lexicon-terraform && test -d /app/node_modules/@intentius/chant-lexicon-aws && test -d /app/node_modules/@cdktn/hcl2json
+RUN mkdir /opt/lexicon && cd /opt/lexicon && npm init -y >/dev/null && npm install --no-audit --no-fund @intentius/chant-lexicon-aws@^0.124.0 && cp -Rn /opt/lexicon/node_modules/. /app/node_modules/ && test -d /app/node_modules/@intentius/chant-lexicon-terraform && test -d /app/node_modules/@intentius/chant-lexicon-aws && test -d /app/node_modules/@cdktn/hcl2json
 USER node
 EXPOSE 4600
