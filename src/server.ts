@@ -171,7 +171,7 @@ import { readWhy, whyRegion, withChain } from "./workspace-why.ts";
 import { floorFor, floorMet, floorRefusal } from "./chant-floors.ts";
 import { allowedHostsFrom, guardRequest } from "./request-guard.ts";
 import { applyMemberPasses, memberKindOf, memberKindSpec, memberPassNote, servesAsEstate, type MemberPassRun } from "./member-kind.ts";
-import { TerraformReadError, terraformMemberProject, terraformReaderState, terraformVia } from "./terraform-member.ts";
+import { TerraformReadError, terraformMemberProject, terraformMemberWorkspace, terraformReaderState, terraformVia } from "./terraform-member.ts";
 import { paintTerraformPlan, readTerraformPlan, terraformPlanNote, type MemberPlanAnswer, type PlanReadDeps, type TerraformPlanRead } from "./terraform-plan.ts";
 import { normalizeTerraformNodes } from "./terraform-lens.ts";
 import { invalidateMember, memberIr, memberIrCacheStats, memberSourceStamp } from "./member-ir.ts";
@@ -215,7 +215,7 @@ import { COLLISION_READ, collisionsFloorRefusal, readCollisions } from "./collis
 import { sqlYodelerLaneRoute } from "./sql-yodeler-lane.ts";
 import { cachedHealth, invalidateHealth, readHealthOverlay, rememberHealth, type HealthMember } from "./health-overlay.ts";
 import { rootReader } from "./workspace-reader.ts";
-import { SearchAskError, checkAsk, drawnOf, drawnUnder, runCapabilities, runSearch, searchTarget, type SearchTarget } from "./search.ts";
+import { SearchAskError, checkAsk, drawnOf, runCapabilities, runSearch, searchTarget, type SearchTarget } from "./search.ts";
 import { resolvedVersion } from "./terraform-member.ts";
 import { writeViewQuery } from "../web/view-url.js";
 import { controlRepoInfo, terragucciEstateRoutes } from "./terragucci-estate.ts";
@@ -2459,9 +2459,10 @@ export function createApp(
 
   // behold#913: `q`. chant answers, behold draws: one search through the
   // workspace reader (src/search.ts), `chant workspace search` on a declared
-  // workspace and plain `chant search --json` on one project or a bare
-  // Terraform folder's scratch project. The answer is chant's document,
-  // unchanged, plus what the page draws from it (`draw`) and the link to the
+  // workspace and on a bare Terraform folder's one-member scratch workspace
+  // (#925), and plain `chant search --json` on one project. chant composes
+  // every id, and behold draws them as chant printed them. The answer is
+  // chant's document, unchanged, plus what the page draws from it (`draw`) and the link to the
   // view. A --public serve answers a declared query only (src/public-mode.ts
   // refuses env and snapshot before this runs).
   const searchTargetNow = (): SearchTarget =>
@@ -2471,7 +2472,9 @@ export function createApp(
       dirs: cfg.projectDirs ?? [cfg.projectDir],
       kindOf: (dir) => memberKindOf(dir),
       chantOf: (dir) => resolveChant(dir).version,
-      terraformProject: (dir) => ({ project: terraformMemberProject(dir).project, chant: resolvedVersion("@intentius/chant") }),
+      // A lone folder is a one-member estate (#389); its box is named here, and chant composes ids under that name (#925).
+      memberOf: (dir) => estateMembers([dir])[0]!.name,
+      terraformWorkspace: (dir, member) => ({ root: terraformMemberWorkspace(dir, member).root, chant: resolvedVersion("@intentius/chant") }),
     });
   app.get("/api/search", async (c) => {
     const url = new URL(c.req.url);
@@ -2498,9 +2501,7 @@ export function createApp(
     }
     const read = await runSearch(target, ask, (root, env) => rootReader(root, env));
     if (!read.ok) return c.json({ ...read.refusal, ...view, link }, 422);
-    // A lone Terraform folder is drawn as a one-member estate: its cards' ids are under the member's name.
-    const lone = target.kind === "terraform" && cfg.projectDirs?.length === 1 ? estateMembers(cfg.projectDirs)[0]?.name : undefined;
-    const drawn = drawnUnder(drawnOf(read.document), lone);
+    const drawn = drawnOf(read.document);
     // A query chant's grammar refuses is the asker's to fix: 400, chant's message and hint verbatim.
     if (drawn.failure?.kind === "query") {
       const code = drawn.failure.code === "query-invalid" ? "query" : (drawn.failure.code ?? "query");

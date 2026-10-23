@@ -19,7 +19,8 @@ import { createApp } from "./server.ts";
 import { callTool, locateServe, TOOLS, type Context, type Fetch } from "./mcp.ts";
 import { localCapabilities, localServeOptions } from "./shot-cli.ts";
 import { realDir } from "./serve-registry.ts";
-import { discoverTerraformRoots, HCL_PARSER_PKG, resolvedVersion, TERRAFORM_LEXICON_PKG, writeTerraformScratchProject } from "./terraform-member.ts";
+import { HCL_PARSER_PKG, resolvedVersion, TERRAFORM_LEXICON_PKG, terraformMemberWorkspace } from "./terraform-member.ts";
+import { estateMembers } from "./estate.ts";
 
 const made: string[] = [];
 afterAll(() => {
@@ -138,8 +139,12 @@ describe("the catalog read: one chant call through the reader, behind the floor"
     expect(await runCapabilities({ kind: "workspace", root: "/w", chant: "0.124.46" }, w.reader)).toEqual({ ok: true, document: CATALOG });
     expect(w.calls).toEqual([{ argv: ["workspace", "search", "--capabilities", "--json"], root: "/w" }]);
     const tf = recording(CATALOG);
-    await runCapabilities({ kind: "terraform", dir: "/tf", project: "/scratch", chant: "0.124.46" }, tf.reader);
-    expect(tf.calls).toEqual([{ argv: ["search", "--capabilities", "--json"], root: "/scratch" }]);
+    // #925: a bare Terraform folder is asked at its one-member scratch workspace.
+    await runCapabilities({ kind: "terraform", dir: "/tf", root: "/scratch-ws", chant: "0.124.46" }, tf.reader);
+    expect(tf.calls).toEqual([{ argv: ["workspace", "search", "--capabilities", "--json"], root: "/scratch-ws" }]);
+    const p = recording(CATALOG);
+    await runCapabilities({ kind: "project", dir: "/p", chant: "0.124.46" }, p.reader);
+    expect(p.calls).toEqual([{ argv: ["search", "--capabilities", "--json"], root: "/p" }]);
   });
 
   it("refuses a chant below the floor before any call, and a document from before the contract", async () => {
@@ -236,20 +241,21 @@ const catalogued = meetsFloor(resolvedVersion("@intentius/chant"), CAPABILITIES_
 const gate = (!peers && !REQUIRE_PEERS) || !catalogued;
 const why = `needs chant ${CAPABILITIES_CHANT_FLOOR} (INTENTIUS/chant#4375) and the terraform lexicon`;
 
-/** What chant itself prints, run in the scratch project behold graphs the folder through. */
+/** What chant itself prints, run where behold runs it: the folder's one-member scratch workspace (#925). */
 function chantSays(dir: string, argv: string[]): string {
-  const scratch = writeTerraformScratchProject(dir, discoverTerraformRoots(dir), mkdtempSync(join(tmpdir(), "behold-926-chant-")));
-  made.push(scratch);
-  return spawnSync(join(scratch, "node_modules", ".bin", "chant"), argv, { cwd: scratch, encoding: "utf8" }).stdout.trim();
+  const { root } = terraformMemberWorkspace(dir, estateMembers([dir])[0]!.name);
+  return spawnSync(join(root, "node_modules", ".bin", "chant"), argv, { cwd: root, encoding: "utf8" }).stdout.trim();
 }
 
 /** A hop end as a bare Terraform address: the card it is drawn on, without any member or root prefix. */
 const bare = (id: string): string => id.split("#")[0]!.split("/").pop()!;
 
 describe("the ledger's Terraform form, through the real chant", () => {
-  const dir = gate ? "" : mkdtempSync(join(tmpdir(), "behold-926-"));
+  const parent = gate ? "" : mkdtempSync(join(tmpdir(), "behold-926-"));
+  // #925: a name chant's declaration accepts, since the folder's member is named after it.
+  const dir = gate ? "" : join(parent, "ledger");
   if (!gate) {
-    made.push(dir);
+    made.push(parent);
     cpSync(LEDGER, dir, { recursive: true });
   }
   let app: ReturnType<typeof createApp> | undefined;
@@ -261,7 +267,7 @@ describe("the ledger's Terraform form, through the real chant", () => {
     const res = await app!.request(`http://localhost/api/search?q=${encodeURIComponent(q)}`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { draw: ReturnType<typeof drawnOf> };
-    const chant = JSON.parse(chantSays(dir, ["search", "--explain", "--json", "--", q])) as {
+    const chant = JSON.parse(chantSays(dir, ["workspace", "search", "--explain", "--json", "--", q])) as {
       matches: Array<{ id: string; paths: Array<{ hops: Array<{ from: string; to: string }>; because?: Array<{ hops: Array<{ from: string; to: string }> }> }> }>;
     };
     const web = chant.matches.find((m) => bare(m.id) === "aws_instance.web");
@@ -286,7 +292,7 @@ describe("the ledger's Terraform form, through the real chant", () => {
 
   it.skipIf(gate)(`GET /api/capabilities and behold mcp's capabilities answer chant's document byte for byte (${why})`, { timeout: 180_000 }, async () => {
     await ready;
-    const said = chantSays(dir, ["search", "--capabilities", "--json"]);
+    const said = chantSays(dir, ["workspace", "search", "--capabilities", "--json"]);
     expect(JSON.parse(said)).toMatchObject({ contract: 1, $schema: "https://intentius.io/chant/schemas/workspace/capabilities/v1/capabilities.schema.json" });
     const res = await app!.request("http://localhost/api/capabilities");
     expect(res.status).toBe(200);

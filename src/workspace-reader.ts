@@ -51,8 +51,9 @@ export const JSON_FLAGS: Record<WorkspaceReadCommand, readonly string[]> = {
 };
 
 /**
- * behold#913: plain `chant search --json`, for a project that is not a
- * declared workspace and for a bare Terraform folder's scratch project. It
+ * behold#913: plain `chant search --json`, for a chant project that is not a
+ * declared workspace. A bare Terraform folder is searched with the workspace
+ * form, at its one-member scratch workspace (behold#925). It
  * prints the same contract 1 `search` document as `workspace search`, without
  * `members`, so it is read and checked the same way. It is not a `chant
  * workspace` command, so chant's conformance suite lists only the workspace

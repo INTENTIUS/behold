@@ -167,6 +167,15 @@ export const GRAPH_LINT_REPORT_CHANT_FLOOR = "0.124.46";
  * through it. Below it a query is refused: an older `search --json` has no
  * contract head, and an older chant has no workspace form to read. */
 export const SEARCH_CONTRACT_CHANT_FLOOR = "0.124.46";
+/** The first chant that searches a bare Terraform folder the way behold#925
+ * reads it: `chant workspace search` at behold's one-member scratch workspace,
+ * whose member is the generated project naming the folder's roots. It needs
+ * `chant workspace search` (INTENTIUS/chant#4374), `search` reading
+ * `terraform.roots` (INTENTIUS/chant#4365), and the release that makes
+ * `workspace search` read Terraform members and name a member whose kind is
+ * unknown (INTENTIUS/chant#4380). Below it a query on a bare Terraform folder
+ * is refused. */
+export const SEARCH_TERRAFORM_WORKSPACE_CHANT_FLOOR = "0.124.46";
 /** The first chant whose `search --count-by --json` lists each group's matched
  * ids (`groups[].ids`, INTENTIUS/chant#4382, on chant's epic/908-ask-your-agent
  * at ab5b422fc). behold#922 lights each group's cards from them. Below it the
@@ -216,7 +225,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "declared CI report URL", floor: CI_REPORT_URL_CHANT_FLOOR, adds: "workspace ls ci.reportUrl, the declaration's report URL (chant#4160)", degraded: "the runs pane reads chant's run index only when serve is given --ci-report-url" },
   { read: "local CI run", floor: CI_RUN_LOCAL_CHANT_FLOOR, adds: "chant ci run --local (chant#4161)" },
   { read: "runtime health", floor: HEALTH_CHANT_FLOOR, adds: "chant lifecycle health --json, a chant-health/v1 document (chant#4177)", degraded: "the graph draws no health marks and no record out of rotation" },
-  { read: "search over a Terraform folder", floor: SEARCH_TERRAFORM_ROOTS_CHANT_FLOOR, adds: "chant search reads terraform.roots, as graph does (chant#4365)" },
+  { read: "search over a Terraform folder", floor: SEARCH_TERRAFORM_WORKSPACE_CHANT_FLOOR, adds: "chant workspace search over a one-member workspace whose member reads terraform.roots (chant#4365, chant#4374, chant#4380)" },
   { read: "plan read on a Terraform root", floor: TERRAFORM_PLAN_CHANT_FLOOR, adds: "the terraform lexicon reads a saved plan as an observation depth, CHANT_TERRAFORM_OBSERVE=plan (chant#4358)" },
   { read: "groups lit by count", floor: SEARCH_COUNT_BY_IDS_CHANT_FLOOR, adds: "chant search --count-by --json lists each group's ids (chant#4382)", degraded: "the groups and the total are listed and no card is lit" },
   { read: "search", floor: SEARCH_CONTRACT_CHANT_FLOOR, adds: "the read contract's search document, from chant search --json and chant workspace search (chant#4374)" },

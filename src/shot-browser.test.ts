@@ -105,11 +105,12 @@ describe("a query's shot in a real browser (behold#913)", async () => {
   let dir = "";
   beforeAll(() => {
     if (gate) return;
-    dir = mkdtempSync(join(tmpdir(), "behold-shot-q-"));
+    // #925: the folder's member is named after it, so its name is one chant's declaration accepts.
+    dir = join(mkdtempSync(join(tmpdir(), "behold-shot-q-")), "bare-estate");
     cpSync(join(HERE, "..", "example-terraform-estate"), dir, { recursive: true });
     rmSync(join(dir, "chant.workspace.json"));
   });
-  afterAll(() => dir && rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => dir && rmSync(join(dir, ".."), { recursive: true, force: true }));
 
   it.skipIf(gate)(`lights what the search answers, and no matches is dimmed (needs chant ${SEARCH_CONTRACT_CHANT_FLOOR})`, { timeout: 180_000 }, async (ctx) => {
     if (browserReason) return ctx.skip(`no headless browser: ${browserReason}`);

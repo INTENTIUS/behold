@@ -910,7 +910,7 @@ chant's reader conformance suite):
 |---|---|
 | a declared workspace | `chant workspace search [flags] --json -- <q>` at the root (INTENTIUS/chant#4374). Ids are `<member>/<id>`, as `workspace graph` gives them. A member chant didn't search is named in a "not searched" line with chant's reason code, never shown as no matches |
 | one chant project | `chant search [flags] --json -- <q>` in its directory |
-| a bare Terraform folder | the same, in the scratch project behold graphs it through. Its cards are a one-member estate's, so behold puts chant's ids under that member's name in `draw`; chant's document is unchanged |
+| a bare Terraform folder | `chant workspace search` at a scratch workspace of one member (#925): `<tmpdir>/behold-tfws-<hash>`, whose `chant.workspace.json` declares one member of kind `chant`, named what the folder's box is named, at a link to the scratch project behold graphs the folder through. chant composes the `<member>/<id>` ids the cards carry; behold prefixes nothing. Nothing is written in the folder. A folder whose name isn't a member name chant accepts (`^[a-z0-9][a-z0-9-]{0,39}$`) is refused, `code: "search-member-name"` |
 | a loose estate of several dirs | refused, `code: "search-estate"`: declare a workspace |
 
 The mode follows the view: no `env` is the declared source, `env` is a live

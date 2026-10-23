@@ -15,8 +15,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SEARCH_CONTRACT_CHANT_FLOOR, SEARCH_COUNT_BY_IDS_CHANT_FLOOR, TERRAFORM_PLAN_CHANT_FLOOR } from "./chant-floors.ts";
 import { meetsFloor } from "./floor.ts";
-import { checkAsk, drawnOf, drawnUnder, planRefusal, runSearch, SearchAskError, searchArgs, searchEnv, type SearchTarget } from "./search.ts";
-import { projectSearchArgv, workspaceReader, type TransportRun, type WorkspaceReader } from "./workspace-reader.ts";
+import { checkAsk, drawnOf, planRefusal, runSearch, SearchAskError, searchArgs, searchEnv, type SearchTarget } from "./search.ts";
+import { readArgv, workspaceReader, type TransportRun, type WorkspaceReader } from "./workspace-reader.ts";
 import { canonicalKey, captureKeys, settleCountBy } from "./export.ts";
 import { moveView, type MoveContext } from "./view-move.ts";
 import { queryView } from "./shot.ts";
@@ -24,7 +24,7 @@ import { publicReadRefusal } from "./public-mode.ts";
 import { createApp } from "./server.ts";
 import { localServeOptions } from "./shot-cli.ts";
 import { estateMembers } from "./estate.ts";
-import { discoverTerraformRoots, HCL_PARSER_PKG, resolvedVersion, TERRAFORM_LEXICON_PKG, writeTerraformScratchProject } from "./terraform-member.ts";
+import { HCL_PARSER_PKG, resolvedVersion, TERRAFORM_LEXICON_PKG, terraformMemberWorkspace } from "./terraform-member.ts";
 import { PLAN_READ_ENV } from "./terraform-plan.ts";
 import { PLAN_SNAPSHOT_REASON, readViewQuery, restoreViewQuery, settleView, writeViewQuery, ZOOMS } from "../web/view-url.js";
 import { viewFromMessage } from "../web/embed.js";
@@ -91,7 +91,7 @@ describe("what a countBy or plan search sends chant", () => {
     const project: SearchTarget = { kind: "project", dir: "/p", chant: "0.124.46" };
     expect(planRefusal(project, { q: "a", plan: true })).toMatchObject({ code: "plan-env" });
     expect(planRefusal(project, { q: "a", plan: true, env: "prod" })).toBeUndefined();
-    expect(planRefusal({ kind: "terraform", dir: "/t", project: "/s", chant: "0.124.46" }, { q: "a", plan: true })).toBeUndefined();
+    expect(planRefusal({ kind: "terraform", dir: "/t", root: "/s", chant: "0.124.46" }, { q: "a", plan: true })).toBeUndefined();
     const r = await runSearch(project, { q: "a", plan: true }, () => {
       throw new Error("no read expected");
     });
@@ -105,9 +105,10 @@ describe("what a countBy or plan search sends chant", () => {
       envs.push(env);
       return workspaceReader({ run: async (argv): Promise<TransportRun> => (argvs.push(argv), { status: 0, stdout: JSON.stringify({ ...HEAD, query: "a", source: { kind: "live" }, matches: [] }), stderr: "" }) });
     };
-    await runSearch({ kind: "terraform", dir: "/t", project: "/s", chant: "0.124.46" }, { q: "a", plan: true }, reader);
+    await runSearch({ kind: "terraform", dir: "/t", root: "/s", chant: "0.124.46" }, { q: "a", plan: true }, reader);
     expect(envs).toEqual([{ CHANT_TERRAFORM_OBSERVE: "plan" }]);
-    expect(argvs[0]).toEqual(projectSearchArgv(["--live", "--env", PLAN_READ_ENV, "--explain", "--", "a"]));
+    // #925: a bare folder is searched at its one-member scratch workspace.
+    expect(argvs[0]).toEqual(readArgv("search", ["--live", "--env", PLAN_READ_ENV, "--explain", "--", "a"]));
   });
 
   it("a public view answers no plan search", () => {
@@ -117,13 +118,12 @@ describe("what a countBy or plan search sends chant", () => {
 });
 
 describe("the groups drawn from chant's counts document", () => {
-  it("lights every group's ids, keeps chant's groups and total, and puts them under a lone folder's member", () => {
+  it("lights every group's ids as chant printed them, and keeps chant's groups and total", () => {
     const d = drawnOf(COUNTS);
     expect(d.counts).toEqual({ by: "kind", total: 4, groups: COUNTS.groups });
     expect(d.lit.sort()).toEqual(COUNTS.groups.flatMap((g) => g.ids).sort());
-    const under = drawnUnder(d, "estate");
-    expect(under.counts!.groups[0]!.ids).toEqual(["estate/app/aws_iam_role.a", "estate/app/module.pod/aws_iam_role.b"]);
-    expect(under.lit).toContain("estate/app/aws_db_instance.orders");
+    // #925: no prefixing; chant composes a lone folder's member ids itself.
+    expect(d.counts!.groups[0]!.ids).toEqual(COUNTS.groups[0]!.ids);
   });
 
   it("a chant that lists no ids per group lights nothing and says so, never a wrong group", () => {
@@ -252,18 +252,19 @@ const searchable = meetsFloor(chantVersion, SEARCH_CONTRACT_CHANT_FLOOR) && meet
 const gate = (!peers && !REQUIRE_PEERS) || !searchable;
 const why = `needs chant ${SEARCH_CONTRACT_CHANT_FLOOR} (INTENTIUS/chant#4360, #4382) and the terraform lexicon`;
 
-/** What chant itself prints for `--count-by`, run where behold runs it. */
-function chantCounts(dir: string, q: string, countBy: string): { groups: Array<{ group: string; count: number; ids?: string[] }>; total: number } {
-  const scratch = writeTerraformScratchProject(dir, discoverTerraformRoots(dir), mkdtempSync(join(tmpdir(), "behold-922-chant-")));
-  made.push(scratch);
-  const run = spawnSync(join(scratch, "node_modules", ".bin", "chant"), projectSearchArgv(searchArgs({ q, countBy })), { cwd: scratch, encoding: "utf8" });
+/** What chant itself prints for `--count-by`, run where behold runs it: workspace search at the folder's one-member scratch workspace (#925). */
+function chantCounts(dir: string, q: string, countBy: string, member: string): { groups: Array<{ group: string; count: number; ids?: string[] }>; total: number } {
+  const { root } = terraformMemberWorkspace(dir, member);
+  const run = spawnSync(join(root, "node_modules", ".bin", "chant"), readArgv("search", searchArgs({ q, countBy })), { cwd: root, encoding: "utf8" });
   return JSON.parse(run.stdout) as { groups: Array<{ group: string; count: number; ids?: string[] }>; total: number };
 }
 
 describe("countBy on a bare Terraform folder, through the real chant", () => {
-  const dir = gate ? "" : mkdtempSync(join(tmpdir(), "behold-922-"));
+  const parent = gate ? "" : mkdtempSync(join(tmpdir(), "behold-922-"));
+  // A name chant's declaration accepts, since the folder's member is named after it (#925).
+  const dir = gate ? "" : join(parent, "bare-estate");
   if (!gate) {
-    made.push(dir);
+    made.push(parent);
     cpSync(ESTATE, dir, { recursive: true });
     rmSync(join(dir, "chant.workspace.json"));
   }
@@ -282,7 +283,7 @@ describe("countBy on a bare Terraform folder, through the real chant", () => {
       const res = await app!.request(`http://localhost/api/search?q=&countBy=${countBy}`);
       expect(res.status).toBe(200);
       const body = (await res.json()) as { document: { groups: unknown[]; total: number }; draw: ReturnType<typeof drawnOf>; link: string };
-      const chant = chantCounts(dir, "", countBy);
+      const chant = chantCounts(dir, "", countBy, member);
       // chant's document, verbatim.
       expect(body.document.groups).toEqual(chant.groups);
       expect(body.document.total).toBe(chant.total);
@@ -293,7 +294,9 @@ describe("countBy on a bare Terraform folder, through the real chant", () => {
       const gm = groupMarks({ document: body.document, draw: body.draw }, drawn);
       expect(gm.groups.map((g: { group: string; count: number }) => [g.group, g.count])).toEqual(chant.groups.map((g) => [g.group, g.count]));
       for (const [i, g] of chant.groups.entries()) {
-        expect(gm.groups[i].ids).toEqual(g.ids!.map((id) => `${member}/${id}`));
+        // #925: chant composes the member's ids; behold draws them as printed.
+        expect(gm.groups[i].ids).toEqual(g.ids);
+        expect(g.ids!.every((id) => id.startsWith(`${member}/`))).toBe(true);
         // Every id chant counted that the graph draws as a card is lit in its group.
         for (const id of gm.groups[i].drawn) expect(gm.cardGroup.get(id)).toBe(i);
       }
@@ -330,7 +333,8 @@ describe("plan=1 on a local-backend terraform_data root, real terraform", () => 
     const text = await res.text();
     expect(res.status, text).toBe(200);
     const body = JSON.parse(text) as { document: { matches: Array<{ id: string; show?: Record<string, unknown> }>; source: { kind: string } }; draw: ReturnType<typeof drawnOf>; link: string };
-    expect(body.document.matches.map((m) => m.id)).toEqual(["estate/terraform_data.replaced"]);
+    // #925: chant composes the member's id, `<member>/<root>/<address>`.
+    expect(body.document.matches.map((m) => m.id)).toEqual([`${member}/estate/terraform_data.replaced`]);
     expect(body.document.matches[0]!.show).toMatchObject({ planReplacePaths: ["triggers_replace"], planActionReason: expect.any(String) });
     expect(body.draw.lit).toEqual([`${member}/estate/terraform_data.replaced`]);
     expect(body.link).toBe(`http://localhost/?q=${q}&plan=1`);
