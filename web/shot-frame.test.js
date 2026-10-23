@@ -50,6 +50,11 @@ describe("shotState", () => {
 
 describe("the caption", () => {
   const at = new Date("2026-10-23T14:02:11.250Z");
+  it("says a plan-depth answer is at the plan depth, in the words of the tab's query line", () => {
+    const line = shotCaption({ query: "attr:planAction=replace", provenance: "observed live · bound 1/1", at, plan: true });
+    expect(line).toBe('"attr:planAction=replace"  ·  observed live · bound 1/1  ·  at the plan depth  ·  2026-10-23T14:02:11Z');
+    expect(shotCaption({ query: "a", at })).not.toContain("plan depth");
+  });
   it("is one line: what was asked, from where, when", () => {
     expect(shotCaption({ query: "kind:Bucket", provenance: shotProvenance({ env: "prod" }), at })).toBe('"kind:Bucket"  ·  env prod, live  ·  2026-10-23T14:02:11Z');
     expect(shotCaption({ label: "node a", provenance: shotProvenance({}), at, state: "no-matches" })).toBe("no matches for node a  ·  source graph  ·  2026-10-23T14:02:11Z");

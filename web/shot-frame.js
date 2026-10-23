@@ -87,6 +87,9 @@ export function shotState({ failed = false, lit }) {
 }
 
 /** Where the picture's facts come from, in a few words: the source graph, or the env's live read (and its snapshot). */
+/** What a plan-depth answer says about itself, in the tab's query line and the shot's caption alike. */
+export const PLAN_DEPTH_NOTE = "at the plan depth";
+
 export function shotProvenance(view) {
   const v = view || {};
   if (!v.env) return "source graph";
@@ -98,7 +101,7 @@ export function shotProvenance(view) {
  * selection), where the picture comes from, and when. A failure line comes
  * first when there is one. Control characters become spaces, so it stays one line.
  */
-export function shotCaption({ query = null, label = null, provenance = "", at = new Date(), failure = null, state = "drawn", counts = null } = {}) {
+export function shotCaption({ query = null, label = null, provenance = "", at = new Date(), failure = null, state = "drawn", counts = null, plan = false } = {}) {
   const one = (s) => String(s).replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
   const asked = query ? (query === "the whole graph" ? query : `"${one(query)}"`) : label ? one(label) : "the whole graph";
   const parts = [];
@@ -106,6 +109,7 @@ export function shotCaption({ query = null, label = null, provenance = "", at = 
   parts.push(state === "no-matches" ? `no matches for ${asked}` : asked);
   if (counts) parts.push(one(counts)); // behold#922: chant's groups and total
   if (provenance) parts.push(one(provenance));
+  if (plan) parts.push(PLAN_DEPTH_NOTE);
   const t = at instanceof Date && !Number.isNaN(at.getTime()) ? at.toISOString().replace(/\.\d+Z$/, "Z") : "";
   if (t) parts.push(t);
   return parts.join("  ·  ");

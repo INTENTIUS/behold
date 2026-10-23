@@ -1,3 +1,5 @@
+import { PLAN_DEPTH_NOTE } from "./shot-frame.js";
+
 // behold#913: `q`, a chant search query drawn over the graph.
 //
 // The server runs the query through chant (GET /api/search, src/search.ts)
@@ -198,7 +200,7 @@ export function queryLine(view, answer, marks) {
     parts.push(`${q}: ${n} match${n === 1 ? "" : "es"}${hidden > 0 ? `, ${hidden} not drawn at this zoom` : ""}${(d.edges || []).length ? `, path edges drawn` : ""}`);
   }
   if (prov) parts.push(prov);
-  if (view && view.plan) parts.push("at the plan depth");
+  if (view && view.plan) parts.push(PLAN_DEPTH_NOTE);
   const tone = d.failure ? "failed" : (d.lit || []).length || (d.counts && d.counts.total) ? "ok" : "empty";
   return { text: parts.join(" · "), tone, notSearched };
 }

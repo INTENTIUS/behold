@@ -115,9 +115,9 @@ chant search "kind:aws_ !module.team_pod" --count-by kind
 chant search "kind:aws_ module.team_pod" --count-by kind
 ```
 
-Groups are `(root)` and `module.team_pod`. The root name leads a group
-(`terralith-4-stock/(root)`) only when the project has more than one root;
-behold's scratch project for this estate has one. If `!module.team_pod` comes
+Groups are `terralith-4-stock/(root)` and `terralith-4-stock/module.team_pod`.
+The member name leads every group (behold#925's member naming), even though
+this estate has one member. If `!module.team_pod` comes
 up short of 189 because a root block's body names `module.team_pod`, the
 `--count-by module` row is the answer.
 
@@ -125,11 +125,11 @@ By module:
 
 | module | declared | applied |
 |---|---:|---:|
-| (root) | 189 | 270 |
-| module.team_pod | 6 | 48 (24 per key: `["pod-a"]`, `["pod-b"]`) |
+| terralith-4-stock/(root) | 189 | 270 |
+| terralith-4-stock/module.team_pod | 6 | 48 (24 per key: `["pod-a"]`, `["pod-b"]`) |
 | total | 195 | 318 |
 
-`(root)` by type, declared (applied where it differs):
+`terralith-4-stock/(root)` by type, declared (applied where it differs):
 
 | type | declared | applied |
 |---|---:|---:|
@@ -146,7 +146,7 @@ By module:
 | each of aws_db_instance, aws_db_subnet_group, aws_dynamodb_table, aws_ecs_cluster, aws_instance, aws_internet_gateway, aws_launch_template, aws_route53_zone, aws_route_table, aws_route_table_association, aws_vpc, aws_vpc_security_group_ingress_rule | 1 | |
 | total | 189 | 270 |
 
-`module.team_pod` by type, declared (applied per key, then both keys):
+`terralith-4-stock/module.team_pod` by type, declared (applied per key, then both keys):
 
 | type | declared | per key | both keys |
 |---|---:|---:|---:|
@@ -204,27 +204,34 @@ CHANT_TERRAFORM_OBSERVE=plan chant search --live --env <name> --json -- "attr:pl
 ```
 
 Add `--show planActions,planReplacePaths,planActionReason --explain` to see
-the fields and the provenance line in one answer. `<name>` is an environment
+the fields and the provenance line in one answer. Through behold the same
+read is `ask {query: "attr:planAction=replace", plan: true, show:
+"planActions,planReplacePaths,planActionReason"}`. `<name>` is an environment
 name; the plan read runs `terraform plan -lock=false` in the root, so the
 shell needs the floci variables the setup prints (`AWS_ENDPOINT_URL` and the
 test credentials) and the root must already be initialised (the setup does
-that). The provenance line must say the answer came from a plan; if it says
-state, the plan read fell back and the rows below will be missing. #910 is
-what lets behold draw these facts on the card.
+that). chant prints the provenance line `observed live · bound 1/1`, and the
+document's source is `{kind: live, env: behold-plan}`. It does not yet say
+the answer came from a plan (INTENTIUS/chant#4384), so that line is not a
+check on the plan read; the three values below are. The tab and the shot
+caption add "at the plan depth" themselves. #910 is what lets behold draw
+these facts on the card.
 
 Exactly one row, `<root>/aws_db_instance.orders`:
 
 | field | value |
 |---|---|
 | `planAction` | `replace` |
-| `planActions` | `["delete", "create"]` (the raw list, per instance address) |
+| `planActions` | `{"aws_db_instance.orders":["delete","create"]}` (the raw list, keyed by instance address) |
 | `planReplacePaths` | `["storage_encrypted"]` (dotted strings, not nested lists) |
 | `planActionReason` | `replace_because_cannot_update` |
 
 `terraform plan` says the same in its own words: `# aws_db_instance.orders
 must be replaced`, `~ storage_encrypted = false -> true # forces
 replacement`, `Plan: 1 to add, 0 to change, 1 to destroy.` Every other
-resource is a no-op.
+resource is a no-op: on the cards (`/api/graph?plan=1`, `attrs._plan`) the
+database is the one replace and 14 are no-op, and the database card carries
+`source: "plan"`. The answer counts 1 of 1 `aws_db_instance`.
 
 Where the forcing value comes from: the literal `storage_encrypted = true` on
 `aws_db_instance.orders` in `data.tf`, the line the patch changes. It reads
