@@ -1,0 +1,208 @@
+{
+ "provenance": "CHANT_TERRAFORM_OBSERVE=plan chant graph . --live --overlay --env behold-plan --format ir --detail 3, chant and chant-lexicon-terraform built from chant epic/908-ask-your-agent at 2b8350d29 (chant#4358), terraform 1.15.8, over src/__fixtures__/terraform-plan-root applied at generation 1 and planned at generation 2 with a new token. Root renamed to app; each node keeps its plan attributes and identity only (the HCL source text is dropped).",
+ "stderr": [
+  "warning: terraform: not observed — app/terraform (Terraform::Terraform) — no reader for this resource kind: Terraform::Terraform has no row in terraform state: only resource and data blocks do [queried terraform plan -lock=false + show -json <planfile> (root \"app\", address \"terraform\")]",
+  "warning: terraform: not observed — app/var.generation (Terraform::Variable) — no reader for this resource kind: Terraform::Variable has no row in terraform state: only resource and data blocks do [queried terraform plan -lock=false + show -json <planfile> (root \"app\", address \"var.generation\")]",
+  "warning: terraform: not observed — app/var.token (Terraform::Variable) — no reader for this resource kind: Terraform::Variable has no row in terraform state: only resource and data blocks do [queried terraform plan -lock=false + show -json <planfile> (root \"app\", address \"var.token\")]",
+  "warning: [terraform] terraform.roots.app: the plan read answered (`terraform plan -input=false -lock=false -out=<tmp>/plan.tfplan`)"
+ ],
+ "ir": {
+  "version": 1,
+  "nodes": [
+   {
+    "id": "app/terraform",
+    "kind": "Terraform::Terraform",
+    "lexicon": "terraform",
+    "attrs": {
+     "address": "terraform",
+     "root": "app",
+     "mode": "state",
+     "_status": "neutral",
+     "_unobserved": "unsupported-kind"
+    }
+   },
+   {
+    "id": "app/terraform_data.downstream",
+    "kind": "Terraform::Resource",
+    "lexicon": "terraform",
+    "physicalId": "542a9fc7-9f2b-5858-1d84-aa601014fb5d",
+    "attrs": {
+     "address": "terraform_data.downstream",
+     "root": "app",
+     "mode": "managed",
+     "resourceType": "terraform_data",
+     "provider": "terraform.io/builtin/terraform",
+     "planAction": "update",
+     "planActions": {
+      "terraform_data.downstream": [
+       "update"
+      ]
+     },
+     "planAfterUnknown": [
+      "input",
+      "output"
+     ],
+     "planChanges": [
+      {
+       "path": "input",
+       "before": "e88705fc-3b11-c994-1b25-43a87fb47516",
+       "after": "(known after apply)"
+      },
+      {
+       "path": "output",
+       "before": "e88705fc-3b11-c994-1b25-43a87fb47516",
+       "after": "(known after apply)"
+      }
+     ],
+     "_status": "good"
+    }
+   },
+   {
+    "id": "app/terraform_data.replaced",
+    "kind": "Terraform::Resource",
+    "lexicon": "terraform",
+    "physicalId": "e88705fc-3b11-c994-1b25-43a87fb47516",
+    "attrs": {
+     "address": "terraform_data.replaced",
+     "root": "app",
+     "mode": "managed",
+     "resourceType": "terraform_data",
+     "provider": "terraform.io/builtin/terraform",
+     "planAction": "replace",
+     "planActions": {
+      "terraform_data.replaced": [
+       "delete",
+       "create"
+      ]
+     },
+     "planActionReason": "replace_because_cannot_update",
+     "planReplacePaths": [
+      "triggers_replace"
+     ],
+     "planAfterUnknown": [
+      "id",
+      "output"
+     ],
+     "planChanges": [
+      {
+       "path": "id",
+       "before": "e88705fc-3b11-c994-1b25-43a87fb47516",
+       "after": "(known after apply)"
+      },
+      {
+       "path": "output",
+       "before": "stable",
+       "after": "(known after apply)"
+      },
+      {
+       "path": "triggers_replace",
+       "before": "1",
+       "after": "2"
+      }
+     ],
+     "planRelevantAttributes": [
+      "id"
+     ],
+     "_status": "good"
+    }
+   },
+   {
+    "id": "app/terraform_data.updated",
+    "kind": "Terraform::Resource",
+    "lexicon": "terraform",
+    "physicalId": "a0954a2b-c926-c5f7-bf47-4b52bcd14944",
+    "attrs": {
+     "address": "terraform_data.updated",
+     "root": "app",
+     "mode": "managed",
+     "resourceType": "terraform_data",
+     "provider": "terraform.io/builtin/terraform",
+     "planAction": "update",
+     "planActions": {
+      "terraform_data.updated": [
+       "update"
+      ]
+     },
+     "planAfterUnknown": [
+      "output"
+     ],
+     "planChanges": [
+      {
+       "path": "input.name",
+       "before": "app-1",
+       "after": "app-2"
+      },
+      {
+       "path": "input.token",
+       "before": "(sensitive)",
+       "after": "(sensitive)"
+      },
+      {
+       "path": "output.name",
+       "before": "app-1",
+       "after": "(known after apply)"
+      },
+      {
+       "path": "output.token",
+       "before": "(sensitive)",
+       "after": "(known after apply)"
+      }
+     ],
+     "_status": "good"
+    }
+   },
+   {
+    "id": "app/var.generation",
+    "kind": "Terraform::Variable",
+    "lexicon": "terraform",
+    "attrs": {
+     "address": "var.generation",
+     "root": "app",
+     "mode": "state",
+     "_status": "neutral",
+     "_unobserved": "unsupported-kind"
+    }
+   },
+   {
+    "id": "app/var.token",
+    "kind": "Terraform::Variable",
+    "lexicon": "terraform",
+    "attrs": {
+     "address": "var.token",
+     "root": "app",
+     "mode": "state",
+     "_status": "neutral",
+     "_unobserved": "unsupported-kind"
+    }
+   }
+  ],
+  "edges": [
+   {
+    "from": "app/terraform_data.downstream",
+    "to": "app/terraform_data.replaced",
+    "kind": "ref",
+    "viaAttr": "input",
+    "toAttr": "id"
+   },
+   {
+    "from": "app/terraform_data.replaced",
+    "to": "app/var.generation",
+    "kind": "ref",
+    "viaAttr": "triggers_replace"
+   },
+   {
+    "from": "app/terraform_data.updated",
+    "to": "app/var.generation",
+    "kind": "ref",
+    "viaAttr": "input"
+   },
+   {
+    "from": "app/terraform_data.updated",
+    "to": "app/var.token",
+    "kind": "ref",
+    "viaAttr": "input"
+   }
+  ],
+  "groups": {}
+ }
+}

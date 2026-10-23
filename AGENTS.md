@@ -1701,7 +1701,7 @@ its own graph and overlay counts as it runs.
 | `terralith-1` | `terralith-gen` at scale 1 plus the `estate.chdf.hcl` sidecar it omits, applied by choudoufu from nothing: 79 cards, all 79 bound | docker, choudoufu, go |
 | `terralith-4` | the same at scale 4: 301 cards, all 301 bound. The estate behold is sized against | the same |
 | `terralith-4-adopt` | scale 4 again, but STOCK terraform applies it first, so nothing wears a marker: 301 cards — 85 UNOWNED, 84 bound by derived identity alone, 132 neutral. One `choudoufu live-import` line, which the up script prints and you run, and all 301 read bound | docker, choudoufu, go, terraform |
-| `waterpark` | `../waterpark/access` in place as a bare Terraform directory (#384): five roots as boxes, 58 cards, 49 edges, nothing written under the estate | `@intentius/chant-lexicon-terraform` + `@cdktn/hcl2json` beside behold — optional peers behold declares and does not install |
+| `waterpark` | `../waterpark/access` in place as a bare Terraform directory (#384): five roots as boxes, 58 cards, 49 edges, nothing written under the estate | `@intentius/chant-lexicon-terraform` + `@cdktn/hcl2json` beside behold, dependencies of behold since #909 |
 
 **The scratch, by name and port.** Each emulator is the entry's own, booted by
 its up script and removed by the `scripts/down.sh` that script wrote into the
@@ -1765,8 +1765,9 @@ A Terraform estate reaches behold through chant.
 `@intentius/chant-lexicon-terraform` reads the HCL an estate already has and
 emits one entity per block, so **a Terraform estate is a chant project whose
 only lexicon is a reader** and `chant graph --format ir` serves it like any
-other. behold parses no HCL and ships no HCL parser, the same posture
-`src/carve-lens.ts` states for the carve report (#378).
+other. behold parses no HCL itself, the same posture `src/carve-lens.ts`
+states for the carve report (#378). The parser chant uses is installed with
+behold since #909, below.
 
 Three passes turn what arrives into a picture (`src/terraform-lens.ts`), in this
 order, guarded on the IR carrying terraform entities so every other estate gets
@@ -1829,17 +1830,24 @@ points chant at it. The Invariant's one in-project write stays
 across a read. Three decisions, each a trade #384 left open and each measured on
 water park's `access/` before it was taken:
 
-1. **The lexicon is opt-in.** chant resolves the lexicon from the config file's
-   own location, so the generated project has to see it, and making it a
-   dependency would put `@cdktn/hcl2json`, a ~1.8 MB wasm blob, in the install
-   of every user who serves a chant project. `@intentius/chant-lexicon-terraform`
-   and `@cdktn/hcl2json` are therefore **optional peers**: declared in
-   package.json (the only place their versions are named, the refusal reads
-   them from there), never installed by behold, probed at serve and doctor time,
-   and refused with the one install line and where behold looked. The same gate
-   `behold demo` puts on a binary it does not ship. The lexicon's own chant peer
-   is what moved behold's `@intentius/chant` floor to `^0.61.0`: chant 0.54
-   loads no published version of it (`applyLineage is not a function`).
+1. **The reader ships with behold, and is still probed.** chant resolves the
+   lexicon from the config file's own location, so the generated project has to
+   see it, and chant core (not the lexicon) imports `@cdktn/hcl2json` from its
+   own real path; neither package declares the parser. #384 made both optional
+   peers to keep a ~1.8 MB wasm blob out of chant-only installs. #909 reversed
+   that so `npx @intentius/behold serve .` on a folder of `.tf` files is one
+   command: `@intentius/chant-lexicon-terraform` and `@cdktn/hcl2json` are
+   **dependencies** in package.json (the only place their versions are named;
+   the refusal reads them from there). The maintainer accepted the cost on #909:
+   +8.3 MB on a 195 MB install, six packages. The lexicon's range starts at
+   behold's chant floor so its chant peer dedupes against behold's chant, and
+   npm hoists both beside chant, which is where the scratch project's
+   `node_modules` symlink and chant's parser import look. They are still probed
+   at serve and doctor time and refused with the one install line and where
+   behold looked, because an install that pruned them reaches a chant that
+   warns, exits 0 and prints an empty graph. The lexicon's own chant peer is
+   what moved behold's `@intentius/chant` floor to `^0.61.0`: chant 0.54 loads
+   no published version of it (`applyLineage is not a function`).
 2. **Roots are discovered, and the skips are reported.** A root is a directory
    with a `.tf` declaring a line-start `terraform {` or `provider "` block
    beside a `resource`, `data` or `module` block, a regex probe at the depth
@@ -1925,6 +1933,32 @@ every resource, one provider read per card, 301 of them on `terralith-4`. So:
 - **`/api/overlay`'s meta carries `drift`**: `{read: false}` or `{read: true,
   drifted: n}`. The two are different answers — "nobody looked" versus "looked,
   nothing drifted", and the legend prints a count only for the second.
+
+### A stock Terraform root's plan comes from chant (#910)
+
+`GET /api/graph?plan=1` (palette: **"Read the plan on the Terraform roots"**)
+reads each stock Terraform member's roots at chant's plan depth
+(INTENTIUS/chant#4358): behold's own chant over the member's scratch project,
+`CHANT_TERRAFORM_OBSERVE=plan chant graph . --live --overlay --env behold-plan
+--format ir --detail 3` (src/terraform-plan.ts). The plan runs with
+`-lock=false`, its file under the OS temp directory. Each resource or data card
+gains `attrs._plan` (`source`, `action`, `reason`, `replacePaths`,
+`forcedFrom`, `afterUnknown`, `changes`, `drift`), and the card's rows lead with
+`plan`, `forced by`, `from` and `read`. `GET /api/terraform/plan` answers the
+same facts per card as JSON.
+
+- **Which read answered is per root**, parsed from chant's notes: `plan`,
+  `state` (the plan failed, for missing credentials or a provider error) or
+  `none` (declared only). A card in a root that fell back says `plan: not read`
+  and which read answered. Never "no changes" unless the plan said `no-op`.
+- **Sensitive values arrive redacted** by chant, at any depth and every copy;
+  behold copies plan facts only, never a block's other attributes.
+- **Floor**: `TERRAFORM_PLAN_CHANT_FLOOR` (0.124.46) for behold's chant and the
+  lexicon; below it the read is refused with the upgrade line.
+- **A planned create has no facts**: it reads absent at the plan depth
+  (chant#4372), so its card carries nothing from the plan.
+- **choudoufu members keep #404's read** (src/choudoufu-plan.ts): chant's plan
+  depth leaves a live root on `live-plan -json` (chant#4371).
 
 ### A lexicon behold draws but cannot aim (#430)
 

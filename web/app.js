@@ -1722,6 +1722,9 @@ let bulkDiffCache = null; // { env, nodes: { <id>: { observed, diff, health } } 
 // from its own cache on the loads that follow, so the drift stays on screen
 // without anyone paying for a second full pass over the account.
 let planDriftOnce = false;
+// #910: ONE-SHOT, the same way: set by "Read the plan on the Terraform roots",
+// consumed by the source-graph load that carries `plan=1`.
+let terraformPlanOnce = false;
 async function loadNodeDiff(id) {
   if (publicMode) return null; // #569: /api/diff is refused in a public view
   if (!bulkDiffCache || bulkDiffCache.env !== view.env) {
@@ -10469,6 +10472,11 @@ async function loadOnce(opts = {}, isCurrent = () => true) {
         q.set("plan", "1");
         planDriftOnce = false;
       }
+    } else if (terraformPlanOnce && !view.components) {
+      // #910: the plan on the stock Terraform roots, read through chant onto
+      // the source graph's cards. One-shot, like #404's above.
+      q.set("plan", "1");
+      terraformPlanOnce = false;
     }
     // Radial layout (entity view only) — curl the wide DAG onto concentric rings.
     if (view.radial && !view.components && !view.logical && !view.ops) q.set("radial", "1");
@@ -10581,6 +10589,14 @@ function replayMemberFrames(load) {
  * of `GET /api/overlay`, which is where the drift read lives — so this row
  * goes through `load()`, the path that actually renders those cards.
  */
+async function readTerraformPlan() {
+  terraformPlanOnce = true;
+  nowline("↻ reading the plan on the Terraform roots…");
+  await load();
+  const note = lastMeta && lastMeta.note ? String(lastMeta.note).split(" · ").find((p) => p.startsWith("plan: ")) : null;
+  nowline(note ? `↻ ${note}` : "↻ the plan could not be read");
+}
+
 async function refreshWithPlan() {
   planDriftOnce = true;
   bulkDiffCache = null; // the pane's rows come from /api/diff — re-fetch them against the new plan
@@ -11685,6 +11701,10 @@ function paletteCommands() {
         ? ["Re-check live with plan (attribute drift) — a full read of the account", () => refreshWithPlan()]
         : ["Re-check live with plan (attribute drift) — pick an environment first", () => showToast("attribute drift is read from a plan, which needs an environment to plan against", false)],
     );
+  }
+  // #910: a stock Terraform root's plan, through chant, onto its cards.
+  if (!staticMode && !publicMode && !view.env && projectInfo && (projectInfo.memberKinds || []).includes("terraform")) {
+    c.push(["Read the plan on the Terraform roots (replaces, forcing attributes, unknowns, drift)", () => readTerraformPlan()]);
   }
   c.push(["Fit graph to view", () => fitGraph()]);
   c.push(["Export: current graph as SVG", () => exportSvg()]);

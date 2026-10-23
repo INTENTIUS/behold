@@ -307,6 +307,64 @@ export function terraformCardFields(node: { attrs: Record<string, unknown> }): A
   if (typeof a.score === "number" || typeof a.block !== "string") return undefined;
   const reads = typeof a.reads === "string" ? [{ label: "reads", value: a.reads }] : [];
   const root = typeof a.root === "string" ? [{ label: "root", value: a.root }] : [];
-  const fields = [...reads, ...root];
+  const fields = [...planCardRows(a._plan), ...reads, ...root];
   return fields.length ? fields : [{ label: "block", value: a.block }];
+}
+
+/** A value on a card row: a string as itself, anything else as JSON, both cut short. */
+function shortValue(v: unknown): string {
+  const s = typeof v === "string" ? v : JSON.stringify(v) ?? "null";
+  return s.length > 24 ? `${s.slice(0, 23)}...` : s;
+}
+
+/**
+ * The rows the plan read puts at the top of a card (#910), from the
+ * `attrs._plan` src/terraform-plan.ts paints. Kept here, beside the rest of
+ * the card, so the render needs no import of the read.
+ *
+ *  - read from the plan: what the next apply does (`plan: replace`), what
+ *    forces a replace with its before and after when the plan has them
+ *    (`forced by: triggers_replace 1 -> 2`), where that value comes from in
+ *    the configuration (`from: var.generation`), and `read: plan`;
+ *  - a root that fell back: `plan: not read` and which read answered, so a
+ *    card is never shown as "no changes" when no plan ran.
+ *
+ * Values reach here already redacted: chant replaces every value the plan
+ * marks sensitive, and every copy of one, with `(sensitive)`.
+ */
+export function planCardRows(plan: unknown): Array<{ label: string; value: string }> {
+  if (!plan || typeof plan !== "object") return [];
+  const p = plan as {
+    source?: string;
+    note?: string;
+    action?: string;
+    replacePaths?: string[];
+    forcedFrom?: Array<{ path: string; from: string }>;
+    afterUnknown?: string[];
+    changes?: Array<{ path: string; before: unknown; after: unknown }>;
+    drift?: unknown[];
+    driftAction?: string;
+  };
+  if (p.source !== "plan") {
+    const why = p.note && /no provider credentials/.test(p.note) ? "state, no provider credentials" : p.source === "state" ? "state, the plan failed" : "none, declared only";
+    return [
+      { label: "plan", value: "not read" },
+      { label: "read", value: why },
+    ];
+  }
+  const rows: Array<{ label: string; value: string }> = [{ label: "plan", value: p.action === "no-op" ? "no changes" : (p.action ?? "unknown") }];
+  if (p.replacePaths?.length) {
+    const first = p.replacePaths[0]!;
+    const change = p.changes?.find((c) => c.path === first);
+    const more = p.replacePaths.length > 1 ? ` +${p.replacePaths.length - 1}` : "";
+    rows.push({ label: "forced by", value: change ? `${first} ${shortValue(change.before)} -> ${shortValue(change.after)}${more}` : `${first}${more}` });
+    const from = p.forcedFrom?.find((f) => f.path === first);
+    if (from) rows.push({ label: "from", value: from.from });
+  } else if (p.drift?.length) {
+    rows.push({ label: "drift", value: `${p.driftAction ?? "update"}, ${p.drift.length} attribute${p.drift.length === 1 ? "" : "s"}` });
+  } else if (p.afterUnknown?.length && p.action !== "no-op") {
+    rows.push({ label: "unknown", value: `${p.afterUnknown.length} until apply` });
+  }
+  rows.push({ label: "read", value: "plan" });
+  return rows;
 }

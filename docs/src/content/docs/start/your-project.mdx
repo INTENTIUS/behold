@@ -92,7 +92,7 @@ The string goes to chant verbatim as `chant graph --traffic`. `?traffic=` on `/a
 
 With a level, `/api/overlay` asks chant twice for each member: once about the account (`--live`) and once about the file. The payload's `meta.behaviour` carries `live`, `declared` and `delta`, per member and for the estate, and a card the account no longer holds keeps its declared figure under `attrs._behaviourDeclared`. The live figure moves with drift. The declared one moves only when a file under the member changes, so behold reads it once per edit.
 
-The figures are an engine's, reached by chant through `CHANT_BEHAVIOUR_ENGINE`. behold calls no engine and holds no key. A choudoufu or Terraform member also needs the optional `@intentius/chant-lexicon-terraform` installed beside behold, since that lexicon is what predicts a `.tf` root.
+The figures are an engine's, reached by chant through `CHANT_BEHAVIOUR_ENGINE`. behold calls no engine and holds no key. A choudoufu or Terraform member reads through `@intentius/chant-lexicon-terraform`, which behold installs with itself (#909), since that lexicon is what predicts a `.tf` root.
 
 ## Optional: a shared hand layout
 

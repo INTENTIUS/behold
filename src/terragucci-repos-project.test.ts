@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { GraphIR } from "@intentius/chant";
 
-// The estate read needs chant's terraform lexicon (an optional peer): it answers the example's recorded IR, as in terragucci-route.test.ts.
+// The estate read needs chant's terraform lexicon and a real chant run: it answers the example's recorded IR, as in terragucci-route.test.ts.
 vi.mock("./estate.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./estate.ts")>()),
   composeEstate: vi.fn(),
