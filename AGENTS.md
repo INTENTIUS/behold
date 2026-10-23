@@ -887,6 +887,54 @@ pass.
 There is still **no** endpoint that runs `terraform`. The handoff step hands
 back the runbook's commands as text.
 
+## A chant search query: `q` and `GET /api/search` (#913)
+
+`q` is a view key holding a query in chant's search grammar. In a link
+(`?q=...`), a `behold:view` message, `POST /api/view` and `behold shot`, it
+draws the same way: the cards chant matched are lit, the cards and edges on
+each match's path (chant's `paths[].hops`) are drawn at full weight, and the
+rest is dimmed, with nothing hidden. One line at the top left says the query,
+the match count and chant's provenance line. A query with no matches dims
+the whole graph, says "no matches" with the universe count, and outlines the
+near-misses `--explain` names (hover one for the term it fails). A live read
+that failed is said as a failure naming the lexicon, and its rows wear a
+dashed ring. A query chant's grammar refuses lights and dims nothing and
+shows chant's message and hint. A reload keeps `q`.
+
+chant answers and behold draws. Every search goes through the workspace
+reader (`src/workspace-reader.ts`, a fifth `BEHOLD_READS` entry held by
+chant's reader conformance suite):
+
+| Served | chant call |
+|---|---|
+| a declared workspace | `chant workspace search [flags] --json -- <q>` at the root (INTENTIUS/chant#4374). Ids are `<member>/<id>`, as `workspace graph` gives them. A member chant didn't search is named in a "not searched" line with chant's reason code, never shown as no matches |
+| one chant project | `chant search [flags] --json -- <q>` in its directory |
+| a bare Terraform folder | the same, in the scratch project behold graphs it through. Its cards are a one-member estate's, so behold puts chant's ids under that member's name in `draw`; chant's document is unchanged |
+| a loose estate of several dirs | refused, `code: "search-estate"`: declare a workspace |
+
+The mode follows the view: no `env` is the declared source, `env` is a live
+read (`--live --env`), and `env` with `snapshot` replays a recorded snapshot
+(`--snapshot <ref> --env`). `--explain` is always passed.
+
+```
+GET /api/search?q=->kind:aws_kms_key&env=&snapshot=&show=
+-> 200 {q, env, snapshot,
+        document: <chant's search document, unchanged>,
+        draw: {lit, onPath, edges, unobserved, nearMisses, provenance, failure, notSearched},
+        link}
+```
+
+A query chant refuses answers 400 `code: "query"` with chant's hint as the
+remedy (and the document). A chant below 0.124.46 answers 422
+`code: "chant-too-old"` (`SEARCH_CONTRACT_CHANT_FLOOR` in
+`src/chant-floors.ts`). A `--public` serve answers declared queries and
+refuses `env` and `snapshot` (403).
+
+`behold export --q "<query>"` (repeatable) captures each query's answer for
+the source graph and every environment, so the bundle draws it with no
+backend. The manifest lists `queries`; a link's `q` that wasn't captured is
+named, with the captured ones, and lights nothing.
+
 ## Moving the person's open tab (#914)
 
 `POST /api/view` changes what every open tab of this serve draws. It is a
@@ -908,8 +956,8 @@ same checks a link's query gets (`web/view-url.js`: `viewFromObject`,
 control character or over 2000 characters, or a key that isn't a view key is
 named in `refused` and the rest still moves. `at` is refused by name: in
 chant's read contract it is a git revision, so a snapshot is `snapshot`.
-behold does not parse `q`. Until the search read (#913) lands, the tab
-carries `q` in its URL and its banner and draws nothing from it.
+behold does not parse `q`. The tab draws it through `GET /api/search`
+(below): the matches lit, the rest dimmed.
 
 The answer is `200 {id, movedAt, sent, link, view, refused}`, where `sent` is
 the number of open tabs it reached and `link` opens the same view. With no
@@ -963,14 +1011,17 @@ uses the serve at `--url`, or starts behold's app for the project on a free
 loopback port and stops it after; without `-o` the PNG goes under the OS temp
 directory. Nothing is written in the served project.
 
-Until behold#913 lights a query's matches, a query answers 501 `code:
-"no-search"`, and a shot frames the view's own `node` or `focus` instead
-(`behold shot "" --view node=<id>`).
+A query's matches are lit and framed (#913). Without a query, a shot frames
+the view's own `node` or `focus` (`behold shot "" --view node=<id>`).
 
 ## Over MCP: `behold mcp` (#916)
 
 `behold mcp [project-dir] [--url <serve> | --port <n>]` is a stdio MCP server
-with two tools, both clients of a running serve's HTTP API: `show` calls
+with three tools, all clients of a running serve's HTTP API. `ask` calls
+`GET /api/search` and returns chant's search document verbatim, with `link`
+and `drawn: false` added after its own fields (a test holds it byte for byte
+to what chant prints); it takes `query`, `env`, `snapshot` and `show`, and
+never moves the tab. `show` calls
 `POST /api/view` (its `by` is the MCP client's name plus "via behold mcp"),
 and `shot` calls `GET /api/shot` and returns the PNG as MCP `image` content
 followed by a text block `{link, state, serve}`. They take `query`, `env`,
@@ -984,8 +1035,9 @@ startedAt}`, written by every serve at start, rewritten on a project switch,
 removed at exit, a dead pid ignored; `BEHOLD_SERVES_DIR` moves it), then
 `http://127.0.0.1:4600`. It confirms the serve through `GET /api/project`.
 `show` refuses a serve of another project, naming both, and refuses with the
-serve command when none runs. `shot` with no serve of the project starts
-behold in its own process for the shot (`src/shot-cli.ts`).
+serve command when none runs. `ask` and `shot` with no serve of the project
+start behold in their own process for the call (`src/shot-cli.ts`), and the
+answer comes from the same route.
 
 Arguments are checked against each tool's schema (`additionalProperties:
 false`), a credential-named one is refused by name, and a refusal is an

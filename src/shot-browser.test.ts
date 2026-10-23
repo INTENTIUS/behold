@@ -91,3 +91,41 @@ describe("behold shot in a real browser (behold#915)", () => {
     }
   }, 60_000);
 });
+
+// behold#913 with a real browser and the real chant: the page lights exactly
+// the cards GET /api/search answers for the query, draws its path edges, and a
+// query with no matches is photographed dimmed, never as an empty stage.
+describe("a query's shot in a real browser (behold#913)", async () => {
+  const { SEARCH_CONTRACT_CHANT_FLOOR } = await import("./chant-floors.ts");
+  const { meetsFloor } = await import("./floor.ts");
+  const { resolvedVersion, TERRAFORM_LEXICON_PKG, HCL_PARSER_PKG } = await import("./terraform-member.ts");
+  const { localServeOptions } = await import("./shot-cli.ts");
+  const { cpSync } = await import("node:fs");
+  const gate = !meetsFloor(resolvedVersion("@intentius/chant"), SEARCH_CONTRACT_CHANT_FLOOR) || !resolvedVersion(TERRAFORM_LEXICON_PKG) || !resolvedVersion(HCL_PARSER_PKG);
+  let dir = "";
+  beforeAll(() => {
+    if (gate) return;
+    dir = mkdtempSync(join(tmpdir(), "behold-shot-q-"));
+    cpSync(join(HERE, "..", "example-terraform-estate"), dir, { recursive: true });
+    rmSync(join(dir, "chant.workspace.json"));
+  });
+  afterAll(() => dir && rmSync(dir, { recursive: true, force: true }));
+
+  it.skipIf(gate)(`lights what the search answers, and no matches is dimmed (needs chant ${SEARCH_CONTRACT_CHANT_FLOOR})`, { timeout: 180_000 }, async (ctx) => {
+    if (browserReason) return ctx.skip(`no headless browser: ${browserReason}`);
+    const cfg = await localServeOptions(dir);
+    await withLocalServe(cfg, async (base) => {
+      const q = "->kind:aws_kms_key";
+      const answer = (await (await fetch(`${base}/api/search?q=${encodeURIComponent(q)}`)).json()) as { draw: { lit: string[]; onPath: string[] } };
+      const shot = await takeShot(base, { query: q, view: { zoom: "resources" }, width: 1200, height: 800 }, { linkBase: "http://localhost:4600" });
+      expect(shot.state).toBe("drawn");
+      // The lit cards are the answer's, less any the resources zoom elides (an output, here).
+      expect(shot.matched).toBeGreaterThan(0);
+      expect(shot.matched).toBeLessThanOrEqual(answer.draw.lit.length);
+      const none = await takeShot(base, { query: "kind:nothing_here", view: { zoom: "resources" }, width: 1200, height: 800 }, { linkBase: "http://localhost:4600" });
+      expect(none.state).toBe("no-matches");
+      const bad = await takeShot(base, { query: "effectiveIngress:tcp:22", view: { zoom: "resources" }, width: 1200, height: 800 }, { linkBase: "http://localhost:4600" });
+      expect(bad.state).toBe("failed");
+    });
+  });
+});

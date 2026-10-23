@@ -43,7 +43,7 @@ export const SHOT_VIEW_KEYS: readonly string[] = VIEW_KEYS.filter((k) => !["env"
 
 export type ShotState = "drawn" | "no-matches" | "failed";
 
-export type ShotRefusalCode = "no-browser" | "no-search" | "bad-request" | "not-ready" | "public";
+export type ShotRefusalCode = "no-browser" | "bad-request" | "not-ready" | "public";
 
 /** #193's structured refusal: what went wrong, a code, and the one thing that fixes it. */
 export interface ShotRefusalBody {
@@ -52,7 +52,7 @@ export interface ShotRefusalBody {
   remedy: string;
 }
 
-const STATUS: Record<ShotRefusalCode, number> = { "no-browser": 501, "no-search": 501, "bad-request": 400, "not-ready": 504, public: 403 };
+const STATUS: Record<ShotRefusalCode, number> = { "no-browser": 501, "bad-request": 400, "not-ready": 504, public: 403 };
 
 /** A shot that could not be taken. Nothing was written. */
 export class ShotRefusal extends Error {
@@ -105,10 +105,10 @@ const bad = (error: string, remedy: string): ShotRefusal => new ShotRefusal({ er
  * `checkSnapshot`), the ones `POST /api/view` uses (#914); the page settles
  * them again against what its estate offers.
  *
- * behold#913 fills this in: once the page lights chant's matches for `q`, the
- * "no-search" refusal below goes and the settled `q` passes through. Until
- * then a query is refused, and a shot frames what the view's own `node` or
- * `focus` selects (web/shot-frame.js shotLit).
+ * behold#913: the settled `q` passes through, and the page lights chant's
+ * matches for it (GET /api/search, web/search-view.js) and frames them
+ * (web/shot-frame.js shotLit). Without a query, a shot frames what the
+ * view's own `node` or `focus` selects.
  */
 export function queryView(req: ShotRequest): Record<string, string> {
   const raw: Record<string, string> = {};
@@ -126,14 +126,7 @@ export function queryView(req: ShotRequest): Record<string, string> {
   if (env !== null && !isEnvName(env)) throw bad(`not an env name: ${JSON.stringify(env)}`, "Pass one of the project's environments.");
   const { apply, refused } = settleView(want, { zooms: ZOOMS, envs: env ? [env] : [], tiers: typeof want.tier === "string" ? [want.tier] : [] });
   if (refused.length) throw bad(`the view was refused: ${refusalLine(refused)}`, "Fix or drop the keys named.");
-  if (typeof apply.q === "string" && apply.q) {
-    throw new ShotRefusal({
-      error: `behold can't answer a query yet: lighting the matches of "${apply.q}" needs behold#913 (the page lighting chant workspace search's matches for q).`,
-      code: "no-search",
-      remedy: "Until then, frame a selection: pass the view's node or focus (behold shot \"\" --view node=<id>, or GET /api/shot?node=<id>).",
-    });
-  }
-  if (!apply.node && !apply.focus) throw bad("nothing to frame: a shot needs a query, or a view with node or focus", "Pass the view's node or focus (behold shot \"\" --view node=<id>).");
+  if (!apply.q && !apply.node && !apply.focus) throw bad("nothing to frame: a shot needs a query, or a view with node or focus", "Pass the view's node or focus (behold shot \"\" --view node=<id>).");
   return Object.fromEntries(new URLSearchParams(writeViewQuery("", apply)));
 }
 

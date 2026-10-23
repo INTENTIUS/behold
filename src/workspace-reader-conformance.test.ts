@@ -20,6 +20,10 @@ import { join } from "node:path";
 import { workspaceFromLs, memberIrFromGraphDocument } from "./workspace.ts";
 import { gatesFromStatus } from "./workspace-gates.ts";
 import { whyFromIntent } from "./workspace-why.ts";
+import { drawnOf } from "./search.ts";
+import { SEARCH_CONTRACT_CHANT_FLOOR } from "./chant-floors.ts";
+import { meetsFloor } from "./floor.ts";
+import { resolvedVersion } from "./terraform-member.ts";
 import { BEHOLD_READS, workspaceReader, type WorkspaceDocument, type WorkspaceReadCommand } from "./workspace-reader.ts";
 
 /** The suite fixture's chant member, the one `graph --member` reads. */
@@ -39,12 +43,21 @@ function use(command: WorkspaceReadCommand, doc: WorkspaceDocument): void {
     const read = whyFromIntent(doc);
     if (!read.ok) throw new Error(`behold could not use the intent document: ${read.refusal.error}`);
     if (!read.why.answered) throw new Error(`the intent document from chant ${String(doc.chant)} has no why`);
+  } else if (command === "search") {
+    // behold#913: what the page draws from it. A searched member's rows are lit; a member chant didn't search is named.
+    const drawn = drawnOf(doc);
+    if (drawn.failure?.kind === "query") throw new Error(`the search document from chant ${String(doc.chant)} is a refusal: ${drawn.failure.message}`);
+    if (!Array.isArray(doc.members)) throw new Error("the workspace search document lists no members");
   }
 }
 
+// behold#913: `search` joined the suite with chant#4374. Against an older chant the suite has no search to run,
+// so it is left out there, and the reader's own search is held by src/search.test.ts.
+const SUITE_HAS_SEARCH = meetsFloor(resolvedVersion("@intentius/chant"), SEARCH_CONTRACT_CHANT_FLOOR);
+
 describeWorkspaceReaderConformance({
   name: "behold",
-  commands: [...BEHOLD_READS] as ReadContractCommand[],
+  commands: BEHOLD_READS.filter((c) => c !== "search" || SUITE_HAS_SEARCH) as ReadContractCommand[],
   reader: (chant: ChantTransport) => {
     const reader = workspaceReader({ run: (argv) => chant.run(argv) });
     return {
@@ -66,7 +79,9 @@ describe("every workspace read goes through the reader (#468)", () => {
     for (const f of readdirSync(src)) {
       if (!f.endsWith(".ts") || f.endsWith(".test.ts") || f === "workspace-reader.ts") continue;
       const text = readFileSync(join(src, f), "utf8");
-      if (/\[\s*"workspace"\s*,\s*"(ls|graph|status|records|runs|wip)"/.test(text)) offenders.push(f);
+      if (/\[\s*"workspace"\s*,\s*"(ls|graph|status|records|runs|wip|search)"/.test(text)) offenders.push(f);
+      // behold#913: and plain search, the same document for one project.
+      if (/\[\s*"search"\s*,/.test(text) || /runChant(Raw)?\(\s*\[\s*"search"/.test(text)) offenders.push(f);
       // #680: the trunk lane's reads go through the reader too.
       if (/\[\s*"(ci|release)"\s*,\s*"list"/.test(text)) offenders.push(f);
       // #681: and the stored change-set read.

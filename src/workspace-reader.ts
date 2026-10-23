@@ -33,7 +33,7 @@ import { WORKSPACE_CHANT_FLOOR } from "./chant-floors.ts";
 export { WORKSPACE_CHANT_FLOOR };
 
 /** The read-contract commands behold reads, named the way chant's conformance suite names them. */
-export const BEHOLD_READS = ["ls", "graph", "status", "graph --intent"] as const;
+export const BEHOLD_READS = ["ls", "graph", "status", "graph --intent", "search"] as const;
 export type WorkspaceReadCommand = (typeof BEHOLD_READS)[number];
 
 /**
@@ -46,7 +46,21 @@ export const JSON_FLAGS: Record<WorkspaceReadCommand, readonly string[]> = {
   graph: [],
   status: ["--json"],
   "graph --intent": ["--json"],
+  // behold#913: `workspace search` (INTENTIUS/chant#4374). The query goes last, after `--`, so the flag goes before it.
+  search: ["--json"],
 };
+
+/**
+ * behold#913: plain `chant search --json`, for a project that is not a
+ * declared workspace and for a bare Terraform folder's scratch project. It
+ * prints the same contract 1 `search` document as `workspace search`, without
+ * `members`, so it is read and checked the same way. It is not a `chant
+ * workspace` command, so chant's conformance suite lists only the workspace
+ * form; its floor is in src/chant-floors.ts (`SEARCH_CONTRACT_CHANT_FLOOR`).
+ */
+export const PROJECT_SEARCH_READ = "search";
+/** How the plain search names itself to the contract check, apart from the workspace form. */
+const PLAIN_SEARCH = "plain search";
 
 /** Why behold will not use a workspace document, in the #193 refusal shape. */
 export interface WorkspaceRefusal {
@@ -144,13 +158,36 @@ export interface WorkspaceReader {
   readPoints(): Promise<WorkspaceDocument>;
   /** #825: runtime health in `env`, in directory `dir` when given (a member's), as chant printed it once it passes {@link healthProblems}. */
   readHealth(env: string, dir?: string): Promise<HealthDocument>;
+  /**
+   * behold#913: plain `chant search` with `args` (flags, then `--` and the
+   * query), in directory `dir` when given, as chant printed it. A refused
+   * query and a failed live read exit 1 and still print the document, which
+   * is returned: it says what went wrong.
+   */
+  readProjectSearch(args: string[], dir?: string): Promise<WorkspaceDocument>;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 
-/** The argv one read runs: `workspace <command> <args> <json flag>`. */
+/**
+ * The argv one read runs: `workspace <command> <args> <json flag>`. When the
+ * args end in `--` and an operand (a search query), the JSON flag goes before
+ * the `--`, so it is read as a flag and the query stays one operand, even one
+ * that starts with `->`.
+ */
 export function readArgv(command: WorkspaceReadCommand, args: readonly string[]): string[] {
-  return ["workspace", ...command.split(" "), ...args, ...JSON_FLAGS[command]];
+  return ["workspace", ...command.split(" "), ...withFlagsBeforeOperands(args, JSON_FLAGS[command])];
+}
+
+/** `args` with `flags` added before a `--`, or at the end when there is none. */
+function withFlagsBeforeOperands(args: readonly string[], flags: readonly string[]): string[] {
+  const dd = args.indexOf("--");
+  return dd === -1 ? [...args, ...flags] : [...args.slice(0, dd), ...flags, ...args.slice(dd)];
+}
+
+/** behold#913: the argv plain search runs: `search <flags> --json -- <query>`. */
+export function projectSearchArgv(args: readonly string[]): string[] {
+  return [PROJECT_SEARCH_READ, ...withFlagsBeforeOperands(args, ["--json"])];
 }
 
 /**
@@ -161,7 +198,7 @@ export function contractRefusal(doc: Record<string, unknown>, command: string): 
   if (doc.contract === WORKSPACE_CONTRACT) return undefined;
   const said = doc.contract === undefined ? "no contract version" : `contract ${JSON.stringify(doc.contract)}`;
   return {
-    error: `chant ${OUTSIDE_WORKSPACE.includes(command) ? command : `workspace ${command}`} wrote a document with ${said}; behold reads contract ${WORKSPACE_CONTRACT}.`,
+    error: `chant ${OUTSIDE_WORKSPACE.includes(command) ? command : command === PLAIN_SEARCH ? PROJECT_SEARCH_READ : `workspace ${command}`} wrote a document with ${said}; behold reads contract ${WORKSPACE_CONTRACT}.`,
     code: "workspace-contract",
     remedy:
       doc.contract === undefined
@@ -285,6 +322,11 @@ export function workspaceReader(chant: ChantTransport): WorkspaceReader {
       const argv = healthArgv(env);
       const run = await chant.run(argv, dir !== undefined ? { dir } : undefined);
       return healthDocumentOf(run, `chant ${argv.join(" ")}${dir !== undefined ? ` (in ${dir})` : ""}`);
+    },
+    async readProjectSearch(args, dir) {
+      const argv = projectSearchArgv(args);
+      const run = await chant.run(argv, dir !== undefined ? { dir } : undefined);
+      return documentOf(run, `chant ${argv.join(" ")}${dir !== undefined ? ` (in ${dir})` : ""}`, "search", PLAIN_SEARCH);
     },
   };
 }

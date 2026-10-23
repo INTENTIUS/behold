@@ -41,10 +41,12 @@ describe("chant search in the scratch project for a bare Terraform folder (#911)
       const run = spawnSync(join(project, "node_modules", ".bin", "chant"), ["search", "kind:Terraform::Resource"], { cwd: project, encoding: "utf8" });
       expect(run.error, run.stderr).toBeUndefined();
       expect(run.status, run.stderr).toBe(0);
-      // One line per match: `<id>  <kind>  ...`. Footer lines start with a dash.
+      // One line per match: `<id>  <kind>  ...`, where the kind column is the
+      // resource's Terraform type (`aws_s3_bucket`) since INTENTIUS/chant#4366.
+      // Footer lines start with a dash, and "(no matches)" has no columns.
       const rows = run.stdout
         .split("\n")
-        .filter((l) => / {2}Terraform::Resource\b/.test(l))
+        .filter((l) => /^[^\s(-]\S* {2,}\S/.test(l))
         .map((l) => l.split(/\s{2,}/)[0]!);
       expect(rows.length, run.stdout).toBeGreaterThan(0);
 
