@@ -1059,6 +1059,9 @@
       #graph [data-node-id][data-q-near] { opacity: .6; }
       #graph [data-node-id][data-q-near] rect:first-of-type { stroke: var(--ink2); stroke-width: 1.5; stroke-dasharray: 3 2; }
       #graph [data-node-id][data-q-unobserved] rect:first-of-type { stroke: var(--degraded); stroke-dasharray: 5 3; }
+      /* behold#922: a counts answer: each group's cards outlined in its colour, its first card labelled with chant's count. */
+      #graph [data-node-id][data-q-group] rect:first-of-type { stroke: var(--q-group); stroke-width: 3; }
+      #graph .q-group-label { font: 600 12px var(--font-mono); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; pointer-events: none; }
       #q-line { position: fixed; top: 12px; left: 12px; z-index: 54; max-width: min(640px, calc(100vw - 32px)); padding: 6px 10px;
         border: 1px solid var(--rule); border-left: 4px solid var(--pending); border-radius: 6px; background: var(--panel); color: var(--fg);
         font: 12px/1.4 var(--font-mono); overflow-wrap: anywhere; box-shadow: 0 4px 16px color-mix(in srgb, var(--shadow) 40%, transparent); }

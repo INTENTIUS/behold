@@ -2478,16 +2478,17 @@ export function createApp(
     const p = url.searchParams;
     let ask;
     try {
-      ask = checkAsk({ q: p.get("q"), env: p.get("env"), snapshot: p.get("snapshot"), show: p.get("show") });
+      ask = checkAsk({ q: p.get("q"), env: p.get("env"), snapshot: p.get("snapshot"), show: p.get("show"), countBy: p.get("countBy"), plan: p.get("plan") });
     } catch (e) {
       if (e instanceof SearchAskError) return c.json({ ...e.refusal, q: p.get("q") }, 400);
       throw e;
     }
-    if (cfg.public && (ask.env || ask.snapshot)) {
-      return c.json({ error: "a public view answers a query over the declared source only; a live read uses behold's own credentials", code: "public", remedy: "Drop env and snapshot.", q: ask.q }, 403);
+    if (cfg.public && (ask.env || ask.snapshot || ask.plan)) {
+      return c.json({ error: "a public view answers a query over the declared source only; a live read or a plan uses behold's own credentials", code: "public", remedy: "Drop env, snapshot and plan.", q: ask.q }, 403);
     }
-    const link = `${url.origin}/${writeViewQuery("", { q: ask.q, env: ask.env ?? null, snapshot: ask.snapshot ?? null })}`;
-    const view = { q: ask.q, env: ask.env ?? null, snapshot: ask.snapshot ?? null };
+    // behold#922: plan and countBy are view keys too, so the link draws the same answer.
+    const view = { q: ask.q, env: ask.env ?? null, snapshot: ask.snapshot ?? null, ...(ask.countBy ? { countBy: ask.countBy } : {}), ...(ask.plan ? { plan: true } : {}) };
+    const link = `${url.origin}/${writeViewQuery("", view)}`;
     let target: SearchTarget;
     try {
       target = searchTargetNow();
@@ -2495,7 +2496,7 @@ export function createApp(
       if (e instanceof TerraformReadError) return c.json({ ...e.refusal, ...view, link }, 422);
       throw e;
     }
-    const read = await runSearch(target, ask, (root) => rootReader(root));
+    const read = await runSearch(target, ask, (root, env) => rootReader(root, env));
     if (!read.ok) return c.json({ ...read.refusal, ...view, link }, 422);
     // A lone Terraform folder is drawn as a one-member estate: its cards' ids are under the member's name.
     const lone = target.kind === "terraform" && cfg.projectDirs?.length === 1 ? estateMembers(cfg.projectDirs)[0]?.name : undefined;
@@ -2536,7 +2537,7 @@ export function createApp(
         {
           method: "GET",
           path: "/api/search",
-          desc: "a chant search query over the served estate (behold#913): ?q=<query>&env=&snapshot=&show= -> {q, env, snapshot, document: chant's read-contract search document unchanged (chant workspace search on a declared workspace, chant search --json on one project or a Terraform folder), draw: what the page draws from it {lit, onPath, edges, unobserved, nearMisses, provenance, failure, notSearched}, link}; no env is the declared source, env is a live read, env+snapshot replays a recorded snapshot; --explain always on; 400 code query with chant's hint for a query chant refuses; 422 chant-too-old below chant 0.124.46; --public answers declared queries only",
+          desc: "a chant search query over the served estate (behold#913): ?q=<query>&env=&snapshot=&show=&countBy=&plan= -> {q, env, snapshot, countBy?, plan?, document: chant's read-contract search document unchanged (chant workspace search on a declared workspace, chant search --json on one project or a Terraform folder), draw: what the page draws from it {lit, onPath, edges, unobserved, nearMisses, provenance, failure, notSearched}, link}; no env is the declared source, env is a live read, env+snapshot replays a recorded snapshot; --explain always on; countBy=kind|module|attr:<name> (behold#922) is chant's --count-by, the document its counts branch with each group's ids and draw.counts the groups the page lights, and q may then be empty to count the whole graph; plan=1 (behold#922) answers at the plan depth (CHANT_TERRAFORM_OBSERVE=plan, --live --env <env, or a placeholder on a bare Terraform folder>), refused with snapshot (400) and without env on a chant project (422 plan-env); 400 code query with chant's hint for a query chant refuses; 422 chant-too-old below chant 0.124.46; --public answers declared queries only",
         },
         { method: "GET", path: "/api/graph", desc: "the graph {ir, svg, meta} — params: detail=0..3, components=1, logical=1, ops=1 (+entities=1 to link steps to the estate), env, stack, tier, target, lens, up=1, down=1, radial=1, layout=1" },
         ...(cfg.carveReport

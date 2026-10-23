@@ -935,6 +935,41 @@ the source graph and every environment, so the bundle draws it with no
 backend. The manifest lists `queries`; a link's `q` that wasn't captured is
 named, with the captured ones, and lights nothing.
 
+### Groups and the plan: `countBy` and `plan` (#922)
+
+Two more view keys, carried the same way as `q` (a link, `behold:view`,
+`POST /api/view`, `behold shot --view`, the MCP tools, an export):
+
+- `countBy=kind|module|attr:<name>` is chant's `--count-by`. The document is
+  chant's counts branch, verbatim: `countBy`, `groups[{group, count, ids}]`
+  and `total` (INTENTIUS/chant#4360; `ids` is INTENTIUS/chant#4382). The page
+  lights each group's cards from `ids`, outlines them in the group's colour,
+  labels the group's first drawn card `<group> · <count>`, and the top-left
+  line lists the groups and the total. `draw.counts` is `{by, total, groups}`.
+  With `countBy`, `q` may be empty: the whole graph is counted. A chant that
+  lists no ids per group lights nothing and the line says so. behold never
+  works out a node's group itself.
+- `plan=1` is the plan read. The source graph's cards carry each stock
+  Terraform root's plan facts (`/api/graph?plan=1`, #910) on every load, and
+  `q` is answered at the plan depth: `CHANT_TERRAFORM_OBSERVE=plan` in the
+  environment of that one chant call, with `--live --env <env>`
+  (INTENTIUS/chant#4358). A bare Terraform folder needs no env (the plan
+  read's placeholder `behold-plan` is used); a chant project or workspace
+  needs one (422 `code: "plan-env"`). `plan` with `snapshot` is refused,
+  naming both: a 400 on the route, both keys in `refused` on a link or
+  `POST /api/view`. A `--public` serve refuses it (403). It runs
+  `terraform plan -lock=false` in each root: nothing is changed, but every
+  resource is read.
+
+```
+GET /api/search?q=kind:aws_&countBy=module
+GET /api/search?q=attr:planAction=replace&plan=1&show=planActions,planReplacePaths,planActionReason
+```
+
+`behold export --count-by <g>` captures each `--q` grouped too (with no
+`--q`, the whole graph's groups); `behold export --plan` captures the plan
+cards on the source graph and each `--q` at the plan depth.
+
 ## Moving the person's open tab (#914)
 
 `POST /api/view` changes what every open tab of this serve draws. It is a
@@ -948,7 +983,8 @@ POST /api/view
 ```
 
 `view` takes the URL's view keys (`member`, `zoom`, `env`, `tier`, `lens`,
-`node`, `radial`, `alike`, `gates`, `focus`, `run`, `pull`) plus `q`, a
+`node`, `radial`, `alike`, `gates`, `focus`, `run`, `pull`, and #922's
+`plan` (a boolean) and `countBy`) plus `q`, a
 question in chant's search grammar, and `snapshot`, a recorded lifecycle
 snapshot (`latest` or a ref) that needs an `env`. They are settled with the
 same checks a link's query gets (`web/view-url.js`: `viewFromObject`,

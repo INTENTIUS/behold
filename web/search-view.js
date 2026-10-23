@@ -12,16 +12,60 @@
 export function searchUrl(view) {
   const v = view || {};
   const p = new URLSearchParams();
+  if (v.countBy) p.set("countBy", v.countBy); // behold#922
   if (v.env) p.set("env", v.env);
-  p.set("q", v.q);
-  if (v.env && v.snapshot) p.set("snapshot", v.snapshot);
+  if (v.plan) p.set("plan", "1"); // behold#922
+  p.set("q", v.q || "");
+  if (v.env && v.snapshot && !v.plan) p.set("snapshot", v.snapshot);
   return `/api/search?${p}`;
 }
 
-/** What identifies one answer: a new query, env or snapshot is a new read. */
+/** What identifies one answer: a new query, env, snapshot, grouping or plan is a new read. A grouping alone counts the whole graph. */
 export function searchKey(view) {
   const v = view || {};
-  return v.q ? JSON.stringify([v.q, v.env || null, (v.env && v.snapshot) || null]) : null;
+  return v.q || v.countBy ? JSON.stringify([v.q || "", v.env || null, (v.env && !v.plan && v.snapshot) || null, v.countBy || null, !!v.plan]) : null;
+}
+
+/** behold#922: the colours a group is drawn in, in chant's group order, repeating past the last. */
+export const GROUP_COLOURS = ["#58a6ff", "#f0883e", "#3fb950", "#d2a8ff", "#ff7b72", "#e3b341", "#39c5cf", "#f778ba"];
+
+/**
+ * behold#922: how a counts answer (chant's `--count-by`, src/search.ts
+ * `drawnOf`'s `counts`) is drawn against the cards on screen. One entry per
+ * chant group, in chant's order: its name, chant's count, its colour, the ids
+ * of its cards that are drawn, and `label`, the first of them, where the
+ * group's label goes. `cardGroup` maps each drawn card to its group's index.
+ * A group whose cards are all stacked or elided at this zoom has no label
+ * card; the line still lists it. Groups behold can't light (an older chant
+ * listed no ids) have `ids: null`.
+ */
+export function groupMarks(answer, cards) {
+  const drawnIds = cards instanceof Set ? cards : new Set(cards || []);
+  const d = (answer && answer.draw) || null;
+  const out = { groups: [], cardGroup: new Map(), total: 0, by: "" };
+  if (!d || !d.counts) return out;
+  out.total = d.counts.total;
+  out.by = d.counts.by;
+  d.counts.groups.forEach((g, i) => {
+    const drawn = (g.ids || []).filter((id) => drawnIds.has(id));
+    for (const id of drawn) out.cardGroup.set(id, i);
+    out.groups.push({ group: g.group, count: g.count, colour: GROUP_COLOURS[i % GROUP_COLOURS.length], drawn, label: drawn[0] || null, ids: g.ids });
+  });
+  return out;
+}
+
+/** behold#922: the label a group's first card wears: its name and chant's count. */
+export function groupLabel(g) {
+  return `${one(g.group)} · ${g.count}`;
+}
+
+/** behold#922: the line's account of a counts answer: each group and its count in chant's order, then the total. */
+export function countsLine(counts) {
+  if (!counts) return "";
+  const shown = counts.groups.slice(0, 12).map((g) => `${one(g.group)} ${g.count}`);
+  const more = counts.groups.length > 12 ? `, and ${counts.groups.length - 12} more` : "";
+  const noIds = counts.groups.some((g) => !g.ids) ? "; this chant lists no ids per group, so no group is lit (chant 0.124.46 does)" : "";
+  return `${counts.groups.length} group${counts.groups.length === 1 ? "" : "s"} by ${one(counts.by)}: ${shown.join(", ")}${more} · ${counts.total} total${noIds}`;
 }
 
 const one = (s) => String(s == null ? "" : s).replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
@@ -68,7 +112,7 @@ export function queryMarks(answer, cards, edges) {
     return "dim";
   });
   if (!lit.size) for (const n of d.nearMisses || []) if (drawnIds.has(n.id)) out.near.set(n.id, n.fails);
-  out.state = d.failure ? "failed" : lit.size ? "drawn" : "no-matches";
+  out.state = d.failure ? "failed" : lit.size || (d.counts && d.counts.total) ? "drawn" : "no-matches";
   return out;
 }
 
@@ -97,7 +141,7 @@ function universe(doc) {
  * did not search, or "".
  */
 export function queryLine(view, answer, marks) {
-  const q = `"${one(view && view.q)}"`;
+  const q = view && view.q ? `"${one(view.q)}"` : "the whole graph";
   const a = answer || {};
   const d = a.draw;
   if (!d) {
@@ -114,7 +158,11 @@ export function queryLine(view, answer, marks) {
   const m = marks || queryMarks(answer, [], []);
   const parts = [];
   if (d.failure && d.failure.kind === "live") parts.push(one(d.failure.message));
-  if (!(d.lit || []).length) {
+  if (d.counts) {
+    // behold#922: chant's groups and total, and how many lit cards are drawn at this zoom.
+    const hidden = (d.lit || []).length - m.litDrawn;
+    parts.push(`${q}: ${countsLine(d.counts)}${hidden > 0 ? `; ${hidden} not drawn at this zoom` : ""}`);
+  } else if (!(d.lit || []).length) {
     const u = universe(a.document);
     parts.push(`no matches for ${q}${u ? `, 0 of ${u.of} nodes` : ""}${m.near.size ? `; near misses outlined (${m.near.size})` : ""}`);
   } else {
@@ -123,7 +171,8 @@ export function queryLine(view, answer, marks) {
     parts.push(`${q}: ${n} match${n === 1 ? "" : "es"}${hidden > 0 ? `, ${hidden} not drawn at this zoom` : ""}${(d.edges || []).length ? `, path edges drawn` : ""}`);
   }
   if (prov) parts.push(prov);
-  const tone = d.failure ? "failed" : (d.lit || []).length ? "ok" : "empty";
+  if (view && view.plan) parts.push("at the plan depth");
+  const tone = d.failure ? "failed" : (d.lit || []).length || (d.counts && d.counts.total) ? "ok" : "empty";
   return { text: parts.join(" · "), tone, notSearched };
 }
 

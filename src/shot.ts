@@ -107,7 +107,9 @@ const bad = (error: string, remedy: string): ShotRefusal => new ShotRefusal({ er
  *
  * behold#913: the settled `q` passes through, and the page lights chant's
  * matches for it (GET /api/search, web/search-view.js) and frames them
- * (web/shot-frame.js shotLit). Without a query, a shot frames what the
+ * (web/shot-frame.js shotLit). behold#922: `plan` and `countBy` are view
+ * keys like the rest (`--view plan=1`, `--view countBy=kind`): the page
+ * answers `q` at the plan depth, or lights chant's groups with their counts. Without a query, a shot frames what the
  * view's own `node` or `focus` selects.
  */
 export function queryView(req: ShotRequest): Record<string, string> {
@@ -126,7 +128,8 @@ export function queryView(req: ShotRequest): Record<string, string> {
   if (env !== null && !isEnvName(env)) throw bad(`not an env name: ${JSON.stringify(env)}`, "Pass one of the project's environments.");
   const { apply, refused } = settleView(want, { zooms: ZOOMS, envs: env ? [env] : [], tiers: typeof want.tier === "string" ? [want.tier] : [] });
   if (refused.length) throw bad(`the view was refused: ${refusalLine(refused)}`, "Fix or drop the keys named.");
-  if (!apply.q && !apply.node && !apply.focus) throw bad("nothing to frame: a shot needs a query, or a view with node or focus", "Pass the view's node or focus (behold shot \"\" --view node=<id>).");
+  // behold#922: countBy alone counts (and frames) the whole graph's groups.
+  if (!apply.q && !apply.countBy && !apply.node && !apply.focus) throw bad("nothing to frame: a shot needs a query or countBy, or a view with node or focus", "Pass the view's node or focus (behold shot \"\" --view node=<id>).");
   return Object.fromEntries(new URLSearchParams(writeViewQuery("", apply)));
 }
 
