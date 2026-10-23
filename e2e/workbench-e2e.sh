@@ -380,17 +380,21 @@ while IFS=$'\x1f' read -r name env inplace local reason <&3; do
   fi
 
   # #912: the stock estate #908's demo runs on. Stock terraform applied it and
-  # nothing else: no sidecar, a terraform.tfstate, the planned change and the
-  # expected answers beside it. behold draws one card per declared block, so
+  # nothing else: no sidecar, a terraform.tfstate, the planned change beside it.
+  # The expected answers are not in the target (the agent works there). behold draws one card per declared block, so
   # ?logical=1 (no stacking) carries all 195 resource blocks plus the
   # module.team_pod call: 196, the count expected-answers.md derives from the
   # HCL. The findings layer's resources must be among them.
   if [ "$name" = "terralith-4-stock" ]; then
     [ ! -e "$TARGET/estate.chdf.hcl" ] || { echo "FAIL: $name: estate.chdf.hcl in the target — this entry is stock terraform only" >&2; exit 1; }
-    for f in terraform.tfstate replace-db.patch expected-answers.md scripts/down.sh; do
+    for f in terraform.tfstate replace-db.patch scripts/down.sh; do
       [ -f "$TARGET/$f" ] || { echo "FAIL: $name: no $f in the target" >&2; exit 1; }
     done
-    echo "  ✓ stock: terraform.tfstate, replace-db.patch, expected-answers.md, no estate.chdf.hcl"
+    # The answers stay in the entry's own directory: the served estate is
+    # where the demo agent works, and it must not find them there.
+    [ ! -e "$TARGET/expected-answers.md" ] || { echo "FAIL: $name: expected-answers.md was copied into the served estate" >&2; exit 1; }
+    [ -f "workbench/$name/expected-answers.md" ] || { echo "FAIL: $name: no expected-answers.md in workbench/$name" >&2; exit 1; }
+    echo "  ✓ stock: terraform.tfstate, replace-db.patch, no estate.chdf.hcl, expected-answers.md kept out of the estate"
     applied="$(terraform -chdir="$TARGET" state list 2>/dev/null | wc -l | tr -d ' ')"
     [ "$applied" = "318" ] || { echo "FAIL: $name: terraform.tfstate holds $applied instances, want 318" >&2; exit 1; }
     echo "  ✓ terraform.tfstate holds 318 instances"

@@ -180,7 +180,6 @@ wb_terralith_stock() {
   fi
 
   cp "$here/replace-db.patch" replace-db.patch
-  cp "$here/expected-answers.md" expected-answers.md
   wb_say "$(terraform state list 2>/dev/null | wc -l | tr -d ' ') resource instances in terraform.tfstate"
 
   cat <<EOF
@@ -196,7 +195,9 @@ The demo's planned change sits beside the estate, unapplied:
   patch -p1 < replace-db.patch     # storage_encrypted = false -> true
   terraform plan                   # aws_db_instance.orders must be replaced
 
-expected-answers.md holds the answers to demo steps 2 to 6.
+The answers to demo steps 2 to 6 stay in the entry directory, outside the served
+estate, so an agent working in the estate cannot read them:
+  ${here}/expected-answers.md
 
 EOF
 }
