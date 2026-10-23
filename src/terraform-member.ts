@@ -117,6 +117,7 @@ import {
 } from "./terraform-lens.ts";
 import { SCRATCH_PREFIX, assertScratch } from "./scratch.ts";
 import { attachLintFindings, terraformLintNote } from "./terraform-lint.ts";
+import { redactSensitiveSources } from "./terraform-redact.ts";
 import { GRAPH_LINT_REPORT_CHANT_FLOOR } from "./chant-floors.ts";
 import { meetsFloor } from "./floor.ts";
 import {
@@ -700,6 +701,8 @@ export async function readTerraformMember(dir: string, opts: GraphOptions, state
   }
   // Before composition, which keeps nodes and nothing above them.
   attachLintFindings(ir);
+  // #920: a sensitive variable's literal default, in the file text each card carries and in its parsed body.
+  redactSensitiveSources(ir);
   return terragrunt ? addTerragruntUnits(ir, terragrunt) : ir;
 }
 
