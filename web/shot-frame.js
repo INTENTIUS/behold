@@ -61,6 +61,25 @@ export function shotLit(view, cards, groups, matches = null) {
   return { ids: [], asked: false, label: null };
 }
 
+/**
+ * With a query answered, what the shot lights and frames, from the marks
+ * drawQuery put on the drawn cards (`[{id, mark}]`, mark "lit" | "path" |
+ * "dim"). The lit cards are the matches, a stack holding one among them; the
+ * frame takes in the path cards too. Found in #908's stage 3 run: framed on
+ * chant's lit ids alone, `cap:internet-reachable(22)` zoomed onto the bastion
+ * and left its route to the internet gateway out of the picture, and a match
+ * inside a stack was not a drawn card at all.
+ */
+export function queryFrame(cards) {
+  const lit = [];
+  const frame = [];
+  for (const c of cards || []) {
+    if (c.mark === "lit") lit.push(c.id);
+    if (c.mark === "lit" || c.mark === "path") frame.push(c.id);
+  }
+  return { lit, frame };
+}
+
 /** The state a drawn shot reports: a graph that failed, a question with no answer on the graph, or drawn. */
 export function shotState({ failed = false, lit }) {
   if (failed) return "failed";
