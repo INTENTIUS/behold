@@ -1079,6 +1079,18 @@ directory. Nothing is written in the served project.
 A query's matches are lit and framed (#913). Without a query, a shot frames
 the view's own `node` or `focus` (`behold shot "" --view node=<id>`).
 
+Publishing is opt-in per call (#923, `src/shot-publish.ts`): `--publish
+<remote>[/<branch>]` (branch default `behold-shots`) commits the PNG to that
+branch of the remote, in the repo `--publish-repo <dir>` names (default: the
+current directory's), tracked with Git LFS (`*.png` in the branch's
+`.gitattributes`), pushes it, and prints the raw URL (at the commit, for
+GitHub and GitLab) after the view link. It is git plumbing on a private index:
+no checkout's tree, index or HEAD changes, and the branch checked out in the
+repo or the project, or its upstream, is refused. Without git-lfs, or when the
+remote does not take the LFS object, it refuses with the setup line and exits
+1 before the branch moves; the local PNG is kept. `behold mcp`, `GET
+/api/shot` and a `--public` serve never publish.
+
 ## Over MCP: `behold mcp` (#916)
 
 `behold mcp [project-dir] [--url <serve> | --port <n>]` is a stdio MCP server

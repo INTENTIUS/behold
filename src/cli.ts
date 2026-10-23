@@ -57,7 +57,8 @@ Usage:
                 [--ci-report-url <url>]
   behold carve <report.json> [--port <n>]
   behold shot "<query>" [project-dir] [--env <name>] [--snapshot <ref>] [-o <out.png>] [--url <serve>]
-                [--width <px>] [--height <px>] [--link-base <url>] [--view <k=v&...>]   (behold shot --help)
+                [--width <px>] [--height <px>] [--link-base <url>] [--view <k=v&...>]
+                [--publish <remote>[/<branch>]]   (behold shot --help)
   behold mcp [project-dir] [--url <serve> | --port <n>]   (behold mcp --help)
 
   carve   Render a chant Terraform peelability report — the JSON from

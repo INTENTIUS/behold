@@ -15,9 +15,11 @@ import { createApp, type ServerOptions } from "./server.ts";
 import { SHOT_HEIGHT, SHOT_WIDTH, ShotRefusal, takeShot, type ShotDeps, type ShotRequest, type ShotResult } from "./shot.ts";
 import { drawnMembers, hasDeclaration, readWorkspace } from "./workspace.ts";
 import { servesAsEstate } from "./member-kind.ts";
+import { parsePublishTarget, PublishRefusal, publishShot, type GitRun, type PublishTarget } from "./shot-publish.ts";
 
 export const SHOT_USAGE = `Usage: behold shot "<query>" [project-dir] [--env <name>] [--snapshot <ref>] [-o <out.png>]
                   [--url <serve>] [--width <px>] [--height <px>] [--link-base <url>] [--view <k=v&...>]
+                  [--publish <remote>[/<branch>] [--publish-repo <dir>]]
 
   Writes a PNG of the view that lights the query's matches, framed the way
   the kiosk frames a shot, and prints the link to the same view. It uses the
@@ -40,9 +42,20 @@ export const SHOT_USAGE = `Usage: behold shot "<query>" [project-dir] [--env <na
                       app was started here
   --view <k=v&...>    view keys to pass, settled as a link's are: member,
                       zoom, tier, lens, node, radial, alike, focus, run, pull
+  --publish <remote>[/<branch>]
+                      off by default (behold#923): also commit the PNG to
+                      <branch> (default behold-shots) of <remote> through
+                      Git LFS, push it, and print its raw URL. Never the
+                      branch checked out in the repo. Needs git-lfs and a
+                      remote that takes LFS; without either it refuses and
+                      keeps the local PNG
+  --publish-repo <dir>
+                      the git repo whose remote --publish names
+                      (default: the current directory's)
 
   Exit: 0 drawn (or no matches: the dimmed graph), 1 the graph failed (the
-  picture shows why) or the shot was refused (no file), 2 usage.
+  picture shows why), the shot was refused (no file) or the publish was
+  refused (the local file is kept), 2 usage.
 `;
 
 /** Where the printed link points when the app ran in this process: the default serve. */
@@ -54,6 +67,8 @@ export interface ShotArgs {
   out?: string;
   url?: string;
   linkBase?: string;
+  publish?: PublishTarget;
+  publishRepo?: string;
 }
 
 /** The command line, read. Throws a message on a usage error. */
@@ -63,6 +78,8 @@ export function parseShotArgs(rest: string[], cwd = process.cwd()): ShotArgs | "
   let out: string | undefined;
   let url: string | undefined;
   let linkBase: string | undefined;
+  let publish: PublishTarget | undefined;
+  let publishRepo: string | undefined;
   const need = (flag: string, v: string | undefined): string => {
     if (v === undefined || (v.startsWith("-") && v.length > 1 && flag !== "--view")) throw new Error(`${flag} needs a value`);
     return v;
@@ -75,6 +92,8 @@ export function parseShotArgs(rest: string[], cwd = process.cwd()): ShotArgs | "
     else if (a === "-o" || a === "--out") out = need(a, rest[++i]);
     else if (a === "--url") url = need(a, rest[++i]);
     else if (a === "--link-base") linkBase = need(a, rest[++i]);
+    else if (a === "--publish") publish = parsePublishTarget(need(a, rest[++i]));
+    else if (a === "--publish-repo") publishRepo = need(a, rest[++i]);
     else if (a === "--width") req.width = Number(need(a, rest[++i]));
     else if (a === "--height") req.height = Number(need(a, rest[++i]));
     else if (a === "--view") {
@@ -86,6 +105,7 @@ export function parseShotArgs(rest: string[], cwd = process.cwd()): ShotArgs | "
   if (positional.length < 1) throw new Error('give the query (or "" with --view node=<id>)');
   if (positional.length > 2) throw new Error(`unexpected argument '${positional[2]}'`);
   req.query = positional[0];
+  if (publishRepo && !publish) throw new Error("--publish-repo goes with --publish <remote>[/<branch>]");
   if (url) {
     try {
       const u = new URL(url);
@@ -94,7 +114,7 @@ export function parseShotArgs(rest: string[], cwd = process.cwd()): ShotArgs | "
       throw new Error(`--url is not an http(s) URL: ${url}`);
     }
   }
-  return { req, projectDir: resolve(cwd, positional[1] ?? "."), ...(out ? { out: resolve(cwd, out) } : {}), ...(url ? { url } : {}), ...(linkBase ? { linkBase } : {}) };
+  return { req, projectDir: resolve(cwd, positional[1] ?? "."), ...(out ? { out: resolve(cwd, out) } : {}), ...(url ? { url } : {}), ...(linkBase ? { linkBase } : {}), ...(publish ? { publish, publishRepo: resolve(cwd, publishRepo ?? ".") } : {}) };
 }
 
 /**
@@ -179,7 +199,7 @@ export function defaultShotPath(now = new Date()): string {
 }
 
 /** `behold shot`: the exit code. */
-export async function runShot(rest: string[], io: { out: (s: string) => void; err: (s: string) => void } = { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) }, deps?: ShotDeps): Promise<number> {
+export async function runShot(rest: string[], io: { out: (s: string) => void; err: (s: string) => void } = { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) }, deps?: ShotDeps, git?: GitRun): Promise<number> {
   let args: ShotArgs | "help";
   try {
     args = parseShotArgs(rest);
@@ -208,5 +228,19 @@ export async function runShot(rest: string[], io: { out: (s: string) => void; er
   const how = `${shot.state}, ${shot.browser === "chrome" ? "system Chrome" : "chromium-headless-shell"}, ${shot.ms} ms`;
   io.err(`behold shot: wrote ${path} (${how})\n`);
   if (!args.url && !args.linkBase) io.err(`  the link opens on \`npx @intentius/behold serve ${args.projectDir}\`\n`);
-  return shot.state === "failed" ? 1 : 0;
+  if (shot.state === "failed") {
+    if (args.publish) io.err("behold shot: not published: the graph failed\n");
+    return 1;
+  }
+  if (!args.publish) return 0;
+  try {
+    const p = publishShot({ png: path, target: args.publish, repoDir: args.publishRepo ?? process.cwd(), ...(args.url ? {} : { projectDir: args.projectDir }) }, git);
+    io.out(`${p.rawUrl ?? `${p.remoteUrl} ${args.publish.branch}:${p.path} (${p.commit})`}\n`);
+    io.err(`behold shot: published ${p.path} to ${args.publish.remote}/${args.publish.branch} through Git LFS (${p.commit.slice(0, 12)})\n`);
+    return 0;
+  } catch (e) {
+    const remedy = e instanceof PublishRefusal ? `\n  ${e.remedy}` : "";
+    io.err(`behold shot: not published: ${(e as Error).message}${remedy}\n  (the local file ${path} is kept)\n`);
+    return 1;
+  }
 }
