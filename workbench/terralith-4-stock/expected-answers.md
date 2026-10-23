@@ -41,12 +41,16 @@ Two counts appear throughout, and they differ:
 The estate has 195 declared blocks (189 in the root, 6 in
 `modules/team_pod`) and 318 applied instances.
 
-Before any step, behold must be able to draw the estate at all. Today it
-refuses: chant's terraform lexicon reports 3 lint errors (TF022, TF030, TF033)
-and `chant graph` will not emit a graph with lint errors. That is #919. With
-those three rules set to warnings by hand, behold draws 196 nodes at
-`?logical=1` (195 blocks plus the `module.team_pod` call) and 24 at the
-default zoom, where 180 look-alike cards stack into 8.
+Before any step, behold must be able to draw the estate at all. chant's
+terraform lexicon reports 3 lint errors in it (TF022, TF030, TF033), and with
+chant 0.124.46 or newer behold draws it anyway (#919): its scratch config sets
+`graph.lint: "report"`. behold draws 196 nodes at `?logical=1` (195 blocks plus
+the `module.team_pod` call) and 24 at the default zoom, where 180 look-alike
+cards stack into 8. The note ends "3 lint errors, drawn anyway - TF022
+aws_db_instance.orders, TF033 aws_db_instance.orders, TF030
+aws_vpc_security_group_ingress_rule.bastion_ssh", and those two cards carry
+the findings on `attrs._lint`. A chant below 0.124.46 still refuses the
+estate, and the refusal names the chant that draws it.
 
 ## Step 2: "What's in here?"
 
@@ -299,5 +303,6 @@ real apply:
    `aws_db_instance.orders`, with the actions, `replace_paths` and
    `action_reason` above. The same plan without the patch reads "No changes".
 6. behold's node counts (196 at `?logical=1`, 24 at the default zoom) were
-   read from `/api/graph` on that applied estate, with the three lint rules
-   #919 is about set to warnings in behold's scratch config by hand.
+   read from `/api/graph` on that applied estate, with chant built from its
+   `epic/908-ask-your-agent` branch (#919's `graph.lint: "report"`) and no
+   change to behold's scratch config by hand.
