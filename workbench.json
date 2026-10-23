@@ -207,6 +207,18 @@
       }
     },
     {
+      "name": "terralith-4-stock",
+      "description": "The estate #908's ask-your-agent demo runs on (#912): the terralith at scale 4 with terralith-gen's -findings layer (INTENTIUS/choudoufu#2199), 318 resources, applied by STOCK terraform against this entry's own scratch floci and left there. Plain .tf files and a terraform.tfstate: no estate.chdf.hcl, no live block, no choudoufu step. behold serves it as a bare Terraform directory through chant's terraform lexicon, which behold does not install: npm install --no-save @intentius/chant-lexicon-terraform@^0.124.0 @cdktn/hcl2json@^0.24.0. The layer adds an instance in an internet-gateway-routed subnet whose launch template's security group opens SSH to 0.0.0.0/0, an unencrypted postgres instance, and a role whose attached policy reaches a DynamoDB table. The target also gets replace-db.patch (storage_encrypted false -> true, which forces the database's replacement; never applied by the setup) and expected-answers.md (demo steps 2 to 6). Catalog: workbench.json, pending the maintainer's ruling on demos.json vs workbench.json (#912). Needs a ../choudoufu whose terralith-gen has -findings, or BEHOLD_CHOUDOUFU_DIR naming one. Docker + go + terraform. scripts/down.sh in the target removes the container.",
+      "source": "local",
+      "requires": [
+        "docker",
+        "go",
+        "terraform"
+      ],
+      "setup": "bash \"$BEHOLD_WORKBENCH_DIR/workbench/terralith-4-stock/up.sh\"",
+      "serve": {}
+    },
+    {
       "name": "waterpark",
       "description": "water park's own AWS access estate, ../waterpark/access, served IN PLACE as a bare Terraform directory (#384): five roots as boxes — envs/prod, identity, github, baseline, satellites/waterpark-runner — 58 cards at detail 2, modules/persona left out as a called module, and no file written under the estate. Needs chant's terraform lexicon beside behold, which behold does not install: npm install --no-save @intentius/chant-lexicon-terraform @cdktn/hcl2json (the refusal names the exact line). No cloud, no Docker.",
       "source": "local",

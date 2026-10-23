@@ -19,6 +19,8 @@
 #     the `choudoufu live-import` line the up script PRINTED, by hand, in the
 #     target — behold never runs that write (#372's boundary) — and the same
 #     overlay reads bound afterwards.
+#   - `terralith-4-stock` (#912) is asserted by its node count at ?logical=1
+#     (196) and by what its target holds: a state file, no sidecar.
 #   - `waterpark` is served in place out of a working checkout, so
 #     `git status --porcelain` there must be as empty after as before (#384:
 #     nothing is written under a served Terraform estate).
@@ -86,6 +88,13 @@ for (const e of loadDemoRegistry(process.cwd())) {
   const local = demoLocalPath(e) ?? "";
   const missing = missingRequirements(e);
   let reason = missing.length ? `needs ${missing.join(", ")}` : "";
+  // #912: a generator entry that only stock terraform applies (no choudoufu)
+  // renders a bare Terraform directory, which behold reads through the same
+  // optional lexicon an in-place Terraform estate needs.
+  if (!reason && !e.inPlace && !local && e.requires.includes("terraform") && !e.requires.includes("choudoufu")) {
+    const refusal = terraformReaderState().refusal;
+    if (refusal) reason = `needs the Terraform lexicon behold does not install — ${refusal.remedy}`;
+  }
   if (!reason && e.inPlace && local) {
     if (existsSync(join(local, "package.json")) && !existsSync(join(local, "node_modules"))) {
       reason = `needs its own node_modules — an in-place entry is served exactly as it sits and behold installs nothing there (npm install in ${local})`;
@@ -167,6 +176,10 @@ entry_ceiling() { # <entry name> -> seconds
   case "$1" in
     terralith-14)                    printf '640' ;;
     terralith-4-adopt)               printf '320' ;;
+    # #912: not measured end to end yet. Its apply is the adopt entry's plus
+    # an RDS instance floci takes about 80s to create; re-baseline on the
+    # first full run.
+    terralith-4-stock)               printf '400' ;;
     terralith-4)                     printf '270' ;;
     choudoufu-workbench)             printf '160' ;;
     terralith-1)                     printf '120' ;;
@@ -291,6 +304,17 @@ while IFS=$'\x1f' read -r name env inplace local reason <&3; do
   fi
   echo "  up in $((SECONDS - t0))s"
 
+  # #912/#919: a bare Terraform estate whose lint finds errors is refused by
+  # chant's graph gate, and terralith-4-stock's findings are exactly that.
+  # Say so by name rather than dying inside `api`.
+  if [ "$name" = "terralith-4-stock" ]; then
+    code="$(curl -s "http://localhost:$port/api/graph" | jq -r '.code // empty' 2>/dev/null || true)"
+    if [ "$code" = "lint" ]; then
+      echo "FAIL: $name: /api/graph refuses the estate on its lint errors (TF022/TF030/TF033) — blocked on behold#919" >&2
+      exit 1
+    fi
+  fi
+
   G="$(api "$port" "/api/graph")"
   jq_assert "$G" '(.ir.nodes | length) > 0' "$(printf '%s nodes, %s edges in /api/graph' "$(printf '%s' "$G" | jq -r '.ir.nodes|length')" "$(printf '%s' "$G" | jq -r '.ir.edges|length')")"
 
@@ -352,6 +376,27 @@ while IFS=$'\x1f' read -r name env inplace local reason <&3; do
     [ "$bound2" -gt "$bound" ] || { echo "FAIL: $name: the import bound nothing" >&2; exit 1; }
     [ "$unowned2" -eq 0 ] || { echo "FAIL: $name: $unowned2 cards still read UNOWNED after the import" >&2; exit 1; }
     jq_assert "$O2" '([.ir.nodes[]|select(.attrs._status=="good")]|length) == (.ir.nodes|length)' "every card is bound after the import — the whole estate, adopted"
+  fi
+
+  # #912: the stock estate #908's demo runs on. Stock terraform applied it and
+  # nothing else: no sidecar, a terraform.tfstate, the planned change and the
+  # expected answers beside it. behold draws one card per declared block, so
+  # ?logical=1 (no stacking) carries all 195 resource blocks plus the
+  # module.team_pod call: 196, the count expected-answers.md derives from the
+  # HCL. The findings layer's resources must be among them.
+  if [ "$name" = "terralith-4-stock" ]; then
+    [ ! -e "$TARGET/estate.chdf.hcl" ] || { echo "FAIL: $name: estate.chdf.hcl in the target — this entry is stock terraform only" >&2; exit 1; }
+    for f in terraform.tfstate replace-db.patch expected-answers.md scripts/down.sh; do
+      [ -f "$TARGET/$f" ] || { echo "FAIL: $name: no $f in the target" >&2; exit 1; }
+    done
+    echo "  ✓ stock: terraform.tfstate, replace-db.patch, expected-answers.md, no estate.chdf.hcl"
+    applied="$(terraform -chdir="$TARGET" state list 2>/dev/null | wc -l | tr -d ' ')"
+    [ "$applied" = "318" ] || { echo "FAIL: $name: terraform.tfstate holds $applied instances, want 318" >&2; exit 1; }
+    echo "  ✓ terraform.tfstate holds 318 instances"
+    L="$(api "$port" "/api/graph?logical=1")"
+    jq_assert "$L" '(.ir.nodes | length) == 196' "$(printf '%s nodes at ?logical=1 — 195 declared resource blocks + the module.team_pod call' "$(printf '%s' "$L" | jq -r '.ir.nodes|length')")"
+    jq_assert "$L" '[.ir.nodes[].id] as $ids | all(("aws_instance.bastion","aws_vpc_security_group_ingress_rule.bastion_ssh","aws_db_instance.orders","aws_dynamodb_table.sessions","aws_iam_role.app_data"); . as $a | any($ids[]; endswith("/" + $a)))' \
+      "the findings layer is drawn: bastion, its SSH rule, the database, the table, the role"
   fi
 
   # #396: waterpark is the other estate the audit measured, and the one whose

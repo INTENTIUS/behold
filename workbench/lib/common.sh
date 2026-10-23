@@ -33,8 +33,10 @@ wb_root() {
 # The choudoufu checkout these entries read their generators and image pin from.
 wb_choudoufu_checkout() {
   local dir
-  dir="$(wb_root)/../choudoufu"
-  [ -d "$dir" ] || wb_die "../choudoufu is not checked out (looked in $dir)"
+  # BEHOLD_CHOUDOUFU_DIR names another checkout (a worktree, or one carrying a
+  # generator change main does not have yet); the sibling is the default.
+  dir="${BEHOLD_CHOUDOUFU_DIR:-$(wb_root)/../choudoufu}"
+  [ -d "$dir" ] || wb_die "../choudoufu is not checked out (looked in $dir; BEHOLD_CHOUDOUFU_DIR names another)"
   (cd "$dir" && pwd)
 }
 
