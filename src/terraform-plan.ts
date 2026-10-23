@@ -196,8 +196,10 @@ export function terraformPlanReadOf(ir: Pick<GraphIR, "nodes"> & Partial<Pick<Gr
     const answer = root ? byRoot.get(root) : undefined;
     if (answer?.answered === "plan") {
       const facts = planFactsOf(n);
-      // A planned create reads absent and carries no plan attributes
-      // (chant#4372); it gets no card facts rather than a guessed action.
+      // A planned create reads absent, and chant puts its plan attributes on
+      // the declared node all the same (chant#4372): `create`, and what stays
+      // unknown until apply. A block with no plan attributes at all gets no
+      // card facts rather than a guessed action.
       if (facts) {
         const from = facts.replacePaths ? forcedFromOf(n.id, root, facts.replacePaths, ir.edges ?? []) : undefined;
         cards[n.id] = from ? { ...facts, forcedFrom: from } : facts;

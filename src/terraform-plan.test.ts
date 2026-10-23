@@ -79,6 +79,35 @@ describe("the plan facts per card (#910)", () => {
     ]);
   });
 
+  it("a planned create gets a card: create, and what stays unknown until apply (chant#4372)", () => {
+    const { ir, stderr } = recorded();
+    // As chant prints a block the applied state has never seen: absent, so
+    // pending and with no physical id, carrying the plan's attributes.
+    ir.nodes.push({
+      id: "app/terraform_data.created",
+      kind: "Terraform::Resource",
+      lexicon: "terraform",
+      attrs: {
+        _status: "accent",
+        planAction: "create",
+        planActions: { "terraform_data.created": ["create"] },
+        planAfterUnknown: ["id", "input", "output"],
+      },
+    } as GraphIR["nodes"][number]);
+    const read = terraformPlanReadOf(ir, stderr.join("\n"));
+    expect(read.cards["app/terraform_data.created"]).toEqual({
+      source: "plan",
+      action: "create",
+      actions: { "terraform_data.created": ["create"] },
+      afterUnknown: ["id", "input", "output"],
+    });
+    expect(planCardRows(read.cards["app/terraform_data.created"])).toEqual([
+      { label: "plan", value: "create" },
+      { label: "unknown", value: "3 until apply" },
+      { label: "read", value: "plan" },
+    ]);
+  });
+
   it("keeps sensitive values as (sensitive): the token's change has no value in it", () => {
     const { ir, stderr } = recorded();
     const read = terraformPlanReadOf(ir, stderr.join("\n"));
