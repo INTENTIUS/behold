@@ -171,6 +171,7 @@ import { floorFor, floorMet, floorRefusal } from "./chant-floors.ts";
 import { allowedHostsFrom, guardRequest } from "./request-guard.ts";
 import { applyMemberPasses, memberKindOf, memberKindSpec, memberPassNote, servesAsEstate, type MemberPassRun } from "./member-kind.ts";
 import { TerraformReadError, terraformMemberProject, terraformReaderState, terraformVia } from "./terraform-member.ts";
+import { paintTerraformPlan, readTerraformPlan, terraformPlanNote, type MemberPlanAnswer, type PlanReadDeps, type TerraformPlanRead } from "./terraform-plan.ts";
 import { normalizeTerraformNodes } from "./terraform-lens.ts";
 import { invalidateMember, memberIr, memberIrCacheStats, memberSourceStamp } from "./member-ir.ts";
 import { diagnose } from "./doctor.ts";
@@ -215,6 +216,7 @@ import { cachedHealth, invalidateHealth, readHealthOverlay, rememberHealth, type
 import { rootReader } from "./workspace-reader.ts";
 import { controlRepoInfo, terragucciEstateRoutes } from "./terragucci-estate.ts";
 import { yodelReportRoute } from "./yodel-report.ts";
+import { viewMoveRoute } from "./view-move.ts";
 import { loadDemoRegistry, missingRequirements, fetchesFromNetwork, demoTargetDir, loadDemo, type DemoEntry } from "./demos.ts";
 
 /** The installed behold package root — `demos.json` and the bundled examples
@@ -295,6 +297,10 @@ export interface ServerOptions {
    * strip to Docker+Floci, and tells the SPA to hide those controls. Local
    * deploy (apply/reset/bring-up/approve) and all reads stay on. */
   previewMode?: boolean;
+  /** #914: served by `behold preview`, with or without `--emulator`. Refuses
+   * only the routes that change what someone else is looking at (`POST
+   * /api/view`); everything previewMode locks stays keyed on previewMode. */
+  preview?: boolean;
   /** Carve mode (#252, M1 of #230): the path of a `chant carve advise --json`
    * peelability report to render instead of a chant project. Mutually exclusive
    * with everything project-shaped — the report IS the estate here, so no chant
@@ -337,6 +343,9 @@ export interface ServerOptions {
    * optional lexicon. `graphIr` and the real probe outside a test; a route
    * test answers both halves from written reports with no chant to spawn. */
   behaviour?: PredictMemberDeps;
+  /** #910: how the plan read on a stock Terraform root runs — the chant spawn
+   * and the versions it is checked against. Absent outside a test. */
+  terraformPlan?: PlanReadDeps;
   port: number;
 }
 
@@ -1808,19 +1817,46 @@ export function createApp(
   // Live updates (#3): SSE stream the SPA subscribes to. On a "changed" event
   // (a source edit — see startServer's watcher) the SPA re-pulls the current view.
   // Keep-alive pings hold the connection open; the browser's EventSource reconnects.
+  // #914: the open streams are the tabs POST /api/view reaches.
+  let openTabs = 0;
   app.get("/api/events", (c) =>
     streamSSE(c, async (stream) => {
+      openTabs++;
+      let open = true;
       const unsubscribe = broadcaster.subscribe((type, data) => {
         void stream.writeSSE({ event: type, data: data || String(Date.now()) });
       });
-      stream.onAbort(unsubscribe);
-      while (!stream.aborted) {
-        await stream.writeSSE({ event: "ping", data: "" });
-        await stream.sleep(30_000);
+      const close = () => {
+        if (open) openTabs--;
+        open = false;
+        unsubscribe();
+      };
+      stream.onAbort(close);
+      try {
+        while (!stream.aborted) {
+          await stream.writeSSE({ event: "ping", data: "" });
+          await stream.sleep(30_000);
+        }
+      } finally {
+        close();
       }
-      unsubscribe();
     }),
   );
+
+  // #914: an agent moves every open tab's view. Writes nothing; refused under
+  // --public and any `behold preview` (src/view-move.ts).
+  viewMoveRoute(app, {
+    emit: (e) => broadcaster.emit("view", JSON.stringify(e)),
+    tabs: () => openTabs,
+    public: () => !!cfg.public,
+    preview: () => !!(cfg.preview || cfg.previewMode),
+    offer: async () => {
+      const { environments } = await detectProject(cfg.projectDir).catch(() => ({ environments: [] as string[] }));
+      const envs = environments.length === 0 && (cfg.projectDirs ?? [cfg.projectDir]).some((d) => memberKindOf(d) === "choudoufu") ? ["live"] : environments;
+      return { envs, ...(beholdConfig.tiers ? { tiers: beholdConfig.tiers.values } : {}) };
+    },
+    defaultEnv: () => cfg.env ?? null,
+  });
 
   // What behold is and what its reads cost (#421, M2 of #419). `diagnose()` has
   // produced this report since #193 and only the CLI has ever asked for it, so
@@ -2461,6 +2497,7 @@ export function createApp(
         { method: "POST", path: "/api/layout", desc: "store one lens's deltas: JSON body {lens, deltas: {<node id>: {dx,dy,dw,dh}}} (the only file behold writes in your project)" },
         { method: "GET", path: "/api/health", desc: "runtime health for ?env= from chant lifecycle health (chant 0.124.33+): {env, nodes: {<id>: {state: healthy|unhealthy|unknown|unobserved|absent, detail, observedAt, checkedAt?, reason?}}, rotation: {<record id>: {check, inRotation: true|false|null, line}}, members, counts}; cached 30 s, ?fresh=1 reads again (#825)" },
         { method: "GET", path: "/api/diff", desc: "per-node live diff for ?env= — {env, nodes: {<id>: {observed, diff, health, fieldDrift}}}" },
+        { method: "GET", path: "/api/terraform/plan", desc: "the plan on each stock Terraform root, read through chant (chant 0.124.46+, #910): {members: [{member?, roots: [{root, answered: plan|state|none, note}], cards: {<id>: {source, action, reason, replacePaths, forcedFrom, afterUnknown, changes, drift}}} | {member?, refusal}]}; sensitive values are (sensitive); /api/graph?plan=1 puts the same facts on the cards" },
         { method: "GET", path: "/api/reconcile", desc: "pending-change summary for ?env=" },
         { method: "GET", path: "/api/resources", desc: "component → declared resources" },
         { method: "GET", path: "/api/components/compare", desc: "cross-env digest comparison: ?env=&to= — is one env running what the other tested (ledger-only)" },
@@ -2480,7 +2517,12 @@ export function createApp(
         { method: "GET", path: "/api/operator/log", desc: "the operating loop's timeline: converge ticks + gate resolutions, newest ?limit=n (max 200) from ?since=<iso>" },
         { method: "GET", path: "/api/history", desc: "recent source commits (rollback targets)" },
         { method: "GET", path: "/api/frames", desc: "captured lanes frames" },
-        { method: "GET", path: "/api/events", desc: "SSE: changed / op / apply / run / pr" },
+        { method: "GET", path: "/api/events", desc: "SSE: changed / op / apply / run / pr / view" },
+        {
+          method: "POST",
+          path: "/api/view",
+          desc: "move every open tab to a view, writing nothing: JSON body {view: {q, snapshot, env, member, zoom, node, focus, ...}, by?}; by is a label, not authentication; answers {id, movedAt, sent, link, view, refused}, or 409 code no-tab with the link when no tab is open; refused under --public and behold preview (#914)",
+        },
         { method: "POST", path: "/api/refresh", desc: "re-observe live now (?env=) — returns the fresh graph. With ?notify=1 it is a host's notice that the workspace changed: cached reads are dropped and every open page re-pulls (#476)" },
         { method: "POST", path: "/api/apply", desc: "delegated apply: ?env=&component=<name|all> (guarded, preview-locked)" },
         { method: "POST", path: "/api/ops/:name/run", desc: "run a committed Op (delegated write)" },
@@ -2572,6 +2614,50 @@ export function createApp(
       },
     };
   };
+
+  /**
+   * #910: the plan read on each stock Terraform member served, through chant
+   * (src/terraform-plan.ts). A choudoufu member is not one: its live roots
+   * keep #404's plan read (src/choudoufu-plan.ts), since chant's plan depth
+   * covers stock roots only (INTENTIUS/chant#4371).
+   */
+  const terraformPlans = async (multi: boolean): Promise<Array<MemberPlanAnswer & { dir: string; read?: TerraformPlanRead }>> => {
+    const members = multi
+      ? estateMembers(cfg.projectDirs!).filter((m) => m.kind === "terraform").map((m) => ({ member: m.name as string | undefined, dir: m.dir }))
+      : memberKindOf(cfg.projectDir) === "terraform"
+        ? [{ member: undefined, dir: cfg.projectDir }]
+        : [];
+    return Promise.all(
+      members.map(async ({ member, dir }) => {
+        const res = await readTerraformPlan(dir, cfg.terraformPlan);
+        return res.ok ? { ...(member ? { member } : {}), dir, roots: res.read.roots, read: res.read } : { ...(member ? { member } : {}), dir, refusal: res.refusal };
+      }),
+    );
+  };
+  const paintTerraformPlans = async (ir: GraphIR, multi: boolean): Promise<MemberPlanAnswer[]> => {
+    const answers = await terraformPlans(multi);
+    for (const a of answers) if (a.read) paintTerraformPlan(ir, a.read, a.member);
+    return answers.map(({ dir: _dir, read: _read, ...a }) => a);
+  };
+
+  /**
+   * #910: the plan facts per card, for an agent: `{members: [{member?, roots:
+   * [{root, answered: plan|state|none, note}], cards: {<id>: facts}} |
+   * {member?, refusal}]}`. Ids are the graph's (`<member>/<root>/<address>`
+   * on an estate). Only plan facts, every sensitive value already
+   * `(sensitive)`; a root that fell back says which read answered.
+   */
+  app.get("/api/terraform/plan", async (c) => {
+    const multi = !!cfg.projectDirs;
+    const answers = await terraformPlans(multi);
+    return c.json({
+      members: answers.map(({ dir: _dir, read, ...a }) => ({
+        ...a,
+        ...(read ? { cards: Object.fromEntries(Object.entries(read.cards).map(([id, f]) => [a.member ? `${a.member}/${id}` : id, f])) } : {}),
+      })),
+      ...(answers.length ? {} : { note: terraformPlanNote([]) }),
+    });
+  });
 
   app.get("/api/graph", async (c) => {
     const url = new URL(c.req.url);
@@ -3021,6 +3107,10 @@ export function createApp(
       // logical path returns before this line — so this is the single-project
       // half of the same one call per request.
       const run = multi ? estateRun : applyMemberPasses(ir, { detail: opts.detail });
+      // #910: `?plan=1` reads the plan on every stock Terraform root through
+      // chant and puts each card's plan facts on it (`attrs._plan`), which the
+      // card's rows print. Opt-in: a plan refreshes every resource in a root.
+      const planNote = url.searchParams.get("plan") === "1" && !components ? terraformPlanNote(await paintTerraformPlans(ir, multi)) : undefined;
       // COMPOSITES (level 1) on the SOURCE view too (#138): the overlay branch
       // below has joined the component DAG's dependsOn edges since #84, but a
       // source-only serve (no env) rendered the tier with no component edges at
@@ -3189,7 +3279,7 @@ export function createApp(
       // picker rows, one image. One clause, through the same module every
       // other caption comes from.
       const sameNote = unchangedZoomNote(srcZoom, estateMembers(estateDirs()).map((m) => m.kind));
-      const ownNote = [estateLensNote, tf.note, cdNote, sameNote].filter(Boolean).join(" · ");
+      const ownNote = [estateLensNote, tf.note, cdNote, sameNote, planNote].filter(Boolean).join(" · ");
       // #554: notesFor counts the references to undeclared targets itself.
       // When it is not consulted (an estate, or a note above took its place),
       // the count is added here, read from the expanded IR like the rest.
@@ -3203,7 +3293,7 @@ export function createApp(
           .filter(Boolean)
           .join(" · ") || undefined;
       const srcNoteShort =
-        tf.noteShort || sameNote ? [estateLensNote, tf.noteShort ?? tf.note, cdNote, sameNote, danglingClause, collapsedNote].filter(Boolean).join(" · ") : undefined;
+        tf.noteShort || sameNote ? [estateLensNote, tf.noteShort ?? tf.note, cdNote, sameNote, planNote, danglingClause, collapsedNote].filter(Boolean).join(" · ") : undefined;
       return c.json({
         ir,
         svg,

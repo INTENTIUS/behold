@@ -27,6 +27,17 @@ function estate(): GraphIR {
 }
 
 describe("stackAlike (#877)", () => {
+  it("keeps a card the plan would change out of its stack, so its plan rows stay on the canvas (#910)", () => {
+    const g = estate();
+    g.nodes.push(node("a/sg4", "AWS::EC2::SecurityGroup", "good"));
+    g.nodes.find((n) => n.id === "a/sg4")!.attrs._plan = { source: "plan", action: "replace" };
+    g.nodes.find((n) => n.id === "a/sg1")!.attrs._plan = { source: "plan", action: "no-op" };
+    (g.groups.byStack as Record<string, string[]>).a!.push("a/sg4");
+    const ids = stackAlike(g).ir.nodes.map((n) => n.id);
+    expect(ids).toContain("a/sg4");
+    expect(ids).toContain("a/SecurityGroup ×3");
+  });
+
   it("stacks three or more of one kind within a box, and leaves smaller sets and other boxes alone", () => {
     const r = stackAlike(estate());
     const ids = r.ir.nodes.map((n) => n.id).sort();

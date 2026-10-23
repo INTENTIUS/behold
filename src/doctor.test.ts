@@ -405,8 +405,9 @@ describe("diagnose", () => {
   });
 
   // #384: the terraform line, on the estate that is a directory of `.tf` files
-  // and nothing else. The reader is two optional peers behold does not install,
-  // so its absence is a fail with the one install line.
+  // and nothing else. The reader is two packages behold installs as
+  // dependencies (#909); an install that pruned them fails with the one
+  // install line.
   describe("the terraform line", () => {
     const estate = () =>
       fixture({
@@ -425,7 +426,7 @@ describe("diagnose", () => {
       lexicon: { pkg: "@intentius/chant-lexicon-terraform", range: "^0.77.0" },
       parser: { pkg: "@cdktn/hcl2json", range: "^0.24.0" },
       refusal: {
-        error: "Reading a Terraform estate needs chant's terraform lexicon, which behold does not install: … are not resolvable from /opt/behold/dist.",
+        error: "Reading a Terraform estate needs chant's terraform lexicon and its HCL parser, which behold installs as dependencies: … are not resolvable from /opt/behold/dist, so this install skipped or pruned them.",
         code: "terraform-lexicon" as const,
         remedy: "Install @intentius/chant-lexicon-terraform@^0.77.0 @cdktn/hcl2json@^0.24.0 beside behold, then reload.",
       },
@@ -454,7 +455,7 @@ describe("diagnose", () => {
       expect(report.ok).toBe(false);
       expect(by(report, "terraform")).toMatchObject({
         status: "fail",
-        detail: expect.stringContaining("behold does not install"),
+        detail: expect.stringContaining("skipped or pruned"),
         fix: absent.refusal.remedy,
       });
       expect(by(report, "terraform").detail).toContain("1 root (prod)");

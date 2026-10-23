@@ -54,7 +54,7 @@ export function linkDemoPins(work: string, probes: DemoPinsProbes = {}): DemoPin
   for (const pin of decl.pins) {
     if (!isRecord(pin) || typeof pin.package !== "string") continue;
     const pkg = pin.package;
-    // The terraform lexicon reads HCL through a second optional peer, and the
+    // The terraform lexicon needs the HCL parser chant loads beside it, and the
     // reader's own refusal names both: the same line the README promises.
     if (pkg === TERRAFORM_LEXICON_PKG) {
       const refusal = (probes.reader ?? terraformReaderState)().refusal;

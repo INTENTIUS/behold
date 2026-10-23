@@ -83,25 +83,25 @@ HCL.
 
 ## It needs the lexicon
 
-behold parses no HCL and ships no HCL parser. The reading goes through
-`@intentius/chant-lexicon-terraform`, which loads `@cdktn/hcl2json` underneath —
-a ~1.8 MB wasm blob. Both are declared as optional peers and behold does not
-install them, so that every user who serves an ordinary chant project does not
-carry an HCL parser they will never run:
+behold parses no HCL itself. The reading goes through
+`@intentius/chant-lexicon-terraform`, and chant parses the HCL with
+`@cdktn/hcl2json`, a ~1.8 MB wasm blob. Both are dependencies of behold
+(#909), so `npx @intentius/behold demo terraform-estate` needs nothing else.
+
+An install that skipped or pruned them makes the demo refuse before it serves,
+naming both packages, the ranges behold declares, where it looked, and the line
+that puts them back:
 
 ```sh
-npm install --no-save @intentius/chant-lexicon-terraform@^0.124.0 @cdktn/hcl2json@^0.24.0
+npm install @intentius/chant-lexicon-terraform@^0.124.38 @cdktn/hcl2json@^0.24.0
 ```
-
-Without them the demo refuses before it serves, naming both packages, the
-ranges behold declares, and where it looked.
 
 The estate is a declared chant workspace, and chant reads a member's kind from
 the packages `chant.workspace.json` pins, looked up from the workspace's own
 `node_modules` at exactly the pinned version. A demo copy has no
 `node_modules`, so `behold demo` links the lexicon behold resolved into the
 copy and sets the copy's pin to that version (#484). It says so as it loads:
-`linked @intentius/chant-lexicon-terraform 0.124.0 into the copy`. Serving
+`linked @intentius/chant-lexicon-terraform 0.124.38 into the copy`. Serving
 your own declared workspace is different: install the pinned lexicon in its
 root, the way `chant workspace check` asks.
 

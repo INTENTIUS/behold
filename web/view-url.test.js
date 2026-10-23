@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine, isEnvName, withOpening, defaultEnv } from "./view-url.js";
+import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine, isEnvName, withOpening, defaultEnv, checkQuery, checkSnapshot, QUERY_MAX, viewFromObject, restoreViewQuery } from "./view-url.js";
 
 describe("readViewQuery (#475)", () => {
   it("reads the view keys and nothing else", () => {
@@ -160,5 +160,69 @@ describe("an export's opening view (#827)", () => {
     expect(defaultEnv({ zoom: "composites" }, null)).toBe(null);
     // the source graph in such a bundle is written env=, so a reload keeps it
     expect(writeViewQuery("", { zoom: "composites", env: null }, { env: defaultEnv({ env: "frozen" }, null) })).toBe("?zoom=composites&env=");
+  });
+});
+
+describe("q and snapshot (#913, #914)", () => {
+  it("reads and writes q and snapshot through the URL, + for a space and %2B for a plus", () => {
+    const q = "attr:internetFacing=true attr:effectiveIngress=tcp:22:0.0.0.0/0 a+b";
+    const search = writeViewQuery("", { zoom: "resources", env: "prod", q, snapshot: "latest" });
+    expect(search).toBe("?zoom=resources&env=prod&q=attr%3AinternetFacing%3Dtrue+attr%3AeffectiveIngress%3Dtcp%3A22%3A0.0.0.0%2F0+a%2Bb&snapshot=latest");
+    expect(readViewQuery(search)).toEqual({ zoom: "resources", env: "prod", q, snapshot: "latest" });
+    expect(readViewQuery("?q=")).toEqual({ q: null });
+  });
+  it("checkQuery passes chant's grammar through and refuses control characters, length and non-strings", () => {
+    expect(checkQuery('  ->kind:Bucket !"x <-a  ')).toEqual({ ok: true, value: '->kind:Bucket !"x <-a' });
+    expect(checkQuery("")).toEqual({ ok: true, value: null });
+    expect(checkQuery(null)).toEqual({ ok: true, value: null });
+    expect(checkQuery("a\tb").ok).toBe(false);
+    expect(checkQuery("a\u007fb").ok).toBe(false);
+    expect(checkQuery("x".repeat(QUERY_MAX)).ok).toBe(true);
+    expect(checkQuery("x".repeat(QUERY_MAX + 1)).ok).toBe(false);
+    expect(checkQuery(3).ok).toBe(false);
+  });
+  it("settleView takes q, and a snapshot only on an env", () => {
+    expect(settleView({ q: "kind:Bucket" }, {})).toEqual({ apply: { q: "kind:Bucket" }, refused: [] });
+    expect(settleView({ q: "a\nb" }, {}).refused[0].key).toBe("q");
+    expect(settleView({ snapshot: "latest", env: "prod" }, { envs: ["prod"] }).apply).toEqual({ env: "prod", snapshot: "latest" });
+    expect(settleView({ snapshot: "latest" }, { env: "prod" }).apply).toEqual({ snapshot: "latest" });
+    expect(settleView({ snapshot: "latest" }, {}).refused[0]).toMatchObject({ key: "snapshot", reason: "a snapshot is of an env; name one with env" });
+    expect(settleView({ snapshot: "a b" }, { env: "prod" }).refused[0].key).toBe("snapshot");
+    expect(settleView({ snapshot: null }, {}).apply).toEqual({ snapshot: null });
+    expect(checkSnapshot("latest")).toEqual({ ok: true, value: "latest" });
+  });
+});
+
+describe("viewFromObject (#914)", () => {
+  it("takes the view keys and names everything else", () => {
+    const { want, refused } = viewFromObject({ q: "x", env: "", member: null, radial: true, zoom: "resources", at: "abc", other: 1, focus: 3 });
+    expect(want).toEqual({ q: "x", env: null, member: null, radial: true, zoom: "resources" });
+    expect(refused.map((r) => r.key)).toEqual(["at", "other", "focus"]);
+    expect(refused[0].reason).toMatch(/git revision/);
+  });
+  it("refuses a view that isn't an object", () => {
+    expect(viewFromObject("q=x").refused[0].key).toBe("view");
+    expect(viewFromObject(null).want).toEqual({});
+  });
+});
+
+describe("restoreViewQuery (#914)", () => {
+  it("clears what the URL leaves out, so Back undoes a move", () => {
+    expect(restoreViewQuery("?zoom=resources", { env: "prod", lens: "cost" })).toEqual({
+      zoom: "resources",
+      member: null,
+      gates: null,
+      focus: null,
+      run: null,
+      pull: null,
+      q: null,
+      snapshot: null,
+      radial: false,
+      alike: true,
+      env: "prod",
+      lens: "cost",
+    });
+    expect(restoreViewQuery("?zoom=logical&env=&q=kind%3AX").env).toBe(null);
+    expect(restoreViewQuery("?zoom=logical&env=&q=kind%3AX").q).toBe("kind:X");
   });
 });

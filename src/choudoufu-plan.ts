@@ -64,6 +64,16 @@
  * both in the document and both in the terminal's own output; a skip-list of
  * "internal" attribute names would differ per provider and guessing it is
  * worse than showing what the plan says.
+ *
+ * ## Why this stays beside chant's plan read (#910)
+ *
+ * A stock Terraform root's plan now comes through chant's terraform lexicon
+ * (INTENTIUS/chant#4358, src/terraform-plan.ts). This module is not retired
+ * for it: chant's plan depth covers stock roots only. A choudoufu live root
+ * asked for the plan depth keeps its `live-plan -json` read and gets a note
+ * saying so, and merging the plan's attributes onto a live root's ownership
+ * verdicts is filed as INTENTIUS/chant#4371. Until that lands, a choudoufu
+ * member's attribute drift is read here, and its tests stay here.
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

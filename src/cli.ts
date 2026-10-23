@@ -1095,7 +1095,8 @@ async function runPreview(rest: string[]): Promise<void> {
   }
   if (!emulator) {
     warnIfNotChantProject(projectDir);
-    await startServer({ projectDir, port });
+    // #914: any preview refuses POST /api/view; only --emulator locks the rest (previewMode).
+    await startServer({ projectDir, port, preview: true });
     return;
   }
   injectEmulatorEnv("local");
@@ -1103,7 +1104,7 @@ async function runPreview(rest: string[]): Promise<void> {
     `behold preview --emulator — Loom on the local Floci emulator (read + local deploy only)\n  project: ${projectDir}\n` +
       `  If Floci isn't up yet, use "Bring up" on the Floci substrate pill (boots + deploys Loom).\n`,
   );
-  await startServer({ projectDir, port, env: "local", previewMode: true });
+  await startServer({ projectDir, port, env: "local", previewMode: true, preview: true });
 }
 
 /** `behold export` — capture the estate into a static interactive bundle.

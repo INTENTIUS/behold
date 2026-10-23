@@ -12,7 +12,8 @@
  * and the route answers the bytes.
  *
  * The browser comes from `playwright-core`, an optional peer behold does not
- * install (the way the terraform lexicon is, src/terraform-member.ts). The
+ * install; the range in the install line is read from behold's own
+ * `peerDependencies`. The
  * system Chrome is tried first, then Playwright's own
  * `chromium-headless-shell`; with neither, the shot is refused with the
  * install lines.
@@ -20,8 +21,10 @@
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { declaredPeerRange, resolvedPackage, type OptionalPeer } from "./terraform-member.ts";
+import { readFileSync } from "node:fs";
+import { resolvedPackage } from "./terraform-member.ts";
 import { SHOT_ATTR, SHOT_STATES } from "../web/shot-frame.js";
+import { VIEW_KEYS, ZOOMS, isEnvName, readViewQuery, refusalLine, settleView, writeViewQuery } from "../web/view-url.js";
 
 /** The optional peer that drives the browser. */
 export const SHOT_PEER_PKG = "playwright-core";
@@ -35,8 +38,8 @@ const SIZE_MAX = 4096;
 /** How long the page has to report ready: a live read can be slow. */
 export const SHOT_TIMEOUT_MS = 60_000;
 
-/** The view keys a shot passes to the page besides the query (web/view-url.js VIEW_KEYS, less the ones a shot has no use for). */
-export const SHOT_VIEW_KEYS = ["member", "zoom", "tier", "lens", "node", "radial", "alike", "focus", "run", "pull"] as const;
+/** The view keys a shot takes besides the query, env and snapshot (web/view-url.js VIEW_KEYS, less gates, which a shot never draws). */
+export const SHOT_VIEW_KEYS: readonly string[] = VIEW_KEYS.filter((k) => !["env", "gates", "q", "snapshot"].includes(k));
 
 export type ShotState = "drawn" | "no-matches" | "failed";
 
@@ -92,46 +95,46 @@ export interface ShotResult {
 // The query -> view step.
 // ---------------------------------------------------------------------------
 
-const CONTROL = /[\u0000-\u001f\u007f]/;
-const isEnvName = (env: string): boolean => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(env);
 const bad = (error: string, remedy: string): ShotRefusal => new ShotRefusal({ error, code: "bad-request", remedy });
 
 /**
  * The view a shot asks the page for: the query parameters behold's page reads,
- * without the frame parameters. The one place a query becomes a view.
+ * without the frame parameters. The one place a query becomes a view. The
+ * keys are read and settled with the same checks a link gets
+ * (web/view-url.js `readViewQuery`, `settleView`, `checkQuery`,
+ * `checkSnapshot`), the ones `POST /api/view` uses (#914); the page settles
+ * them again against what its estate offers.
  *
- * behold#913 fills this in: once `q` is a view key that lights chant's matches,
- * a query passes through as `q` (checked by view-url.js `checkQuery`) and
- * the "no-search" refusal below goes. Until then a query is refused, and a
- * shot frames what the view's own `node` or `focus` selects.
+ * behold#913 fills this in: once the page lights chant's matches for `q`, the
+ * "no-search" refusal below goes and the settled `q` passes through. Until
+ * then a query is refused, and a shot frames what the view's own `node` or
+ * `focus` selects (web/shot-frame.js shotLit).
  */
 export function queryView(req: ShotRequest): Record<string, string> {
-  const out: Record<string, string> = {};
-  const query = typeof req.query === "string" ? req.query.trim() : "";
-  if (query) {
-    if (query.length > 2000 || CONTROL.test(query)) throw bad("a query is 1 to 2000 characters with no control characters", "Shorten the query, or take the newlines out of it.");
-    throw new ShotRefusal({
-      error: `behold can't answer a query yet: lighting the matches of "${query}" needs the \`q\` view key (behold#913, which reads chant workspace search).`,
-      code: "no-search",
-      remedy: "Until then, frame a selection: pass the view's node or focus (behold shot --view node=<id>, or GET /api/shot?node=<id>).",
-    });
-  }
-  if (req.env !== undefined && req.env !== "") {
-    if (!isEnvName(req.env)) throw bad(`not an env name: ${JSON.stringify(req.env)}`, "Pass one of the project's environments.");
-    out.env = req.env;
-  }
-  if (req.snapshot !== undefined && req.snapshot !== "") {
-    if (!out.env) throw bad("a snapshot is an env's recorded snapshot, so it needs an env", "Pass --env <name> with --snapshot (snapshot=latest replays the newest).");
-    if (req.snapshot.length > 200 || CONTROL.test(req.snapshot) || /\s/.test(req.snapshot)) throw bad(`not a snapshot ref: ${JSON.stringify(req.snapshot)}`, "Pass latest, or a snapshot ref chant lists.");
-    out.snapshot = req.snapshot;
-  }
+  const raw: Record<string, string> = {};
   for (const [k, v] of Object.entries(req.view ?? {})) {
     if (!(SHOT_VIEW_KEYS as readonly string[]).includes(k)) throw bad(`not a view key a shot takes: ${k}`, `Use one of ${SHOT_VIEW_KEYS.join(", ")}.`);
-    if (typeof v !== "string" || !v.trim() || v.length > 500 || CONTROL.test(v)) throw bad(`a bad value for ${k}`, "Pass a short value with no control characters.");
-    out[k] = v.trim();
+    if (typeof v !== "string" || !v.trim()) throw bad(`${k} needs a value`, `Pass ${k}=<value>, or leave it out.`);
+    raw[k] = v;
   }
-  if (!query && !out.node && !out.focus) throw bad("nothing to frame: a shot needs a query, or a view with node or focus", "Pass the view's node or focus (behold shot --view node=<id>).");
-  return out;
+  if (req.query !== undefined && req.query.trim()) raw.q = req.query;
+  if (req.env !== undefined && req.env !== "") raw.env = req.env;
+  if (req.snapshot !== undefined && req.snapshot !== "") raw.snapshot = req.snapshot;
+  const want = readViewQuery(new URLSearchParams(raw).toString());
+  // The env is the page's to check against the estate: here only its shape.
+  const env = typeof want.env === "string" ? want.env : null;
+  if (env !== null && !isEnvName(env)) throw bad(`not an env name: ${JSON.stringify(env)}`, "Pass one of the project's environments.");
+  const { apply, refused } = settleView(want, { zooms: ZOOMS, envs: env ? [env] : [], tiers: typeof want.tier === "string" ? [want.tier] : [] });
+  if (refused.length) throw bad(`the view was refused: ${refusalLine(refused)}`, "Fix or drop the keys named.");
+  if (typeof apply.q === "string" && apply.q) {
+    throw new ShotRefusal({
+      error: `behold can't answer a query yet: lighting the matches of "${apply.q}" needs behold#913 (the page lighting chant workspace search's matches for q).`,
+      code: "no-search",
+      remedy: "Until then, frame a selection: pass the view's node or focus (behold shot \"\" --view node=<id>, or GET /api/shot?node=<id>).",
+    });
+  }
+  if (!apply.node && !apply.focus) throw bad("nothing to frame: a shot needs a query, or a view with node or focus", "Pass the view's node or focus (behold shot \"\" --view node=<id>).");
+  return Object.fromEntries(new URLSearchParams(writeViewQuery("", apply)));
 }
 
 /** The page the browser loads, and the link a person opens: the same view, the page with the shot's frame on. */
@@ -187,8 +190,18 @@ declare const document: {
   querySelector(selector: string): { getAttribute(name: string): string | null } | null;
 };
 
+/** The range behold's own package.json declares for `pkg` under peerDependencies (`dist/` and `src/` sit one level under it). */
+export function declaredPeerRange(pkg: string, manifestDir = join(here(), "..")): string | undefined {
+  try {
+    const manifest = JSON.parse(readFileSync(join(manifestDir, "package.json"), "utf8")) as { peerDependencies?: Record<string, string> };
+    return manifest.peerDependencies?.[pkg];
+  } catch {
+    return undefined;
+  }
+}
+
 /** The peer as installed beside behold: the range behold declares and the version found, if any. */
-export function shotPeer(from = here()): OptionalPeer & { dir?: string } {
+export function shotPeer(from = here()): { pkg: string; range?: string; version?: string; dir?: string } {
   const range = declaredPeerRange(SHOT_PEER_PKG, join(from, ".."));
   const found = resolvedPackage(SHOT_PEER_PKG, from);
   return { pkg: SHOT_PEER_PKG, ...(range ? { range } : {}), ...(found ? { version: found.version, dir: found.dir } : {}) };

@@ -35,8 +35,8 @@ export const SHOT_USAGE = `Usage: behold shot "<query>" [project-dir] [--env <na
   --link-base <url>   where the printed link points (an export's host);
                       default: the serve, or http://localhost:4600 when the
                       app was started here
-  --view <k=v&...>    view keys to pass: member, zoom, tier, lens, node,
-                      radial, alike, focus, run, pull
+  --view <k=v&...>    view keys to pass, settled as a link's are: member,
+                      zoom, tier, lens, node, radial, alike, focus, run, pull
 
   Exit: 0 drawn (or no matches: the dimmed graph), 1 the graph failed (the
   picture shows why) or the shot was refused (no file), 2 usage.
