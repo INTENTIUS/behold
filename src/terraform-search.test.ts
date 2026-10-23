@@ -13,9 +13,9 @@ import { discoverTerraformRoots, HCL_PARSER_PKG, readTerraformMember, resolvedVe
 // lexicon through its `node_modules` symlink and the roots through its
 // `estate` symlink; break either and this test fails.
 //
-// Two gates. The lexicon is an optional peer: skipped where it is not
-// installed, except in CI's `peers` job (BEHOLD_REQUIRE_PEERS=1), where a
-// missing peer fails. And chant below SEARCH_TERRAFORM_ROOTS_CHANT_FLOOR
+// Two gates. The lexicon and parser are behold dependencies (#909), so they
+// are installed wherever behold is; the skip is for an install that pruned
+// them, and CI's `peers` job (BEHOLD_REQUIRE_PEERS=1) fails instead. And chant below SEARCH_TERRAFORM_ROOTS_CHANT_FLOOR
 // answers `(no matches)` here for every query (INTENTIUS/chant#4365), so the
 // test waits for behold's chant to reach that floor.
 const REQUIRE_PEERS = process.env.BEHOLD_REQUIRE_PEERS === "1";

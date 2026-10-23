@@ -190,7 +190,7 @@ const absent: TerraformReaderState = {
   parser: { pkg: "@cdktn/hcl2json", range: "^0.24.0" },
   from: "/behold/src",
   refusal: {
-    error: "Reading a Terraform estate needs chant's terraform lexicon, which behold does not install: … are not resolvable from /behold/src.",
+    error: "Reading a Terraform estate needs chant's terraform lexicon and its HCL parser, which behold installs as dependencies: … are not resolvable from /behold/src, so this install skipped or pruned them.",
     code: "terraform-lexicon",
     remedy: "Install @intentius/chant-lexicon-terraform@^0.77.0 @cdktn/hcl2json@^0.24.0 beside behold, then reload.",
   },

@@ -183,14 +183,37 @@ describe("the scratch project (#384)", () => {
   });
 });
 
-describe("the reader behold does not install (#384)", () => {
+describe("the reader ships with behold (#909)", () => {
+  // The maintainer's ruling on #909: both reader packages are dependencies, so
+  // `npx @intentius/behold serve .` on a folder of .tf files needs no other
+  // command. A peer or devDependency here would install nothing for a user.
+  it("declares the lexicon and the parser as dependencies, and nowhere else", () => {
+    const manifest = JSON.parse(readFileSync(join(HERE, "..", "package.json"), "utf8")) as Record<string, Record<string, string> | undefined>;
+    for (const pkg of [TERRAFORM_LEXICON_PKG, HCL_PARSER_PKG]) {
+      expect(manifest.dependencies?.[pkg], pkg).toMatch(/^\^\d/);
+      expect(manifest.peerDependencies?.[pkg], pkg).toBeUndefined();
+      expect(manifest.devDependencies?.[pkg], pkg).toBeUndefined();
+    }
+    // The lexicon's chant peer is met by behold's own chant: same floor.
+    expect(manifest.dependencies?.[TERRAFORM_LEXICON_PKG]).toBe(manifest.dependencies?.["@intentius/chant"]);
+  });
+
+  it("resolves from behold's own install, so the probe passes with no extra step", () => {
+    const state = terraformReaderState();
+    expect(state.refusal).toBeUndefined();
+    expect(state.lexicon.version).toMatch(/^\d/);
+    expect(state.parser.version).toMatch(/^\d/);
+  });
+});
+
+describe("the reader, when an install pruned it (#384, #909)", () => {
   it("refuses politely, naming both packages, where it looked, and the one install line", () => {
     const state = terraformReaderState(tmp("behold-tf-nolexicon-"));
 
     expect(state.refusal!.code).toBe("terraform-lexicon");
     expect(state.refusal!.error).toContain(TERRAFORM_LEXICON_PKG);
     expect(state.refusal!.error).toContain(HCL_PARSER_PKG);
-    expect(state.refusal!.error).toContain("behold does not install");
+    expect(state.refusal!.error).toContain("skipped or pruned");
     expect(state.refusal!.remedy).toMatch(/^Install .* beside behold, then reload\.$/);
     // The declared ranges, read from behold's own manifest — so the line and
     // the package.json cannot drift apart.

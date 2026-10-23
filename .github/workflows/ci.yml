@@ -66,9 +66,10 @@ jobs:
       - name: built files match the committed ones
         run: npm run check
 
-  # #465: the tests that need behold's optional peers (chant's terraform
-  # lexicon, @cdktn/hcl2json) and choudoufu skip in `check`, which installs
-  # none of them. Here they are installed and the tests must run: with
+  # #465: the tests that need choudoufu skip in `check`, which does not
+  # install it. chant's terraform lexicon and @cdktn/hcl2json are behold
+  # dependencies since #909, so `npm ci` brings them in both jobs. Here
+  # choudoufu is installed and the tests must run: with
   # BEHOLD_REQUIRE_PEERS=1 a missing peer fails instead of skipping. Among
   # them, a declared choudoufu member read through chant workspace graph
   # against the same member read loose: same ids, same edges.
@@ -82,7 +83,7 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - name: install the optional peers and choudoufu
+      - name: install choudoufu
         run: |
           bin="$(bash scripts/install-peers.sh)"
           echo "$bin" >> "$GITHUB_PATH"

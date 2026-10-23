@@ -7,8 +7,8 @@
 # from 4720 up:
 #
 #   - `missingRequirements` (src/demos.ts) decides first. A binary that is not
-#     on PATH, a sibling checkout nobody has, an optional peer behold does not
-#     install — each prints `skip: <entry>: needs …` and the run moves on. CI
+#     on PATH, a sibling checkout nobody has, a Terraform reader an install
+#     pruned — each prints `skip: <entry>: needs …` and the run moves on. CI
 #     has no Docker, no choudoufu, no siblings, so every entry skips there and
 #     the script exits 0, the way e2e/choudoufu-estate-floci-e2e.sh does.
 #   - what survives is served: wait for /healthz, then /api/graph must carry
@@ -74,7 +74,8 @@ npm run build --silent
 # registry merge, `missingRequirements`, `demoLocalPath`, and — for an entry
 # served in place — the two preconditions that are not a binary on PATH: an
 # uninstalled chant example (an in-place entry is never installed, #390) and
-# the Terraform lexicon behold declares as an optional peer and does not ship.
+# the Terraform lexicon, a behold dependency since #909, missing only where an
+# install pruned it.
 CATALOG="$(./node_modules/.bin/tsx -e "$(
   cat <<'JS'
 import { existsSync } from "node:fs";
@@ -90,17 +91,17 @@ for (const e of loadDemoRegistry(process.cwd())) {
   let reason = missing.length ? `needs ${missing.join(", ")}` : "";
   // #912: a generator entry that only stock terraform applies (no choudoufu)
   // renders a bare Terraform directory, which behold reads through the same
-  // optional lexicon an in-place Terraform estate needs.
+  // lexicon an in-place Terraform estate needs.
   if (!reason && !e.inPlace && !local && e.requires.includes("terraform") && !e.requires.includes("choudoufu")) {
     const refusal = terraformReaderState().refusal;
-    if (refusal) reason = `needs the Terraform lexicon behold does not install — ${refusal.remedy}`;
+    if (refusal) reason = `needs the Terraform lexicon this install is missing — ${refusal.remedy}`;
   }
   if (!reason && e.inPlace && local) {
     if (existsSync(join(local, "package.json")) && !existsSync(join(local, "node_modules"))) {
       reason = `needs its own node_modules — an in-place entry is served exactly as it sits and behold installs nothing there (npm install in ${local})`;
     } else if (hasTerraformRoots(local)) {
       const refusal = terraformReaderState().refusal;
-      if (refusal) reason = `needs the Terraform lexicon behold does not install — ${refusal.remedy}`;
+      if (refusal) reason = `needs the Terraform lexicon this install is missing — ${refusal.remedy}`;
     }
   }
   // The unit separator, not a tab: `read` in bash folds a run of IFS

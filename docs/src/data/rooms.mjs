@@ -101,15 +101,13 @@ export const ROOMS = [
 			'A read across two roots stays on its card as text',
 		],
 		needs: [
-			'`@intentius/chant-lexicon-terraform` and `@cdktn/hcl2json` beside behold',
 			'Only the checkout: behold reads the `.tf` files without a cloud account or a `terraform` binary',
 		],
 		first: {
-			command: 'npm install --no-save @intentius/chant-lexicon-terraform@^0.124.0 @cdktn/hcl2json@^0.24.0\nnpx @intentius/behold serve ./infra',
+			command: 'npx @intentius/behold serve ./infra',
 			link: { label: 'Look at a Terraform estate', href: 'using/terraform' },
 		},
 		task: [
-			'Install the two packages the page names beside behold.',
 			"Serve this repository's Terraform with `npx @intentius/behold serve <dir>` and tell me the URL.",
 			'List the roots it found and each directory it skipped, and why.',
 		],
