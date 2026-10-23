@@ -16,8 +16,6 @@
 name: e2e-forge
 
 on:
-  schedule:
-    - cron: "17 6 * * *"
   workflow_dispatch: {}
 
 permissions:
