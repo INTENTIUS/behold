@@ -29,13 +29,16 @@ counts it should get back. The features the queries use have landed on chant's
 - The plan read (`planAction`, `planActions`, `planReplacePaths`,
   `planActionReason` on the IR): INTENTIUS/chant#4358. It is chosen with
   `CHANT_TERRAFORM_OBSERVE=plan` and needs `--live --env <name>`.
-- Step 6's capability terms (`cap:`, `[cap=]`) are INTENTIUS/chant#4375, still
-  in progress. Their names below are provisional, and step 6 keeps a
-  plain-path query that works without them.
+- The capability terms (`cap:`, `[cap=]`, as in `cap:internet-reachable(22)`
+  and `cap:stores-data`): INTENTIUS/chant#4375. Steps 4 and 6 keep the
+  attribute and plain-path queries as cross-checks.
 
-Row ids are `<root>/<address>`. `<root>` is the name of the directory the
-estate was rendered into: `terralith-4-stock` for `behold demo
-terralith-4-stock` and for `just e2e-workbench`.
+Row ids in a workspace answer are `<member>/<root>/<address>`, for example
+`terralith-4-stock/terralith-4-stock/aws_instance.bastion`. The member is
+named by behold#925's member naming (it leads even with one member), and
+`<root>` is the name of the directory the estate was rendered into:
+`terralith-4-stock` for `behold demo terralith-4-stock` and for `just
+e2e-workbench`. Both are `terralith-4-stock` here.
 
 Two counts appear throughout, and they differ:
 
@@ -160,17 +163,35 @@ By module:
 ## Step 4: "What's reachable on SSH from the internet?"
 
 ```
+chant search "cap:internet-reachable(22)"
 chant search "kind:aws_instance attr:internetFacing=true attr:effectiveIngress=tcp:22:0.0.0.0/0" --explain
 ```
 
-Exactly one row:
+Through behold the first is `ask {query: "cap:internet-reachable(22)"}`; the
+`capabilities` tool lists it (16 capabilities, `port` optional). Its
+provenance line is `declared only · each member mapped by its own chant,
+capabilities evaluated once over the composed workspace graph`. Exactly one
+row, `terralith-4-stock/terralith-4-stock/aws_instance.bastion`, internet-facing via:
 
 ```
-<root>/aws_instance.bastion  Terraform::Resource
+aws_instance.bastion.subnet_id -> aws_subnet.public; aws_route_table_association.public.subnet_id -> aws_subnet.public; .route_table_id -> aws_route_table.public; aws_route_table.public.route -> #route[0]; #route[0].gateway_id -> aws_internet_gateway.main
+```
+
+and open-ingress via:
+
+```
+aws_instance.bastion.launch_template -> aws_launch_template.bastion; .vpc_security_group_ids -> aws_security_group.bastion; aws_vpc_security_group_ingress_rule.bastion_ssh.security_group_id -> aws_security_group.bastion
+```
+
+It notes what it does not evaluate: load balancers, API gateways, network
+ACLs. The attribute query is the cross-check, and also returns exactly one row:
+
+```
+terralith-4-stock/terralith-4-stock/aws_instance.bastion  Terraform::Resource
 — declared only · no observation · physical ids unavailable · effectiveIngress, internetFacing derived from declared references
 — 1 of 1 aws_instance matched  (query: kind:aws_instance attr:internetFacing=true attr:effectiveIngress=tcp:22:0.0.0.0/0)
-  ✓ <root>/aws_instance.bastion internetFacing via subnet route aws_subnet.public -> aws_route_table.public -> aws_internet_gateway.main (inline route)
-  ✓ <root>/aws_instance.bastion effectiveIngress via security groups aws_launch_template.bastion -> aws_security_group.bastion
+  ✓ terralith-4-stock/terralith-4-stock/aws_instance.bastion internetFacing via subnet route aws_subnet.public -> aws_route_table.public -> aws_internet_gateway.main (inline route)
+  ✓ terralith-4-stock/terralith-4-stock/aws_instance.bastion effectiveIngress via security groups aws_launch_template.bastion -> aws_security_group.bastion
 ```
 
 The path, edge by edge, as the configuration states it:
@@ -210,14 +231,12 @@ read is `ask {query: "attr:planAction=replace", plan: true, show:
 name; the plan read runs `terraform plan -lock=false` in the root, so the
 shell needs the floci variables the setup prints (`AWS_ENDPOINT_URL` and the
 test credentials) and the root must already be initialised (the setup does
-that). chant prints the provenance line `observed live · bound 1/1`, and the
-document's source is `{kind: live, env: behold-plan}`. It does not yet say
-the answer came from a plan (INTENTIUS/chant#4384), so that line is not a
-check on the plan read; the three values below are. The tab and the shot
-caption add "at the plan depth" themselves. #910 is what lets behold draw
-these facts on the card.
+that). The provenance line is `observed at the plan depth (terraform plan
+-lock=false) · bound 1/1` (INTENTIUS/chant#4384), and the document's source
+is `{kind: live, env: behold-plan, depth: "plan"}`. #910 is what lets behold
+draw these facts on the card.
 
-Exactly one row, `<root>/aws_db_instance.orders`:
+Exactly one row, `aws_db_instance.orders`:
 
 | field | value |
 |---|---|
@@ -251,31 +270,41 @@ INTENTIUS/choudoufu#2199). `storage_encrypted` cannot be changed in place.
 carries (`aws_launch_template.bastion.iam_instance_profile.arn ->
 aws_iam_instance_profile.app_data`, whose `role` is `aws_iam_role.app_data`).
 Step 6 as #908 frames it asks for a capability: what the role reaches that
-stores data. That is INTENTIUS/chant#4375 (the catalog implementing
-chant#4361's ruling), still in progress. These names are provisional and may
-change when it lands:
+stores data (INTENTIUS/chant#4375). The agent first finds the role with
+`kind:aws_iam_role <-[cap=runs-as]aws_instance.bastion`, then asks:
 
 ```
 chant search "cap:stores-data <-[cap=reaches]aws_iam_role.app_data" --explain
 ```
 
-It should return only `<root>/aws_dynamodb_table.sessions`. Until the catalog
-is in the chant under test, the same answer comes from plain path terms
-(#4359, #4366), which work today:
+It returns only `aws_dynamodb_table.sessions` (as a workspace row,
+`terralith-4-stock/terralith-4-stock/aws_dynamodb_table.sessions`), with the
+provenance line `declared only · each member mapped by its own chant,
+capabilities evaluated once over the composed workspace graph` and the path:
+
+```
+aws_iam_role_policy_attachment.app_data.role -> role; .policy_arn -> aws_iam_policy.app_data; .policy -> Statement[0]; Statement[0].Resource[0] -> aws_dynamodb_table.sessions
+```
+
+`reaches` does not evaluate `Resource "*"` (26 statements here), IAM
+Condition keys, NotAction/NotResource, boundaries and SCPs, AWS-managed
+policies, or unresolved resources, so the 8 wildcard roles below are outside
+this answer and a careful agent says so. The same answer also comes from plain
+path terms (#4359, #4366):
 
 ```
 chant search "kind:aws_dynamodb_table <-*aws_iam_role_policy_attachment.app_data" --explain
 chant search "kind:aws_iam_role_policy_attachment ->[via=role]aws_iam_role.app_data" --show policy_arn
 ```
 
-The first plain-path query returns exactly one row, `<root>/aws_dynamodb_table.sessions`,
+The first plain-path query returns exactly one row, `terralith-4-stock/terralith-4-stock/aws_dynamodb_table.sessions`,
 with the path:
 
 ```
 aws_iam_role_policy_attachment.app_data.policy_arn -> aws_iam_policy.app_data.arn; aws_iam_policy.app_data.policy -> aws_dynamodb_table.sessions.arn
 ```
 
-The second returns exactly one row, `<root>/aws_iam_role_policy_attachment.app_data`:
+The second returns exactly one row, `terralith-4-stock/terralith-4-stock/aws_iam_role_policy_attachment.app_data`:
 the role has one attached policy and no inline policy.
 
 The expected answer: `aws_iam_role.app_data` reaches one data store,
