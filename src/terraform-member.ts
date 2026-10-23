@@ -638,6 +638,29 @@ export function terraformMemberProject(dir: string): { project: string; componen
 /** The name grammar chant's declaration gives a workspace and its members. */
 export const WORKSPACE_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
 
+/** A declaration name: lowercase letters, digits and hyphens, starting with one of the first two, 40 at most. */
+export function declarationName(raw: string): string {
+  const folded = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40)
+    .replace(/-+$/, "");
+  return folded || "member";
+}
+
+/**
+ * behold#927: the name a bare Terraform folder served alone is drawn under.
+ * It is also the member of the scratch workspace it is searched at (#925),
+ * so it has to be one chant's declaration accepts. A folder name that already
+ * is one is kept as it is, so its ids and saved links do not move; any other
+ * is folded once by {@link declarationName} (`MyInfra` -> `myinfra`,
+ * `terraform_ec2` -> `terraform-ec2`, cut to 40).
+ */
+export function bareFolderMemberName(folder: string): string {
+  return WORKSPACE_NAME.test(folder) ? folder : declarationName(folder);
+}
+
 /** The declaration the scratch workspace holds. Pure and deterministic. Exported for testing. */
 export function terraformScratchDeclaration(member: string): string {
   return `${JSON.stringify(

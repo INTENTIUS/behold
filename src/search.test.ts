@@ -439,6 +439,44 @@ describe("q on a bare Terraform folder, through the real chant", () => {
 });
 
 // #925: the read-contract ruling on #908 says behold does no id prefixing.
+// behold#927: a folder whose name chant's member grammar refuses is drawn, and
+// so searched, under the one name chant accepts for it. A valid name is kept.
+describe("q on a bare Terraform folder whose name chant's member grammar refuses (#927)", () => {
+  const named = (name: string): string => {
+    const parent = mkdtempSync(join(tmpdir(), "behold-927-"));
+    made.push(parent);
+    const dir = join(parent, name);
+    cpSync(ESTATE, dir, { recursive: true });
+    rmSync(join(dir, "chant.workspace.json"));
+    return dir;
+  };
+  const cases: [string, string][] = [
+    ["Terraform_Estate", "terraform-estate"],
+    ["MyInfra", "myinfra"],
+    ["terraform_ec2", "terraform-ec2"],
+    [`Platform_${"x".repeat(51)}`, `platform-${"x".repeat(31)}`],
+    ["infra", "infra"],
+  ];
+
+  it.skipIf(gate)(`answers q, with every lit id a drawn card under the folder's box name (${why})`, { timeout: 600_000 }, async () => {
+    for (const [folder, member] of cases) {
+      const dir = named(folder);
+      const app = createApp(await localServeOptions(dir));
+      const res = await app.request(`http://localhost/api/search?q=${encodeURIComponent("kind:aws_s3_bucket")}`);
+      const body = (await res.json()) as Answer & { code?: string };
+      expect(res.status, `${folder}: ${body.code}`).toBe(200);
+      expect(body.draw.lit.length, folder).toBeGreaterThan(0);
+      // chant composed these ids; behold handed them through.
+      expect(body.draw.lit.every((id) => id.startsWith(`${member}/`)), folder).toBe(true);
+      const chant = JSON.parse(chantSays(dir, "kind:aws_s3_bucket", member)) as { matches: Array<{ id: string }> };
+      expect(body.draw.lit).toEqual(chant.matches.map((m) => m.id));
+      const graph = (await (await app.request("http://localhost/api/graph?detail=2")).json()) as { ir: { nodes: Array<{ id: string }> } };
+      const drawn = new Set(graph.ir.nodes.map((n) => n.id));
+      for (const id of body.draw.lit) expect(drawn.has(id), `${folder}: ${id}`).toBe(true);
+    }
+  });
+});
+
 // chant composes `<member>/<id>`, a bare Terraform folder's included, and the
 // route draws chant's ids as printed.
 describe("no id prefixing in the search route (#925)", () => {

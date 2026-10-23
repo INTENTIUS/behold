@@ -30,6 +30,7 @@ import { overlayIr } from "./overlay-ir.ts";
 import { memberKindOf, memberKindSpec, type MemberKind } from "./member-kind.ts";
 import { CLUSTER_SCOPED } from "./zoom-notes.ts";
 import { choudoufuWorkspaceVia } from "./choudoufu-workspace.ts";
+import { bareFolderMemberName } from "./terraform-member.ts";
 import { CONTRACT_READ_KINDS, servedWorkspace, unreadableMemberIr, unreadableMembers, workspaceMemberOf, workspaceVia, WorkspaceMemberError } from "./workspace.ts";
 
 // ---------------------------------------------------------------------------
@@ -102,7 +103,11 @@ export function estateMembers(projectDirs: readonly string[]): { name: string; d
 export function estateMemberNames(projectDirs: readonly string[]): string[] {
   const declared = projectDirs.map((d) => workspaceMemberOf(d)?.name);
   if (declared.every((n): n is string => n !== undefined)) return declared;
-  return shortStackNames([...projectDirs]);
+  const names = shortStackNames([...projectDirs]);
+  // behold#927: a bare Terraform folder served alone is searched as a one-member
+  // workspace named for its box, so its box takes a name chant accepts.
+  if (projectDirs.length === 1 && memberKindOf(projectDirs[0]) === "terraform") return [bareFolderMemberName(names[0])];
+  return names;
 }
 
 /**
