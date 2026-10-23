@@ -2,7 +2,9 @@
 
 Hand-written answers for INTENTIUS/behold#908's "ask your agent about a
 Terraform estate" demo, on the estate `behold demo terralith-4-stock` builds
-(#912). #908's final run checks each step's answer against this file.
+(#912). #908's final run checks each step's answer against this file. It lives in
+the entry directory and is never copied into the served estate, so the agent
+under test cannot read it.
 
 The estate is `go run ./tools/terralith-gen -scale 4 -findings` from choudoufu
 (INTENTIUS/choudoufu#2199), applied by stock `terraform`. It has one root and
@@ -12,19 +14,24 @@ generator changes, re-derive them (see the last section).
 ## Reading the queries
 
 Each step gives the `chant search` query an agent would run, then the rows or
-counts it should get back. Some query features are still being built in this
-run, and the step names the issue it waits on:
+counts it should get back. The features the queries use have landed on chant's
+`epic/908-ask-your-agent` and ship in chant 0.124.46:
 
-- `--count-by` is INTENTIUS/chant#4360.
-- `kind:aws_instance` matching a Terraform resource type is INTENTIUS/chant#4366.
-- `search` reading `terraform.roots` from behold's scratch config is
+- `kind:aws_instance` matching a Terraform resource type, and `kind:aws_`
+  as a prefix: INTENTIUS/chant#4366.
+- `--count-by kind|module|attr:<name>`: INTENTIUS/chant#4360.
+- `search` reading `terraform.roots` from behold's scratch config:
   INTENTIUS/chant#4365.
-- The plan read (`replace_paths`, `action_reason` on the IR) is
-  INTENTIUS/chant#4358. Its attribute names below follow `terraform show -json`
-  and may be spelled differently once it lands; the values will not change.
-- `internetFacing` and `effectiveIngress` on Terraform kinds (chant#4362) and
-  transitive, attribute-qualified edges with paths (chant#4359) have landed on
-  chant's `epic/908-ask-your-agent`.
+- `internetFacing` and `effectiveIngress` on Terraform kinds:
+  INTENTIUS/chant#4362.
+- Transitive and attribute-qualified edges (`->*`, `<-*`, `[via=]`, `[to=]`)
+  with a path per match under `--explain`: INTENTIUS/chant#4359.
+- The plan read (`planAction`, `planActions`, `planReplacePaths`,
+  `planActionReason` on the IR): INTENTIUS/chant#4358. It is chosen with
+  `CHANT_TERRAFORM_OBSERVE=plan` and needs `--live --env <name>`.
+- Step 6's capability terms (`cap:`, `[cap=]`) are INTENTIUS/chant#4375, still
+  in progress. Their names below are provisional, and step 6 keeps a
+  plain-path query that works without them.
 
 Row ids are `<root>/<address>`. `<root>` is the name of the directory the
 estate was rendered into: `terralith-4-stock` for `behold demo
@@ -46,10 +53,12 @@ terraform lexicon reports 3 lint errors in it (TF022, TF030, TF033), and with
 chant 0.124.46 or newer behold draws it anyway (#919): its scratch config sets
 `graph.lint: "report"`. behold draws 196 nodes at `?logical=1` (195 blocks plus
 the `module.team_pod` call) and 24 at the default zoom, where 180 look-alike
-cards stack into 8. The note ends "3 lint errors, drawn anyway - TF022
-aws_db_instance.orders, TF033 aws_db_instance.orders, TF030
-aws_vpc_security_group_ingress_rule.bastion_ssh", and those two cards carry
-the findings on `attrs._lint`. A chant below 0.124.46 still refuses the
+cards stack into 8. The note ends "3 lint errors, drawn anyway" and names the
+three findings: TF022 and TF033 on `aws_db_instance.orders`, and TF030 on
+`aws_vpc_security_group_ingress_rule.bastion_ssh`. Check the set of findings,
+not the string: behold writes an em dash where this file would write a
+hyphen, and the findings may come in any order (TF030 first, for one). Those
+two cards carry the findings on `attrs._lint`. A chant below 0.124.46 still refuses the
 estate, and the refusal names the chant that draws it.
 
 ## Step 2: "What's in here?"
@@ -57,8 +66,6 @@ estate, and the refusal names the chant that draws it.
 ```
 chant search "kind:aws_" --count-by kind
 ```
-
-Waits on chant#4360, #4365, #4366.
 
 One root and one module call, `module "team_pod"` (source
 `./modules/team_pod`, `for_each = toset(["pod-a", "pod-b"])`). No backend
@@ -97,7 +104,8 @@ The declared column counts each block in `modules/team_pod` once, as the
 configuration does (6 blocks). The applied column counts it once per module
 key and per `count` index (2 keys x 4 = 8 instances per block, 48 in all).
 `--count-by kind` over the declared graph prints the declared column,
-sorted by count then name, with a total line of 195.
+sorted by count then name, with a total line of 195. With `--json` the same
+answer is `.groups[]` (`group`, `count`) and `.total`.
 
 ## Step 3: "How many resources does each module own, by type?"
 
@@ -107,7 +115,11 @@ chant search "kind:aws_ !module.team_pod" --count-by kind
 chant search "kind:aws_ module.team_pod" --count-by kind
 ```
 
-Waits on chant#4360, #4365, #4366.
+Groups are `(root)` and `module.team_pod`. The root name leads a group
+(`terralith-4-stock/(root)`) only when the project has more than one root;
+behold's scratch project for this estate has one. If `!module.team_pod` comes
+up short of 189 because a root block's body names `module.team_pod`, the
+`--count-by module` row is the answer.
 
 By module:
 
@@ -151,9 +163,6 @@ By module:
 chant search "kind:aws_instance attr:internetFacing=true attr:effectiveIngress=tcp:22:0.0.0.0/0" --explain
 ```
 
-Waits on chant#4365 and #4366 (the folds themselves, chant#4362, have
-landed).
-
 Exactly one row:
 
 ```
@@ -191,18 +200,26 @@ patch -p1 < replace-db.patch     # data.tf: storage_encrypted = false -> true
 ```
 
 ```
-chant search "attr:replace_paths" --show actions,replace_paths,action_reason --explain
+CHANT_TERRAFORM_OBSERVE=plan chant search --live --env <name> --json -- "attr:planAction=replace"
 ```
 
-Waits on chant#4358 (and #910 for behold to draw it), #4365.
+Add `--show planActions,planReplacePaths,planActionReason --explain` to see
+the fields and the provenance line in one answer. `<name>` is an environment
+name; the plan read runs `terraform plan -lock=false` in the root, so the
+shell needs the floci variables the setup prints (`AWS_ENDPOINT_URL` and the
+test credentials) and the root must already be initialised (the setup does
+that). The provenance line must say the answer came from a plan; if it says
+state, the plan read fell back and the rows below will be missing. #910 is
+what lets behold draw these facts on the card.
 
 Exactly one row, `<root>/aws_db_instance.orders`:
 
 | field | value |
 |---|---|
-| actions | `["delete", "create"]` |
-| replace_paths | `[["storage_encrypted"]]` |
-| action_reason | `replace_because_cannot_update` |
+| `planAction` | `replace` |
+| `planActions` | `["delete", "create"]` (the raw list, per instance address) |
+| `planReplacePaths` | `["storage_encrypted"]` (dotted strings, not nested lists) |
+| `planActionReason` | `replace_because_cannot_update` |
 
 `terraform plan` says the same in its own words: `# aws_db_instance.orders
 must be replaced`, `~ storage_encrypted = false -> true # forces
@@ -226,23 +243,29 @@ INTENTIUS/choudoufu#2199). `storage_encrypted` cannot be changed in place.
 "This role" is `aws_iam_role.app_data`, the role the internet-facing bastion
 carries (`aws_launch_template.bastion.iam_instance_profile.arn ->
 aws_iam_instance_profile.app_data`, whose `role` is `aws_iam_role.app_data`).
-Step 6 as #908 frames it waits on INTENTIUS/chant#4361's rule language, which
-is a maintainer ruling. Until then the answer is reachable with edge terms
-that exist today:
+Step 6 as #908 frames it asks for a capability: what the role reaches that
+stores data. That is INTENTIUS/chant#4375 (the catalog implementing
+chant#4361's ruling), still in progress. These names are provisional and may
+change when it lands:
+
+```
+chant search "cap:stores-data <-[cap=reaches]aws_iam_role.app_data" --explain
+```
+
+It should return only `<root>/aws_dynamodb_table.sessions`. Until the catalog
+is in the chant under test, the same answer comes from plain path terms
+(#4359, #4366), which work today:
 
 ```
 chant search "kind:aws_dynamodb_table <-*aws_iam_role_policy_attachment.app_data" --explain
 chant search "kind:aws_iam_role_policy_attachment ->[via=role]aws_iam_role.app_data" --show policy_arn
 ```
 
-Waits on chant#4365, #4366.
-
-The first query returns exactly one row, `<root>/aws_dynamodb_table.sessions`,
+The first plain-path query returns exactly one row, `<root>/aws_dynamodb_table.sessions`,
 with the path:
 
 ```
-aws_iam_role_policy_attachment.app_data.policy_arn -> aws_iam_policy.app_data.arn
-aws_iam_policy.app_data.policy -> aws_dynamodb_table.sessions.arn
+aws_iam_role_policy_attachment.app_data.policy_arn -> aws_iam_policy.app_data.arn; aws_iam_policy.app_data.policy -> aws_dynamodb_table.sessions.arn
 ```
 
 The second returns exactly one row, `<root>/aws_iam_role_policy_attachment.app_data`:
@@ -300,8 +323,9 @@ real apply:
    the policy behind it.
 5. Step 5 comes from `terraform plan` and `terraform show -json` on a copy of
    the applied estate with `replace-db.patch` applied: one resource change,
-   `aws_db_instance.orders`, with the actions, `replace_paths` and
-   `action_reason` above. The same plan without the patch reads "No changes".
+   `aws_db_instance.orders`, with the actions, `planReplacePaths`
+   and `planActionReason` above (the names chant#4358 landed; the raw
+   `terraform show -json` calls them `replace_paths` and `action_reason`). The same plan without the patch reads "No changes".
 6. behold's node counts (196 at `?logical=1`, 24 at the default zoom) were
    read from `/api/graph` on that applied estate, with chant built from its
    `epic/908-ask-your-agent` branch (#919's `graph.lint: "report"`) and no
