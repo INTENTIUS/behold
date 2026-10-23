@@ -60,11 +60,12 @@ export function viewFromMessage(event, host) {
   for (const k of VIEW_KEYS) {
     if (!(k in d)) continue;
     const v = d[k];
-    if (k === "radial") {
-      if (typeof v === "boolean") want.radial = v;
+    if (k === "radial" || k === "plan") {
+      // plan (behold#922): true is the plan read, false the declared source again.
+      if (typeof v === "boolean") want[k] = v;
       continue;
     }
-    if (k === "env" || k === "gates" || k === "focus" || k === "run" || k === "pull" || k === "q" || k === "snapshot") {
+    if (k === "env" || k === "gates" || k === "focus" || k === "run" || k === "pull" || k === "q" || k === "snapshot" || k === "countBy") {
       // env: null or "" is the source graph. gates: null or "" hands the
       // gate strip back to the graph's env. focus: null or "" brings nothing forward. run: null or "" draws the newest run again.
       // q, snapshot (#913/#914): null or "" clears the question, or reads the env live again.

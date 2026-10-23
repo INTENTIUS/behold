@@ -167,6 +167,11 @@ export const GRAPH_LINT_REPORT_CHANT_FLOOR = "0.124.46";
  * through it. Below it a query is refused: an older `search --json` has no
  * contract head, and an older chant has no workspace form to read. */
 export const SEARCH_CONTRACT_CHANT_FLOOR = "0.124.46";
+/** The first chant whose `search --count-by --json` lists each group's matched
+ * ids (`groups[].ids`, INTENTIUS/chant#4382, on chant's epic/908-ask-your-agent
+ * at ab5b422fc). behold#922 lights each group's cards from them. Below it the
+ * groups and the total are still shown, and nothing is lit. */
+export const SEARCH_COUNT_BY_IDS_CHANT_FLOOR = "0.124.46";
 
 export interface ChantFloor {
   /** The read, in words: `the why of a member or a card`. */
@@ -204,6 +209,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "runtime health", floor: HEALTH_CHANT_FLOOR, adds: "chant lifecycle health --json, a chant-health/v1 document (chant#4177)", degraded: "the graph draws no health marks and no record out of rotation" },
   { read: "search over a Terraform folder", floor: SEARCH_TERRAFORM_ROOTS_CHANT_FLOOR, adds: "chant search reads terraform.roots, as graph does (chant#4365)" },
   { read: "plan read on a Terraform root", floor: TERRAFORM_PLAN_CHANT_FLOOR, adds: "the terraform lexicon reads a saved plan as an observation depth, CHANT_TERRAFORM_OBSERVE=plan (chant#4358)" },
+  { read: "groups lit by count", floor: SEARCH_COUNT_BY_IDS_CHANT_FLOOR, adds: "chant search --count-by --json lists each group's ids (chant#4382)", degraded: "the groups and the total are listed and no card is lit" },
   { read: "search", floor: SEARCH_CONTRACT_CHANT_FLOOR, adds: "the read contract's search document, from chant search --json and chant workspace search (chant#4374)" },
   { read: "plan read on a choudoufu member", floor: CHOUDOUFU_PLAN_CHANT_FLOOR, adds: "the plan depth on a live choudoufu root (chant#4371) and its live-plan document handed back (chant#4383)", degraded: "Re-check live with plan re-reads ownership and draws no plan marks on a choudoufu member" },
   { read: "a Terraform folder with lint errors", floor: GRAPH_LINT_REPORT_CHANT_FLOOR, adds: "graph.lint: \"report\" draws it, the findings on meta.lint (behold#919)", degraded: "a bare Terraform estate that lint finds errors in is refused, and the refusal says which chant draws it" },
