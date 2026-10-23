@@ -122,3 +122,24 @@ describe("readReleases on a real chant/lifecycle branch (#525)", () => {
     expect(a.cells.find((c) => c.env === "staging" && c.component === "schema")!.source.path).toBe("_members/db/staging/releases.jsonl");
   });
 });
+
+describe("releaseCells with plan records (chant#4274)", () => {
+  // A plan digest is minted per run, so two environments that applied the same commit never share one.
+  const plan = (env: string, digest: string, gitSha: string) =>
+    rec(env, "net", digest, "2026-10-09T09:00:00Z", { gitSha, ...({ digestKind: "plan" } as object) });
+
+  it("marks no difference when both environments applied the same commit, and carries digestKind", () => {
+    const sha = "1".repeat(40);
+    const l = new Map([["dev", [plan("dev", "sha256:p1", sha)]], ["prod", [plan("prod", "sha256:p2", sha)]]]);
+    const { cells } = releaseCells(l, ["dev", "prod"], sources);
+    const prod = cells.find((c) => c.env === "prod")!;
+    expect(prod.differs).toBeUndefined();
+    expect((prod as { digestKind?: string }).digestKind).toBe("plan");
+  });
+
+  it("marks a difference when the commits differ", () => {
+    const l = new Map([["dev", [plan("dev", "sha256:p1", "1".repeat(40))]], ["prod", [plan("prod", "sha256:p2", "2".repeat(40))]]]);
+    const prod = releaseCells(l, ["dev", "prod"], sources).cells.find((c) => c.env === "prod")!;
+    expect(prod.differs?.from).toBe("dev");
+  });
+});

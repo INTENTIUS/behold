@@ -242,6 +242,10 @@ export interface ReleaseStatus {
   url?: string;
   gitSha: string;
   digest: string;
+  /** What `digest` names when it is not an artifact digest (chant#4274): `plan`
+   * or `deploy-input` for a record that only says the component applied, or
+   * `templates`. Absent for an artifact digest, and on a chant that predates it. */
+  digestKind?: string;
   timestamp: string;
   actor: string;
   /** Who cleared the durable approval gate, when the change was gated. Absent
@@ -260,6 +264,27 @@ function httpUrl(url: unknown): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * A record's `digestKind` (chant#4274, written by chant 0.124.35 and newer).
+ * Read through a structural type so behold still compiles against a chant whose
+ * `ReleaseRecord` does not declare it.
+ */
+export function digestKindOf(rec: object): string | undefined {
+  const k = (rec as { digestKind?: unknown }).digestKind;
+  return typeof k === "string" ? k : undefined;
+}
+
+/**
+ * The value two environments' records are compared on. A `plan` or
+ * `deploy-input` digest is minted per run and never repeats across
+ * environments, so chant compares those on the commit instead (compareKey in
+ * its workspace/status.ts).
+ */
+export function releaseCompareKey(rec: { digest: string; gitSha: string }): string {
+  const kind = digestKindOf(rec);
+  return kind === "plan" || kind === "deploy-input" ? `git:${rec.gitSha}` : rec.digest;
 }
 
 /** Resolve a record's id space and address. Pure. */
@@ -311,6 +336,7 @@ export function releaseStatus(rec: ReleaseRecord | undefined): ReleaseStatus | u
     ...releaseOrigin(rec),
     gitSha: rec.gitSha,
     digest: rec.digest,
+    ...(digestKindOf(rec) ? { digestKind: digestKindOf(rec) } : {}),
     timestamp: rec.timestamp,
     actor: rec.actor,
     ...(rec.approver ? { approver: rec.approver } : {}),
