@@ -30,6 +30,27 @@ export function searchKey(view) {
 export const GROUP_COLOURS = ["#58a6ff", "#f0883e", "#3fb950", "#d2a8ff", "#ff7b72", "#e3b341", "#39c5cf", "#f778ba"];
 
 /**
+ * A stack card (`attrs._stackOf`, src/stack-lens.ts) stands for the cards it
+ * holds, so a match inside it lights the stack. Member id -> the drawn stack
+ * card's id, for the stacks among `cards`. chant answers member ids; at the
+ * default zoom most of a large estate sits in stacks (found in #908's stage 3
+ * run: 180 of terralith-4-stock's 195 resources).
+ */
+export function stackIndex(nodes, cards) {
+  const drawn = cards instanceof Set ? cards : new Set(cards || []);
+  const out = new Map();
+  for (const n of nodes || []) {
+    const held = n && n.attrs && n.attrs._stackOf;
+    if (!Array.isArray(held) || !drawn.has(n.id)) continue;
+    for (const m of held) {
+      const id = typeof m === "string" ? m : m && m.id;
+      if (id) out.set(id, n.id);
+    }
+  }
+  return out;
+}
+
+/**
  * behold#922: how a counts answer (chant's `--count-by`, src/search.ts
  * `drawnOf`'s `counts`) is drawn against the cards on screen. One entry per
  * chant group, in chant's order: its name, chant's count, its colour, the ids
@@ -39,17 +60,21 @@ export const GROUP_COLOURS = ["#58a6ff", "#f0883e", "#3fb950", "#d2a8ff", "#ff7b
  * card; the line still lists it. Groups behold can't light (an older chant
  * listed no ids) have `ids: null`.
  */
-export function groupMarks(answer, cards) {
+export function groupMarks(answer, cards, stackOf = new Map()) {
   const drawnIds = cards instanceof Set ? cards : new Set(cards || []);
   const d = (answer && answer.draw) || null;
   const out = { groups: [], cardGroup: new Map(), total: 0, by: "" };
   if (!d || !d.counts) return out;
   out.total = d.counts.total;
   out.by = d.counts.by;
+  const labelled = new Set();
   d.counts.groups.forEach((g, i) => {
-    const drawn = (g.ids || []).filter((id) => drawnIds.has(id));
-    for (const id of drawn) out.cardGroup.set(id, i);
-    out.groups.push({ group: g.group, count: g.count, colour: GROUP_COLOURS[i % GROUP_COLOURS.length], drawn, label: drawn[0] || null, ids: g.ids });
+    // A stack holding cards of several groups takes the first of them, in chant's order.
+    const drawn = [...new Set((g.ids || []).map((id) => stackOf.get(id) || id))].filter((id) => drawnIds.has(id));
+    for (const id of drawn) if (!out.cardGroup.has(id)) out.cardGroup.set(id, i);
+    const label = drawn.find((id) => !labelled.has(id)) || drawn[0] || null;
+    if (label) labelled.add(label);
+    out.groups.push({ group: g.group, count: g.count, colour: GROUP_COLOURS[i % GROUP_COLOURS.length], drawn, label, ids: g.ids });
   });
   return out;
 }
@@ -81,7 +106,7 @@ const one = (s) => String(s == null ? "" : s).replace(/[\u0000-\u001f\u007f]+/g,
  * order: "path" (a hop on a match's path), "lit" (both ends lit), or "dim".
  * `state`: drawn | no-matches | failed | refused, as the shot reports it.
  */
-export function queryMarks(answer, cards, edges) {
+export function queryMarks(answer, cards, edges, stackOf = new Map()) {
   const drawnIds = cards instanceof Set ? cards : new Set(cards || []);
   const edgeList = edges || [];
   const a = answer || {};
@@ -92,26 +117,28 @@ export function queryMarks(answer, cards, edges) {
     out.state = "failed";
     return out; // chant refused the query: nothing lit and nothing dimmed
   }
-  const lit = new Set(d.lit || []);
-  const onPath = new Set((d.onPath || []).filter((id) => !lit.has(id)));
-  out.litTotal = lit.size;
-  for (const id of drawnIds) {
-    const mark = lit.has(id) ? "lit" : onPath.has(id) ? "path" : "dim";
-    out.cardMarks.set(id, mark);
-    if (mark === "lit") out.litDrawn++;
-  }
-  for (const id of Object.keys(d.unobserved || {})) if (drawnIds.has(id)) out.unobserved.add(id);
+  // A match inside a drawn stack lights the stack (stackIndex).
+  const card = (id) => stackOf.get(id) || id;
+  const litIds = d.lit || [];
+  const lit = new Set(litIds.map(card));
+  const onPath = new Set((d.onPath || []).map(card).filter((id) => !lit.has(id)));
+  out.litTotal = new Set(litIds).size;
+  for (const id of drawnIds) out.cardMarks.set(id, lit.has(id) ? "lit" : onPath.has(id) ? "path" : "dim");
+  out.litDrawn = new Set(litIds.filter((id) => drawnIds.has(card(id)))).size;
+  for (const id of Object.keys(d.unobserved || {})) if (drawnIds.has(card(id))) out.unobserved.add(card(id));
   const hops = new Set();
   for (const h of d.edges || []) {
-    hops.add(`${h.from}\u0000${h.to}`);
-    hops.add(`${h.to}\u0000${h.from}`); // behold may draw the edge the other way round
+    const from = card(h.from);
+    const to = card(h.to);
+    hops.add(`${from}\u0000${to}`);
+    hops.add(`${to}\u0000${from}`); // behold may draw the edge the other way round
   }
   out.edgeMarks = edgeList.map((e) => {
     if (hops.has(`${e.from}\u0000${e.to}`)) return "path";
     if (lit.has(e.from) && lit.has(e.to)) return "lit";
     return "dim";
   });
-  if (!lit.size) for (const n of d.nearMisses || []) if (drawnIds.has(n.id)) out.near.set(n.id, n.fails);
+  if (!lit.size) for (const n of d.nearMisses || []) if (drawnIds.has(card(n.id))) out.near.set(card(n.id), n.fails);
   out.state = d.failure ? "failed" : lit.size || (d.counts && d.counts.total) ? "drawn" : "no-matches";
   return out;
 }

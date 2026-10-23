@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { queryLine, queryMarks, searchKey, searchUrl, uncapturedLine } from "./search-view.js";
+import { groupMarks, queryLine, queryMarks, searchKey, searchUrl, stackIndex, uncapturedLine } from "./search-view.js";
 
 // behold#913: how the page draws a query's answer (GET /api/search's `draw`).
 
@@ -58,6 +58,47 @@ describe("queryMarks", () => {
     const old = queryMarks({ error: "Search needs chant 0.124.46 or newer.", code: "chant-too-old" }, cards, edges);
     expect(old.cardMarks.size).toBe(0);
     expect(old.edgeMarks).toEqual([null, null, null, null]);
+  });
+});
+
+describe("matches inside a stack (#908 stage 3)", () => {
+  // The default zoom stacks look-alike cards (attrs._stackOf); chant answers the ids they hold.
+  const nodes = [
+    { id: "web", attrs: {} },
+    { id: "roles ×3", attrs: { _stackOf: [{ id: "role.a" }, { id: "role.b" }, "role.pod"] } },
+    { id: "unused ×2", attrs: { _stackOf: [{ id: "x.a" }, { id: "x.b" }] } },
+  ];
+  const drawn = ["web", "roles ×3", "db"];
+  const stackOf = stackIndex(nodes, drawn);
+  const sEdges = [{ from: "web", to: "roles ×3" }, { from: "roles ×3", to: "db" }];
+
+  it("maps a stack's members to the drawn stack, and only for stacks that are drawn", () => {
+    expect([...stackOf]).toEqual([["role.a", "roles ×3"], ["role.b", "roles ×3"], ["role.pod", "roles ×3"]]);
+  });
+
+  it("lights a stack holding a match, draws a hop through it, and counts its matches as drawn", () => {
+    const a = answer({ lit: ["role.a", "role.b"], onPath: ["web"], edges: [{ from: "web", to: "role.a" }] });
+    const m = queryMarks(a, drawn, sEdges, stackOf);
+    expect(Object.fromEntries(m.cardMarks)).toEqual({ web: "path", "roles ×3": "lit", db: "dim" });
+    expect(m.edgeMarks).toEqual(["path", "dim"]);
+    expect(m.litDrawn).toBe(2);
+    expect(queryLine({ q: "kind:aws_iam_role" }, a, m).text).not.toContain("not drawn at this zoom");
+    // Without the index the stack stays dim and its matches read as not drawn.
+    expect(queryMarks(a, drawn, sEdges).cardMarks.get("roles ×3")).toBe("dim");
+  });
+
+  it("groups a stack with the first group holding its cards, and labels a group on a card no earlier group labelled, when there is one", () => {
+    const a = answer({
+      lit: ["role.a", "role.b", "role.pod", "web"],
+      counts: { by: "module", total: 4, groups: [{ group: "(root)", count: 3, ids: ["role.a", "role.b", "web"] }, { group: "module.pod", count: 1, ids: ["role.pod"] }] },
+    });
+    const g = groupMarks(a, drawn, stackOf);
+    expect(g.groups.map((x) => [x.group, x.drawn, x.label])).toEqual([
+      ["(root)", ["roles ×3", "web"], "roles ×3"],
+      ["module.pod", ["roles ×3"], "roles ×3"],
+    ]);
+    expect(Object.fromEntries(g.cardGroup)).toEqual({ "roles ×3": 0, web: 0 });
+    expect(queryMarks(a, drawn, sEdges, stackOf).cardMarks.get("roles ×3")).toBe("lit");
   });
 });
 
