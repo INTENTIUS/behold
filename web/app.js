@@ -11,7 +11,8 @@
 import "./view-repo.js"; // behold#571: first, so every read carries the page's ?repo=
 import { createRefreshQueue } from "./refresh-queue.js";
 import { indexCompositeMembers } from "./composite-members.js";
-import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine, withOpening, defaultEnv } from "./view-url.js";
+import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine, withOpening, defaultEnv, restoreViewQuery, viewFromObject } from "./view-url.js";
+import { agentBanner, agentEntry } from "./agent-move.js";
 import { quietCardLines, readEmbed, selectMessage, viewFromMessage, wheelPx, wheelZoomsBare } from "./embed.js";
 import { WORDS as POP_WORDS, cardRoot as popCardRoot, placePopover, popReduce, popState, resourcePopover, rootPopover } from "./kiosk-popover.js";
 import { waveListKey, waveListOf } from "./kiosk-wave-list.js";
@@ -2015,7 +2016,9 @@ function wire(ir) {
 // member (#475) is the estate member the view is on: a host opens behold with
 // ?member=, and picking a card or a member box moves it. It changes no fetch;
 // the graph is the whole estate, framed on that member's box.
-const view = { member: null, env: null, gates: null, focus: null, run: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false, collapse: false, alike: true, compareTo: null };
+// q, snapshot (#913, #914): the question the view asks and the recorded snapshot it reads. Carried in the URL and
+// moved by an agent; nothing draws q until #913's search read lands.
+const view = { member: null, env: null, gates: null, focus: null, run: null, q: null, snapshot: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false, collapse: false, alike: true, compareTo: null };
 
 // #182: `components` is the boot default, but a project that declares no
 // components renders it as ZERO nodes — the first screen was a blank graph
@@ -3003,6 +3006,7 @@ function applyWantedView(want) {
     zooms: availableZooms().map(([, z]) => z),
     tiers,
     lenses: COLOUR_MODES,
+    env: view.env, // a snapshot is of the env the view is on
   });
   urlRefusals.push(...first.refused, ...refused);
   if (apply.tier) view.tier = apply.tier;
@@ -3017,6 +3021,9 @@ function applyWantedView(want) {
   if ("focus" in apply) view.focus = apply.focus; // #569: drawn by drawTgReads, no new read
   if ("run" in apply) view.run = apply.run; // #569: which run the view draws; read in the message handler
   if ("pull" in apply) view.pull = apply.pull; // the cycle's pull request: a commit's run never draws another's plan
+  if ("q" in apply) view.q = apply.q; // #914: carried; #913 draws it
+  if ("snapshot" in apply) view.snapshot = apply.snapshot;
+  if (!view.env) view.snapshot = null; // a snapshot is of an env: the source graph has none
   if (want.member === null) {
     view.member = null;
     selectedNodeId = null;
@@ -3038,6 +3045,13 @@ function fetchKey() {
 window.addEventListener("message", (e) => {
   const want = viewFromMessage(e, embedOpts.host);
   if (!want) return;
+  moveViewTo(want);
+});
+
+/** Move the view the way a host's `behold:view` does: settle it, re-read what
+ * it changed, and say what couldn't be opened. An agent's move (#914) and Back
+ * from one come through here too. */
+function moveViewTo(want) {
   const lensBefore = colourMode;
   const gatesBefore = view.gates;
   const focusBefore = view.focus;
@@ -3068,7 +3082,82 @@ window.addEventListener("message", (e) => {
   urlRefusals = [];
   if (line) nowline(line);
   renderStatusbar();
+}
+
+// --- #914: an agent moved the tab --------------------------------------------
+// POST /api/view sends a `view` event on /api/events. The tab moves the way a
+// host's message moves it, says who asked and when, and pushes a history entry
+// so the banner's Back and the browser's Back both return to the view it left.
+// The person's own changes keep replacing the entry they are on (syncViewUrl).
+// An embedded frame with a host ignores the event: its view is the host's (#476).
+function agentMove(data) {
+  if (embedOpts.embed && embedOpts.host) return;
+  let ev;
+  try {
+    ev = JSON.parse(data);
+  } catch {
+    return;
+  }
+  if (!ev || typeof ev !== "object") return;
+  const { want } = viewFromObject(ev.view);
+  if (!Object.keys(want).length) return;
+  const move = { id: String(ev.id || ""), by: String(ev.by || "an agent"), movedAt: String(ev.movedAt || ""), q: typeof want.q === "string" ? want.q : "" };
+  syncViewUrl(); // the entry being left holds the view as it is now
+  const entry = agentEntry(history.state, move);
+  try {
+    // The new entry starts as a copy of the one being left; moveViewTo's syncViewUrl writes the new view into it.
+    if (entry.push) history.pushState(entry.state, "", location.href);
+    else history.replaceState(entry.state, "", location.href);
+  } catch {
+    /* a sandboxed frame may refuse; the move still happens */
+  }
+  moveViewTo(want);
+  showAgentBanner(move);
+}
+
+// Back, from the banner or the browser: the URL is the view to go back to.
+window.addEventListener("popstate", (e) => {
+  if (!viewUrlReady) return;
+  const defaults = { env: defaultEnv(manifest && manifest.opening, projectInfo && projectInfo.currentEnv), lens: savedColourMode };
+  moveViewTo(restoreViewQuery(location.search, defaults));
+  const move = e.state && e.state.beholdMove;
+  if (move) showAgentBanner(move);
+  else hideAgentBanner();
 });
+
+function showAgentBanner(move) {
+  let el = document.getElementById("agent-banner");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "agent-banner";
+    el.setAttribute("role", "status");
+    document.body.appendChild(el);
+  }
+  const b = agentBanner(move, new Date(move.movedAt));
+  el.innerHTML = "";
+  const text = document.createElement("span");
+  text.className = "agent-banner-text";
+  text.textContent = b.text;
+  el.appendChild(text);
+  const back = document.createElement("button");
+  back.className = "agent-banner-back";
+  back.textContent = "Back";
+  back.title = "Return to the view before this move";
+  back.addEventListener("click", () => history.back());
+  el.appendChild(back);
+  const close = document.createElement("button");
+  close.className = "agent-banner-close";
+  close.textContent = "×";
+  close.title = "Dismiss; Back in the browser still returns";
+  close.addEventListener("click", hideAgentBanner);
+  el.appendChild(close);
+  el.hidden = false;
+  el.dataset.request = move.id;
+}
+function hideAgentBanner() {
+  const el = document.getElementById("agent-banner");
+  if (el) el.hidden = true;
+}
 
 /** Tell the host what was picked: a card (member + node) or a member's box. */
 function embedSelected(member, node) {
@@ -3339,6 +3428,8 @@ function syncViewUrl() {
     gates: view.gates,
     focus: view.focus,
     run: view.run,
+    q: view.q,
+    snapshot: view.snapshot,
   };
   const defaults = { env: defaultEnv(manifest && manifest.opening, projectInfo && projectInfo.currentEnv), lens: savedColourMode };
   const next = location.pathname + writeViewQuery(location.search, state, defaults) + location.hash;
@@ -10647,6 +10738,9 @@ events.addEventListener("member", (e) => {
   markIdentityCards(lastGraphIr);
   renderStatusbar();
 });
+
+// #914: an agent's POST /api/view.
+events.addEventListener("view", (e) => agentMove(e.data));
 
 events.addEventListener("changed", () => {
   bulkDiffCache = null; // an op ran → per-node live state may have changed

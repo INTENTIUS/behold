@@ -90,3 +90,11 @@ describe("the wheel in the kiosk's bare frame", () => {
     expect(wheelPx({})).toBe(0);
   });
 });
+
+describe("viewFromMessage q and snapshot (#913, #914)", () => {
+  const host = "http://localhost:7777";
+  it("takes q and snapshot from the host, null or empty clearing them", () => {
+    expect(viewFromMessage({ origin: host, data: { type: "behold:view", q: "kind:Bucket", snapshot: "latest" } }, host)).toEqual({ q: "kind:Bucket", snapshot: "latest" });
+    expect(viewFromMessage({ origin: host, data: { type: "behold:view", q: "", snapshot: null } }, host)).toEqual({ q: null, snapshot: null });
+  });
+});

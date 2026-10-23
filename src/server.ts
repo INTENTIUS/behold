@@ -215,6 +215,7 @@ import { cachedHealth, invalidateHealth, readHealthOverlay, rememberHealth, type
 import { rootReader } from "./workspace-reader.ts";
 import { controlRepoInfo, terragucciEstateRoutes } from "./terragucci-estate.ts";
 import { yodelReportRoute } from "./yodel-report.ts";
+import { viewMoveRoute } from "./view-move.ts";
 import { loadDemoRegistry, missingRequirements, fetchesFromNetwork, demoTargetDir, loadDemo, type DemoEntry } from "./demos.ts";
 
 /** The installed behold package root — `demos.json` and the bundled examples
@@ -293,6 +294,10 @@ export interface ServerOptions {
    * strip to Docker+Floci, and tells the SPA to hide those controls. Local
    * deploy (apply/reset/bring-up/approve) and all reads stay on. */
   previewMode?: boolean;
+  /** #914: served by `behold preview`, with or without `--emulator`. Refuses
+   * only the routes that change what someone else is looking at (`POST
+   * /api/view`); everything previewMode locks stays keyed on previewMode. */
+  preview?: boolean;
   /** Carve mode (#252, M1 of #230): the path of a `chant carve advise --json`
    * peelability report to render instead of a chant project. Mutually exclusive
    * with everything project-shaped — the report IS the estate here, so no chant
@@ -1809,19 +1814,46 @@ export function createApp(
   // Live updates (#3): SSE stream the SPA subscribes to. On a "changed" event
   // (a source edit — see startServer's watcher) the SPA re-pulls the current view.
   // Keep-alive pings hold the connection open; the browser's EventSource reconnects.
+  // #914: the open streams are the tabs POST /api/view reaches.
+  let openTabs = 0;
   app.get("/api/events", (c) =>
     streamSSE(c, async (stream) => {
+      openTabs++;
+      let open = true;
       const unsubscribe = broadcaster.subscribe((type, data) => {
         void stream.writeSSE({ event: type, data: data || String(Date.now()) });
       });
-      stream.onAbort(unsubscribe);
-      while (!stream.aborted) {
-        await stream.writeSSE({ event: "ping", data: "" });
-        await stream.sleep(30_000);
+      const close = () => {
+        if (open) openTabs--;
+        open = false;
+        unsubscribe();
+      };
+      stream.onAbort(close);
+      try {
+        while (!stream.aborted) {
+          await stream.writeSSE({ event: "ping", data: "" });
+          await stream.sleep(30_000);
+        }
+      } finally {
+        close();
       }
-      unsubscribe();
     }),
   );
+
+  // #914: an agent moves every open tab's view. Writes nothing; refused under
+  // --public and any `behold preview` (src/view-move.ts).
+  viewMoveRoute(app, {
+    emit: (e) => broadcaster.emit("view", JSON.stringify(e)),
+    tabs: () => openTabs,
+    public: () => !!cfg.public,
+    preview: () => !!(cfg.preview || cfg.previewMode),
+    offer: async () => {
+      const { environments } = await detectProject(cfg.projectDir).catch(() => ({ environments: [] as string[] }));
+      const envs = environments.length === 0 && (cfg.projectDirs ?? [cfg.projectDir]).some((d) => memberKindOf(d) === "choudoufu") ? ["live"] : environments;
+      return { envs, ...(beholdConfig.tiers ? { tiers: beholdConfig.tiers.values } : {}) };
+    },
+    defaultEnv: () => cfg.env ?? null,
+  });
 
   // What behold is and what its reads cost (#421, M2 of #419). `diagnose()` has
   // produced this report since #193 and only the CLI has ever asked for it, so
@@ -2438,7 +2470,12 @@ export function createApp(
         { method: "GET", path: "/api/operator/log", desc: "the operating loop's timeline: converge ticks + gate resolutions, newest ?limit=n (max 200) from ?since=<iso>" },
         { method: "GET", path: "/api/history", desc: "recent source commits (rollback targets)" },
         { method: "GET", path: "/api/frames", desc: "captured lanes frames" },
-        { method: "GET", path: "/api/events", desc: "SSE: changed / op / apply / run / pr" },
+        { method: "GET", path: "/api/events", desc: "SSE: changed / op / apply / run / pr / view" },
+        {
+          method: "POST",
+          path: "/api/view",
+          desc: "move every open tab to a view, writing nothing: JSON body {view: {q, snapshot, env, member, zoom, node, focus, ...}, by?}; by is a label, not authentication; answers {id, movedAt, sent, link, view, refused}, or 409 code no-tab with the link when no tab is open; refused under --public and behold preview (#914)",
+        },
         { method: "POST", path: "/api/refresh", desc: "re-observe live now (?env=) — returns the fresh graph. With ?notify=1 it is a host's notice that the workspace changed: cached reads are dropped and every open page re-pulls (#476)" },
         { method: "POST", path: "/api/apply", desc: "delegated apply: ?env=&component=<name|all> (guarded, preview-locked)" },
         { method: "POST", path: "/api/ops/:name/run", desc: "run a committed Op (delegated write)" },

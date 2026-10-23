@@ -526,7 +526,8 @@ preview-locked, and one load runs at a time (409 otherwise).
    `?env=`, `/api/overlay` is the live entity overlay; `/api/diff?env=` slices
    per-node observed state, drift and field ownership; `/api/reconcile?env=`
    summarizes the pending change set; `/api/substrates` reports substrate
-   readiness; `/api/events` (SSE) pushes `changed`/`op`/`apply`/`run`/`pr`.
+   readiness; `/api/events` (SSE) pushes `changed`/`op`/`apply`/`run`/`pr`,
+   and `view` when an agent moves the tab (below).
    With `?components=1&env=`, each component node carries `_liveStatus` (the
    `chant components status` verdict) and, when the release ledger recorded
    one, `_release` — `{runId, forge, originSource, url?, gitSha, digest,
@@ -885,6 +886,53 @@ pass.
 
 There is still **no** endpoint that runs `terraform`. The handoff step hands
 back the runbook's commands as text.
+
+## Moving the person's open tab (#914)
+
+`POST /api/view` changes what every open tab of this serve draws. It is a
+view change and writes nothing: no infrastructure, no project file, not
+`.behold/layout.json`, and nothing kept on the server.
+
+```
+POST /api/view
+{"view": {"q": "attr:internetFacing=true", "env": "prod", "snapshot": "latest", "zoom": "resources"},
+ "by": "claude-code via behold mcp"}
+```
+
+`view` takes the URL's view keys (`member`, `zoom`, `env`, `tier`, `lens`,
+`node`, `radial`, `alike`, `gates`, `focus`, `run`, `pull`) plus `q`, a
+question in chant's search grammar, and `snapshot`, a recorded lifecycle
+snapshot (`latest` or a ref) that needs an `env`. They are settled with the
+same checks a link's query gets (`web/view-url.js`: `viewFromObject`,
+`settleView`, `checkQuery`); an env the project doesn't declare, a `q` with a
+control character or over 2000 characters, or a key that isn't a view key is
+named in `refused` and the rest still moves. `at` is refused by name: in
+chant's read contract it is a git revision, so a snapshot is `snapshot`.
+behold does not parse `q`. Until the search read (#913) lands, the tab
+carries `q` in its URL and its banner and draws nothing from it.
+
+The answer is `200 {id, movedAt, sent, link, view, refused}`, where `sent` is
+the number of open tabs it reached and `link` opens the same view. With no
+tab open it is `409 {code: "no-tab", link}`: hand the person the link. A
+view with nothing that can be applied is `400 {code: "view", refused}`.
+
+Each tab gets a `view` event `{id, movedAt, by, view}` on `/api/events`,
+moves, and shows "Moved by an agent: `<by>` asked `<q>` at <time> (request
+<id>)" with a Back button. An agent's move pushes a browser history entry, so
+the banner's Back and the browser's Back both return to the view from before
+it; up to 20 moves in a row stack this way. The person's own changes keep
+replacing the entry they are on. An embedded frame with a host (`embed=1&host=`)
+ignores the event, because its host owns its view (#476).
+
+`by` is a label of at most 80 printable characters. Without one it is the
+request's User-Agent product token. Anyone who can reach the serve can send
+any name, so `by` says who the caller claims to be and is not authentication.
+
+Refused: under `serve --public` (405 from the request guard, and 403 `code:
+"public"` in the route itself), and under every `behold preview`, with or
+without `--emulator` (403 `code: "preview"`). A terragucci or SQL Yodeler
+repo allows it, since it writes nothing. A static export has no server, so no
+route.
 
 ## The act loop (delegated, never direct)
 
@@ -1344,7 +1392,8 @@ allowlist (#500): every request whose method is not GET, HEAD or OPTIONS, on
 any path, answers that `409` unless `TERRAGUCCI_ALLOWED_WRITES` names its
 method and route, and that list holds only the exceptions below (the layout
 sidecar, project open and reveal, demo open, refresh, and the four carve
-steps). A new write route is refused on a terragucci repo until it is added
+steps), plus `POST /api/view`, which moves the open tabs and writes nothing
+(#914). A new write route is refused on a terragucci repo until it is added
 there. `src/terragucci-repo.test.ts` walks every non-GET route of the real
 app (`app.routes`, built plain, with a carve report and with `--terragucci`)
 and asserts each one is allowlisted or answers 409, and that every allowlist
