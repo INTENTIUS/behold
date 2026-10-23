@@ -26,6 +26,7 @@ import { servesAsEstate } from "./member-kind.ts";
 import { setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
 import { readCarveReport } from "./carve-lens.ts";
 import { HCL_PARSER_PKG } from "./terraform-member.ts";
+import { runShot } from "./shot-cli.ts";
 import { listCheckouts, type RepoTarget, type ViewRepos } from "./view-repos.ts";
 import {
   bootScratchFloci,
@@ -53,6 +54,8 @@ Usage:
                 [--repos <parent>] [--yodel-report <file|dir>] [--chant-report-url <url>] [--chant-demo <src>]
                 [--ci-report-url <url>]
   behold carve <report.json> [--port <n>]
+  behold shot "<query>" [project-dir] [--env <name>] [--snapshot <ref>] [-o <out.png>] [--url <serve>]
+                [--width <px>] [--height <px>] [--link-base <url>] [--view <k=v&...>]   (behold shot --help)
 
   carve   Render a chant Terraform peelability report — the JSON from
           \`chant carve advise --from <tf-dir> --json\` — as a graph. One card
@@ -346,6 +349,11 @@ export async function run(argv: string[]): Promise<void> {
   if (cmd === "carve") {
     await runCarve(rest);
     return;
+  }
+
+  if (cmd === "shot") {
+    // Exit at once: the app a shot starts in-process may leave timers behind it.
+    process.exit(await runShot(rest));
   }
 
   if (cmd !== "serve") {

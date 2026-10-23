@@ -3,7 +3,7 @@
   "version": "0.29.57",
   "license": "Apache-2.0",
   "type": "module",
-  "description": "behold — a live control plane on chant. See your whole estate (every substrate in one graph), coloured by drift; act through delegated, gated Ops.",
+  "description": "behold \u2014 a live control plane on chant. See your whole estate (every substrate in one graph), coloured by drift; act through delegated, gated Ops.",
   "bin": {
     "behold": "./bin/behold.js"
   },
@@ -55,13 +55,17 @@
   },
   "peerDependencies": {
     "@intentius/chant-lexicon-terraform": "^0.124.0",
-    "@cdktn/hcl2json": "^0.24.0"
+    "@cdktn/hcl2json": "^0.24.0",
+    "playwright-core": "^1.62.0"
   },
   "peerDependenciesMeta": {
     "@intentius/chant-lexicon-terraform": {
       "optional": true
     },
     "@cdktn/hcl2json": {
+      "optional": true
+    },
+    "playwright-core": {
       "optional": true
     }
   },

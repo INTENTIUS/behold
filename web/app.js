@@ -129,6 +129,7 @@ import { comparisonRow, comparisonSummary } from "./cross-env.js";
 // The marker-vs-derived mark on a choudoufu card: how its identity was found.
 import { identityMark, tagGlyphSvg } from "./identity-mark.js";
 import { shotFromMessage, shotViewBox, tweenViewBox, unionBox, sameViewBox, heldFrame, heldInsets, heldTarget, holdsStage, medianWidth, smallStage } from "./kiosk-shot.js"; // behold#571: Watch's camera
+import { SHOT_ATTR, SHOT_CAPTION_PX, SHOT_DIM, readShotFrame, shotCaption, shotLit, shotProvenance, shotState } from "./shot-frame.js"; // behold#915: the page `behold shot` photographs
 // #712, #715: the dots layer, the zoom past the cards. Mounted for a live
 // carve when the estate has choudoufu roots or estate rosters
 // (/api/terragucci/carve, liveCarveGate below), or when /api/graph's meta
@@ -6357,15 +6358,22 @@ function kioskTellBoxes() {
  * so the graph pane never shows an empty frame.
  */
 var drawnTold = false;
+/** Whether the graph has drawn with its marks: "failed" when it could not, true once drawn, false while it is still coming. */
+function graphDrawnState() {
+  const svg = currentSvg();
+  if (document.querySelector("#graph > .err")) return "failed";
+  if (!(svg && svg.querySelector("[data-node-id]"))) return false;
+  // The marks: terragucci's reports answered (or refused), or chant's loop has its own.
+  if (terragucciComponentsRepo && !tgAnswer && !chantPrDrawn()) return false;
+  // behold#631: a chant repo's loop: its first read of /api/chant/pr, answered or not.
+  if (!terragucciComponentsRepo && view.components && chantFacets && !staticMode && !chantPrRead) return false;
+  return true;
+}
 function kioskTellDrawn() {
   if (drawnTold || !embedOpts.host || window.parent === window) return;
-  const svg = currentSvg();
-  const failed = !!document.querySelector("#graph > .err");
-  if (!failed && !(svg && svg.querySelector("[data-node-id]"))) return;
-  // The marks: terragucci's reports answered (or refused), or chant's loop has its own.
-  if (!failed && terragucciComponentsRepo && !tgAnswer && !chantPrDrawn()) return;
-  // behold#631: a chant repo's loop: its first read of /api/chant/pr, answered or not.
-  if (!failed && !terragucciComponentsRepo && view.components && chantFacets && !staticMode && !chantPrRead) return;
+  const drawnState = graphDrawnState();
+  if (!drawnState) return;
+  const failed = drawnState === "failed";
   drawnTold = true;
   try {
     window.parent.postMessage({ type: "behold:drawn", failed }, embedOpts.host);
@@ -6375,6 +6383,82 @@ function kioskTellDrawn() {
 }
 // A graph that failed draws no svg and no reads: say so too, so the kiosk is never left waiting.
 if (embedOpts.bare) setInterval(kioskTellDrawn, 1000);
+
+// --- behold#915: the page `behold shot` photographs ---------------------------
+// `?embed=1&bare=1&frame=matches` (web/shot-frame.js). Once the graph has
+// drawn, the cards the view asks for are lit and the rest dimmed, the lit
+// cards are framed with the kiosk's arithmetic at once (no move), one caption
+// line says what was asked, from where and when, and <html> gets
+// `data-behold-shot`. A graph that never draws never sets it, so the driver
+// times out and writes nothing.
+const shotFrameOn = !!embedOpts.bare && readShotFrame(location.search) === "matches";
+// The link as loaded: the page rewrites its URL as it settles the view (a card it lacks drops out), and the shot answers what was asked.
+const shotAsked = new URLSearchParams(location.search);
+var shotFrameDone = false; // var: setupGraphViewBox reads it, and may run before this line is reached
+function shotFrameTick() {
+  if (!shotFrameOn || shotFrameDone) return;
+  const drawnState = graphDrawnState();
+  if (!drawnState) return;
+  shotFrameDone = true;
+  const state = shotFrameApply(drawnState === "failed");
+  // Two frames, so what was set above is painted before the driver looks.
+  requestAnimationFrame(() => requestAnimationFrame(() => document.documentElement.setAttribute(SHOT_ATTR, state)));
+}
+/** Light, dim, frame and caption the graph as it is drawn now; the state the shot reports. */
+function shotFrameApply(failed = !!document.querySelector("#graph > .err")) {
+  const params = shotAsked;
+  const svg = currentSvg();
+  const host = document.getElementById("graph");
+  let lit = { ids: [], asked: false, label: null };
+  if (!failed && svg && host) {
+    const ownRect = (g) => g.querySelector(":scope > rect") || g;
+    const cards = [...svg.querySelectorAll("[data-node-id]")].map((g) => ({ id: g.getAttribute("data-node-id"), g, box: userBoxOf(svg, ownRect(g)) }));
+    const groups = [...svg.querySelectorAll("rect[data-group-id]")].map((r) => ({ id: r.getAttribute("data-group-id"), box: userBoxOf(svg, r) }));
+    // behold#913 passes the query's matched node ids as the fourth argument; until then the view's node or focus stands in.
+    // The link's own node and focus, as asked: a card the graph lacks is a question with no answer, never the whole graph.
+    lit = shotLit({ node: params.get("node"), focus: params.get("focus") }, cards, groups, null);
+    const on = new Set(lit.ids);
+    for (const c of cards) {
+      const dim = lit.asked && !on.has(c.id);
+      c.g.style.opacity = dim ? String(SHOT_DIM) : "";
+      if (dim) c.g.setAttribute("data-shot-dim", "1");
+      else c.g.removeAttribute("data-shot-dim");
+    }
+    for (const e of svg.querySelectorAll("[data-edge-from]")) {
+      const dim = lit.asked && !(on.has(e.getAttribute("data-edge-from")) && on.has(e.getAttribute("data-edge-to")));
+      e.style.opacity = dim ? String(SHOT_DIM) : "";
+    }
+    // The lit cards, or with none lit the whole graph as drawn (its boxes' titles and all).
+    const whole = vbInit && { x: vbInit[0], y: vbInit[1], x2: vbInit[0] + vbInit[2], y2: vbInit[1] + vbInit[3] };
+    const target = (lit.ids.length && unionBox(cards.filter((c) => on.has(c.id)).map((c) => c.box))) || whole;
+    const pane = host.getBoundingClientRect();
+    const to = target && shotViewBox(target, { width: pane.width, height: pane.height }, { bottom: SHOT_CAPTION_PX });
+    if (to) {
+      vb = to;
+      vbAtFit = false;
+      applyVB();
+    }
+  }
+  const state = shotState({ failed, lit });
+  const err = document.querySelector("#graph > .err");
+  let cap = document.getElementById("shot-caption");
+  if (!cap) {
+    cap = document.createElement("div");
+    cap.id = "shot-caption";
+    cap.style.cssText = `position:fixed;left:0;right:0;bottom:0;height:${SHOT_CAPTION_PX}px;padding:0 12px;font:13px/1 system-ui,sans-serif;line-height:${SHOT_CAPTION_PX}px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:50;background:var(--bg, #0d1117);color:var(--fg, #e6edf3);border-top:1px solid var(--border, #30363d)`;
+    document.body.appendChild(cap);
+  }
+  cap.style.color = state === "failed" ? "var(--degraded, #f85149)" : "var(--fg, #e6edf3)";
+  cap.textContent = shotCaption({
+    query: params.get("q"),
+    label: lit.label,
+    provenance: shotProvenance({ env: view.env, snapshot: params.get("snapshot") }),
+    failure: state === "failed" ? ((err && err.textContent) || "the graph failed to draw").split("\n")[0] : null,
+    state,
+  });
+  return state;
+}
+if (shotFrameOn) setInterval(shotFrameTick, 250);
 
 window.addEventListener("message", (e) => {
   if (!embedOpts.bare) return;
@@ -9200,6 +9284,8 @@ function setupGraphViewBox(svg) {
     applyVB();
     // behold#571: in the kiosk's Watch mode a re-render keeps the shot the kiosk asked for.
     if (kioskShot) queueMicrotask(() => applyKioskShot(false));
+    // behold#915: a re-render keeps the shot's lights and framing.
+    if (shotFrameDone) queueMicrotask(() => shotFrameApply());
   } else {
     vbInit = vb = null;
   }
