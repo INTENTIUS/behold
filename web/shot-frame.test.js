@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readShotFrame, shotCaption, shotLit, shotProvenance, shotState } from "./shot-frame.js";
+import { queryFrame, readShotFrame, shotCaption, shotLit, shotProvenance, shotState } from "./shot-frame.js";
 
 const box = (x, y, w = 100, h = 60) => ({ x, y, x2: x + w, y2: y + h });
 const cards = [
@@ -60,5 +60,26 @@ describe("the caption", () => {
     expect(line).not.toContain("\n");
     expect(line.startsWith("graph failed: chant exited 1")).toBe(true);
     expect(line).toContain("env prod, snapshot latest");
+  });
+});
+
+describe("queryFrame (#908 stage 3)", () => {
+  it("lights the lit cards and frames them with the path cards, leaving the dimmed out", () => {
+    const marks = [
+      { id: "bastion", mark: "lit" },
+      { id: "subnet", mark: "path" },
+      { id: "igw", mark: "path" },
+      { id: "vpc", mark: "dim" },
+      { id: "roles ×31", mark: "lit" },
+      { id: "plain", mark: null },
+    ];
+    expect(queryFrame(marks)).toEqual({ lit: ["bastion", "roles ×31"], frame: ["bastion", "subnet", "igw", "roles ×31"] });
+    expect(shotState({ lit: shotLit({}, marks, [], queryFrame(marks).lit) })).toBe("drawn");
+  });
+
+  it("frames nothing and reports no matches when nothing is lit", () => {
+    const marks = [{ id: "vpc", mark: "dim" }];
+    expect(queryFrame(marks)).toEqual({ lit: [], frame: [] });
+    expect(shotState({ lit: shotLit({}, marks, [], queryFrame(marks).lit) })).toBe("no-matches");
   });
 });

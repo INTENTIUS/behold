@@ -130,7 +130,7 @@ import { comparisonRow, comparisonSummary } from "./cross-env.js";
 // The marker-vs-derived mark on a choudoufu card: how its identity was found.
 import { identityMark, tagGlyphSvg } from "./identity-mark.js";
 import { shotFromMessage, shotViewBox, tweenViewBox, unionBox, sameViewBox, heldFrame, heldInsets, heldTarget, holdsStage, medianWidth, smallStage } from "./kiosk-shot.js"; // behold#571: Watch's camera
-import { SHOT_ATTR, SHOT_CAPTION_PX, SHOT_DIM, readShotFrame, shotCaption, shotLit, shotProvenance, shotState } from "./shot-frame.js"; // behold#915: the page `behold shot` photographs
+import { SHOT_ATTR, SHOT_CAPTION_PX, SHOT_DIM, queryFrame, readShotFrame, shotCaption, shotLit, shotProvenance, shotState } from "./shot-frame.js"; // behold#915: the page `behold shot` photographs
 import { countsLine, groupLabel, groupMarks, queryLine, queryMarks, searchKey, searchUrl, stackIndex, uncapturedLine } from "./search-view.js"; // behold#913: `q` drawn; behold#922: groups
 // #712, #715: the dots layer, the zoom past the cards. Mounted for a live
 // carve when the estate has choudoufu roots or estate rosters
@@ -6674,7 +6674,9 @@ function shotFrameApply(failed = !!document.querySelector("#graph > .err")) {
     // behold#913: the query's matched node ids (drawQuery has marked the cards and the path edges). Without a
     // query, the link's own node and focus, as asked: a card the graph lacks is a question with no answer, never the whole graph.
     const qa = queryAnswerNow();
-    lit = shotLit({ node: params.get("node"), focus: params.get("focus") }, cards, groups, qa ? (qa.draw ? qa.draw.lit || [] : []) : null);
+    // #908 stage 3: the matches and the frame come from drawQuery's marks, so a stack holding a match counts and the path is in the picture.
+    const qf = qa && qa.draw ? queryFrame(cards.map((c) => ({ id: c.id, mark: c.g.getAttribute("data-q") }))) : null;
+    lit = shotLit({ node: params.get("node"), focus: params.get("focus") }, cards, groups, qa ? (qf ? qf.lit : []) : null);
     shotQueryFailed = !!qa && (!qa.draw || !!qa.draw.failure);
     const on = new Set(lit.ids);
     for (const c of cards) {
@@ -6691,7 +6693,8 @@ function shotFrameApply(failed = !!document.querySelector("#graph > .err")) {
     }
     // The lit cards, or with none lit the whole graph as drawn (its boxes' titles and all).
     const whole = vbInit && { x: vbInit[0], y: vbInit[1], x2: vbInit[0] + vbInit[2], y2: vbInit[1] + vbInit[3] };
-    const target = (lit.ids.length && unionBox(cards.filter((c) => on.has(c.id)).map((c) => c.box))) || whole;
+    const framed = qf ? new Set(qf.frame) : on;
+    const target = (lit.ids.length && unionBox(cards.filter((c) => framed.has(c.id)).map((c) => c.box))) || whole;
     const pane = host.getBoundingClientRect();
     const to = target && shotViewBox(target, { width: pane.width, height: pane.height }, { bottom: SHOT_CAPTION_PX });
     if (to) {
