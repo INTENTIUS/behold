@@ -16,6 +16,11 @@
  *    with a reason), `unowned[]` (a live object at a declared identity that is
  *    not ours: adoptable, or belonging to another estate), `diagnostics[]`.
  *
+ * A re-check with plan (`opts.plan`, #924) takes the `live-plan` document from
+ * chant instead of spawning its own: chant's plan-depth read of the member
+ * hands back the document its plan was merged on (src/choudoufu-chant-read.ts),
+ * so one `live-plan` answers both the paint and the plan marks.
+ *
  * The palette is the one behold already paints, `good | warn | accent |
  * neutral`, mapped from three vocabularies choudoufu deliberately did not
  * unify (`bound[].source`, `gaps[].rung`, the ten omission reasons) — the
@@ -51,6 +56,10 @@ import {
 } from "./choudoufu-member.ts";
 import { addIntraEstateEdges, lexiconStamp } from "./choudoufu-refs.ts";
 import type { MemberVia } from "./member-ir.ts";
+// Imported when a re-check needs it: the chant read reaches the member-kind
+// registry through src/terraform-member.ts, which registers this module's spec.
+import type { ChoudoufuChantAnswer } from "./choudoufu-chant-read.ts";
+import { resolve } from "node:path";
 import type { MemberKindSpec } from "./member-kind.ts";
 
 // ---------------------------------------------------------------------------
@@ -510,7 +519,9 @@ export function paintPlanDrift(ir: GraphIR, drift: Map<string, { actions: string
     const address = member && n.id.startsWith(`${member}/`) ? n.id.slice(member.length + 1) : n.id;
     const d = drift.get(address);
     if (!d) continue;
-    const mark: PlanDriftMark = { actions: d.actions, attributes: d.changes.map((c) => c.path) };
+    // chant names a change by its leaf path (`tags.drifted`); the card names
+    // the attribute (`tags`), once.
+    const mark: PlanDriftMark = { actions: d.actions, attributes: [...new Set(d.changes.map((c) => c.path.split(/[.[]/)[0]!))].sort() };
     n.attrs = { ...n.attrs, _planDrift: mark };
     marked++;
   }
@@ -540,6 +551,8 @@ export interface ChoudoufuLiveRead {
  * note, which is what "could not observe" should look like.
  */
 export async function readChoudoufuLive(dir: string, opts: GraphOptions, run: Runner = captureChoudoufu): Promise<ChoudoufuLiveRead> {
+  const chantRead = opts.plan ? await import("./choudoufu-chant-read.ts") : undefined;
+  const unavailable = chantRead ? await chantRead.choudoufuChantUnavailable() : undefined;
   // The roster first, offline: `live-ls` reads no configuration and REQUIRES
   // `-estate=NAME` (it lists what the account holds under one tag, and has
   // nothing to derive the name from), and the name is on this document.
@@ -558,19 +571,47 @@ export async function readChoudoufuLive(dir: string, opts: GraphOptions, run: Ru
       dir,
     );
   }
-  const [lsRun, planRun] = await Promise.all([
-    run(["live-ls", `-estate=${estate}`, "-json", ...(opts.consistent ? ["-consistent"] : []), "."], dir),
-    run(["live-plan", "-json"], dir),
+  const lsRead = run(["live-ls", `-estate=${estate}`, "-json", ...(opts.consistent ? ["-consistent"] : []), "."], dir);
+  // #924: a re-check with plan reads ownership and the plan through ONE chant
+  // read (src/choudoufu-chant-read.ts), which hands back the `live-plan`
+  // document its verdicts came from. Every other read, and a re-check chant
+  // cannot answer, runs behold's own `live-plan`.
+  const stamp = chantRead?.memberSourceStamp(dir);
+  const [lsRun, planDoc] = await Promise.all([
+    lsRead,
+    chantRead && !unavailable
+      ? chantRead.readChoudoufuThroughChant(dir).then((r) => {
+          planAnswers.set(resolve(dir), { answered: r.answered, ...(r.note ? { note: r.note } : {}) });
+          if (r.answered === "live+plan") chantRead.cacheChoudoufuPlan(resolve(dir), stamp, r.drift);
+          // A re-check whose plan was not read must not leave an older change
+          // set standing as if it were this one.
+          else chantRead.resetChoudoufuPlanCache(resolve(dir));
+          return r.plan;
+        })
+      : run(["live-plan", "-json"], dir).then((planRun) => {
+          if (opts.plan) {
+            planAnswers.set(resolve(dir), { answered: "live", note: `the plan was not read: ${unavailable}` });
+            chantRead?.resetChoudoufuPlanCache(resolve(dir));
+          }
+          const plan = parseLivePlan(planRun, dir);
+          if (!plan.ok) throw new ChoudoufuReadError(plan.refusal, dir);
+          return plan.doc;
+        }),
   ]);
   const ls = parseLiveLs(lsRun, dir);
   if (!ls.ok) throw new ChoudoufuReadError(ls.refusal, dir);
-  const plan = parseLivePlan(planRun, dir);
-  if (!plan.ok) throw new ChoudoufuReadError(plan.refusal, dir);
-  const error = plan.doc.diagnostics?.find((d) => d.severity === "error");
+  const error = planDoc.diagnostics?.find((d) => d.severity === "error");
   if (error) {
     throw new ChoudoufuReadError({ error: `live-plan: ${error.summary}${error.detail ? ` — ${error.detail.split("\n")[0]}` : ""}`, code: "choudoufu-live-check", remedy: CREDS }, dir);
   }
-  return { check: check.doc, ls: ls.doc, plan: plan.doc };
+  return { check: check.doc, ls: ls.doc, plan: planDoc };
+}
+
+/** What the last re-check with plan said for a member, by resolved directory:
+ * which reads answered and, when the plan was not read, why (#924). */
+const planAnswers = new Map<string, { answered: ChoudoufuChantAnswer; note?: string }>();
+export function choudoufuPlanAnswer(dir: string): { answered: ChoudoufuChantAnswer; note?: string } | undefined {
+  return planAnswers.get(resolve(dir));
 }
 
 /** The live read as an IR: the declared graph, painted. */

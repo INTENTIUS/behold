@@ -217,7 +217,9 @@ describe("restoreViewQuery (#914)", () => {
       pull: null,
       q: null,
       snapshot: null,
+      countBy: null, // behold#922: no countBy is no grouping
       radial: false,
+      plan: false, // behold#922: no plan is the declared source
       alike: true,
       env: "prod",
       lens: "cost",

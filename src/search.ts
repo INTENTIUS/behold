@@ -29,6 +29,17 @@
  * recorded snapshot (`--snapshot <ref> --env`). `--explain` is always passed,
  * for the near-misses and the universe count a "no matches" view draws.
  *
+ * behold#922: `plan` runs the search at the plan depth, chant's terraform
+ * lexicon reading a saved plan of each root (`CHANT_TERRAFORM_OBSERVE=plan`
+ * with `--live --env`, INTENTIUS/chant#4358), so `attr:planAction=replace`
+ * answers what a change would do. A bare Terraform folder's scratch project
+ * declares no environments, so without an env it takes the placeholder the
+ * plan read on the cards uses (src/terraform-plan.ts `PLAN_READ_ENV`). A plan
+ * is now, so it never goes with a snapshot. `countBy` (`kind`, `module`,
+ * `attr:<name>`) is chant's `--count-by`: the document is the counts branch,
+ * each group with its ids (INTENTIUS/chant#4360, #4382), and the page lights
+ * each group's cards and labels the group with its count.
+ *
  * What is drawn from the document ({@link drawnOf}) is a projection of it,
  * not a join: the ids chant matched, the hop ends and edges on their paths,
  * the rows a live read could not observe, and whether the answer is a
@@ -38,6 +49,8 @@ import { SEARCH_CONTRACT_CHANT_FLOOR, SEARCH_TERRAFORM_WORKSPACE_CHANT_FLOOR, fl
 import { meetsFloor } from "./floor.ts";
 import { checkQuery, checkSnapshot, isEnvName } from "../web/view-url.js";
 import { WORKSPACE_NAME } from "./terraform-member.ts";
+import { checkCountBy } from "../web/view-url.js";
+import { PLAN_READ_ENV, TERRAFORM_OBSERVE_ENV } from "./terraform-plan.ts";
 import { WorkspaceReadError, type WorkspaceDocument, type WorkspaceReader, type WorkspaceRefusal } from "./workspace-reader.ts";
 
 /** What a view asks search for. */
@@ -47,6 +60,10 @@ export interface SearchAsk {
   snapshot?: string | null;
   /** `--show`: a comma list of attributes to carry on each row. */
   show?: string | null;
+  /** behold#922: `--count-by`: `kind`, `module` or `attr:<name>`. */
+  countBy?: string | null;
+  /** behold#922: search at the plan depth (`CHANT_TERRAFORM_OBSERVE=plan`, `--live --env`). */
+  plan?: boolean;
 }
 
 /** Where behold runs the search, and with which chant. */
@@ -67,20 +84,28 @@ export class SearchAskError extends Error {
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 
 /** Check what a request asks for, the way the URL's `q` and `snapshot` are checked. */
-export function checkAsk(raw: { q?: string | null; env?: string | null; snapshot?: string | null; show?: string | null }): SearchAsk {
+export function checkAsk(raw: { q?: string | null; env?: string | null; snapshot?: string | null; show?: string | null; countBy?: string | null; plan?: string | boolean | null }): SearchAsk {
   const q = checkQuery(raw.q ?? null);
   if (!q.ok) throw new SearchAskError({ error: `q was refused: ${q.reason}.`, code: "bad-request", remedy: "Pass q, a query in chant's search grammar." });
-  if (!q.value) throw new SearchAskError({ error: "there is no query to search for.", code: "bad-request", remedy: "Pass q, a query in chant's search grammar (https://intentius.io/chant/cli/search/)." });
+  const cb = checkCountBy(raw.countBy ?? null);
+  if (!cb.ok) throw new SearchAskError({ error: `countBy was refused: ${cb.reason}.`, code: "bad-request", remedy: "Pass countBy=kind, countBy=module or countBy=attr:<name>." });
+  const plan = raw.plan === true || raw.plan === "1" || raw.plan === "true";
+  if (raw.plan !== undefined && raw.plan !== null && raw.plan !== "" && !plan && raw.plan !== false && raw.plan !== "0" && raw.plan !== "false") {
+    throw new SearchAskError({ error: `plan is 1 or 0, not ${JSON.stringify(String(raw.plan).slice(0, 40))}.`, code: "bad-request", remedy: "Pass plan=1 for the plan depth, or leave it out." });
+  }
+  // With countBy, no query counts the whole graph (chant's own rule): "what's in here?".
+  if (!q.value && !cb.value) throw new SearchAskError({ error: "there is no query to search for.", code: "bad-request", remedy: "Pass q, a query in chant's search grammar (https://intentius.io/chant/cli/search/), or countBy to count the whole graph." });
   const env = raw.env ? raw.env.trim() : null;
   if (env !== null && !isEnvName(env)) throw new SearchAskError({ error: `${JSON.stringify(env)} isn't an env name.`, code: "bad-request", remedy: "Pass one of the project's environments as env." });
   const snap = checkSnapshot(raw.snapshot ?? null);
   if (!snap.ok) throw new SearchAskError({ error: `snapshot was refused: ${snap.reason}.`, code: "bad-request", remedy: "Pass latest, or a snapshot ref chant lists." });
   if (snap.value && !env) throw new SearchAskError({ error: "a snapshot is of an env, and no env was named.", code: "bad-request", remedy: "Pass env with snapshot." });
+  if (snap.value && plan) throw new SearchAskError({ error: "plan and snapshot were both asked: a plan is read now, and a snapshot replays what was recorded.", code: "bad-request", remedy: "Drop snapshot to read the plan, or drop plan to replay the snapshot." });
   const show = raw.show ? raw.show.trim() : null;
   if (show !== null && !/^[A-Za-z0-9_.:@/-]+(,[A-Za-z0-9_.:@/-]+)*$/.test(show)) {
     throw new SearchAskError({ error: `show is a comma list of attribute names, not ${JSON.stringify(show.slice(0, 80))}.`, code: "bad-request", remedy: "Pass show=a,b." });
   }
-  return { q: q.value, ...(env ? { env } : {}), ...(snap.value ? { snapshot: snap.value } : {}), ...(show ? { show } : {}) };
+  return { q: q.value ?? "", ...(env ? { env } : {}), ...(snap.value ? { snapshot: snap.value } : {}), ...(show ? { show } : {}), ...(cb.value ? { countBy: cb.value } : {}), ...(plan ? { plan: true } : {}) };
 }
 
 /**
@@ -88,8 +113,33 @@ export function checkAsk(raw: { q?: string | null; env?: string | null; snapshot
  * view, and `--explain` is always on. The reader adds `--json` before the `--`.
  */
 export function searchArgs(ask: SearchAsk): string[] {
-  const mode = ask.env ? (ask.snapshot ? ["--snapshot", ask.snapshot, "--env", ask.env] : ["--live", "--env", ask.env]) : [];
-  return [...mode, "--explain", ...(ask.show ? ["--show", ask.show] : []), "--", ask.q];
+  const mode = ask.plan
+    ? ["--live", "--env", ask.env ?? PLAN_READ_ENV]
+    : ask.env
+      ? ask.snapshot
+        ? ["--snapshot", ask.snapshot, "--env", ask.env]
+        : ["--live", "--env", ask.env]
+      : [];
+  return [...mode, "--explain", ...(ask.show ? ["--show", ask.show] : []), ...(ask.countBy ? ["--count-by", ask.countBy] : []), "--", ask.q];
+}
+
+/** behold#922: the environment one search runs with: the plan depth when the view asks for the plan. */
+export function searchEnv(ask: SearchAsk): Record<string, string> | undefined {
+  return ask.plan ? { [TERRAFORM_OBSERVE_ENV]: "plan" } : undefined;
+}
+
+/**
+ * behold#922: a plan without an env, on a target that isn't a bare Terraform
+ * folder: a chant project's own environments are its to name, so behold
+ * doesn't make one up for it.
+ */
+export function planRefusal(target: SearchTarget, ask: SearchAsk): WorkspaceRefusal | undefined {
+  if (!ask.plan || ask.env || target.kind === "terraform" || target.kind === "refused") return undefined;
+  return {
+    error: "plan reads each Terraform root live at the plan depth, and no env was named.",
+    code: "plan-env",
+    remedy: "Pass env, one of the project's environments, with plan.",
+  };
 }
 
 /** The refusal for a chant below the search floor, or undefined when it meets it. */
@@ -106,13 +156,20 @@ export function searchFloorRefusal(target: SearchTarget): WorkspaceRefusal | und
  * back as chant printed it, a refused query or a failed live read included;
  * a chant below the floor, or a target behold can't search, is a refusal.
  */
-export async function runSearch(target: SearchTarget, ask: SearchAsk, reader: (root: string) => WorkspaceReader): Promise<{ ok: true; document: WorkspaceDocument } | { ok: false; refusal: WorkspaceRefusal }> {
+export async function runSearch(
+  target: SearchTarget,
+  ask: SearchAsk,
+  reader: (root: string, env?: Record<string, string>) => WorkspaceReader,
+): Promise<{ ok: true; document: WorkspaceDocument } | { ok: false; refusal: WorkspaceRefusal }> {
   if (target.kind === "refused") return { ok: false, refusal: target.refusal };
   const tooOld = searchFloorRefusal(target);
   if (tooOld) return { ok: false, refusal: tooOld };
+  const noEnv = planRefusal(target, ask);
+  if (noEnv) return { ok: false, refusal: noEnv };
+  const env = searchEnv(ask);
   try {
-    if (target.kind === "workspace" || target.kind === "terraform") return { ok: true, document: await reader(target.root).read("search", searchArgs(ask)) };
-    return { ok: true, document: await reader(target.dir).readProjectSearch(searchArgs(ask)) };
+    if (target.kind === "workspace" || target.kind === "terraform") return { ok: true, document: await reader(target.root, env).read("search", searchArgs(ask)) };
+    return { ok: true, document: await reader(target.dir, env).readProjectSearch(searchArgs(ask)) };
   } catch (e) {
     if (e instanceof WorkspaceReadError) return { ok: false, refusal: e.refusal };
     throw e;
@@ -153,6 +210,13 @@ export interface Drawn {
   failure: { kind: "query" | "live" | "refused"; code: string | null; message: string; hint?: string; lexicons?: string[] } | null;
   /** Members chant listed and did not search, never drawn as no matches. */
   notSearched: NotSearched[];
+  /**
+   * behold#922: a `--count-by` answer, chant's groups in chant's order, each
+   * with the ids chant listed for it (INTENTIUS/chant#4382), or `ids: null`
+   * from a chant that lists none (then nothing is lit for the group, and the
+   * line says so). Absent for a row answer.
+   */
+  counts?: { by: string; total: number; groups: Array<{ group: string; count: number; ids: string[] | null }> };
 }
 
 const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
@@ -173,6 +237,14 @@ export function drawnOf(doc: WorkspaceDocument): Drawn {
   const lit = new Set<string>();
   const onPath = new Set<string>();
   const edges = new Map<string, Hop>();
+  // behold#922: a counts answer lights each group's ids; it carries no rows.
+  if (Array.isArray(doc.groups)) {
+    const groups = doc.groups
+      .filter((g): g is Record<string, unknown> => isRecord(g) && typeof g.group === "string" && typeof g.count === "number")
+      .map((g) => ({ group: g.group as string, count: g.count as number, ids: Array.isArray(g.ids) ? g.ids.filter((x): x is string => typeof x === "string") : null }));
+    for (const g of groups) for (const id of g.ids ?? []) lit.add(id);
+    out.counts = { by: str(doc.countBy) ?? "", total: typeof doc.total === "number" ? doc.total : groups.reduce((n, g) => n + g.count, 0), groups };
+  }
   for (const m of Array.isArray(doc.matches) ? doc.matches : []) {
     if (!isRecord(m) || typeof m.id !== "string") continue;
     lit.add(m.id);

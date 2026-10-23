@@ -79,12 +79,13 @@ export function shotProvenance(view) {
  * selection), where the picture comes from, and when. A failure line comes
  * first when there is one. Control characters become spaces, so it stays one line.
  */
-export function shotCaption({ query = null, label = null, provenance = "", at = new Date(), failure = null, state = "drawn" } = {}) {
+export function shotCaption({ query = null, label = null, provenance = "", at = new Date(), failure = null, state = "drawn", counts = null } = {}) {
   const one = (s) => String(s).replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
-  const asked = query ? `"${one(query)}"` : label ? one(label) : "the whole graph";
+  const asked = query ? (query === "the whole graph" ? query : `"${one(query)}"`) : label ? one(label) : "the whole graph";
   const parts = [];
   if (failure) parts.push(one(failure));
   parts.push(state === "no-matches" ? `no matches for ${asked}` : asked);
+  if (counts) parts.push(one(counts)); // behold#922: chant's groups and total
   if (provenance) parts.push(one(provenance));
   const t = at instanceof Date && !Number.isNaN(at.getTime()) ? at.toISOString().replace(/\.\d+Z$/, "Z") : "";
   if (t) parts.push(t);

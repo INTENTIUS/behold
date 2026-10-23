@@ -51,7 +51,8 @@ export const serveCommand = (dir: string): string => `npx @intentius/behold serv
 
 type Prop =
   | { type: "string"; description: string; enum?: string[] }
-  | { type: "integer"; description: string; minimum?: number; maximum?: number };
+  | { type: "integer"; description: string; minimum?: number; maximum?: number }
+  | { type: "boolean"; description: string };
 
 /** A tool's input: JSON Schema, every property listed, nothing else accepted. */
 export interface InputSchema {
@@ -142,6 +143,7 @@ export function checkArgs(tool: Tool, args: Record<string, unknown> | undefined)
       if (typeof v !== "string") throw new ToolError(`${tool.name}: ${k} must be a string`);
       if (p.enum && !p.enum.includes(v)) throw new ToolError(`${tool.name}: ${k} is one of ${p.enum.join(", ")}`);
     }
+    if (p.type === "boolean" && typeof v !== "boolean") throw new ToolError(`${tool.name}: ${k} must be true or false`);
     if (p.type === "integer" && !(Number.isInteger(v) && (p.minimum === undefined || (v as number) >= p.minimum) && (p.maximum === undefined || (v as number) <= p.maximum))) {
       throw new ToolError(`${tool.name}: ${k} must be a whole number${p.minimum !== undefined ? ` from ${p.minimum}` : ""}${p.maximum !== undefined ? ` to ${p.maximum}` : ""}`);
     }
@@ -231,7 +233,17 @@ const SEARCH_OPTIONS =
 const VIEW_PROPS: Record<string, Prop> = {
   query: { type: "string", description: "A chant search query whose matches the view lights, such as `attr:internetFacing=true`." },
   env: { type: "string", description: "The environment whose live state the view shows. Without it, the declared source." },
-  snapshot: { type: "string", description: "With env: a recorded snapshot to show instead of a live read (latest, or a ref chant lists)." },
+  snapshot: { type: "string", description: "With env: a recorded snapshot to show instead of a live read (latest, or a ref chant lists). Not with plan." },
+  plan: {
+    type: "boolean",
+    description:
+      "The plan read (behold#922): the query is answered at the plan depth (CHANT_TERRAFORM_OBSERVE=plan, chant search --live --env), and the cards carry each Terraform root's planAction, planActions, planReplacePaths and planActionReason. " +
+      "On a bare Terraform folder no env is needed; on a chant project pass env. Refused with snapshot. Runs terraform plan -lock=false in each root: it changes nothing, and reads every resource.",
+  },
+  countBy: {
+    type: "string",
+    description: "Group the matches the way chant search --count-by does: kind, module or attr:<name> (behold#922). The answer is chant's groups and total; the view lights each group's cards and labels the group with its count. The query may then be empty, to count the whole estate.",
+  },
   member: { type: "string", description: "Show one estate member." },
   zoom: { type: "string", description: "The zoom: components, resources, attributes, or another behold offers." },
   focus: { type: "string", description: "Comma-separated box ids to keep at full weight; the rest dims." },
@@ -246,6 +258,9 @@ function viewOf(a: Record<string, unknown>): Record<string, string> {
   if (typeof a.query === "string" && a.query.trim()) v.q = a.query;
   if (typeof a.env === "string" && a.env) v.env = a.env;
   if (typeof a.snapshot === "string" && a.snapshot) v.snapshot = a.snapshot;
+  if (a.plan === true) v.plan = "1";
+  if (typeof a.countBy === "string" && a.countBy) v.countBy = a.countBy;
+  if (v.plan && v.snapshot) throw new ToolError("plan and snapshot were both asked: a plan is read now, and a snapshot replays what was recorded. Drop one.");
   for (const k of VIEW_ARGS) if (typeof a[k] === "string" && a[k]) v[k] = a[k] as string;
   if (v.snapshot && !v.env) throw new ToolError("snapshot needs env: a snapshot is recorded per environment");
   return v;
@@ -276,6 +291,8 @@ export const TOOLS: Tool[] = [
       "with `link` (the behold view that draws it) and `drawn: false` added. ask never moves the person's tab; use show for that. " +
       "On a declared workspace the document is chant workspace search's, with every member's rows as <member>/<id>; on one project or a Terraform folder it is chant search --json's. " +
       "Uses the running behold serve of this project; with none, behold answers in this process. Needs chant 0.124.46 or newer. " +
+      "Which demo questions it answers: \"what's in here?\" is countBy kind with the query kind:aws_ (or empty); \"how many resources does each module own, by type?\" is countBy module, then countBy kind with the query narrowed to a module; " +
+      "\"what would this change do, and why does it replace the database?\" is plan with the query attr:planAction=replace and show planActions,planReplacePaths,planActionReason. " +
       SEARCH_OPTIONS,
     inputSchema: {
       type: "object",
@@ -283,16 +300,24 @@ export const TOOLS: Tool[] = [
         query: VIEW_PROPS.query!,
         env: VIEW_PROPS.env!,
         snapshot: VIEW_PROPS.snapshot!,
+        plan: VIEW_PROPS.plan!,
+        countBy: VIEW_PROPS.countBy!,
         show: { type: "string", description: "Comma-separated attributes to carry on each row (chant search --show)." },
       },
-      required: ["query"],
       additionalProperties: false,
     },
     annotations: READ_ONLY,
     async run(a, ctx) {
       const view = viewOf(a);
-      if (!view.q) throw new ToolError("ask needs a query");
-      const q = new URLSearchParams({ q: view.q, ...(view.env ? { env: view.env } : {}), ...(view.snapshot ? { snapshot: view.snapshot } : {}), ...(typeof a.show === "string" && a.show ? { show: a.show } : {}) });
+      if (!view.q && !view.countBy) throw new ToolError("ask needs a query, or countBy to count the whole estate");
+      const q = new URLSearchParams({
+        q: view.q ?? "",
+        ...(view.env ? { env: view.env } : {}),
+        ...(view.snapshot ? { snapshot: view.snapshot } : {}),
+        ...(view.plan ? { plan: "1" } : {}),
+        ...(view.countBy ? { countBy: view.countBy } : {}),
+        ...(typeof a.show === "string" && a.show ? { show: a.show } : {}),
+      });
       const serve = await ctx.findServe();
       let status: number;
       let body: Record<string, unknown>;
@@ -321,7 +346,7 @@ export const TOOLS: Tool[] = [
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async run(a, ctx) {
       const view = viewOf(a);
-      if (!Object.keys(view).length) throw new ToolError("show needs a query or a view key (env, member, zoom, focus, node)");
+      if (!Object.keys(view).length) throw new ToolError("show needs a query or a view key (env, plan, countBy, member, zoom, focus, node)");
       const serve = await ctx.findServe();
       if (!serve) {
         throw new ToolError(`No behold serve of ${ctx.projectDir} is running, so there is no tab to move. Start one with \`${serveCommand(ctx.projectDir)}\` and open it, or take a shot instead.`, {
@@ -342,7 +367,8 @@ export const TOOLS: Tool[] = [
       const res = await ctx.fetch(`${serve.url}/api/view`, {
         method: "POST",
         headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({ view, by }),
+        // POST /api/view takes plan as a boolean, as a host's behold:view does.
+        body: JSON.stringify({ view: { ...view, ...(view.plan ? { plan: true } : {}) }, by }),
       });
       const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
       if (!res.ok) throw new ToolError(typeof body.error === "string" ? body.error : `POST /api/view answered ${res.status}`, { status: res.status, ...body });

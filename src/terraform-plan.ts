@@ -39,10 +39,9 @@
  * resource in the root against its providers, so only a request that asks for
  * it (`?plan=1`) runs one.
  *
- * A choudoufu live root is not read here. chant reads one at the plan depth
- * since chant#4371, but behold reads a choudoufu member's ownership itself
- * (src/choudoufu-live.ts), so the member keeps behold's own plan read,
- * src/choudoufu-plan.ts, until both move to chant together (#924).
+ * A choudoufu live root is not read here: its re-check reads ownership and
+ * the plan through chant's live+plan read together (INTENTIUS/chant#4371),
+ * in src/choudoufu-chant-read.ts (#924).
  */
 import type { GraphIR, IRNode } from "@intentius/chant";
 import { stripAnsi } from "./ansi.ts";

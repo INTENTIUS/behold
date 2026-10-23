@@ -33,27 +33,49 @@ function estate(): { root: string; mono: string; teamA: string } {
 }
 
 /**
- * #404: what `show -json` answers here. Synthetic, and deliberately so — the
- * recorded plan documents are from the iam-ecr cohort and name ITS addresses,
- * which no roster in this file declares, so a join against them would prove
- * nothing. The parser and the change-set rules are pinned against the real
- * documents in src/choudoufu-plan.test.ts; this is only the shape the route
- * has to carry from a spawn to a card, keyed to an address the monolith's own
- * roster declares and `live-plan` reports bound.
+ * #924: what chant's plan-depth read answers for a member (the monolith only).
+ * Synthetic, and deliberately so: the recorded chant reads are from the
+ * iam-ecr cohort and name ITS addresses, which no roster in this file
+ * declares. The reader and the change-set rules are pinned against the
+ * recorded documents in src/choudoufu-chant-read.test.ts; this is only the
+ * shape the route carries from a chant read to a card, keyed to an address
+ * the monolith's roster declares and `live-plan` reports bound.
  */
-const FAKE_PLAN = JSON.stringify({
-  format_version: "1.2",
-  resource_changes: [
-    { address: "aws_iam_role.team_a", mode: "managed", change: { actions: ["update"], before: { tags: { drifted: "out-of-band" } }, after: { tags: {} } } },
-    { address: "aws_iam_policy.team_a", mode: "managed", change: { actions: ["no-op"], before: { name: "p" }, after: { name: "p" } } },
+const FAKE_IR = JSON.stringify({
+  nodes: [
+    { id: "mono/aws_iam_role.team_a", kind: "Terraform::Resource", lexicon: "terraform", attrs: { planAction: "update", planActions: { "aws_iam_role.team_a": ["update"] }, planChanges: [{ path: "tags.drifted", before: "out-of-band", after: null }] } },
+    { id: "mono/aws_iam_policy.team_a", kind: "Terraform::Resource", lexicon: "terraform", attrs: { planAction: "no-op", planActions: { "aws_iam_policy.team_a": ["no-op"] } } },
   ],
+  edges: [],
 });
+
+/** The chant seam: one `graph` read per member, which hands back the
+ * member's recorded `live-plan` document where `CHANT_TERRAFORM_LIVE_PLAN_DIR`
+ * says, the way chant does (INTENTIUS/chant#4383). Records every read. */
+function fakeChant(reads: Array<{ args: string[]; project: string; env: Record<string, string> }>) {
+  return {
+    chantVersion: () => "0.124.46",
+    lexiconVersion: () => "0.124.46",
+    readerAbsent: () => undefined,
+    run: async (args: string[], project: string, env: Record<string, string>) => {
+      reads.push({ args, project, env });
+      const config = readFileSync(join(project, "chant.config.ts"), "utf8");
+      const root = /"(mono|team-a)": \{/.exec(config)![1]!;
+      writeFileSync(join(env.CHANT_TERRAFORM_LIVE_PLAN_DIR!, `${root}.live-plan.json`), root === "mono" ? raw("choudoufu-live-plan-monolith-clean.json") : raw("choudoufu-live-plan-team-a-after-split.json"));
+      return {
+        code: 0,
+        stdout: root === "mono" ? FAKE_IR : '{"nodes":[],"edges":[]}',
+        stderr: `warning: [terraform] terraform.roots.${root}: the plan read answered (\`choudoufu plan -input=false -lock=false -out=<tmp>/plan.tfplan\`), beside \`live-plan -json\`, which answered presence and ownership\n`,
+      };
+    },
+  };
+}
 
 /** The spawn seam: live-check per member from its recorded roster, live-mv
  * from the recorded dry run or refusal, live-ls from the recorded listings,
- * and (#404) the two-spawn plan read — `plan` writes a file and prints
- * progress, `show -json` prints the document. Records every argv so a test can
- * assert what was (not) run. */
+ * and live-plan from the recorded plans. A `plan` or `show` is refused: since
+ * #924 behold never plans a choudoufu member itself. Records every argv so a
+ * test can assert what was (not) run. */
 function fakeChoudoufu(spawns: string[][]) {
   return async (args: string[], cwd: string) => {
     spawns.push(args);
@@ -63,17 +85,15 @@ function fakeChoudoufu(spawns: string[][]) {
     if (verb === "live-mv") return { code: 0, stderr: "", stdout: args[4] === "aws_iam_role.team_b" ? raw("choudoufu-live-mv-refused.json") : raw("choudoufu-live-mv-cross-estate-dry-run.json") };
     if (verb === "live-ls") return { code: 0, stderr: "", stdout: inMono ? raw("choudoufu-live-ls-monolith.json") : raw("choudoufu-live-ls-team-a-after-split.json") };
     if (verb === "live-plan") return { code: 0, stderr: "", stdout: inMono ? raw("choudoufu-live-plan-monolith-clean.json") : raw("choudoufu-live-plan-team-a-after-split.json") };
-    if (verb === "plan") return { code: 0, stderr: "", stdout: "" };
-    if (verb === "show") return { code: 0, stderr: "", stdout: inMono ? FAKE_PLAN : '{"format_version":"1.2","resource_changes":[]}' };
     return { code: 2, stderr: `unexpected ${verb}`, stdout: "" };
   };
 }
 
-function served(spawns: string[][] = []) {
+function served(spawns: string[][] = [], chantReads: Array<{ args: string[]; project: string; env: Record<string, string> }> = []) {
   const { mono, teamA } = estate();
   const broadcaster = new Broadcaster();
   const app = createApp(
-    { projectDir: mono, projectDirs: [mono, teamA], port: 0, choudoufu: { run: fakeChoudoufu(spawns) } },
+    { projectDir: mono, projectDirs: [mono, teamA], port: 0, choudoufu: { run: fakeChoudoufu(spawns), chant: fakeChant(chantReads) } },
     broadcaster,
     new FrameBuffer(),
     new OpRunner({ projectDir: mono, broadcaster, onDone: () => {} }),
@@ -156,48 +176,78 @@ describe("GET /api/choudoufu/split (#371)", () => {
   // #404: attribute drift is opt-in, and the meta says which of the two
   // "nothing is drifted" answers a reader is looking at.
   describe("attribute drift from the plan (#404)", () => {
-    type Overlay = { ir: { nodes: { id: string; attrs: Record<string, unknown> }[] }; meta: { drift?: { read: boolean; drifted?: number } } };
+    type Overlay = { ir: { nodes: { id: string; attrs: Record<string, unknown> }[] }; meta: { drift?: { read: boolean; drifted?: number; note?: string } } };
     const overlay = async (app: ReturnType<typeof served>["app"], q = "") => (await (await app.request(`/api/overlay?alike=0&env=live${q}`)).json()) as Overlay;
 
     it("never plans on an ordinary overlay read, and says the question was not asked", async () => {
       const spawns: string[][] = [];
-      const { app } = served(spawns);
+      const reads: Parameters<typeof fakeChant>[0] = [];
+      const { app } = served(spawns, reads);
       const body = await overlay(app);
       // The distinction the SPA renders: not `drifted: 0`, which would claim a
       // plan ran and found nothing.
       expect(body.meta.drift).toEqual({ read: false });
       expect(body.ir.nodes.every((n) => n.attrs._planDrift === undefined)).toBe(true);
-      // And no spawn was paid for it.
+      // And no plan was paid for: no chant plan read, no choudoufu plan.
+      expect(reads).toEqual([]);
       expect(spawns.map((a) => a[0])).not.toContain("plan");
-      expect(spawns.map((a) => a[0])).not.toContain("show");
     });
 
-    it("plans on ?plan=1, marks the bound card and leaves its ownership colour alone", async () => {
+    it("re-checks through one chant read per member, marks the bound card and leaves its ownership colour alone (#924)", async () => {
       const spawns: string[][] = [];
-      const { app } = served(spawns);
+      const reads: Parameters<typeof fakeChant>[0] = [];
+      const { app } = served(spawns, reads);
       const body = await overlay(app, "&plan=1");
       expect(body.meta.drift).toEqual({ read: true, drifted: 1 });
       const node = body.ir.nodes.find((n) => n.id === "mono/aws_iam_role.team_a")!;
       expect(node.attrs._status).toBe("good");
       expect(node.attrs._planDrift).toEqual({ actions: ["update"], attributes: ["tags"] });
-      // The no-op entry in the same document earns no mark.
+      // The no-op entry in the same read earns no mark.
       expect(body.ir.nodes.find((n) => n.id === "mono/aws_iam_policy.team_a")!.attrs._planDrift).toBeUndefined();
-      // The two spawns the module header pins, in order, per choudoufu member.
-      expect(spawns.filter((a) => a[0] === "plan" || a[0] === "show").map((a) => a.slice(0, 2).join(" "))).toEqual(["plan -input=false", "show -json", "plan -input=false", "show -json"]);
+      // One `live-plan` per member, and it is chant's: one chant read per
+      // member at the plan depth, handing its document to a directory behold
+      // made, and no `live-plan`, `plan` or `show` of behold's own.
+      expect(reads).toHaveLength(2);
+      for (const r of reads) {
+        expect(r.args).toEqual(["graph", ".", "--live", "--overlay", "--env", "behold-plan", "--format", "ir", "--detail", "3"]);
+        expect(r.env.CHANT_TERRAFORM_OBSERVE).toBe("plan");
+        expect(r.env.CHANT_TERRAFORM_LIVE_PLAN_DIR).toMatch(/behold-choudoufu-live-plan-/);
+        expect(readFileSync(join(r.project, "chant.config.ts"), "utf8")).toContain('binary: "choudoufu"');
+      }
+      expect(spawns.filter((a) => ["live-plan", "plan", "show"].includes(a[0]!))).toEqual([]);
     });
 
-    it("a reload after a plan read serves the cached change set instead of planning again", async () => {
+    it("a reload after a re-check serves the cached change set instead of reading again", async () => {
       const spawns: string[][] = [];
-      const { app } = served(spawns);
+      const reads: Parameters<typeof fakeChant>[0] = [];
+      const { app } = served(spawns, reads);
       await overlay(app, "&plan=1");
-      const planned = spawns.filter((a) => a[0] === "plan").length;
+      const before = { reads: reads.length, spawns: spawns.length };
       const again = await overlay(app); // no ?plan=1 — an ordinary reload
       // The drift is still on the card...
       expect(again.meta.drift).toEqual({ read: true, drifted: 1 });
       expect(again.ir.nodes.find((n) => n.id === "mono/aws_iam_role.team_a")!.attrs._planDrift).toBeDefined();
-      // ...and it cost nothing: the source has not moved, so the stored answer
-      // still stands.
-      expect(spawns.filter((a) => a[0] === "plan").length).toBe(planned);
+      // ...and it cost nothing: the member was served the document the
+      // re-check read, and the plan from the cache.
+      // (The offline roster, `live-check`, is read as on any load.)
+      expect({ reads: reads.length, spawns: spawns.slice(before.spawns).map((a) => a[0]).filter((v) => v !== "live-check") }).toEqual({ reads: before.reads, spawns: [] });
+    });
+
+    it("with no chant to read through, a re-check paints ownership from behold's own live-plan and reads no plan", async () => {
+      const spawns: string[][] = [];
+      const { mono, teamA } = estate();
+      const broadcaster = new Broadcaster();
+      const app = createApp(
+        { projectDir: mono, projectDirs: [mono, teamA], port: 0, choudoufu: { run: fakeChoudoufu(spawns) } },
+        broadcaster,
+        new FrameBuffer(),
+        new OpRunner({ projectDir: mono, broadcaster, onDone: () => {} }),
+      );
+      const body = await overlay(app, "&plan=1");
+      expect(body.meta.drift).toEqual({ read: false, note: expect.stringMatching(/^mono: the plan was not read: no chant to read the plan through; team-a: /) });
+      expect(body.ir.nodes.find((n) => n.id === "mono/aws_iam_role.team_a")!.attrs._status).toBe("good");
+      expect(spawns.filter((a) => a[0] === "live-plan")).toHaveLength(2);
+      expect(spawns.map((a) => a[0])).not.toContain("plan");
     });
 
     it("names the changed attributes on /api/diff, in the pane's own before/after shape", async () => {
@@ -207,7 +257,7 @@ describe("GET /api/choudoufu/split (#371)", () => {
       };
       expect(body.nodes["mono/aws_iam_role.team_a"]).toMatchObject({
         health: "healthy", // bound is bound — drift is the second signal, not a demotion
-        diff: { category: "planned", changes: [{ path: "tags", oldValue: { drifted: "out-of-band" }, newValue: {} }] },
+        diff: { category: "planned", changes: [{ path: "tags.drifted", oldValue: "out-of-band", newValue: null }] },
       });
       expect(body.nodes["mono/aws_iam_policy.team_a"].diff).toBeNull();
     });
@@ -332,15 +382,18 @@ describe("collapse and expand are re-renders, not second live reads (#396 findin
 
   it("observes again when the palette asks — a re-check re-checks both halves", async () => {
     const spawns: string[][] = [];
-    const { app } = served(spawns);
+    const reads: Parameters<typeof fakeChant>[0] = [];
+    const { app } = served(spawns, reads);
     resetOverlayCache();
 
     await app.request("/api/overlay?alike=0&env=live");
     const once = observes(spawns);
     // "Re-check live with plan (attribute drift)" — the ownership read behind
     // the plan is fresh too, or the two halves would describe two moments.
+    // Since #924 its `live-plan` is chant's (one read per member, beside
+    // behold's own `live-ls`), so the plan sits on the same document.
     await app.request("/api/overlay?alike=0&env=live&plan=1");
-    expect(observes(spawns)).toBe(once * 2);
+    expect(observes(spawns) + reads.length).toBe(once * 2);
   });
 
   it("observes again after a member's source moves", async () => {

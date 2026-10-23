@@ -32,7 +32,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Hono } from "hono";
-import { latestPerComponent, listReleaseEnvironments, readReleaseLedger, recordsForDigest, type ReleaseRecord } from "@intentius/chant/lifecycle/release-ledger";
+import { digestKindOf, releaseCompareKey } from "./component-status.ts";
+import { latestPerComponent, listReleaseEnvironments, readReleaseLedger, type ReleaseRecord } from "@intentius/chant/lifecycle/release-ledger";
 import {
   CHECKOUT_REF,
   LIFECYCLE_BRANCH,
@@ -81,6 +82,8 @@ export interface ReleaseCell {
   env: string;
   component: string;
   digest: string;
+  /** What `digest` names when it is not an artifact digest (chant#4274). */
+  digestKind?: string;
   timestamp: string;
   actor: string;
   approver?: string;
@@ -145,17 +148,18 @@ export function releaseCells(ledgers: Map<string, ReleaseRecord[]>, order: strin
       const prevEnv = i > 0 ? order[i - 1] : undefined;
       const prev = prevEnv ? latest.get(prevEnv)!.get(component) : undefined;
       const differs =
-        prevEnv && prev?.digest !== r.digest
+        prevEnv && (prev ? releaseCompareKey(prev) : undefined) !== releaseCompareKey(r)
           ? {
               from: prevEnv,
               ...(prev ? { digest: prev.digest } : {}),
-              everHad: recordsForDigest((ledgers.get(prevEnv) ?? []).filter((x) => x.component === component), r.digest).length > 0,
+              everHad: (ledgers.get(prevEnv) ?? []).some((x) => x.component === component && releaseCompareKey(x) === releaseCompareKey(r)),
             }
           : undefined;
       cells.push({
         env,
         component,
         digest: r.digest,
+        ...(digestKindOf(r) ? { digestKind: digestKindOf(r) } : {}),
         timestamp: r.timestamp,
         actor: r.actor,
         ...(r.approver ? { approver: r.approver } : {}),

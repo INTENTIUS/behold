@@ -158,8 +158,8 @@ import { attachBehaviour, type BehaviourMember } from "./behaviour.ts";
 import { attachBehaviourDelta, attachDeclaredBehaviour, paintLive, predictMember, trafficFor, type DeltaMember, type PredictMemberDeps } from "./behaviour-delta.ts";
 import { addEstateMemberEdges } from "./estate-edges.ts";
 import { addChoudoufuReferenceEdges, liveCheckToIr, readLiveCheck, setChoudoufuRunner, setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
-import { choudoufuDiffNodes, paintPlanDrift, readChoudoufuLive, type Runner as ChoudoufuRunner } from "./choudoufu-live.ts";
-import { cacheChoudoufuPlan, cachedChoudoufuPlan, readChoudoufuPlan, type PlanResourceDrift } from "./choudoufu-plan.ts";
+import { choudoufuDiffNodes, choudoufuPlanAnswer, paintPlanDrift, readChoudoufuLive, type Runner as ChoudoufuRunner } from "./choudoufu-live.ts";
+import { cachedChoudoufuPlan, setChoudoufuChantDeps, type ChoudoufuChantDeps, type PlanResourceDrift } from "./choudoufu-chant-read.ts";
 import { choudoufuLexiconNote, setEstateLexiconRead, type LexiconRead } from "./choudoufu-refs.ts";
 import { readTerralith } from "./terralith-demo.ts";
 import { discoverSplitPlans, moveMembers, moveReceipt, movesPayload, readSplitPlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
@@ -342,6 +342,11 @@ export interface ServerOptions {
     /** #334: a test that wants intra-estate edges hands in a reader over a
      * recorded lexicon IR; absent, a fake choudoufu means no lexicon spawn. */
     lexicon?: LexiconRead;
+    /** #924: how a member's re-check with plan reads through chant. A test
+     * answers the chant spawn from recorded output; absent beside a fake
+     * choudoufu, the re-check paints from the fake's `live-plan` and reads
+     * no plan. */
+    chant?: ChoudoufuChantDeps;
   };
   /** #402: how a member is predicted — the chant read, and the probe for the
    * optional lexicon. `graphIr` and the real probe outside a test; a route
@@ -1076,6 +1081,7 @@ export function createApp(
   // (src/choudoufu-member.ts `setChoudoufuRunner`); undefined in production.
   setChoudoufuRunner(cfg.choudoufu?.run);
   setEstateLexiconRead(cfg.choudoufu ? (cfg.choudoufu.lexicon ?? null) : undefined);
+  setChoudoufuChantDeps(cfg.choudoufu ? (cfg.choudoufu.chant ?? null) : undefined);
   // #464: the declared workspace this app serves, if any — the estate code asks
   // it which member a directory is and what the declaration names it.
   setServedWorkspace(cfg.workspace);
@@ -2475,16 +2481,17 @@ export function createApp(
     const p = url.searchParams;
     let ask;
     try {
-      ask = checkAsk({ q: p.get("q"), env: p.get("env"), snapshot: p.get("snapshot"), show: p.get("show") });
+      ask = checkAsk({ q: p.get("q"), env: p.get("env"), snapshot: p.get("snapshot"), show: p.get("show"), countBy: p.get("countBy"), plan: p.get("plan") });
     } catch (e) {
       if (e instanceof SearchAskError) return c.json({ ...e.refusal, q: p.get("q") }, 400);
       throw e;
     }
-    if (cfg.public && (ask.env || ask.snapshot)) {
-      return c.json({ error: "a public view answers a query over the declared source only; a live read uses behold's own credentials", code: "public", remedy: "Drop env and snapshot.", q: ask.q }, 403);
+    if (cfg.public && (ask.env || ask.snapshot || ask.plan)) {
+      return c.json({ error: "a public view answers a query over the declared source only; a live read or a plan uses behold's own credentials", code: "public", remedy: "Drop env, snapshot and plan.", q: ask.q }, 403);
     }
-    const link = `${url.origin}/${writeViewQuery("", { q: ask.q, env: ask.env ?? null, snapshot: ask.snapshot ?? null })}`;
-    const view = { q: ask.q, env: ask.env ?? null, snapshot: ask.snapshot ?? null };
+    // behold#922: plan and countBy are view keys too, so the link draws the same answer.
+    const view = { q: ask.q, env: ask.env ?? null, snapshot: ask.snapshot ?? null, ...(ask.countBy ? { countBy: ask.countBy } : {}), ...(ask.plan ? { plan: true } : {}) };
+    const link = `${url.origin}/${writeViewQuery("", view)}`;
     let target: SearchTarget;
     try {
       target = searchTargetNow();
@@ -2492,7 +2499,7 @@ export function createApp(
       if (e instanceof TerraformReadError) return c.json({ ...e.refusal, ...view, link }, 422);
       throw e;
     }
-    const read = await runSearch(target, ask, (root) => rootReader(root));
+    const read = await runSearch(target, ask, (root, env) => rootReader(root, env));
     if (!read.ok) return c.json({ ...read.refusal, ...view, link }, 422);
     const drawn = drawnOf(read.document);
     // A query chant's grammar refuses is the asker's to fix: 400, chant's message and hint verbatim.
@@ -2531,7 +2538,7 @@ export function createApp(
         {
           method: "GET",
           path: "/api/search",
-          desc: "a chant search query over the served estate (behold#913): ?q=<query>&env=&snapshot=&show= -> {q, env, snapshot, document: chant's read-contract search document unchanged (chant workspace search on a declared workspace, chant search --json on one project or a Terraform folder), draw: what the page draws from it {lit, onPath, edges, unobserved, nearMisses, provenance, failure, notSearched}, link}; no env is the declared source, env is a live read, env+snapshot replays a recorded snapshot; --explain always on; 400 code query with chant's hint for a query chant refuses; 422 chant-too-old below chant 0.124.46; --public answers declared queries only",
+          desc: "a chant search query over the served estate (behold#913): ?q=<query>&env=&snapshot=&show=&countBy=&plan= -> {q, env, snapshot, countBy?, plan?, document: chant's read-contract search document unchanged (chant workspace search on a declared workspace, chant search --json on one project or a Terraform folder), draw: what the page draws from it {lit, onPath, edges, unobserved, nearMisses, provenance, failure, notSearched}, link}; no env is the declared source, env is a live read, env+snapshot replays a recorded snapshot; --explain always on; countBy=kind|module|attr:<name> (behold#922) is chant's --count-by, the document its counts branch with each group's ids and draw.counts the groups the page lights, and q may then be empty to count the whole graph; plan=1 (behold#922) answers at the plan depth (CHANT_TERRAFORM_OBSERVE=plan, --live --env <env, or a placeholder on a bare Terraform folder>), refused with snapshot (400) and without env on a chant project (422 plan-env); 400 code query with chant's hint for a query chant refuses; 422 chant-too-old below chant 0.124.46; --public answers declared queries only",
         },
         { method: "GET", path: "/api/graph", desc: "the graph {ir, svg, meta} — params: detail=0..3, components=1, logical=1, ops=1 (+entities=1 to link steps to the estate), env, stack, tier, target, lens, up=1, down=1, radial=1, layout=1" },
         ...(cfg.carveReport
@@ -2678,10 +2685,9 @@ export function createApp(
 
   /**
    * #910: the plan read on each stock Terraform member served, through chant
-   * (src/terraform-plan.ts). A choudoufu member is not one: its live roots
-   * keep #404's plan read (src/choudoufu-plan.ts) beside behold's own
-   * ownership read; moving both onto chant's live+plan read
-   * (INTENTIUS/chant#4371) is #924.
+   * (src/terraform-plan.ts). A choudoufu member is not one here: its re-check
+   * reads ownership and the plan through chant's live+plan read together
+   * (INTENTIUS/chant#4371, src/choudoufu-chant-read.ts, #924).
    */
   const terraformPlans = async (multi: boolean): Promise<Array<MemberPlanAnswer & { dir: string; read?: TerraformPlanRead }>> => {
     const members = multi
@@ -3637,50 +3643,43 @@ export function createApp(
   /**
    * #404: the attribute drift half of a choudoufu member, per member.
    *
-   * OPT-IN. `plan` refreshes every resource in the estate — a read per
-   * resource against the account, where the ownership half (`live-ls` /
-   * `live-plan`) costs the tagging index and is flat in the estate's size. So
-   * an ordinary overlay read never plans; `?plan=1` does, and that is the only
-   * thing that spawns one.
+   * OPT-IN. `plan` refreshes every resource in the estate, a read per resource
+   * against the account, where the ownership half costs the tagging index. So
+   * an ordinary overlay read never plans; `?plan=1` does. Since #924 the plan
+   * is not read here: the re-check's member read takes ownership and the plan
+   * from one chant read (src/choudoufu-chant-read.ts, `opts.plan` through
+   * `readChoudoufuLive`) and caches the change set under the member's source
+   * stamp. This serves what that read cached, for the re-check itself and for
+   * every ordinary reload after it while the source has not moved. `read` is
+   * false only when no member has a change set, which is what lets the SPA
+   * tell "not looked" from "looked, nothing drifted".
    *
-   * A read WITHOUT `plan=1` still serves a change set already in the cache for
-   * a member whose source has not moved, so a reload after a plan refresh
-   * keeps showing what the refresh found rather than dropping it. `read` is
-   * false only when no plan was asked for AND none was cached — which is what
-   * lets the SPA tell "not looked" from "looked, nothing drifted".
-   *
-   * A member whose plan refuses (no credentials, a provider error) is skipped:
-   * the ownership overlay is untouched and perfectly good, and a failed
-   * SECOND opinion must not blank the first one.
+   * A member whose plan was not read (no credentials, a provider error, a
+   * chant below the floor) has none: its ownership overlay stands, and a
+   * failed second opinion must not blank the first one.
    */
-  const choudoufuPlanDrift = async (dirs: string[], wanted: boolean): Promise<{ read: boolean; byDir: Map<string, { name: string; drift: Map<string, PlanResourceDrift> }> }> => {
-    const members = estateMembers(dirs).filter((m) => m.kind === "choudoufu");
+  /** #924: why a re-check read no plan, per choudoufu member that read none
+   * (chant's own note, or the floor), or undefined when every member did. */
+  const planNotes = (dirs: string[]): string | undefined => {
+    const notes = estateMembers(dirs)
+      .filter((m) => m.kind === "choudoufu")
+      .flatMap((m) => {
+        const a = choudoufuPlanAnswer(m.dir);
+        return a && a.answered !== "live+plan" ? [`${m.name}: ${a.note ?? "the plan was not read"}`] : [];
+      });
+    return notes.length ? notes.join("; ") : undefined;
+  };
+  const choudoufuPlanDrift = (dirs: string[]): { read: boolean; byDir: Map<string, { name: string; drift: Map<string, PlanResourceDrift> }> } => {
     // Keyed by DIRECTORY, not by member name: a member's name is derived from
     // its path, so a call scoped to one member (the single-node diff route)
-    // and a call over the whole estate must agree on the key, and the
-    // directory is the only thing both of them know for certain.
+    // and a call over the whole estate must agree on the key.
     const byDir = new Map<string, { name: string; drift: Map<string, PlanResourceDrift> }>();
     let read = false;
-    for (const m of members) {
-      const stamp = memberSourceStamp(m.dir);
-      if (!wanted) {
-        const hit = cachedChoudoufuPlan(m.dir, stamp);
-        if (hit) {
-          read = true;
-          byDir.set(m.dir, { name: m.name, drift: hit });
-        }
-        continue;
-      }
-      try {
-        const drift = await readChoudoufuPlan(m.dir, cfg.choudoufu?.run);
-        cacheChoudoufuPlan(m.dir, stamp, drift);
-        read = true;
-        byDir.set(m.dir, { name: m.name, drift });
-      } catch {
-        // The plan could not be read for this member — the overlay's ownership
-        // colours stand, and `drift.read` stays false unless another member
-        // answered.
-      }
+    for (const m of estateMembers(dirs).filter((m) => m.kind === "choudoufu")) {
+      const hit = cachedChoudoufuPlan(resolve(m.dir), memberSourceStamp(m.dir));
+      if (!hit) continue;
+      read = true;
+      byDir.set(m.dir, { name: m.name, drift: hit });
     }
     return { read, byDir };
   };
@@ -3758,7 +3757,7 @@ export function createApp(
         // build the first picture and none is reused; a pending member becomes
         // a real one only when its own read completes.
         if (new URL(c.req.url).searchParams.get("progressive") === "1") {
-          const readOpts = { ...tierTargetOpts(query), detail, env };
+          const readOpts = { ...tierTargetOpts(query), detail, env, ...(planWanted ? { plan: true } : {}) };
           const pending = await composeEstatePending(cfg.projectDirs, readOpts);
           // The live pass runs past this response on purpose. It is the same
           // read the blocking branch does — one per member, under the same
@@ -3805,7 +3804,7 @@ export function createApp(
         // has settled, and a figure about the account belongs with the picture
         // of the account.
         const traffic = trafficFor(new URL(c.req.url).searchParams, beholdConfig);
-        const est = await composeEstateOverlay(cfg.projectDirs, { ...tierTargetOpts(query), detail, env, ...(traffic ? { traffic } : {}) }, reclassifyOverlay, { fresh: planWanted });
+        const est = await composeEstateOverlay(cfg.projectDirs, { ...tierTargetOpts(query), detail, env, ...(traffic ? { traffic } : {}), ...(planWanted ? { plan: true } : {}) }, reclassifyOverlay, { fresh: planWanted });
         if (est.dropped.length === est.total) {
           return c.json({ error: `no project in the estate could be graphed — ${est.dropped.map((d) => `${d.name}: ${d.reason}`).join("; ")}` }, 500);
         }
@@ -3843,7 +3842,7 @@ export function createApp(
         // attribute drift) and only ever adds `_planDrift` beside it — the
         // ownership verdict stays the card's colour. `planWanted` is read
         // above, where it also decides whether the ownership half re-observes.
-        const drift = await choudoufuPlanDrift(cfg.projectDirs, planWanted);
+        const drift = choudoufuPlanDrift(cfg.projectDirs);
         let driftedCards = 0;
         for (const e of drift.byDir.values()) driftedCards += paintPlanDrift(ir, e.drift, e.name);
         const coverNote =
@@ -3989,7 +3988,7 @@ export function createApp(
             // that says nothing where a plan was never read is honest; one
             // that says `0 drifted` there is a claim behold did not earn.
             // The figure is CARDS marked, which is what the legend counts.
-            drift: drift.read ? { read: true, drifted: driftedCards } : { read: false },
+            drift: { ...(drift.read ? { read: true, drifted: driftedCards } : { read: false }), ...(planWanted && planNotes(cfg.projectDirs) ? { note: planNotes(cfg.projectDirs) } : {}) },
             ...(note ? { note } : {}),
           },
         });
@@ -4309,11 +4308,13 @@ export function createApp(
     // #404: the same opt-in the overlay takes — `?plan=1` reads a plan, no
     // flag serves one already cached for a member whose source has not moved,
     // and neither one ever plans on a read that did not ask.
-    const diffDrift = await choudoufuPlanDrift(cfg.projectDirs ?? [cfg.projectDir], new URL(c.req.url).searchParams.get("plan") === "1");
+    // #924: a re-check reads the plan in the same chant read as ownership.
+    const diffPlan = new URL(c.req.url).searchParams.get("plan") === "1";
     for (const m of estateMembers(cfg.projectDirs ?? [cfg.projectDir])) {
       if (m.kind !== "choudoufu") continue;
       try {
-        const r = await readChoudoufuLive(m.dir, {});
+        const r = await readChoudoufuLive(m.dir, diffPlan ? { plan: true } : {});
+        const diffDrift = choudoufuPlanDrift([m.dir]);
         Object.assign(nodes, choudoufuDiffNodes(r.check, r.ls, r.plan, multi ? m.name : undefined, diffDrift.byDir.get(m.dir)?.drift));
       } catch {
         // painted unobserved on the overlay; nothing to slice
@@ -4454,10 +4455,10 @@ export function createApp(
     const owner = estateMembers(cfg.projectDirs ?? [cfg.projectDir]).find((m) => m.kind === "choudoufu" && (multi ? node.startsWith(`${m.name}/`) : true));
     if (owner) {
       try {
-        const r = await readChoudoufuLive(owner.dir, {});
         // #404: the same opt-in as the bulk route above, so one node's pane
         // and the whole estate's pane cannot disagree about what drifted.
-        const one = await choudoufuPlanDrift([owner.dir], new URL(c.req.url).searchParams.get("plan") === "1");
+        const r = await readChoudoufuLive(owner.dir, new URL(c.req.url).searchParams.get("plan") === "1" ? { plan: true } : {});
+        const one = choudoufuPlanDrift([owner.dir]);
         const entry = choudoufuDiffNodes(r.check, r.ls, r.plan, multi ? owner.name : undefined, one.byDir.get(owner.dir)?.drift)[node];
         return c.json({ node, env, ...(entry ?? { diff: null, observed: null, health: "unknown", fieldDrift: null }) });
       } catch (err) {

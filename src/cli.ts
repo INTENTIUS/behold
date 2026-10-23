@@ -11,7 +11,7 @@ import { startServer, beholdVersion } from "./server.ts";
 import { loadDemoRegistry, missingRequirements, demoTargetDir, loadDemo, type DemoCarve } from "./demos.ts";
 import { resolveChant, runChantRaw } from "./chant.ts";
 import { applyConversion, planConversion } from "./workspace-convert.ts";
-import { ExportRefusal, OPENING_ZOOMS, publishTarget, runExport, settleNote, settleQueries } from "./export.ts";
+import { ExportRefusal, OPENING_ZOOMS, publishTarget, runExport, settleCountBy, settleNote, settleQueries } from "./export.ts";
 import { DEFAULT_KEEP, publishSnapshot, resolveCommit, SNAPSHOT_REPORTS_BASE } from "./publish-snapshots.ts";
 import { hasEnvCredentials, S3Object, s3FromEnv } from "./s3-object.ts";
 import { diagnose, formatReport } from "./doctor.ts";
@@ -49,6 +49,7 @@ Usage:
   behold export [project-dir] [--out <dir>] [--env <name>] [--name <worker>] [--emulator]
                 [--terragucci <src> [--terragucci-project <p>] [--reports-base <rel>]] [--no-source]
                 [--yodel-report <file|dir>] [--open-env <env>] [--open-zoom <zoom>] [--note <text>] [--q <query>…]
+                [--count-by <kind|module|attr:name>] [--plan]
                 [--publish s3://<bucket>/<prefix>/views/<name> [--commit <sha>] [--keep <n>]]
   behold serve <project-dir…> [--port <n>] [--host <addr>] [--allow-host <name,…>] [--hud <url>] [--env <name>] [--poll <secs>] [--local]
                 [--public] [--terragucci <src> [--terragucci-project <p>] [--terragucci-poll <secs>] [--terragucci-runs <src>]]
@@ -322,6 +323,13 @@ Options:
                       answers with no backend (behold#913), captured for the
                       source graph and every environment. A link's q that
                       wasn't captured is named, and lights nothing.
+  --count-by <g>      export only: capture each --q grouped too, the way
+                      chant search --count-by groups it (kind, module or
+                      attr:<name>); with no --q, the whole graph's groups
+                      (behold#922). A link's countBy=<g> draws them.
+  --plan              export only: capture the plan read too, the cards'
+                      plan facts and each --q at the plan depth; it runs
+                      terraform plan -lock=false in each root (behold#922).
   -h, --help          This text.
   -v, --version       Print the behold version.
 `;
@@ -1148,10 +1156,14 @@ async function runExportCmd(rest: string[]): Promise<void> {
   let openZoom: string | undefined;
   let note: string | undefined;
   const queries: string[] = [];
+  let countBy: string | undefined;
+  let plan = false;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a === "--out") outDir = resolve(rest[++i]);
     else if (a === "--q") queries.push(rest[++i] ?? "");
+    else if (a === "--count-by") countBy = rest[++i] ?? "";
+    else if (a === "--plan") plan = true;
     else if (a === "--note") note = rest[++i] ?? "";
     else if (a === "--open-env") openEnv = rest[++i] ?? "";
     else if (a === "--open-zoom") openZoom = rest[++i] ?? "";
@@ -1193,6 +1205,11 @@ async function runExportCmd(rest: string[]): Promise<void> {
   const settledQueries = settleQueries(queries);
   if ("error" in settledQueries) {
     process.stderr.write(`behold export: ${settledQueries.error}\n`);
+    process.exit(2);
+  }
+  const settledCountBy = settleCountBy(countBy);
+  if ("error" in settledCountBy) {
+    process.stderr.write(`behold export: ${settledCountBy.error}\n`);
     process.exit(2);
   }
   if ((terragucciProject || reportsBase !== undefined) && !terragucci) {
@@ -1259,6 +1276,8 @@ async function runExportCmd(rest: string[]): Promise<void> {
       ...(Object.keys(open).length ? { open } : {}),
       ...(settledNote.note ? { note: settledNote.note } : {}),
       ...(settledQueries.queries ? { queries: settledQueries.queries } : {}),
+      ...(settledCountBy.countBy ? { countBy: settledCountBy.countBy } : {}),
+      ...(plan ? { plan } : {}),
     },
   ).catch((e: unknown) => {
     if (!(e instanceof ExportRefusal)) throw e;

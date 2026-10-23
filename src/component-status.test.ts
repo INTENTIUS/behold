@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { componentStatusColor, joinComponentStatus, joinTickVerdicts, releaseStatus, releaseChip, releaseOrigin } from "./component-status.ts";
+import { componentStatusColor, joinComponentStatus, joinTickVerdicts, releaseStatus, releaseChip, releaseOrigin, releaseCompareKey } from "./component-status.ts";
 import { TICK_VERDICT_TTL_MS, type TickComponentVerdicts } from "./operator.ts";
 import type { ReleaseRecord, GraphIR, ComponentStatusRow } from "@intentius/chant";
 
@@ -653,6 +653,21 @@ describe("joinComponentStatus — the release rides the row (#165)", () => {
   });
 });
 
+describe("digestKind (chant#4274)", () => {
+  const PLAN: ReleaseRecord = { ...GH_RECORD, digest: "sha256:plan1", ...({ digestKind: "plan" } as object) };
+
+  it("passes a plan record's digestKind into _release, and omits it for an artifact digest", () => {
+    expect(releaseStatus(PLAN)?.digestKind).toBe("plan");
+    expect("digestKind" in releaseStatus(GH_RECORD)!).toBe(false);
+  });
+
+  it("compares a plan or deploy-input record on its commit, an artifact record on its digest", () => {
+    expect(releaseCompareKey(PLAN)).toBe(`git:${GH_RECORD.gitSha}`);
+    expect(releaseCompareKey({ ...PLAN, digest: "sha256:plan2" })).toBe(releaseCompareKey(PLAN));
+    expect(releaseCompareKey(GH_RECORD)).toBe(GH_RECORD.digest);
+  });
+});
+
 describe("pins chant's ReleaseRecord key union (chant#2045)", () => {
   // Fails TYPECHECK, not just this test, the day behold's chant floor carries a
   // key this object lacks. It tripped once already, on the ^0.54.0 bump that
@@ -683,11 +698,23 @@ describe("pins chant's ReleaseRecord key union (chant#2045)", () => {
     // (chant#4064). Passed through in `_release`, not read yet.
     admission: true,
     releaseDigest: true,
-  } satisfies Record<keyof ReleaseRecord, true>;
+    // The ^0.124.35 bump (chant#4274): what `digest` names when it is not an
+    // artifact digest. Read through `digestKindOf`, which also works on a chant
+    // whose ReleaseRecord does not declare it yet.
+    digestKind: true,
+  };
 
-  it("the floor's ReleaseRecord has exactly these keys — runOrigin is read as chant's own type", () => {
+  // Every key chant's ReleaseRecord declares must appear in KEYS: the day the
+  // floor carries one KEYS lacks, this line stops typechecking. The reverse is
+  // not checked, so behold still compiles against an older chant that has not
+  // got `digestKind` (the lockfile's 0.124.38).
+  type Unpinned = Exclude<keyof ReleaseRecord, keyof typeof KEYS>;
+  const _allPinned: [Unpinned] extends [never] ? true : { unpinnedReleaseRecordKeys: Unpinned } = true;
+  void _allPinned;
+
+  it("the pinned key list is the one this test expects — runOrigin is read as chant's own type", () => {
     expect(Object.keys(KEYS).sort()).toEqual([
-      "actor", "admission", "approver", "component", "digest", "env", "flags", "gitSha", "inputDigest", "manifestDigest", "profileOverride", "promotedFrom", "redeploys", "releaseDigest", "restores", "runId", "runOrigin", "timestamp", "version",
+      "actor", "admission", "approver", "component", "digest", "digestKind", "env", "flags", "gitSha", "inputDigest", "manifestDigest", "profileOverride", "promotedFrom", "redeploys", "releaseDigest", "restores", "runId", "runOrigin", "timestamp", "version",
     ]);
   });
 });

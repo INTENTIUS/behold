@@ -1,0 +1,2 @@
+warning: [terraform] terraform.roots.beh924 is a live root: ownership came from choudoufu's tofu-estate/tofu-address markers via `live-plan -json`, not from a state file
+warning: [terraform] terraform.roots.beh924: the plan read answered (`choudoufu plan -input=false -lock=false -out=<tmp>/plan.tfplan`), beside `live-plan -json`, which answered presence and ownership
