@@ -385,24 +385,52 @@ const disabledPage =
   `<body style="font:16px system-ui;background:var(--bg,#1e1e2e);color:var(--fg,#cdd6f4);padding:2rem">` +
   `<h3>The kiosk follows a terragucci demo</h3><p style="color:var(--muted,#777a8c)">Start behold with <code>--terragucci &lt;reports source&gt;</code>; the kiosk reads <code>demo.json</code> there.</p></body>`;
 
+/** The demos worth listing: those live in demo.json now, or with a published cycle. In {@link VENDOR_TOOLS}' order. */
+export async function listedDemos(source: TerragucciSource, now: Date = new Date()): Promise<{ demos: Array<{ tool: VendorTool; live: boolean }>; live: VendorTool | null }> {
+  const d = await readDemo(source, now);
+  const liveTool = d.demo && d.demo.scenario !== "base" && d.demo.tool && isVendorTool(d.demo.tool) ? d.demo.tool : null;
+  const demos: Array<{ tool: VendorTool; live: boolean }> = [];
+  for (const tool of VENDOR_TOOLS) {
+    if (tool === liveTool) demos.push({ tool, live: true });
+    else if ((await readCycle(source, tool, now)).cycle) demos.push({ tool, live: false });
+  }
+  return { demos, live: liveTool };
+}
+
+/** `GET /api/terragucci/demos`: the listed demos, shared for {@link DEMO_READ_TTL_MS}. */
+export function terragucciDemosRoute(app: Hono, source: TerragucciSource, opts: { now?: () => Date } = {}): () => ReturnType<typeof listedDemos> {
+  let cached: { at: number; read: ReturnType<typeof listedDemos> } | undefined;
+  const read = () => {
+    const at = Date.now();
+    if (!cached || at - cached.at >= DEMO_READ_TTL_MS) cached = { at, read: listedDemos(source, opts.now ? opts.now() : new Date()) };
+    return cached.read;
+  };
+  app.get("/api/terragucci/demos", async (c) => c.json(await read(), 200, { "cache-control": "no-store" }));
+  return read;
+}
+
 /**
- * `GET /kiosk`: the kiosk page. Without `--terragucci` there is nothing to
- * narrate, and the page says so instead of loading.
+ * `GET /`: the demo, served directly: the live demo's page, else the first listed one. A request with a query (the
+ * kiosk's own graph frame loads `/?embed=1&...`) goes on to the app. `GET /kiosk` redirects to `/`, so old links work.
+ * `listed` says which demos are listed; without it the first demo is served.
  */
 export function kioskRoute(app: Hono, webRoot: string, enabled: boolean, allowedHosts: string[] = [], opts: KioskPageOptions = {}): void {
   app.get("/kiosk", (c) => {
     // behold#752: with chant's fan-out demo the only one served (`--chant-demo`, no `--terragucci`), /kiosk is its page.
     if (!enabled && opts.chantDemo) return chantFanoutPage(c, webRoot, allowedHosts, "/kiosk", opts.ciRuns);
-    if (!enabled) {
-      return c.html(disabledPage, 404);
+    if (!enabled) return c.html(disabledPage, 404);
+    return c.redirect("/", 302);
+  });
+  app.get("/", async (c, next) => {
+    if (!enabled || new URL(c.req.url).search) return next();
+    let tool: VendorTool = VENDOR_TOOLS[0];
+    try {
+      const l = opts.listed ? await opts.listed() : undefined;
+      if (l) tool = l.live ?? l.demos[0]?.tool ?? tool;
+    } catch {
+      /* the first demo's page says it has not run */
     }
-    const html = sharePage(readFileSync(join(webRoot, "kiosk.html"), "utf8"), {
-      title: "behold · live demo",
-      description: "Watch one change go from pull request to apply across real Terraform states.",
-      origin: shareOrigin(c.req.header("host"), c.req.header("x-forwarded-proto"), allowedHosts),
-      path: "/kiosk",
-    });
-    return new Response(runsMeta(html, opts.ciRuns), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } });
+    return demoPage(c, webRoot, allowedHosts, tool, "/", opts.ciRuns);
   });
 }
 
@@ -490,24 +518,21 @@ export function shareImageRoute(app: Hono, webRoot: string): void {
 // when demo.json's `tool` is it, otherwise a replay of its newest cycle.
 
 /**
- * The tools with a page of their own, in the order the loop runs them. web/kiosk-vendor.js has their names.
- * behold#746: then the fan-out loop's three, each a page of its own (`/chant-fanout` is chant's alone).
+ * The demos with a page of their own, in the order they are listed: the multi-state plan-and-apply ones. web/kiosk-vendor.js
+ * VENDORS has their banner words. A demo is listed once its tool has a published cycle or is live ({@link listedDemos}).
  */
-export const VENDOR_TOOLS = ["terraform", "terragrunt", "cdk-terrain", "choudoufu", "chant", "chant-fanout", "tofu-fanout", "choudoufu-fanout"] as const;
+export const VENDOR_TOOLS = ["choudoufu-compose", "terragrunt-choudoufu", "atmos-choudoufu"] as const;
 export type VendorTool = (typeof VENDOR_TOOLS)[number];
 
-/** Each tool's name as its owner writes it, for the page's title. web/kiosk-vendor.js VENDORS has the same names. */
+/** Each demo's name for the page's title. web/kiosk-vendor.js VENDORS has the same names. */
 export const VENDOR_NAMES: Record<VendorTool, string> = {
-  terraform: "Terraform",
-  terragrunt: "Terragrunt",
-  "cdk-terrain": "CDK Terrain",
-  choudoufu: "choudoufu",
-  chant: "chant",
-  // behold#746: a fan-out page's title is its product's name, as its vendor page's is.
-  "chant-fanout": "chant",
-  "tofu-fanout": "OpenTofu",
-  "choudoufu-fanout": "choudoufu",
+  "choudoufu-compose": "choudoufu",
+  "terragrunt-choudoufu": "choudoufu with Terragrunt",
+  "atmos-choudoufu": "choudoufu with Atmos",
 };
+
+/** The tools that had a page before the list narrowed to the demos above: their URLs redirect to `/`. */
+export const LEGACY_TOOLS = ["terraform", "terragrunt", "cdk-terrain", "choudoufu", "chant", "chant-fanout", "tofu-fanout", "choudoufu-fanout"] as const;
 
 export const isVendorTool = (v: string): v is VendorTool => (VENDOR_TOOLS as readonly string[]).includes(v);
 
@@ -624,6 +649,8 @@ export type KioskSource = "chant-demo";
 /** What a kiosk page is served with: chant's demo (`--chant-demo`), and behold#815 chant's run index (`--ci-report-url`). */
 export interface KioskPageOptions {
   chantDemo?: boolean;
+  /** Which demos are listed and which is live ({@link terragucciDemosRoute}); absent, `/` serves the first demo. */
+  listed?: () => Promise<{ demos: Array<{ tool: VendorTool; live: boolean }>; live: VendorTool | null }>;
   ciRuns?: boolean;
 }
 
@@ -636,14 +663,14 @@ export function runsMeta(html: string, ciRuns?: boolean): string {
 }
 
 /** The kiosk page for one tool: kiosk.html, told its tool (and, behold#752, its demo's source) by meta tags the page reads. */
-export function vendorPage(html: string, tool: VendorTool, source?: KioskSource): string {
+export function vendorPage(html: string, tool: string, source?: KioskSource): string {
   const src = source ? `\n    <meta name="kiosk-source" content="${source}" />` : "";
   return html.replace(/<meta charset="utf-8" \/>/, `<meta charset="utf-8" />\n    <meta name="kiosk-tool" content="${tool}" />${src}`);
 }
 
 /** behold#752: chant's fan-out page, reading chant's own demo records, at `path`. */
 function chantFanoutPage(c: { req: { header(name: string): string | undefined } }, webRoot: string, allowedHosts: string[], path: string, ciRuns?: boolean): Response {
-  const name = VENDOR_NAMES["chant-fanout"];
+  const name = "chant";
   const shared = sharePage(readFileSync(join(webRoot, "kiosk.html"), "utf8"), {
     title: `behold · ${name}`,
     description: `Watch ${name} carry one change from pull request to apply, live.`,
@@ -653,41 +680,50 @@ function chantFanoutPage(c: { req: { header(name: string): string | undefined } 
   return new Response(runsMeta(vendorPage(shared, "chant-fanout", "chant-demo"), ciRuns), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } });
 }
 
+/** One demo's kiosk page, served at `path`. */
+function demoPage(c: { req: { header(name: string): string | undefined } }, webRoot: string, allowedHosts: string[], tool: VendorTool, path: string, ciRuns?: boolean): Response {
+  const name = VENDOR_NAMES[tool];
+  const shared = sharePage(readFileSync(join(webRoot, "kiosk.html"), "utf8"), {
+    title: `behold · ${name}`,
+    description: `Watch ${name} carry one change from pull request to apply, live.`,
+    origin: shareOrigin(c.req.header("host"), c.req.header("x-forwarded-proto"), allowedHosts),
+    path,
+  });
+  return new Response(runsMeta(vendorPage(shared, tool), ciRuns), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } });
+}
+
 /**
- * `GET /<tool>` for each of {@link VENDOR_TOOLS}: the kiosk for that tool
- * alone. Without `--terragucci` it says what /kiosk says.
+ * `GET /<tool>` for each of {@link VENDOR_TOOLS}: that demo's page, live or its latest cycle. A {@link LEGACY_TOOLS}
+ * URL redirects (302) to `/`. Without `--terragucci` a demo's page says what /kiosk says.
  */
 export function vendorRoutes(app: Hono, webRoot: string, enabled: boolean, allowedHosts: string[] = [], opts: KioskPageOptions = {}): void {
   for (const tool of VENDOR_TOOLS) {
     app.get(`/${tool}`, (c) => {
-      // behold#752: `--chant-demo` gives /chant-fanout chant's own records, whatever else is served.
-      if (opts.chantDemo && tool === "chant-fanout") return chantFanoutPage(c, webRoot, allowedHosts, `/${tool}`, opts.ciRuns);
       if (!enabled) return c.html(disabledPage, 404);
-      const name = VENDOR_NAMES[tool];
-      const shared = sharePage(readFileSync(join(webRoot, "kiosk.html"), "utf8"), {
-        title: `behold · ${name}`,
-        description: `Watch ${name} carry one change from pull request to apply, live.`,
-        origin: shareOrigin(c.req.header("host"), c.req.header("x-forwarded-proto"), allowedHosts),
-        path: `/${tool}`,
-      });
-      const html = runsMeta(vendorPage(shared, tool), opts.ciRuns);
-      return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } });
+      return demoPage(c, webRoot, allowedHosts, tool, `/${tool}`, opts.ciRuns);
+    });
+  }
+  for (const tool of LEGACY_TOOLS) {
+    app.get(`/${tool}`, (c) => {
+      // behold#752: `--chant-demo` alone still gives /chant-fanout chant's own records.
+      if (opts.chantDemo && tool === "chant-fanout") return chantFanoutPage(c, webRoot, allowedHosts, `/${tool}`, opts.ciRuns);
+      return c.redirect("/", 302);
     });
   }
 }
 
-/** A short path that names no page, where a tool's page would be: a page that links to /kiosk. */
+/** A short path that names no page, where a tool's page would be: a page that links to the demo. */
 export const VENDOR_PATH = /^\/[a-z][a-z0-9-]{0,40}$/;
 
 export const notFoundPage =
   `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width, initial-scale=1"><title>No page here</title>` +
   `<script type="module">import { initTheme } from "/theme.js"; initTheme();</script>` +
   `<body style="font:16px system-ui;background:var(--bg,#1e1e2e);color:var(--fg,#cdd6f4);padding:2rem">` +
-  `<h3>No page here</h3><p style="color:var(--muted,#777a8c)">This address shows nothing. The demo runs at <a style="color:inherit" href="/kiosk">/kiosk</a>.</p></body>`;
+  `<h3>No page here</h3><p style="color:var(--muted,#777a8c)">This address shows nothing. The demo is at <a style="color:inherit" href="/">the front page</a>.</p></body>`;
 
 /**
  * Registered after the static files: a one-segment path that is no file and
- * no route answers 404 with a link to /kiosk, instead of an empty 404.
+ * no route answers 404 with a link to the front page, instead of an empty 404.
  */
 export function vendorFallback(app: Hono): void {
   app.get("*", (c) => (VENDOR_PATH.test(c.req.path) ? c.html(notFoundPage, 404) : c.notFound()));

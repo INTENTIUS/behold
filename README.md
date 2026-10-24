@@ -446,12 +446,17 @@ log, which the loop driver copies into the bucket under `runs/`. It needs
 `--terragucci`, asks only GETs, and has no control.
 The docs' terragucci page says what it shows.
 
-Each tool in the loop has a page of its own at `/<tool>`: `/terraform`,
-`/terragrunt`, `/cdk-terrain` and `/choudoufu` (behold#571). It shows that
-tool's scenario and runs alone, with a footer saying who makes the tool.
-While another tool's scenario runs, the page replays the tool's latest cycle at
-the pace it ran (`cycles/<tool>/latest.json` beside `demo.json`), and says so in
-a banner. Any other short path answers 404 with a link to `/kiosk`.
+The demo is served at `/`: the live demo's page, else the first listed one.
+`/kiosk` redirects to `/`. The listed demos are the multi-state plan-and-apply
+ones, each at a path of its own (`/choudoufu-compose`, `/terragrunt-choudoufu`,
+`/atmos-choudoufu`); one is listed once its tool has a published cycle
+(`cycles/<tool>/latest.json` beside `demo.json`) or is live, and
+`/api/terragucci/demos` says which. A page shows the demo's live run, or replays
+its latest cycle, under a banner with the example's name, its products, a link to
+its code in INTENTIUS/terragucci, and a switcher when more than one is listed.
+The older tools' URLs (`/terraform`, `/terragrunt`, `/cdk-terrain`, `/choudoufu`,
+`/chant`, and the fan-out pages) redirect to `/`. Any other short path answers
+404 with a link to the front page.
 
 In a declared workspace, the gates waiting on a person come from
 `chant workspace status <env> --json`, keyed `member/op/gate` the way arugula's

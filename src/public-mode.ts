@@ -133,7 +133,7 @@ export function publicPage(webRoot: string): string {
  * they run before everything else: the reads above are refused, and the
  * page is served with the public flag.
  */
-export function publicRoutes(app: Hono, webRoot: string): void {
+export function publicRoutes(app: Hono, webRoot: string, demoAtRoot = false): void {
   app.use("*", async (c, next) => {
     const why = publicReadRefusal(c.req.path, new URL(c.req.url).searchParams);
     if (why) return c.json({ error: `behold is serving a public, read-only view: ${c.req.path} is refused, because ${why}`, code: "public" }, 403);
@@ -141,6 +141,7 @@ export function publicRoutes(app: Hono, webRoot: string): void {
   });
   const page = (): Response =>
     new Response(publicPage(webRoot), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } });
-  app.get("/", () => page());
+  // With --terragucci a bare `/` is the demo (src/terragucci-demo.ts kioskRoute); the graph frame's `/?embed=1&...` stays the page.
+  app.get("/", (c, next) => (demoAtRoot && !new URL(c.req.url).search ? next() : page()));
   app.get("/index.html", () => page());
 }

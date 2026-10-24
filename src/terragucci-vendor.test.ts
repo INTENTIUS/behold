@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
-import { VENDOR_TOOLS, cycleProblem, kioskRoute, readCycle, readDemo, terragucciCyclesRoute, vendorFallback, vendorPage, vendorRoutes } from "./terragucci-demo.ts";
+import { LEGACY_TOOLS, VENDOR_TOOLS, cycleProblem, kioskRoute, listedDemos, readCycle, readDemo, terragucciCyclesRoute, vendorFallback, vendorPage, vendorRoutes } from "./terragucci-demo.ts";
 import { terragucciSource, type TerragucciSource } from "./terragucci-source.ts";
 
 const FIXTURES = join(import.meta.dirname, "__fixtures__", "terragucci-demo");
@@ -80,57 +80,76 @@ describe("GET /api/terragucci/cycles/:tool (behold#571)", () => {
   });
 });
 
-describe("GET /<tool> (behold#571)", () => {
-  const app = (enabled = true) => {
+describe("GET /<demo>", () => {
+  const app = (enabled = true, listed?: () => Promise<{ demos: Array<{ tool: (typeof VENDOR_TOOLS)[number]; live: boolean }>; live: (typeof VENDOR_TOOLS)[number] | null }>) => {
     const a = new Hono();
-    kioskRoute(a, WEB, enabled);
+    kioskRoute(a, WEB, enabled, [], listed ? { listed } : {});
     vendorRoutes(a, WEB, enabled);
     a.get("/app.js", (c) => c.text("js"));
+    a.get("/", (c) => c.text("spa"));
     vendorFallback(a);
     return a;
   };
-  it("serves the kiosk page for each tool, told its tool", async () => {
+  it("lists only the multi-state demos", () => {
+    expect([...VENDOR_TOOLS]).toEqual(["choudoufu-compose", "terragrunt-choudoufu", "atmos-choudoufu"]);
+  });
+  it("serves each demo's page at its own path, told its tool, with the banner", async () => {
     for (const tool of VENDOR_TOOLS) {
       const r = await app().request(`/${tool}`);
       expect(r.status).toBe(200);
       const html = await r.text();
       expect(html).toContain(`<meta name="kiosk-tool" content="${tool}" />`);
-      expect(html).toContain('id="bar"');
+      expect(html).toContain('id="k-banner"');
     }
-    expect(await (await app().request("/kiosk")).text()).not.toContain("kiosk-tool");
   });
-  it("serves a page per fan-out tool (behold#746), titled with its own product alone", async () => {
-    const titles: Record<string, string> = {};
-    for (const tool of ["chant-fanout", "tofu-fanout", "choudoufu-fanout"]) {
-      const r = await app().request(`/${tool}`);
-      expect(r.status).toBe(200);
-      const html = await r.text();
-      expect(html).toContain(`<meta name="kiosk-tool" content="${tool}" />`);
-      titles[tool] = [...html.matchAll(/<title>([^<]*)<\/title>|<meta (?:property|name)="(?:og:title|og:description|description|twitter:title|twitter:description)" content="([^"]*)"/g)].map((m) => m[1] ?? m[2]).join(" | ");
+  it("redirects /kiosk and every old tool's URL to / (302)", async () => {
+    for (const path of ["/kiosk", ...LEGACY_TOOLS.map((t) => `/${t}`)]) {
+      const r = await app().request(path, { redirect: "manual" });
+      expect(r.status).toBe(302);
+      expect(r.headers.get("location")).toBe("/");
     }
-    expect(titles["chant-fanout"]).toContain("behold · chant");
-    expect(titles["chant-fanout"]).not.toMatch(/terragucci|tofu/i);
-    expect(titles["tofu-fanout"]).toContain("behold · OpenTofu");
-    expect(titles["tofu-fanout"]).not.toMatch(/chant|choudoufu/i);
-    expect(titles["choudoufu-fanout"]).toContain("behold · choudoufu");
-    expect(titles["choudoufu-fanout"]).not.toMatch(/chant|tofu/i);
   });
-  it("answers a short path that is no tool 404, with a link to /kiosk; other paths as before", async () => {
+  it("serves / as the live demo's page, else the first listed, else the first demo", async () => {
+    const tool = async (a: Hono) => /name="kiosk-tool" content="([^"]+)"/.exec(await (await a.request("/")).text())?.[1];
+    expect(await tool(app())).toBe("choudoufu-compose");
+    expect(await tool(app(true, async () => ({ demos: [{ tool: "atmos-choudoufu", live: false }], live: null })))).toBe("atmos-choudoufu");
+    expect(await tool(app(true, async () => ({ demos: [{ tool: "choudoufu-compose", live: false }, { tool: "terragrunt-choudoufu", live: true }], live: "terragrunt-choudoufu" })))).toBe("terragrunt-choudoufu");
+  });
+  it("leaves / with a query (the graph frame) to the app", async () => {
+    expect(await (await app().request("/?embed=1&bare=1")).text()).toBe("spa");
+  });
+  it("answers a short path that is no demo 404, with a link to the front page; other paths as before", async () => {
     const r = await app().request("/pulumi");
     expect(r.status).toBe(404);
-    expect(await r.text()).toContain('href="/kiosk"');
+    const html = await r.text();
+    expect(html).toContain('href="/"');
+    expect(html).not.toContain("/kiosk");
     expect((await app().request("/app.js")).status).toBe(200);
-    expect(await (await app().request("/a/b")).text()).not.toContain("/kiosk");
   });
-  it("takes GET alone, and says what /kiosk says without --terragucci", async () => {
-    expect((await app().request("/terraform", { method: "POST" })).status).toBe(404);
-    const off = await app(false).request("/terragrunt");
+  it("takes GET alone, and says so without --terragucci", async () => {
+    expect((await app().request("/choudoufu-compose", { method: "POST" })).status).toBe(404);
+    const off = await app(false).request("/terragrunt-choudoufu");
     expect(off.status).toBe(404);
     expect(await off.text()).toContain("--terragucci");
   });
   it("puts the meta tag in the head, after the charset", () => {
-    const html = vendorPage(readFileSync(join(WEB, "kiosk.html"), "utf8"), "cdk-terrain");
+    const html = vendorPage(readFileSync(join(WEB, "kiosk.html"), "utf8"), "atmos-choudoufu");
     expect(html.indexOf('name="kiosk-tool"')).toBeGreaterThan(html.indexOf("charset"));
     expect(html.indexOf('name="kiosk-tool"')).toBeLessThan(html.indexOf("</head>"));
+  });
+});
+
+describe("listedDemos", () => {
+  const dir = mkdtempSync(join(tmpdir(), "behold-listed-"));
+  mkdirSync(join(dir, "cycles", "atmos-choudoufu"), { recursive: true });
+  writeFileSync(join(dir, "cycles", "atmos-choudoufu", "latest.json"), JSON.stringify({ ...cycle(), tool: "atmos-choudoufu" }));
+  it("lists a demo once its tool has a cycle or is live", async () => {
+    const l = await listedDemos(terragucciSource(dir));
+    expect(l.demos).toEqual([{ tool: "atmos-choudoufu", live: false }]);
+    expect(l.live).toBeNull();
+    writeFileSync(join(dir, "demo.json"), JSON.stringify({ ...fixture("demo-waiting.json"), tool: "choudoufu-compose", scenario: "choudoufu-compose-edit" }));
+    const m = await listedDemos(terragucciSource(dir));
+    expect(m.demos.map((d) => d.tool)).toEqual(["choudoufu-compose", "atmos-choudoufu"]);
+    expect(m.live).toBe("choudoufu-compose");
   });
 });

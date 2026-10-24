@@ -289,31 +289,33 @@ describe("the pages (behold#752)", () => {
       expect(html).toContain('<meta name="kiosk-source" content="chant-demo" />');
       expect(html).toContain("<title>behold · chant</title>");
     }
-    // The other tools' pages need terragucci's loop.
-    expect((await page(a, "/terraform")).status).toBe(404);
+    // The other pages need terragucci's loop; an old tool's URL goes to the root.
+    expect((await page(a, "/terraform")).status).toBe(302);
   });
   it("with --terragucci too, /kiosk follows terragucci's loop and /chant-fanout reads chant's records", async () => {
     const a = new Hono();
     kioskRoute(a, WEB, true, [], { chantDemo: true });
     vendorRoutes(a, WEB, true, [], { chantDemo: true });
-    expect((await page(a, "/kiosk")).html).not.toContain('name="kiosk-source"');
+    expect((await page(a, "/")).html).not.toContain('name="kiosk-source"');
+    expect((await page(a, "/kiosk")).status).toBe(302);
     expect((await page(a, "/chant-fanout")).html).toContain('<meta name="kiosk-source" content="chant-demo" />');
-    expect((await page(a, "/tofu-fanout")).html).not.toContain('name="kiosk-source"');
+    expect((await page(a, "/tofu-fanout")).status).toBe(302);
   });
   it("without --chant-demo every page is as before: no source tag, terragucci's reads", async () => {
     const a = new Hono();
     kioskRoute(a, WEB, true, []);
     vendorRoutes(a, WEB, true, []);
-    for (const p of ["/kiosk", "/chant-fanout", "/tofu-fanout", "/choudoufu-fanout"]) {
+    for (const p of ["/", "/choudoufu-compose", "/terragrunt-choudoufu", "/atmos-choudoufu"]) {
       const { status, html } = await page(a, p);
       expect(status).toBe(200);
       expect(html).not.toContain('name="kiosk-source"');
     }
+    for (const p of ["/kiosk", "/chant-fanout", "/tofu-fanout", "/choudoufu-fanout"]) expect((await page(a, p)).status).toBe(302);
     const off = new Hono();
     kioskRoute(off, WEB, false, []);
     vendorRoutes(off, WEB, false, []);
     expect((await page(off, "/kiosk")).status).toBe(404);
-    expect((await page(off, "/chant-fanout")).status).toBe(404);
+    expect((await page(off, "/chant-fanout")).status).toBe(302);
   });
 });
 
