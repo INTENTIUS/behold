@@ -53,7 +53,7 @@ export function safeLink(l) {
 export const DEFAULT_TIPS = [
   { title: "All at once", body: "Every estate plans together, and the plan already holds the new subnet's id. Most tools go one root at a time.", link: { label: "How it plans across estates", url: "https://intentius.io/choudoufu/how-it-works/across-estates/" } },
   { title: "terragucci", body: "terragucci runs this from your own CI. It puts every estate into one plan and one apply.", link: { label: "How a composed run works", url: "https://intentius.io/terragucci/concepts/waves-and-approvals/#composed-estates" } },
-  { title: "choudoufu", body: "choudoufu is a fork of OpenTofu. It plans and applies every estate in one pass. Resource-level locking at the cloud level.", link: { label: "How the locking works", url: "https://intentius.io/choudoufu/how-it-works/locking/" } },
+  { title: "choudoufu", body: "choudoufu is a fork of OpenTofu. It can plan and apply every estate in one pass. Resource-level locking at the cloud level.", link: { label: "How the locking works", url: "https://intentius.io/choudoufu/how-it-works/locking/" } },
   { title: "Free, nothing to host", body: "Both are free and open source. Everything runs in your own CI pipeline. There is no server or database to host.", link: { label: "choudoufu on GitHub", url: "https://github.com/INTENTIUS/choudoufu" } },
   { title: "Inspect", body: "Open Inspect to explore every resource and the plan behind it." },
 ];
@@ -94,6 +94,9 @@ export function createTipSequencer({ show, hide, enabled = () => true, defaults 
   let queue = [];
   // Built-in cards shown so far, by scenario cycle.
   const given = new Map();
+  // The scenario cycle the busy line belongs to, and the one whose cards the viewer closed: none come back in it.
+  let cycleNow = null;
+  let closedCycle = null;
   const stop = () => {
     if (timer !== null) clearTimer(timer);
     timer = null;
@@ -135,9 +138,10 @@ export function createTipSequencer({ show, hide, enabled = () => true, defaults 
       id = step;
       // A card on screen is never cut short: a step that ends or changes only changes what comes after it.
       queue = [];
-      if (id !== null && enabled()) {
+      if (id !== null) cycleNow = `${d.cycle}|${d.scenario}`;
+      if (id !== null && enabled() && cycleNow !== closedCycle) {
         const own = validTips(d.tips);
-        const cycle = `${d.cycle}|${d.scenario}`;
+        const cycle = cycleNow;
         const list = own.length ? own : defaults.slice(given.get(cycle) || 0);
         queue = list.map((tip) => ({ tip, builtin: !own.length, cycle }));
       }
@@ -159,12 +163,14 @@ export function createTipSequencer({ show, hide, enabled = () => true, defaults 
       paused = null;
       arm(left);
     },
+    /** The viewer closed the card: no more cards for the rest of this scenario cycle. */
     dismiss() {
       stop();
       paused = null;
       up = false;
       read = false;
       queue = [];
+      closedCycle = cycleNow;
     },
     /** The Tips switch turned off: the card goes. */
     off() {
@@ -185,6 +191,7 @@ const STYLE_ID = "k-ask-tips-style";
 const STYLE = `
 #k-ask-tips { position: fixed; left: 0; right: 0; top: 0; height: 0; z-index: 50; pointer-events: none; overflow: hidden; }
 #k-ask-tips .eh-modal-wrap { position: absolute; inset: 0; z-index: auto; background: transparent; align-items: flex-start; padding: 12px 16px 0; box-sizing: border-box; pointer-events: none; }
+#k-ask-tips .eh-modal-close { min-width: 44px; min-height: 44px; top: 0; right: 0; }
 #k-ask-tips .eh-modal-link { display: inline-block; margin-top: 0.4em; font-size: 0.9em; color: var(--focus, inherit); text-decoration: underline; }
 #k-ask-tips .eh-modal { pointer-events: auto; width: min(32em, 100%); max-height: calc(100% - 12px); font-size: 1em; }
 @media (max-width: 700px) { #k-ask-tips .eh-modal { font-size: 0.9em; padding: 0.7em 1em 0.8em; } #k-ask-tips .eh-modal-title { font-size: 1.15em; margin-bottom: 0.3em; } }
