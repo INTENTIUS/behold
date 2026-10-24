@@ -186,8 +186,9 @@ export function joinTerragucci(read: TerragucciRead, nodes: readonly Node[], roo
       // a person approves it, so they mark their cards like a plan's.
       if (slot === "apply" && run.approval !== "waiting") {
         // behold#571: what it wrote is what the state holds now, for the kiosk's popover.
-        if (run.applied) {
-          for (const c of run.changes) {
+        const wrote = run.applied && !run.changes.length && runs.wrote ? runs.wrote : run;
+        if (wrote.applied) {
+          for (const c of wrote.changes) {
             const id = blocks?.get(blockPath(c.address));
             if (!id || !c.attributes?.length) continue;
             const a = (applied[id] ??= { values: [], run: ref(run) });

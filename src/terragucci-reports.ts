@@ -656,7 +656,7 @@ export interface TerragucciRead {
   /** How many report.json files were read. */
   reports: number;
   /** The newest run of each stage that planned each root, by root path. */
-  roots: Record<string, { plan?: RootRun; drift?: RootRun; apply?: RootRun }>;
+  roots: Record<string, { plan?: RootRun; drift?: RootRun; apply?: RootRun; wrote?: RootRun }>;
   waiting: WaitingWave[];
   /**
    * The binary each root ran by the newest report read that names it (`roots[].binary`, minor 18), by root path.
@@ -832,8 +832,9 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
       for (const r of doc.roots) {
         if (wanted && !wanted.has(r.path)) continue;
         const entry = (roots[r.path] ??= {});
-        if (entry[key]) continue;
-        entry[key] = {
+        // The push back to the base after a run is a no-op apply that becomes a root's newest; the run before it still says what the change wrote.
+        if (entry[key] && !(stage === "tf-apply" && !entry.wrote && entry.apply && !entry.apply.changes.length && r.changes.length && row.applied)) continue;
+        const built: RootRun = {
           stage,
           finished: doc.run.finished,
           commit: doc.run.commit,
@@ -856,6 +857,8 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
           ...(stage === "tf-apply" && row.approval ? { approval: row.approval } : {}),
           ...(stage === "tf-apply" && row.applied ? { applied: row.applied } : {}),
         };
+        if (entry[key]) entry.wrote = built;
+        else entry[key] = built;
       }
     }
   }
