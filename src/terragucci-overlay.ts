@@ -246,7 +246,18 @@ export function joinTerragucci(read: TerragucciRead, nodes: readonly Node[], roo
     }
     out.push(marks);
   }
-  const estateScene = read.pull_request?.compose?.estate === true ? estateSceneOf(read, roots, applied) : undefined;
+  const estate = read.pull_request?.compose?.estate === true;
+  // behold#965: an estate the run names that the checkout does not list as a root (a Terragrunt unit holding every estate as
+  // a module, whose report roots are `estates/app`) is a root of the answer too: the reads between estates name it by the
+  // report's path, and the page finds its box and cards by the roots it is told.
+  const extra = estate ? extraEstateRoots(read, roots) : [];
+  for (const root of extra) {
+    const runs = read.roots[root.path] ?? {};
+    const marks: RootMarks = { ...root };
+    for (const [slot, run] of [["drift", runs.drift], ["plan", runs.plan], ["apply", runs.apply]] as const) if (run) marks[slot] = verdict(run);
+    out.push(marks);
+  }
+  const estateScene = estate ? estateSceneOf(read, [...roots, ...extra], applied) : undefined;
   return {
     cards,
     roots: out,
@@ -255,6 +266,18 @@ export function joinTerragucci(read: TerragucciRead, nodes: readonly Node[], roo
     applied,
     ...(estateScene ? { estateScene } : {}),
   };
+}
+
+/**
+ * Every estate the run names is drawn: one the checkout does not list as a root joins under the checkout's first member,
+ * named by the last segment of the report's path (`estates/app` is `app`).
+ */
+export function extraEstateRoots(read: TerragucciRead, roots: readonly CheckoutRoot[]): CheckoutRoot[] {
+  const named = [...(read.pull_request?.compose?.roots ?? []), ...Object.keys(read.roots)];
+  const member = roots[0]?.member ?? "estate";
+  return [...new Set(named)]
+    .filter((p) => !roots.some((r) => r.path === p) && read.roots[p])
+    .map((p) => ({ member, name: p.split("/").filter(Boolean).pop() ?? p, path: p }));
 }
 
 /** The card id a scene's resource has: the id a graph card of it would have. */
@@ -266,14 +289,9 @@ export const estateCardId = (root: CheckoutRoot, address: string): string => `${
  * which join `applied` under the same card id. An apply that changed nothing (the push back to the base) is not
  * newer than what it undoes: the run before it speaks.
  */
-function estateSceneOf(read: TerragucciRead, roots: readonly CheckoutRoot[], applied: Record<string, AppliedValues>): EstateScene {
+function estateSceneOf(read: TerragucciRead, all: readonly CheckoutRoot[], applied: Record<string, AppliedValues>): EstateScene {
   const listed = (c: { action: string }) => c.action !== "no-op" && c.action !== "read";
   const out: EstateRootScene[] = [];
-  // Every estate the run names is drawn: one the checkout does not list as a root joins under the checkout's first member.
-  const named = [...(read.pull_request?.compose?.roots ?? []), ...Object.keys(read.roots)];
-  const extra = [...new Set(named)].filter((p) => !roots.some((r) => r.path === p) && read.roots[p]);
-  const member = roots[0]?.member ?? "estate";
-  const all: CheckoutRoot[] = [...roots, ...extra.map((p) => ({ member, name: p.split("/").filter(Boolean).pop() ?? p, path: p }))];
   for (const root of all) {
     const runs = read.roots[root.path];
     if (!runs) continue;
