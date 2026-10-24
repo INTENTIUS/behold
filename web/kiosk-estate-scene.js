@@ -100,11 +100,13 @@ export function sceneModel(answer, plan, progress, open) {
   const keyOf = new Map();
   for (const r of roots) for (const c of r.cards) keyOf.set(`${r.path}/${c.address}`, c.id);
   const edges = [];
+  // Only between roots that sit next to each other: a line past a box to one beyond it crosses what is between.
+  const place = new Map(roots.map((r, i) => [r.path, i]));
   for (const [seed, reaches] of plan.reaches) {
     const from = keyOf.get(seed);
     for (const x of reaches || []) {
       const to = keyOf.get(`${x.root}/${x.address}`);
-      if (from && to && from !== to && !edges.some((e) => e.from === from && e.to === to)) edges.push({ from, to, d: edgePath(at.get(from), at.get(to)) });
+      if (from && to && from !== to && Math.abs(place.get(seed.slice(0, seed.indexOf("/"))) - place.get(x.root)) <= 1 && !edges.some((e) => e.from === from && e.to === to)) edges.push({ from, to, d: edgePath(at.get(from), at.get(to)) });
     }
   }
   return { roots, edges, width: layout.width, height: layout.height, cols: layout.cols };

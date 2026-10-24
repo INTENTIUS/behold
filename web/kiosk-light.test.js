@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { bare, cardTitle, dependentsOf, lightMessage, planOf, producerOf, selectLight, slotState, startKioskLight, stateFile, stateMarks, unknownSlots } from "./kiosk-light.js";
+import { badgeWords, bare, cardTitle, dependentsOf, lightMessage, planOf, producerOf, selectLight, slotState, startKioskLight, stateFile, stateMarks, unknownSlots } from "./kiosk-light.js";
 
 // The three-root estate of behold#937 (src/__fixtures__/terragucci-demo-ask): network creates a subnet,
 // app puts four resources in it, edge reads an address of app's. The answer is built the way the
@@ -244,5 +244,27 @@ describe("the unknown slot and its filling (behold#937)", () => {
     expect(JSON.stringify(run)).not.toMatch(/"(after|value|values|outputs)"/);
     const apply = read("../terragucci-demo-composed/report-apply-wave-1-failed.json");
     for (const r of apply.roots) for (const c of r.changes) for (const at of c.attributes || []) if (at.unknown === true) expect(at).not.toHaveProperty("after");
+  });
+});
+
+describe("ask mode's badge and a producer's own value (behold#940)", () => {
+  const composed = { state: "planned", words: "wave 1 \u00b7 planned, composed" };
+  const done = { states: [{ number: 1, state: "applied", roots: ["network"], composed: { members: [{ root: "network", apply: "applied", state: "written" }] } }], reads: [] };
+
+  it("says planned together, then applied together, with no wave in it", () => {
+    expect(badgeWords(composed, "network", null)).toBe("planned together");
+    // The badge follows the root's outcome even where the wave's own state still reads planned.
+    expect(badgeWords(composed, "network", done)).toBe("applied together");
+    expect(badgeWords({ state: "applied", words: "wave 1 \u00b7 applied, composed" }, "app", null)).toBe("applied together");
+    expect(badgeWords({ state: "planned", words: "wave 2 \u00b7 planned" }, "app", null)).toBe("planned");
+    expect(badgeWords({ state: "unchanged", words: "wave 1 \u00b7 unchanged" }, "app", null)).toBe("unchanged");
+  });
+
+  it("shows the subnet's own id when the exact attribute is not stated, and nothing invented for another card", () => {
+    const own = { key: "network/terraform_data.subnet", cardId: "c", path: "output", producer: "network/terraform_data.subnet", producerRoot: "network" };
+    const a = { applied: { c: { values: [{ address: "x", path: "id", after: "subnet-0a1b2c" }] } } };
+    expect(slotState(own, a, done)).toEqual({ filled: true, value: "subnet-0a1b2c", path: "id" });
+    const other = { ...own, key: "app/terraform_data.service", producer: "network/terraform_data.subnet" };
+    expect(slotState(other, a, done)).toEqual({ filled: true });
   });
 });

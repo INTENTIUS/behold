@@ -191,6 +191,24 @@ export function applyOf(root, progress) {
   return null;
 }
 
+/**
+ * The words on a root's badge in ask mode: no wave (a viewer has no use for one), and the step's own word. Follows the
+ * run view's outcome for the root when it has one, so the badge and the state label under the box agree.
+ * `st` is the root's state from rootStates; null when it has nothing to say.
+ */
+export function badgeWords(st, root, progress) {
+  if (!st) return null;
+  if (st.state === "unchanged" || st.state === "outside") return st.words.replace(/^wave \d+ \u00b7 /, "");
+  const together = /composed/.test(st.words) ? " together" : "";
+  const a = applyOf(root, progress);
+  const apply = a && a.apply ? a.apply : st.state === "applied" ? "applied" : st.state === "failed" ? "partial" : st.state === "applying" ? "applying" : null;
+  if (apply === "applied" || apply === "no-changes") return `applied${together}`;
+  if (apply === "partial" || apply === "failed") return "partly applied";
+  if (apply === "not-started") return "not applied";
+  if (apply === "applying") return `applying${together}`;
+  return `planned${together}`;
+}
+
 export const LOOK_WORDS = { applied: "applied", partial: "partly applied", "not-applied": "not applied" };
 const LOOK_OF = { applied: "applied", "no-changes": "applied", partial: "partial", failed: "partial", "not-started": "not-applied" };
 
@@ -261,8 +279,15 @@ export function slotState(slot, answer, progress) {
   const a = applyOf(slot.producerRoot, progress);
   const filled = !!a && (a.apply === "applied" || a.apply === "no-changes");
   const wrote = slot.cardId && answer && answer.applied ? answer.applied[slot.cardId] : null;
-  const v = filled && wrote ? (wrote.values || []).find((x) => x.path === slot.path && !x.unknown && "after" in x) : null;
-  return v ? { filled, value: v.after } : { filled };
+  const known = filled && wrote ? (wrote.values || []).filter((x) => !x.unknown && "after" in x) : [];
+  let v = known.find((x) => x.path === slot.path);
+  // behold#940: a resource that is its own producer (the subnet) shows what it exported when the exact attribute is not stated: its id, else its first value.
+  let path = slot.path;
+  if (!v && slot.producer === slot.key) {
+    v = known.find((x) => x.path === "id") || known[0];
+    if (v) path = v.path;
+  }
+  return v ? { filled, value: v.after, ...(path !== slot.path ? { path } : {}) } : { filled };
 }
 
 // ---------------------------------------------------------------------------

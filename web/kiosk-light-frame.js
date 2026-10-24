@@ -155,13 +155,14 @@ function drawSlots(layer, svg, plan, answer, progress, h) {
     const b = rect.getBBox();
     slots.forEach((s, i) => {
       const st = slotState(s, answer, progress);
-      const words = st.filled ? (st.value !== undefined ? `${s.path}: ${typeof st.value === "string" ? st.value : JSON.stringify(st.value)}` : `${s.path}: filled from ${s.text.replace(/^not known until /, "").replace(/ exists$/, "")}`) : `${s.path}: ${s.text}`;
+      const words = st.filled ? (st.value !== undefined ? `${st.path || s.path}: ${typeof st.value === "string" ? st.value : JSON.stringify(st.value)}` : `${s.path}: filled from ${s.text.replace(/^not known until /, "").replace(/ exists$/, "")}`) : `${s.path}: ${s.text}`;
       // behold#940: a card the scene drew (data-kl-synth) has room under it for its slots, in bigger type; a graph card's hang over its foot.
       const synth = card.hasAttribute("data-kl-synth");
       const size = synth ? 14 : 11.5;
-      const fit = Math.max(8, Math.floor((b.width - 28) / (size * 0.56)));
-      const shown = synth && words.length > fit ? `${words.slice(0, fit - 3)}...` : words;
-      const w = synth ? b.width - 12 : Math.min(b.width - 12, Math.max(90, shown.length * 6.6 + 16));
+      // One line, inside the card: a long value ends in an ellipsis.
+      const fit = Math.max(8, Math.floor((b.width - 28) / (size * 0.6)));
+      const shown = words.length > fit ? `${words.slice(0, fit - 3)}...` : words;
+      const w = synth ? b.width - 12 : Math.min(b.width - 12, Math.max(90, shown.length * 6.8 + 16));
       const rowH = synth ? 22 : 18;
       const y = synth ? b.y + b.height + 6 + rowH + i * 26 : b.y + b.height - 3 + i * 22;
       const g = make("g", { "data-kl-slot": id, "data-kl-filled": st.filled ? "1" : "0" });

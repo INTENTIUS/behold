@@ -41,7 +41,7 @@ import { TOOLS, orderTools } from "./tool-mark.js";
 import { STATE_WORDS as tgStateWords, changeSection as tgChangeSection, readCardIds as tgReadCardIds, readEdges as tgReadEdges, readLabel as tgReadLabel, readLine as tgReadLine, readTag as tgReadTag, rootStates as tgRootStates, viewCaption as tgViewCaption, pinnedAnswer as tgPinnedAnswer, pinnedCaption as tgPinnedCaption, pinsCommit as tgPinsCommit, pinWaits as tgPinWaits } from "./terragucci-change.js";
 import { auditLines as yrAuditLines, cornerText as yrCorner, datedWords as yrDated, environmentLines as yrEnvLines, joinMarks as yrJoin, legend as yrLegend, markLine as yrMarkLine } from "./yodel-report.js";
 import { drawLight as klDraw } from "./kiosk-light-frame.js"; // behold#937
-import { planOf as klPlanOf } from "./kiosk-light.js"; // behold#940
+import { badgeWords as klBadge, planOf as klPlanOf } from "./kiosk-light.js"; // behold#940
 import { askDeltas, clearScene, drawScene, sceneModel, slotCounts as klSlotCounts } from "./kiosk-estate-scene.js"; // behold#940
 import { cardProgress as tgCardProgress, progressLines as tgProgressLines, progressSection as tgProgressSection, stampProgress as tgStampProgress } from "./terragucci-progress.js";
 import { seconds, whyQuery, whyView } from "./why.js";
@@ -4886,8 +4886,11 @@ function drawTgReads() {
     }
     // Filled when something happened or waits on the root; an outline when nothing has yet.
     const solid = st.state !== "outside" && st.state !== "not-started" && st.state !== "unchanged";
-    const badge = pill(mark, local.x + local.width - 16, tabY, st.words, { stroke: tone, fill: solid ? tone : "var(--panel)", color: solid ? "var(--bg)" : "var(--fg)", size: 14, weight: 700, anchor: "end", cls: st.state === "applying" ? "pin-pulse" : "" });
-    badge.g.appendChild(make("title", {}, [st.words, ...st.facts].join("\n") + "\n(from terragucci's reports, not live)"));
+    // behold#940: in ask mode the badge says the step's own word, with no wave.
+    const askWords = embedOpts.bare && document.documentElement.classList.contains("kiosk-ask") ? klBadge(st, r.path, tgStoryOn() ? tgPacedProgress() : tgProgress) : null;
+    const badgeText = askWords || st.words;
+    const badge = pill(mark, local.x + local.width - 16, tabY, badgeText, { stroke: tone, fill: solid ? tone : "var(--panel)", color: solid ? "var(--bg)" : "var(--fg)", size: 14, weight: 700, anchor: "end", cls: st.state === "applying" ? "pin-pulse" : "" });
+    badge.g.appendChild(make("title", {}, [badgeText, ...st.facts].join("\n") + "\n(from terragucci's reports, not live)"));
     // The facts under it, at the box's bottom right: the plan a wave waits on, its changes.
     // Packed into one line that fits the box, most telling first; the rest is in the badge's tooltip.
     if (st.facts.length) {

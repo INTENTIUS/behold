@@ -112,8 +112,8 @@ describe("a composed choudoufu run's scene (behold#940)", () => {
       expect(c.y).toBeGreaterThanOrEqual(r.y);
       expect(c.y + c.h).toBeLessThanOrEqual(r.y + r.h);
     }
-    // The subnet's reach: one edge to each of app's four and to edge's.
-    expect(m.edges.filter((e: { from: string }) => e.from === "demo/network/aws_sqs_queue.subnet")).toHaveLength(5);
+    // The subnet's reach, to the root next to it: one edge to each of app's four, none past app's box to edge's.
+    expect(m.edges.filter((e: { from: string }) => e.from === "demo/network/aws_sqs_queue.subnet")).toHaveLength(4);
     // Not one row of three: it is taller than the old layout and fills the wide room.
     expect(m.height).toBeGreaterThan(m.width / 4);
   });
