@@ -212,6 +212,28 @@ What the host keeps:
 | `/opt/demo/views/<repo name>` | a checkout of each demo repo in `DEMO_REPOS` at its `main` (behold#571), which behold serves: the first by default, another when a page asks for it with `?repo=<name>`. The driver makes them after a bootstrap, and a missing one on its next start; the watchdog moves each to `main` every cycle. `/opt/demo/view`, the single checkout before, is no longer read and is left as it is |
 | `/opt/demo/views/<repo name>.change` | a second checkout of each demo repo, which the driver's loop moves to each step's commit (a pull request's head, then its merge) before it writes the step (behold#571). The kiosk's graph draws it while the step's commit is checked out there, so a pull request's new roots and resources are drawn. The driver makes it beside the first; the watchdog leaves it as it is |
 
+## The chant compose demo (behold#969)
+
+The kiosk lists a fourth demo, `chant-compose` ("One plan, one apply, across stacks"): terragucci's
+`example-demo-chant-compose`, three CloudFormation stacks (network, app, edge) run by chant's own pull-request
+pipeline. It needs no flag and no change to `compose.yaml`. What the host has to hold:
+
+- `DEMO_REPOS` names `terragucci-admin/demo-chant-compose`, so the driver keeps a view checkout of it at
+  `/opt/demo/views/demo-chant-compose` (the kiosk asks for it with `?repo=demo-chant-compose`). Its
+  `.forgejo/workflows/chant-pr.yml` is the file behold reads: its `--report-url` is
+  `s3://demo-reports/demo/chant/${{ github.repository }}`, which behold fills in from the checkout's origin. That is
+  where the pipeline's reports land (`<pull request>/<commit>/pr-plan.json`, `pr-apply.json`), so `--terragucci
+  "$DEMO_REPORTS"` and the bucket already there are all the feed reads. `--chant-report-url <url>` overrides the
+  pipeline's URL for a repo whose workflow names it through a variable.
+- `DEMO_SCENARIOS` includes `chant-compose-edit chant-compose-create` (terragucci's `stack/demo.sh`
+  `scenario_tool` maps both to the tool `chant-compose`), or is empty for the default list.
+- behold's floci key reads the reports bucket as before. A pr-report states no value for what an apply created, so
+  behold also asks the applied stack for its outputs (`aws cloudformation describe-stacks`, through the container's
+  `AWS_ENDPOINT_URL`) to show the new subnet's real id. With IAM enforcement on, the key needs
+  `cloudformation:DescribeStacks` for that; without it the card reads "filled from subnetB" and nothing else changes.
+- The logo is `web/vendors/chant.svg`, chant's own mark from its repo. The demo's code link is
+  `https://github.com/INTENTIUS/terragucci/tree/main/example-demo-chant-compose`.
+
 ## Bring it up
 
 On a fresh instance, from your laptop: `npx chant run demo-host-bootstrap` in

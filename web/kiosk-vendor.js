@@ -28,7 +28,7 @@
  * - CDK Terrain: the Open Construct Foundation's continuation of CDKTF; its
  *   site, cdktn.io, publishes no rules for its logo, so the name is text.
  * - choudoufu: ours, logo and all.
- * - chant: ours too. Its docs ship no logo, so the name is text. Its scenario
+ * - chant: ours too. The older chant entry below keeps the name as text; the chant-compose demo shows chant's mark. Its scenario
  *   runs chant's own pull-request pipeline, which installs OpenTofu.
  */
 export const VENDORS = {
@@ -176,6 +176,23 @@ export const VENDORS = {
     terms: [],
     runsWith: ["atmos"],
     hides: ["terragrunt", "gruntwork"],
+  },
+  // chant's own pull-request pipeline across three CloudFormation stacks. The logo is chant's mark (web/vendors/chant.svg,
+  // from the chant repo's docs/public/brand/mark.svg). `heading` is the banner's title where it differs from the others'.
+  "chant-compose": {
+    name: "chant",
+    title: "One plan, one apply, across stacks",
+    heading: "One plan, one apply, across stacks",
+    tree: "example-demo-chant-compose",
+    products: ["chant"],
+    owner: "Intentius",
+    url: "https://intentius.io/chant/",
+    logo: { src: "/vendors/chant.svg" },
+    credit: "chant is made by Intentius, who also make this demo.",
+    kind: "demo",
+    terms: [],
+    runsWith: [],
+    hides: ["choudoufu", "terragrunt", "gruntwork", "atmos", "cloud posse"],
   },
 };
 

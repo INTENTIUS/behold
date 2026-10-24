@@ -69,12 +69,29 @@ export const PLAIN_TIPS = [
   DEFAULT_TIPS[4],
 ];
 
+/**
+ * The chant demo runs chant's own pull-request pipeline on three CloudFormation stacks: no terragucci and no choudoufu in
+ * it. Each body was linted alone at strictness 3 and its claims checked against chant's guide (pull-request-ci,
+ * apply-on-merge "A round the first approval covers").
+ */
+export const CHANT_TIPS = [
+  { title: "One plan, one note", body: "chant plans every stack a pull request changes in one pass and posts one note with one digest. A reviewer approves that digest once.", link: { label: "Generated CI for pull requests", url: "https://intentius.io/chant/guide/pull-request-ci/" } },
+  { title: "Known after apply", body: "A stack that reads a new subnet's id is planned with a stand-in for it. The note marks what the stand-in drives as known after apply, and no stand-in is shown as a value.", link: { label: "How CloudFormation stacks are planned", url: "https://intentius.io/chant/guide/pull-request-ci/#cloudformation-stacks" } },
+  { title: "One approval", body: "When network has applied, chant plans the other two stacks again. The first approval covers that plan if it only fills in what the preview marked unknown.", link: { label: "How a round is covered", url: "https://intentius.io/chant/guide/apply-on-merge/#a-round-the-first-approval-covers" } },
+  { title: "Parameters, not exports", body: "A stack reads another stack's output through a stackOutput input, which chant fills in as a CloudFormation parameter. No exports are involved." },
+  { title: "Free, nothing to host", body: "chant is open source under Apache 2.0. The pull request pipeline is a workflow file chant generates for your forge, and it runs in the CI you already have.", link: { label: "chant on GitHub", url: "https://github.com/INTENTIUS/chant" } },
+  DEFAULT_TIPS[4],
+];
+
+/** Whether a scenario belongs to the chant demo (chant-compose-edit, chant-compose-create). */
+export const chantScenario = (scenario) => typeof scenario === "string" && /^chant-compose-/.test(scenario);
+
 /** Whether a scenario belongs to a plain-workflow demo (Terragrunt or Atmos on choudoufu). */
 export const plainScenario = (scenario) => typeof scenario === "string" && /^(terragrunt|atmos)-/.test(scenario);
 
 /** The built-in cards for a scenario, on a phone or not: the last card is Inspect, or on a phone the short-version note. */
 export function defaultTipsFor(scenario, phone = false) {
-  const base = plainScenario(scenario) ? PLAIN_TIPS : DEFAULT_TIPS;
+  const base = chantScenario(scenario) ? CHANT_TIPS : plainScenario(scenario) ? PLAIN_TIPS : DEFAULT_TIPS;
   return phone ? [...base.slice(0, -1), PHONE_TIPS[PHONE_TIPS.length - 1]] : base;
 }
 
@@ -88,11 +105,12 @@ const PHONE = "(max-width: 700px)";
 const validTips = (v) =>
   Array.isArray(v)
     ? v
-        .filter((t) => t && typeof t.title === "string" && t.title && typeof t.body === "string" && t.body)
+        .map((t) => (typeof t === "string" ? { body: t } : t))
+        .filter((t) => t && typeof t.body === "string" && t.body.trim() && (t.title === undefined || t.title === null || typeof t.title === "string"))
         .map((t) => {
-          const { link, ...rest } = t;
+          const { link, title, ...rest } = t;
           const ok = safeLink(link);
-          return ok ? { ...rest, link: ok } : rest;
+          return { ...rest, ...(title ? { title } : {}), ...(ok ? { link: ok } : {}) };
         })
     : [];
 
@@ -204,7 +222,7 @@ export function createTipSequencer({ show, hide, enabled = () => true, defaults 
 
 /** How long a card stays: long enough to read its title and body (about 3 words a second, plus 3 s), never under minMs. */
 export function holdMs(tip, minMs = TIP_MIN_MS) {
-  const words = `${tip.title} ${tip.body}`.split(/\s+/).filter(Boolean).length;
+  const words = `${tip.title || ""} ${tip.body}`.split(/\s+/).filter(Boolean).length;
   return Math.max(minMs, 3_000 + words * 330);
 }
 
@@ -293,7 +311,7 @@ export function mountAskTips({ win = window, doc = document, askHost, reduced = 
       mine.api = openEventModal(host, {
         mode: "narrated",
         kind: "tip",
-        data: { title: tip.title, lines: [{ text: tip.body }], ...(tip.link ? { panel: linkNode(tip.link) } : {}) },
+        data: { ...(tip.title ? { title: tip.title } : {}), lines: [{ text: tip.body }], ...(tip.link ? { panel: linkNode(tip.link) } : {}) },
         doc,
         reduced: reduced(),
         onClose: (s) => {

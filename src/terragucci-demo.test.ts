@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { demoProblem, readDemo } from "./terragucci-demo.ts";
 import type { TerragucciSource } from "./terragucci-source.ts";
 
@@ -144,10 +144,13 @@ describe("demo.json's ask, asks, opening and closing (behold#936)", () => {
     expect(got.slice(2).every((x) => x === undefined)).toBe(true);
     expect(a.demo!.ask!.tips).toHaveLength(8);
   });
-  it("passes tips through, keeping the valid cards in order", async () => {
-    const tips = [{ title: " A ", body: " one " }, { title: "", body: "x" }, { title: "B" }, "no", { title: "C", body: "three" }];
+  it("passes tips through, keeping the valid cards in order; a plain string is a body with no title, and a tip with no body is logged", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const tips = [{ title: " A ", body: " one " }, { title: "", body: "x" }, { title: "B" }, "no", 7, { title: "C", body: "three" }];
     const a = await readDemo(source({ ...fixture("demo-failed.json"), ask: { status: "Applying", tips }, asks: [{ prompt: "p", tips: [] }, { status: "s", tips: "nope" }] }));
-    expect(a.demo!.ask!.tips).toEqual([{ title: "A", body: "one" }, { title: "C", body: "three" }]);
+    expect(a.demo!.ask!.tips).toEqual([{ title: "A", body: "one" }, { body: "x" }, { body: "no" }, { title: "C", body: "three" }]);
+    expect(warn.mock.calls.map((c: unknown[]) => String(c[0]))).toEqual([expect.stringContaining("needs a body"), expect.stringContaining("needs a body")]);
+    warn.mockRestore();
     expect("tips" in a.demo!.asks![0]!).toBe(false);
     expect("tips" in a.demo!.asks![1]!).toBe(false);
   });

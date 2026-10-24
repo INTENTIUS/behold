@@ -91,7 +91,7 @@ describe("GET /<demo>", () => {
     return a;
   };
   it("lists only the multi-state demos", () => {
-    expect([...VENDOR_TOOLS]).toEqual(["choudoufu-compose", "terragrunt-choudoufu", "atmos-choudoufu"]);
+    expect([...VENDOR_TOOLS]).toEqual(["choudoufu-compose", "terragrunt-choudoufu", "atmos-choudoufu", "chant-compose"]);
   });
   it("redirects each demo's own path to / (302): one live view, no per-demo page", async () => {
     for (const tool of VENDOR_TOOLS) {

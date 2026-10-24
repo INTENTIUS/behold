@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
-import { ChantDemo } from "./chant-demo.ts";
-import { chantPrRoute, prStageOfReport } from "./chant-pr.ts";
+import { prStageOfReport } from "./chant-pr.ts";
+import { chantComposedFeedRoutes } from "./chant-compose-feed.ts";
 import { COVERED_WORDS, composedReportOf, composedView } from "./chant-compose.ts";
 import type { TerragucciSource } from "./terragucci-source.ts";
 // @ts-expect-error the kiosk's browser modules have no declaration files
@@ -14,179 +14,235 @@ import { sceneModel } from "../web/kiosk-estate-scene.js";
 // @ts-expect-error see above
 import { readEdges, rootStates } from "../web/terragucci-change.js";
 
-// behold#969 (chant#4419): a composed chant run, stacks network, app and edge. There is no real run to copy yet
-// (terragucci#1269), so the fixtures are pr-report/v1 documents built from the shapes chant documents: the schema
-// (packages/core/src/workspace/pr-report.schema.json), pr-run.test.ts's covered round, and cfn-plan.test.ts's
-// preview (a created resource's id and the properties an unknown input drives marked `unknown`). Replace them with
-// the demo's own files when its first local run writes them.
+// behold#969 (chant#4419): a composed chant run, stacks network, app and edge. The fixtures are the demo's own reports
+// (terragucci's example-demo-chant-compose, chant 0.124.34), copied from the local bucket's
+// demo/chant/terragucci-admin/demo-chant-compose/<pull request>/<commit>/ without a change:
+//   edit-*    pull request 1: network's proxy port moves and an admin port is added; every value is known at plan.
+//   create-*  pull request 2: network creates subnetB, app puts workerInterface in it, edge's allowlist takes its range.
+//             The apply's one round (app and edge) is covered by the first approval.
 const FIX = join(import.meta.dirname, "__fixtures__", "chant-compose");
 const json = (f: string) => JSON.parse(readFileSync(join(FIX, f), "utf8")) as Record<string, unknown>;
-const plan = () => composedReportOf(json("pr-plan.json"))!;
-const covered = () => composedReportOf(json("pr-apply-covered.json"))!;
-const notCovered = () => composedReportOf(json("pr-apply-not-covered.json"))!;
-const VPC_CARD = "chant/network/Vpc";
-const SG_CARD = "chant/app/AppSecurityGroup";
-const DNS_CARD = "chant/edge/DnsUpstream";
+const stage = (f: string) => composedReportOf(json(f))!;
+const SUBNET_CARD = "chant/network/subnetB";
+const WORKER_CARD = "chant/app/workerInterface";
+const ALLOW_CARD = "chant/edge/allowlist";
+const SUBNET_ID = "subnet-0f3a91c2";
+const OUTPUTS = { network: { SubnetBId: SUBNET_ID, VpcId: "vpc-103dd1ad" } };
+const linesOf = (v: { answer: unknown }, card: string) => cardLines(planOf(v.answer)).filter((l: { cardId: string }) => l.cardId === card);
+const shown = (v: { answer: unknown; progress: unknown }, card: string) => linesOf(v, card).map((l: { path: string }) => [l.path, lineState(l, v.answer, v.progress).text]);
 
 describe("reading chant's composed report", () => {
-  it("keeps the unknown inputs, the entries marked unknown and the rounds", () => {
-    const p = plan();
-    expect(p.members.map((m) => [m.member, m.unknownInputs])).toEqual([["app", ["network.VpcId"]], ["edge", ["app.QueueArn"]], ["network", []]]);
-    expect(p.entries.find((e) => e.address === "AppSecurityGroup")!.attributes).toEqual([{ path: "VpcId", unknown: true }]);
+  it("keeps the unknown inputs, the planned upstreams and the round", () => {
+    const p = stage("create-plan.json");
+    expect(p.members.map((m) => [m.member, m.unknownInputs])).toEqual([["app", ["network.SubnetBId"]], ["edge", []], ["network", []]]);
+    expect(p.entries.find((e) => e.address === "workerInterface")!.attributes).toEqual([{ path: "SubnetId", unknown: true }]);
     expect(p.order).toEqual(["network", "app", "edge"]);
-    expect(covered().rounds.map((r) => [r.round, r.components, r.covered?.filledInputs])).toEqual([[2, ["app"], ["network.VpcId"]], [3, ["edge"], ["app.QueueArn"]]]);
-    expect(notCovered().rounds[0]).toMatchObject({ notCovered: "app now plans to create RouteTable, which the first plan did not" });
-    expect(notCovered().rounds[0]!.covered).toBeUndefined();
+    expect(p.planned).toEqual(["app", "network"]);
+    expect([p.pr, p.head]).toEqual([2, "a71e1d3229de3b69009d2730ab47794ef2907b88"]);
+    expect(stage("create-apply.json").rounds.map((r) => [r.round, r.components, r.covered?.filledInputs])).toEqual([[2, ["app", "edge"], ["network.SubnetBId"]]]);
+  });
+  it("reads an edit that moves only known values as a composed run too", () => {
+    const e = stage("edit-plan.json");
+    expect(e.members.every((m) => m.unknownInputs.length === 0)).toBe(true);
+    expect(e.rounds).toEqual([]);
+    expect(e.entries.map((x) => x.address)).toEqual(["adminListenerPort", "listenerPort", "adminUpstream", "upstream", "adminPort", "httpProxyPort"]);
   });
   it("is absent for a report of a plain fan-out", () => {
     const fan = JSON.parse(readFileSync(join(import.meta.dirname, "__fixtures__", "chant-demo", "reports", "773", "6d4a48da36317886b549ca0d46c44646e697f561", "pr-plan.json"), "utf8"));
     expect(composedReportOf(fan)).toBeUndefined();
     expect(prStageOfReport(fan, "x")!.composed).toBeUndefined();
-    expect(prStageOfReport(json("pr-plan.json"), "x")!.composed).toBeDefined();
+    expect(prStageOfReport(json("create-plan.json"), "x")!.composed).toBeDefined();
   });
 });
 
-describe("the plan: three stacks planned together", () => {
-  const v = composedView(plan(), undefined)!;
-  it("draws the three stacks as boxes, upstream first, and a line for each cross-stack read", () => {
+describe("the create plan: three stacks planned together", () => {
+  const v = composedView(stage("create-plan.json"), undefined)!;
+  it("draws the three stacks as boxes, upstream first, with a line from each stack to the next", () => {
     expect(v.progress).toBeNull();
     const a = v.answer as never;
     expect(planOf(a).roots.map((r: { path: string }) => r.path)).toEqual(["network", "app", "edge"]);
     expect(planOf(a).edges).toEqual([{ from: "network", to: "app" }, { from: "app", to: "edge" }]);
     const edges = readEdges(a, null);
-    expect(edges.map((e: { from: string; to: string; unknown: string[] }) => [e.from, e.to, e.unknown])).toEqual([["app", "network", ["VpcId"]], ["edge", "app", ["QueueArn", "ResourceRecords"]]]);
+    expect(edges.map((e: { from: string; to: string; unknown: string[] }) => [e.from, e.to, e.unknown])).toEqual([["app", "network", ["SubnetBId", "SubnetId"]]]);
     const m = sceneModel(a, planOf(a), null, { width: 1900, height: 740 });
     expect(m.roots.map((r: { path: string }) => r.path)).toEqual(["network", "app", "edge"]);
+  });
+  it("takes the stacks' edges from the components graph when it is given", () => {
+    const g = composedView(stage("create-plan.json"), undefined, { dependsOn: { app: ["network"], edge: ["network", "app"] } })!;
+    expect(planOf(g.answer as never).edges).toEqual([{ from: "network", to: "app" }, { from: "network", to: "edge" }, { from: "app", to: "edge" }]);
   });
   it("says planned together on each box", () => {
     const states = rootStates(v.answer, null).roots;
     expect(Object.keys(states).sort()).toEqual(["app", "edge", "network"]);
     for (const r of ["network", "app", "edge"]) expect(badgeWords(states[r], r, null)).toBe("planned together");
   });
-  it("gives a changed resource at most two lines: its id known after apply, then the read, known after apply", () => {
-    const p = planOf(v.answer);
-    const lines = cardLines(p);
-    const of = (id: string) => lines.filter((l: { cardId: string }) => l.cardId === id).map((l: { path: string; kind: string }) => `${l.path}:${l.kind}`);
-    expect(of(VPC_CARD)).toEqual(["id:unknown"]);
-    expect(of(SG_CARD)).toEqual(["id:unknown", "VpcId:unknown"]);
-    expect(of(DNS_CARD)).toEqual(["id:unknown", "ResourceRecords:unknown"]);
-    expect(of("chant/app/Queue")).toEqual(["id:unknown"]);
-    for (const l of lines.filter((x: { cardId: string }) => x.cardId === SG_CARD)) expect(lineState(l, v.answer, null)).toMatchObject({ state: "unknown", text: expect.stringContaining("known after apply") });
-    // The read's producer is a resource the upstream stack creates.
-    expect(lines.find((l: { cardId: string; path: string }) => l.cardId === SG_CARD && l.path === "VpcId")).toMatchObject({ producerRoot: "network" });
+  it("gives a changed resource at most two lines: the id and the read are known after apply, the update says updated", () => {
+    expect(shown(v, SUBNET_CARD)).toEqual([["id", "id: known after apply"]]);
+    expect(shown(v, WORKER_CARD)).toEqual([["id", "id: known after apply"], ["SubnetId", "SubnetId: known after apply"]]);
+    expect(shown(v, ALLOW_CARD)).toEqual([["Value", "Value: updated"]]);
+    for (const l of linesOf(v, WORKER_CARD)) expect(lineState(l, v.answer, null).state).toBe("unknown");
+    // The read's producer is the resource the upstream stack creates.
+    expect(linesOf(v, WORKER_CARD).find((l: { path: string }) => l.path === "SubnetId")).toMatchObject({ producerRoot: "network", producerName: "subnetB" });
   });
   it("lights a resource and what reads it", () => {
-    const sel = selectLight(planOf(v.answer), { light: ["network/Vpc"], paths: true });
+    const sel = selectLight(planOf(v.answer), { light: ["network/subnetB"], paths: true });
     expect(sel.roots).toEqual(["network", "app", "edge"]);
   });
   it("tells previewed members from plain ones", () => {
-    expect(v.members.map((m) => [m.member, m.kind])).toEqual([["app", "previewed"], ["edge", "previewed"], ["network", "plain"]]);
+    expect(v.members.map((m) => [m.member, m.kind])).toEqual([["app", "previewed"], ["edge", "plain"], ["network", "plain"]]);
   });
   it("tells a hole, a member nothing could be previewed for, from a previewed one", () => {
-    const doc = json("pr-plan.json") as { changeSet: { members: { member: string; holes: unknown[] }[] } };
-    doc.changeSet.members.find((m) => m.member === "edge")!.holes = [{ address: "DnsUpstream", reason: "no preview: CloudFormation refused the stand-in" }];
+    const doc = json("create-plan.json") as { changeSet: { members: { member: string; holes: unknown[] }[] } };
+    doc.changeSet.members.find((m) => m.member === "edge")!.holes = [{ address: "allowlist", reason: "no preview: CloudFormation refused the stand-in" }];
     const h = composedView(composedReportOf(doc)!, undefined)!;
     expect(h.members.map((m) => [m.member, m.kind])).toEqual([["app", "previewed"], ["edge", "hole"], ["network", "plain"]]);
     expect((h.answer as { pull_request: { waves: { composed: { held_by_unknown: string[] } }[] } }).pull_request.waves[0]!.composed.held_by_unknown).toContain("edge");
   });
+  it("pins the plan to its pull request and head, so another cycle's plan is never drawn as this one's", () => {
+    expect((v.answer as { pull_request: { run: { pull_request: string; commit: string } } }).pull_request.run).toMatchObject({ pull_request: "2", commit: "a71e1d3229de3b69009d2730ab47794ef2907b88" });
+  });
 });
 
-describe("the apply the first approval covered", () => {
-  const v = composedView(plan(), covered())!;
-  it("says applied together on each box, and the covered round once", () => {
+describe("the create apply the first approval covered", () => {
+  const v = composedView(stage("create-plan.json"), stage("create-apply.json"), { outputs: OUTPUTS })!;
+  it("says applied together on each box, and the covered round on the two stacks it re-planned", () => {
     const states = rootStates(v.answer, v.progress).roots;
     for (const r of ["network", "app", "edge"]) expect(badgeWords(states[r], r, v.progress)).toBe("applied together");
     expect(states.app.facts).toContain(COVERED_WORDS);
     expect(states.edge.facts).toContain(COVERED_WORDS);
     expect(states.network.facts).not.toContain(COVERED_WORDS);
-    expect(v.rounds).toEqual([
-      { round: 2, members: ["app"], covered: true, words: COVERED_WORDS, digest: expect.any(String), filledInputs: ["network.VpcId"] },
-      { round: 3, members: ["edge"], covered: true, words: COVERED_WORDS, digest: expect.any(String), filledInputs: ["app.QueueArn"] },
-    ]);
+    expect(v.rounds).toEqual([{ round: 2, members: ["app", "edge"], covered: true, words: COVERED_WORDS, digest: expect.any(String), filledInputs: ["network.SubnetBId"] }]);
     const marks = stateMarks(v.answer, v.progress);
     expect(stateWords(marks.app)).toBe(`app · applied · ${COVERED_WORDS}`);
     expect(stateWords(marks.network)).toBe("network · applied");
   });
-  it("shows the real value where the plan said known after apply", () => {
-    const lines = cardLines(planOf(v.answer));
-    const read = lines.find((l: { cardId: string; path: string }) => l.cardId === SG_CARD && l.path === "VpcId");
-    expect(lineState(read, v.answer, v.progress)).toEqual({ state: "applied", text: "VpcId: vpc-0a1b2c" });
-    const dns = lines.find((l: { cardId: string; path: string }) => l.cardId === DNS_CARD && l.path === "ResourceRecords");
-    expect(lineState(dns, v.answer, v.progress).text).toBe("ResourceRecords: arn:aws:sqs:us-east-1:000000000000:app-queue");
-    // The id is not stated by the report: the line says the resource was created.
-    const id = lines.find((l: { cardId: string; path: string }) => l.cardId === VPC_CARD);
-    expect(lineState(id, v.answer, v.progress)).toEqual({ state: "applied", text: "id: created" });
+  it("shows the real subnet id where the plan said known after apply", () => {
+    expect(shown(v, SUBNET_CARD)).toEqual([["id", `id: ${SUBNET_ID}`]]);
+    expect(shown(v, WORKER_CARD)).toEqual([["id", "id: created"], ["SubnetId", `SubnetId: ${SUBNET_ID}`]]);
+    for (const l of linesOf(v, WORKER_CARD).filter((x: { path: string }) => x.path === "SubnetId")) expect(lineState(l, v.answer, v.progress).state).toBe("applied");
+  });
+  it("without the stack's outputs the report states no value, and the line says where it was filled from", () => {
+    const bare = composedView(stage("create-plan.json"), stage("create-apply.json"))!;
+    expect(shown(bare, SUBNET_CARD)).toEqual([["id", "id: created"]]);
+    expect(shown(bare, WORKER_CARD)[1]).toEqual(["SubnetId", "SubnetId: filled from subnetB"]);
   });
   it("keeps the lines at two per card after the apply", () => {
     const per: Record<string, number> = {};
     for (const l of cardLines(planOf(v.answer))) per[l.cardId] = (per[l.cardId] || 0) + 1;
     expect(Math.max(...Object.values(per))).toBeLessThanOrEqual(2);
   });
+  it("pins the run view to the merge commit", () => {
+    expect((v.progress as { run: { commit: string } }).run.commit).toBe("9d5964cbb98e5830cbdba91987eea41a6d1d19d1");
+  });
+});
+
+describe("the edit: every value known at plan, three stacks, no round", () => {
+  const plan = composedView(stage("edit-plan.json"), undefined)!;
+  const done = composedView(stage("edit-plan.json"), stage("edit-apply.json"))!;
+  it("draws no unknown line and no covered round", () => {
+    expect(plan.rounds).toEqual([]);
+    expect(done.rounds).toEqual([]);
+    // The only unknown a card shows is a created resource's own id; no read between stacks is unknown.
+    for (const l of cardLines(planOf(plan.answer))) if (l.kind === "unknown") expect(l.path).toBe("id");
+    expect(shown(plan, "chant/network/httpProxyPort")).toEqual([["Value", "Value: updated"]]);
+    const states = rootStates(done.answer, done.progress).roots;
+    for (const r of ["network", "app", "edge"]) expect(badgeWords(states[r], r, done.progress)).toBe("applied together");
+    expect(JSON.stringify(states)).not.toContain(COVERED_WORDS);
+  });
+  it("draws the three stacks in a chain", () => {
+    expect(planOf(plan.answer as never).edges).toEqual([{ from: "network", to: "app" }, { from: "app", to: "edge" }]);
+  });
 });
 
 describe("a re-plan the first approval did not cover", () => {
-  const v = composedView(plan(), notCovered())!;
+  // Derived from the real create apply: its round carries a reason instead of `covered`, and app and edge wait.
+  const doc = json("create-apply.json") as { status: string; members: { member: string; status: string }[]; rounds: Record<string, unknown>[] };
+  doc.status = "waiting";
+  for (const m of doc.members) if (m.member !== "network") m.status = "waiting";
+  delete doc.rounds[0]!.covered;
+  doc.rounds[0]!.status = "waiting";
+  doc.rounds[0]!.notCovered = "app now plans to create RouteTable, which the first plan did not";
+  const v = composedView(stage("create-plan.json"), composedReportOf(doc)!, { outputs: OUTPUTS })!;
   it("says why, marks no stack covered, and leaves the held stacks unapplied", () => {
-    expect(v.rounds).toEqual([{ round: 2, members: ["app"], covered: false, words: "the re-plan needed an approval of its own", reason: "app now plans to create RouteTable, which the first plan did not" }]);
+    expect(v.rounds).toEqual([{ round: 2, members: ["app", "edge"], covered: false, words: "the re-plan needed an approval of its own", reason: "app now plans to create RouteTable, which the first plan did not" }]);
     const states = rootStates(v.answer, v.progress).roots;
     expect(JSON.stringify(states)).not.toContain(COVERED_WORDS);
     expect(badgeWords(states.network, "network", v.progress)).toBe("applied together");
     expect(badgeWords(states.app, "app", v.progress)).toBe("not applied");
-    const lines = cardLines(planOf(v.answer));
-    const read = lines.find((l: { cardId: string; path: string }) => l.cardId === SG_CARD && l.path === "VpcId");
-    // network applied, so the value exists; app has not, so the report states none for it.
-    expect(lineState(read, v.answer, v.progress)).toEqual({ state: "applied", text: "VpcId: filled from Vpc" });
+    // network applied, so its subnet has an id; app has not, so its worker's line stays unknown.
+    expect(shown(v, SUBNET_CARD)).toEqual([["id", `id: ${SUBNET_ID}`]]);
+    expect(shown(v, WORKER_CARD)[1]).toEqual(["SubnetId", "SubnetId: filled from subnetB"]);
   });
 });
 
-describe("/api/terragucci on a chant demo", () => {
-  const HEAD = "b".repeat(40);
-  const MERGE = "c".repeat(40);
-  const noGit = async () => ({ code: 1, stdout: "", stderr: "" });
-  const noLedger = { history: async () => ({ found: false, via: "none" as const, fetch: { ok: false }, read: { at: "" }, logs: [], note: "" }), git: noGit };
-  const memory = (files: Record<string, unknown>): TerragucciSource => ({ kind: "dir", location: "mem", async read(key: string) { return key in files ? JSON.stringify(files[key]) : undefined; } }) as TerragucciSource;
-  const WORKFLOW = `jobs:\n  plan:\n    steps:\n      - run: chant components pr-plan --base "$BASE_SHA" --pr "$PR_NUMBER" --env demo --gate pr-apply --output .chant/pr --forge forgejo\n`;
-  async function app(reports: Record<string, unknown>, stepName: string) {
-    const dir = join(mkdtempSync(join(tmpdir(), "behold-chant-compose-")), "compose-estate");
+describe("the feed: /api/terragucci from the bucket the pipeline writes", () => {
+  const DIR = "pr";
+  const files: Record<string, string> = {
+    "1/a6543aacfbb4ca2afdb6b4c26fc1908683d77195/pr-plan.json": "edit-plan.json",
+    "1/f97fa21effb924712aa6cda6de86cf705ab649e5/pr-apply.json": "edit-apply.json",
+    "2/a71e1d3229de3b69009d2730ab47794ef2907b88/pr-plan.json": "create-plan.json",
+    "2/9d5964cbb98e5830cbdba91987eea41a6d1d19d1/pr-apply.json": "create-apply.json",
+  };
+  const memory = (held: string[]): TerragucciSource => ({
+    kind: "dir",
+    location: "mem",
+    async read(key: string) {
+      return held.includes(key) ? readFileSync(join(FIX, files[key]!), "utf8") : undefined;
+    },
+    async list(under: string) {
+      const base = under === "" ? "" : `${under.replace(/\/+$/, "")}/`;
+      const keys = held.filter((k) => k.startsWith(base)).map((k) => k.slice(base.length));
+      return {
+        prefixes: [...new Set(keys.filter((k) => k.includes("/")).map((k) => `${base}${k.split("/")[0]}/`))],
+        objects: keys.filter((k) => !k.includes("/")).map((k) => ({ key: `${base}${k}`, modified: "2026-10-24T22:14:00.000Z" })),
+        truncated: false,
+      };
+    },
+  });
+  const WORKFLOW = `jobs:\n  plan:\n    steps:\n      - run: chant components pr-plan --base "$BASE_SHA" --pr "$PR_NUMBER" --env demo --gate pr-apply --output .chant/pr --forge forgejo --report-url s3://demo-reports/demo/chant/o/r\n`;
+  function app(held: string[], withLoop = true, stacks: string[] = ["network"]) {
+    const dir = join(mkdtempSync(join(tmpdir(), "behold-chant-feed-")), "demo-chant-compose");
     mkdirSync(join(dir, ".forgejo", "workflows"), { recursive: true });
-    writeFileSync(join(dir, ".forgejo", "workflows", "chant-pr.yml"), WORKFLOW);
-    const step = {
-      $schema: "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
-      contract: 1,
-      demo: "compose-estate",
-      repo: "chant-demo/compose-estate",
-      cycle: 1,
-      step: stepName,
-      pull: 41,
-      commit: stepName === "applied" ? MERGE : HEAD,
-      reports: { url: "s3://chant-demo/compose-estate/reports", plan: `41/${HEAD}`, ...(stepName === "applied" ? { apply: `41/${MERGE}` } : {}) },
-    };
-    const sources: Record<string, TerragucciSource> = { mem: memory({ "step.json": step }), "s3://chant-demo/compose-estate/reports": memory(reports) };
-    const demo = new ChantDemo({ source: "mem", sourceOf: (u) => sources[u]! });
+    if (withLoop) writeFileSync(join(dir, ".forgejo", "workflows", "chant-pr.yml"), WORKFLOW);
     const a = new Hono();
-    chantPrRoute(a, () => dir, { ...noLedger, reportSource: (u) => sources[u]!, demoReports: (d) => demo.prReports(d, noGit) });
-    return a;
+    const asked: string[][] = [];
+    chantComposedFeedRoutes(a, () => dir, {
+      reportSource: () => memory(held),
+      aws: async (args) => {
+        asked.push(args);
+        const stack = args[args.indexOf("--stack-name") + 1]!;
+        return { code: 0, stdout: JSON.stringify({ Stacks: [{ Outputs: stacks.includes(stack) ? Object.entries(OUTPUTS.network).map(([OutputKey, OutputValue]) => ({ OutputKey, OutputValue })) : [] }] }), stderr: "" };
+      },
+    });
+    a.get("/api/terragucci", (c) => c.json({ fell: "through" }));
+    a.get("/api/terragucci/progress", (c) => c.json({ fell: "through" }));
+    return { a, asked };
   }
-  it("serves the answer and the run view the ask mode reads, and keeps /api/chant/pr small", async () => {
-    const a = await app({ [`41/${HEAD}/pr-plan.json`]: json("pr-plan.json"), [`41/${MERGE}/pr-apply.json`]: json("pr-apply-covered.json") }, "applied");
+  const all = Object.keys(files);
+  it("serves the newest pull request's plan and apply, and the real subnet id from the network stack", async () => {
+    const { a, asked } = app(all);
     const answer = (await (await a.request("/api/terragucci")).json()) as any;
     expect(answer.estateScene.roots.map((r: { path: string }) => r.path)).toEqual(["network", "app", "edge"]);
+    expect(answer.pull_request.run.pull_request).toBe("2");
+    expect(answer.applied["chant/network/subnetB"].values[0]).toMatchObject({ path: "id", after: SUBNET_ID });
+    expect(asked.every((x) => x[0] === "cloudformation")).toBe(true);
     const progress = (await (await a.request("/api/terragucci/progress")).json()) as any;
-    expect(progress.states[0].composed.members.find((m: { root: string }) => m.root === "app").covered.filledInputs).toEqual(["network.VpcId"]);
-    const pr = (await (await a.request("/api/chant/pr")).json()) as any;
-    expect(pr.plan.status).toBe("planned");
-    expect(pr.plan.composed).toBeUndefined();
-    expect(pr.apply.composed).toBeUndefined();
+    expect(progress.states[0].composed.members.find((m: { root: string }) => m.root === "app").covered.filledInputs).toEqual(["network.SubnetBId"]);
+    expect(progress.run.commit).toBe("9d5964cbb98e5830cbdba91987eea41a6d1d19d1");
+  });
+  it("a commit picks the pull request that has a stage on it", async () => {
+    const { a } = app(all);
+    const answer = (await (await a.request("/api/terragucci?commit=f97fa21e")).json()) as any;
+    expect(answer.pull_request.run.pull_request).toBe("1");
+    expect(answer.chant.rounds).toEqual([]);
   });
   it("at the plan alone there is no run view", async () => {
-    const a = await app({ [`41/${HEAD}/pr-plan.json`]: json("pr-plan.json") }, "pull-request");
+    const { a } = app(["2/a71e1d3229de3b69009d2730ab47794ef2907b88/pr-plan.json"]);
     expect(((await (await a.request("/api/terragucci")).json()) as any).pull_request.waves[0].composed.members).toHaveLength(3);
     expect(((await (await a.request("/api/terragucci/progress")).json()) as any).run).toBeNull();
   });
-  it("a plain fan-out has neither read, as before", async () => {
-    const fan = JSON.parse(readFileSync(join(import.meta.dirname, "__fixtures__", "chant-demo", "reports", "773", "6d4a48da36317886b549ca0d46c44646e697f561", "pr-plan.json"), "utf8"));
-    const a = await app({ [`41/${HEAD}/pr-plan.json`]: fan }, "pull-request");
-    expect((await a.request("/api/terragucci")).status).toBe(404);
-    expect((await a.request("/api/terragucci/progress")).status).toBe(404);
+  it("a checkout with no pull-request loop, or no composed report, goes on to the terragucci read", async () => {
+    expect(await (await app(all, false).a.request("/api/terragucci")).json()).toEqual({ fell: "through" });
+    expect(await (await app([]).a.request("/api/terragucci/progress")).json()).toEqual({ fell: "through" });
   });
 });

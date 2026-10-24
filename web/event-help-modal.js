@@ -275,7 +275,7 @@ export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc 
     for (const c of [...box.children]) if (c !== x) c.remove();
     const line = modeLine(mode, kind, { at: data.at, now: t, resolved: st.resolved, outcome: st.outcome, replayAt: data.replayAt, action: data.action, fix: !!data.fix });
     if (line) box.appendChild(el("p", `eh-modal-mode eh-modal-${mode}`, line));
-    box.appendChild(el("h2", "eh-modal-title", data.title || ""));
+    if (data.title || kind !== "tip") box.appendChild(el("h2", "eh-modal-title", data.title || ""));
     for (const l of data.lines || []) {
       const p = el("p", `eh-modal-line${l.lit ? " eh-lit" : ""}`, l.text);
       if (l.title) p.title = l.title;

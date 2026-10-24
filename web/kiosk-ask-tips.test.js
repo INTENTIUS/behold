@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_TIPS, LINK_RESUME_MS, PHONE_TIPS, TIP_FADE_MS, TIP_MIN_MS, createTipSequencer, holdMs, safeLink, shouldDismiss, defaultTipsFor } from "./kiosk-ask-tips.js";
+import { CHANT_TIPS, DEFAULT_TIPS, LINK_RESUME_MS, PHONE_TIPS, TIP_FADE_MS, TIP_MIN_MS, createTipSequencer, holdMs, safeLink, shouldDismiss, defaultTipsFor } from "./kiosk-ask-tips.js";
 
 function rig(opts = {}) {
   const log = [];
@@ -80,9 +80,9 @@ describe("tip cards: timing", () => {
     expect(holdMs(long)).toBe(3_000 + 61 * 330);
     expect(holdMs({ title: "T", body: "b" })).toBe(TIP_MIN_MS);
   });
-  it("ignores a repeat of the same busy line, and tips with no title or body", () => {
+  it("ignores a repeat of the same busy line, and tips with no body", () => {
     const { seq, log, advance } = rig();
-    seq.busy(busy("a", { tips: [{ title: "", body: "x" }, { title: "ok", body: "y" }] }));
+    seq.busy(busy("a", { tips: [{ title: "no body", body: "" }, { title: "ok", body: "y" }] }));
     seq.busy(busy("a", { tips }));
     advance(TIP_MIN_MS * 3);
     expect(log).toEqual([["show", "ok", 0]]);
@@ -259,5 +259,22 @@ describe("tip cards: per demo", () => {
     }
     expect(defaultTipsFor("choudoufu-compose-create").map((t) => t.title)).toContain("terragucci");
     expect(defaultTipsFor("atmos-choudoufu-edit", true).at(-1).title).toBe("The full view");
+  });
+  it("gives the chant demo's scenarios their own cards, with no choudoufu or terragucci on them", () => {
+    for (const sc of ["chant-compose-edit", "chant-compose-create"]) {
+      expect(defaultTipsFor(sc)).toBe(CHANT_TIPS);
+      const text = defaultTipsFor(sc).map((t) => `${t.title} ${t.body} ${t.link ? t.link.url : ""}`).join(" ");
+      expect(text).not.toMatch(/choudoufu|terragucci|terragrunt|atmos|opentofu/i);
+      expect(text).not.toMatch(/atomic|transaction/i);
+      for (const t of defaultTipsFor(sc)) if (t.link) expect(safeLink(t.link)).not.toBeNull();
+    }
+    expect(defaultTipsFor("chant-compose-create", true).at(-1).title).toBe("The full view");
+    expect(defaultTipsFor("chant-compose-create", true)).toHaveLength(CHANT_TIPS.length);
+  });
+  it("shows a plain string tip as a body with no title, and drops a tip with no body", () => {
+    const shown = [];
+    const seq = createTipSequencer({ show: (t) => shown.push(t), hide() {}, defaults: () => [], setTimer: () => 1, clearTimer() {} });
+    seq.busy({ busy: true, id: "b1", cycle: 1, scenario: "atmos-choudoufu-edit", tips: ["Plain words.", { title: "T", body: "B" }, { title: "No body" }, 4] });
+    expect(shown).toEqual([{ body: "Plain words." }]);
   });
 });
