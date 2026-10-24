@@ -27,10 +27,19 @@ export function actNumeral(n) {
   return out;
 }
 
-/** The act the loop is on, "Act I", from demo.json's index and scenario count; null for one act, another tool's run or none. */
+/**
+ * The act the loop is on, "Act I": the scenario's place among its own tool's scenarios (demo.json's `act` and `acts`).
+ * Without `act` (an older driver) it falls back to `index` and `scenarios`, which count every tool's scenarios. Null for
+ * one act, another tool's run or none.
+ */
 export function actOf(tool, demo) {
   const d = demo && demo.demo ? demo.demo : demo;
-  if (!d || d.tool !== tool || !Number.isInteger(d.index) || !Number.isInteger(d.scenarios) || d.scenarios < 2 || d.index < 1) return null;
+  if (!d || d.tool !== tool) return null;
+  if (d.act !== undefined && d.act !== null) {
+    if (!Number.isInteger(d.act) || !Number.isInteger(d.acts) || d.acts < 2 || d.act < 1) return null;
+    return `Act ${actNumeral(d.act)}`;
+  }
+  if (!Number.isInteger(d.index) || !Number.isInteger(d.scenarios) || d.scenarios < 2 || d.index < 1) return null;
   return `Act ${actNumeral(d.index)}`;
 }
 

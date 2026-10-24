@@ -55,6 +55,8 @@ describe("the act after the title", () => {
     expect(actOf("choudoufu-compose", { demo: { tool: "other", index: 1, scenarios: 2 } })).toBeNull();
     expect(actOf("choudoufu-compose", { demo: { tool: "choudoufu-compose", index: 1, scenarios: 1 } })).toBeNull();
     expect(actOf("choudoufu-compose", null)).toBeNull();
+    expect(actOf("choudoufu-compose", { demo: { tool: "choudoufu-compose", index: 4, scenarios: 6, act: 2, acts: 2 } })).toBe("Act II");
+    expect(actOf("choudoufu-compose", { demo: { tool: "choudoufu-compose", index: 4, scenarios: 6, act: 1, acts: 1 } })).toBeNull();
     expect(actNumeral(3)).toBe("III");
     expect(actNumeral(4)).toBe("IV");
   });

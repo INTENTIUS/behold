@@ -305,12 +305,12 @@ describe("the pages (behold#752)", () => {
     const a = new Hono();
     kioskRoute(a, WEB, true, []);
     vendorRoutes(a, WEB, true, []);
-    for (const p of ["/", "/choudoufu-compose", "/terragrunt-choudoufu", "/atmos-choudoufu"]) {
+    for (const p of ["/"]) {
       const { status, html } = await page(a, p);
       expect(status).toBe(200);
       expect(html).not.toContain('name="kiosk-source"');
     }
-    for (const p of ["/kiosk", "/chant-fanout", "/tofu-fanout", "/choudoufu-fanout"]) expect((await page(a, p)).status).toBe(302);
+    for (const p of ["/kiosk", "/chant-fanout", "/tofu-fanout", "/choudoufu-fanout", "/choudoufu-compose", "/terragrunt-choudoufu", "/atmos-choudoufu"]) expect((await page(a, p)).status).toBe(302);
     const off = new Hono();
     kioskRoute(off, WEB, false, []);
     vendorRoutes(off, WEB, false, []);
