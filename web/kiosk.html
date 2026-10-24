@@ -511,6 +511,7 @@
         padding: var(--s3) 1.4em var(--s4); font: 600 clamp(1.1rem, 1.9vw, 1.8rem)/1.3 var(--font-mono); color: var(--fg);
         background: var(--surface-pane-b); border-top: 1px solid var(--rule); border-radius: 0 0 8px 8px; box-shadow: 0 -10px 30px color-mix(in srgb, var(--bg) 70%, transparent); }
       #k-ask[hidden] { display: none; }
+      #k-ask:has(.ask-diff) { max-height: 46vh; } /* the diff block needs room, or the reply scrolls out above it */
       #k-ask .ask-entry { display: flex; flex-direction: column; gap: 0.15em; min-width: 0; }
       #k-ask .ask-line { display: flex; gap: 0.6em; }
       #k-ask .ask-mark { color: var(--pending, var(--fg)); flex: none; min-width: 1ch; }
