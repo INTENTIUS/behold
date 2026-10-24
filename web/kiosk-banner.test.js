@@ -15,11 +15,13 @@ describe("the demo banner model", () => {
     expect(bannerModel("atmos-choudoufu").code.url).toBe(`${CODE_BASE}example-demo-atmos-choudoufu`);
     expect(bannerModel("terragrunt-choudoufu").code.url).toBe(`${CODE_BASE}example-demo-terragrunt-choudoufu`);
   });
-  it("shows a logo for choudoufu alone; the other products are text", () => {
-    expect(PRODUCTS.choudoufu.logo).toBeTruthy();
+  it("names the demo's own products: terragucci and choudoufu with logos, Terragrunt and Atmos as text, never OpenTofu", () => {
+    expect(PRODUCTS.choudoufu.logo.src).toBe("/vendors/choudoufu.svg");
+    expect(PRODUCTS.terragucci.logo.src).toBe("/vendors/terragucci.svg");
     for (const k of ["opentofu", "terragrunt", "atmos"]) expect(PRODUCTS[k].logo).toBeNull();
-    expect(bannerModel("atmos-choudoufu").products.map((p) => p.name)).toEqual(["choudoufu", "OpenTofu", "Atmos"]);
-    expect(bannerModel("choudoufu-compose").products.map((p) => p.name)).toEqual(["choudoufu", "OpenTofu"]);
+    expect(bannerModel("choudoufu-compose").products.map((p) => p.name)).toEqual(["terragucci", "choudoufu"]);
+    expect(bannerModel("terragrunt-choudoufu").products.map((p) => p.name)).toEqual(["Terragrunt", "choudoufu"]);
+    expect(bannerModel("atmos-choudoufu").products.map((p) => p.name)).toEqual(["Atmos", "choudoufu"]);
   });
   it("has the switcher only when more than one demo is listed", () => {
     expect(bannerModel("choudoufu-compose", ["choudoufu-compose"]).switcher).toEqual([]);

@@ -1,8 +1,8 @@
 // The demo banner: the example's name, the products in it, a link to the code, and a switcher between the listed demos.
 // Pure: the model from a tool id and the list; web/kiosk.html draws it.
 //
-// Logo policy (web/kiosk-vendor.js): a logo appears only where its owner's published rules allow one. choudoufu's is
-// ours. OpenTofu, Terragrunt and Atmos are shown by name, as text, and link to their official sites.
+// Logo policy (web/kiosk-vendor.js): a logo appears only where its owner's published rules allow one. choudoufu's and
+// terragucci's are ours. OpenTofu, Terragrunt and Atmos are shown by name, as text, and link to their official sites.
 
 import { vendorOf } from "./kiosk-vendor.js";
 
@@ -11,7 +11,8 @@ export const CODE_BASE = "https://github.com/INTENTIUS/terragucci/tree/main/";
 
 /** The products a banner may show: the name, the site, and the logo (null where no rule allows one). */
 export const PRODUCTS = {
-  choudoufu: { name: "choudoufu", url: "https://intentius.io/choudoufu/", logo: { src: "/vendors/choudoufu-64.png", src2x: "/vendors/choudoufu-128.png" } },
+  choudoufu: { name: "choudoufu", url: "https://intentius.io/choudoufu/", logo: { src: "/vendors/choudoufu.svg" } },
+  terragucci: { name: "terragucci", url: "https://intentius.io/terragucci/", logo: { src: "/vendors/terragucci.svg" } },
   opentofu: { name: "OpenTofu", url: "https://opentofu.org/", logo: null },
   terragrunt: { name: "Terragrunt", url: "https://terragrunt.com/", logo: null },
   atmos: { name: "Atmos", url: "https://atmos.tools/", logo: null },

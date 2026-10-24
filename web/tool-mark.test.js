@@ -80,6 +80,6 @@ describe("the marks", () => {
       // Inline geometry, or the PNG behold ships; never an external URL.
       expect(JSON.stringify(t.icon)).not.toMatch(/https?:/);
     }
-    expect(TOOLS.choudoufu.icon.image).toBe("vendors/choudoufu-128.png");
+    expect(TOOLS.choudoufu.icon.image).toBe("vendors/choudoufu.svg");
   });
 });
