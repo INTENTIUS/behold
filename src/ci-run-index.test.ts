@@ -254,8 +254,8 @@ describe("the kiosk page names chant's run index only when serve has --ci-report
     vendorRoutes(a, web, true, [], { ciRuns, chantDemo: true });
     return (await a.request(path)).text();
   };
-  it("tags /kiosk and a tool's page with it, and leaves them as they were without it", async () => {
-    for (const path of ["/kiosk", "/terraform", "/chant-fanout"]) {
+  it("tags / and a tool's page with it, and leaves them as they were without it", async () => {
+    for (const path of ["/", "/choudoufu-compose", "/chant-fanout"]) {
       expect(await page(true, path)).toContain('<meta name="kiosk-runs" content="chant-ci" />');
       expect(await page(false, path)).not.toContain("kiosk-runs");
     }

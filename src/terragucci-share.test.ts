@@ -23,15 +23,15 @@ const metas = (html: string): Record<string, string> => {
 };
 
 describe("link previews (behold#571)", () => {
-  it("gives /kiosk absolute https og:url and og:image for the allowed host behind the proxy", async () => {
-    const r = await app().request("https://x/kiosk", { headers: { host: HOST, "x-forwarded-proto": "https" } });
+  it("gives / (the first demo) absolute https og:url and og:image for the allowed host behind the proxy", async () => {
+    const r = await app().request("https://x/", { headers: { host: HOST, "x-forwarded-proto": "https" } });
     expect(r.status).toBe(200);
     const html = await r.text();
-    expect(html).toContain("<title>behold · live demo</title>");
+    expect(html).toContain("<title>behold · choudoufu</title>");
     expect(metas(html)).toMatchObject({
-      "og:title": "behold · live demo",
+      "og:title": "behold · choudoufu",
       "og:type": "website",
-      "og:url": `https://${HOST}/kiosk`,
+      "og:url": `https://${HOST}/`,
       "og:image": `https://${HOST}/share.png`,
       "og:image:width": "1200",
       "og:image:height": "630",
@@ -59,7 +59,7 @@ describe("link previews (behold#571)", () => {
     // The request guard refuses such a request before any route.
     expect((await app().request("http://x/kiosk", { headers: { host: "evil.example" } })).status).toBe(421);
     // And the tags never echo one: loopback is let in, but isn't on the allowed list.
-    for (const path of ["/kiosk", "/terragrunt"]) {
+    for (const path of ["/", "/terragrunt-choudoufu"]) {
       const html = await (await app().request(`http://x${path}`, { headers: { host: "localhost:4600", "x-forwarded-proto": "https" } })).text();
       const m = metas(html);
       expect(m["og:title"]).toBeTruthy();

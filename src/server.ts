@@ -207,7 +207,7 @@ import { repoBase, servedChoudoufu, terragucciRoutes, type TerragucciOptions } f
 import { terragucciSource } from "./terragucci-source.ts";
 import { metricsRoute } from "./prometheus-metrics.ts";
 import { tracesRoute } from "./tempo-traces.ts";
-import { kioskRoute, shareImageRoute, vendorFallback, vendorRoutes } from "./terragucci-demo.ts";
+import { kioskRoute, shareImageRoute, terragucciDemosRoute, vendorFallback, vendorRoutes } from "./terragucci-demo.ts";
 import { readsOtherRepo, scopeServedDirs, viewRepoFacts, viewReposMiddleware, type ViewRepos } from "./view-repos.ts";
 import { lifecycleHistoryRoute } from "./lifecycle-history.ts";
 import { hasReleaseLedgerHint, releasesRoutes } from "./lifecycle-releases.ts";
@@ -1083,7 +1083,7 @@ export function createApp(
   // behold#571: `?repo=<name>` serves that checkout for this request; an unknown name is refused here.
   if (cfg.viewRepos) viewReposMiddleware(app, cfg.viewRepos);
   // #569: the op tools' reads are refused and the page carries the public flag.
-  if (cfg.public) publicRoutes(app, webRoot);
+  if (cfg.public) publicRoutes(app, webRoot, !!cfg.terragucci);
   // A test's fake choudoufu answers every read, the member via's included
   // (src/choudoufu-member.ts `setChoudoufuRunner`); undefined in production.
   setChoudoufuRunner(cfg.choudoufu?.run);
@@ -1260,7 +1260,9 @@ export function createApp(
   app.get("/healthz", (c) => c.json({ ok: true, projectDir: cfg.projectDir, env: cfg.env ?? null, frames: frames.size }));
 
   // #569 step 2: the kiosk, a looping terragucci demo narrated from demo.json.
-  kioskRoute(app, webRoot, !!cfg.terragucci, guard.allowedHosts, { chantDemo: !!cfg.chantDemo, ciRuns: !!ciRuns });
+  const demoSource = cfg.terragucci ? terragucciSource(cfg.terragucci.source, { ...(cfg.terragucci.aws ? { aws: cfg.terragucci.aws } : {}), ...(cfg.terragucci.fetch ? { fetch: cfg.terragucci.fetch } : {}) }) : undefined;
+  const listedDemos = demoSource ? terragucciDemosRoute(app, demoSource) : undefined;
+  kioskRoute(app, webRoot, !!cfg.terragucci, guard.allowedHosts, { chantDemo: !!cfg.chantDemo, ciRuns: !!ciRuns, ...(listedDemos ? { listed: listedDemos } : {}) });
   // behold#571: the image link previews show, which the kiosk's og:image names.
   shareImageRoute(app, webRoot);
   // behold#571: the kiosk's "Pipeline metrics", from Prometheus; dora.json beside the reports when Prometheus has no DORA gauges.
@@ -1268,7 +1270,7 @@ export function createApp(
   metricsRoute(app, { ...(cfg.prometheus ? { prometheus: cfg.prometheus } : {}), ...(doraSource ? { doraFile: () => doraSource.read("dora.json") } : {}) });
   // behold#571: a job's trace for the kiosk's Trace view, from Tempo, by fixed queries only.
   tracesRoute(app, cfg.tempo ? { tempo: cfg.tempo } : {});
-  // behold#571: a page per tool (/terraform, /terragrunt, ...), the kiosk for that tool alone.
+  // A page per listed demo (/choudoufu-compose, ...); an old tool's URL redirects to /.
   vendorRoutes(app, webRoot, !!cfg.terragucci, guard.allowedHosts, { chantDemo: !!cfg.chantDemo, ciRuns: !!ciRuns });
 
   // Deployment lanes (#5): the captured keyframes as a per-substrate filmstrip.

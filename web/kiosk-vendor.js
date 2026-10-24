@@ -132,6 +132,51 @@ export const VENDORS = {
     terms: ["choudoufu"],
     runsWith: [],
   },
+  // The multi-state demos (the only ones listed): one plan and one apply across three estates, on choudoufu and OpenTofu.
+  // choudoufu's logo is ours. OpenTofu, Terragrunt and Atmos show as text: their owners' published rules, where we found
+  // any, don't give a third party's page a logo (see web/kiosk-banner.js). `title` is the example's name for the banner,
+  // `tree` its public directory in INTENTIUS/terragucci, `products` the banner's logos or names, in order.
+  "choudoufu-compose": {
+    name: "choudoufu",
+    title: "One plan, one apply, across estates",
+    tree: "example-demo-choudoufu-compose",
+    products: ["choudoufu", "opentofu"],
+    owner: "Intentius",
+    url: "https://intentius.io/choudoufu/",
+    logo: { src: "/vendors/choudoufu-64.png", src2x: "/vendors/choudoufu-128.png" },
+    credit: "choudoufu is made by Intentius, who also make this demo. It supports AWS and Kubernetes.",
+    kind: "demo",
+    terms: [],
+    runsWith: ["opentofu"],
+  },
+  "terragrunt-choudoufu": {
+    name: "choudoufu with Terragrunt",
+    title: "One plan, one apply, across estates, with Terragrunt",
+    tree: "example-demo-terragrunt-choudoufu",
+    products: ["choudoufu", "opentofu", "terragrunt"],
+    owner: "Intentius",
+    url: "https://intentius.io/choudoufu/",
+    logo: { src: "/vendors/choudoufu-64.png", src2x: "/vendors/choudoufu-128.png" },
+    credit: "choudoufu is made by Intentius, who also make this demo.",
+    kind: "demo",
+    terms: [],
+    runsWith: ["opentofu", "terragrunt"],
+    hides: ["atmos", "cloud posse"],
+  },
+  "atmos-choudoufu": {
+    name: "choudoufu with Atmos",
+    title: "One plan, one apply, across estates, with Atmos",
+    tree: "example-demo-atmos-choudoufu",
+    products: ["choudoufu", "opentofu", "atmos"],
+    owner: "Intentius",
+    url: "https://intentius.io/choudoufu/",
+    logo: { src: "/vendors/choudoufu-64.png", src2x: "/vendors/choudoufu-128.png" },
+    credit: "choudoufu is made by Intentius, who also make this demo.",
+    kind: "demo",
+    terms: [],
+    runsWith: ["opentofu", "atmos"],
+    hides: ["terragrunt", "gruntwork"],
+  },
 };
 
 /** What a tool's scenarios run on, said on its page as the owner's rules allow ("works with OpenTofu"). */
@@ -142,6 +187,20 @@ export const RUNS_WITH = {
     words: "The pipeline here works with OpenTofu, which runs these roots.",
     kind: "engine",
     terms: ["OpenTofu"],
+  },
+  terragrunt: {
+    name: "Terragrunt",
+    url: "https://terragrunt.com/",
+    words: "This version works with Terragrunt, which Gruntwork, Inc. makes and who don't endorse this demo.",
+    kind: "orchestrator",
+    terms: ["Terragrunt", "Gruntwork"],
+  },
+  atmos: {
+    name: "Atmos",
+    url: "https://atmos.tools/",
+    words: "This version works with Atmos, which Cloud Posse makes and who don't endorse this demo.",
+    kind: "orchestrator",
+    terms: ["Atmos", "Cloud Posse"],
   },
 };
 
@@ -165,7 +224,7 @@ export const COMPETITORS = {
  * behold#746: the fan-out pages compete with each other alone, whatever
  * engine or pipeline each runs: three takes on one scenario.
  */
-export const COMPETES = { engine: "engine", orchestrator: "orchestrator", pipeline: "pipeline", fanout: "fanout" };
+export const COMPETES = { engine: "engine", orchestrator: "orchestrator", pipeline: "pipeline", fanout: "fanout", demo: "demo" };
 
 const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 
@@ -206,7 +265,7 @@ export function otherTerms(tool) {
     if (id === tool || x.kind !== rivals || v.runsWith.includes(id)) continue;
     out.push(...x.terms);
   }
-  return [...out, ...(v.hides || [])];
+  return [...new Set([...out, ...(v.hides || [])])];
 }
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

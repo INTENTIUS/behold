@@ -1,6 +1,6 @@
 // behold#571: the per-tool pages' pure parts: live or replay, the replay's pace, the runs kept, and the branding.
 import { describe, expect, it } from "vitest";
-import { VENDOR_TOOLS } from "../src/terragucci-demo.ts";
+import { LEGACY_TOOLS, VENDOR_TOOLS } from "../src/terragucci-demo.ts";
 import { logRows } from "./kiosk-runs.js";
 import { NO_GRAPH_WORDS, SCENARIOS, WHAT_TITLE, readingRows, scenarioHead, whatParts, whatTitle } from "./kiosk.js";
 import {
@@ -134,17 +134,17 @@ describe("the replay's banner (behold#571)", () => {
 });
 
 describe("the branding table (behold#571)", () => {
-  it("has a page for every tool the server routes, and nothing else", () => {
-    expect(Object.keys(VENDORS)).toEqual([...VENDOR_TOOLS]);
+  it("brands every listed demo and the older tools (kept for the chant demo and the scenario heads), and nothing else", () => {
+    expect(Object.keys(VENDORS)).toEqual([...LEGACY_TOOLS, ...VENDOR_TOOLS]);
   });
   it("links every name to an official https site, and shows a logo for choudoufu alone", () => {
     for (const v of Object.values(VENDORS)) expect(v.url).toMatch(/^https:\/\//);
-    expect(Object.entries(VENDORS).filter(([, v]) => v.logo).map(([id]) => id)).toEqual(["choudoufu", "choudoufu-fanout"]);
+    expect(Object.entries(VENDORS).filter(([, v]) => v.logo).map(([id]) => id)).toEqual(["choudoufu", "choudoufu-fanout", ...VENDOR_TOOLS]);
     expect(VENDORS["cdk-terrain"].url).toBe("https://cdktn.io/");
     expect(VENDORS.terraform.credit).toContain("Terraform is a trademark of HashiCorp.");
   });
   it("says on each page who makes the tool and that they don't endorse the demo, naming no other tool or maker", () => {
-    for (const tool of VENDOR_TOOLS) {
+    for (const tool of [...LEGACY_TOOLS, ...VENDOR_TOOLS]) {
       const v = VENDORS[tool];
       const words = [v.name, ...creditLines(tool).map((l) => l.map((s) => s.text).join("")), ...Object.values(notRunWords(v)), ...readingRows("components", tool).map((r) => r.words), ...readingRows("resources", tool).map((r) => r.words)];
       for (const w of words) expect(namesOther(w, tool), `${tool}: ${w}`).toBe(false);
@@ -164,7 +164,7 @@ describe("the branding table (behold#571)", () => {
     expect(linkSegments("a b a", [{ name: "a", url: "u" }])).toEqual([{ text: "a", url: "u" }, { text: " b a" }]);
   });
   it("counts as a competitor each other tool of the same kind: engines with engines, orchestrators with orchestrators", () => {
-    const matrix = Object.fromEntries(VENDOR_TOOLS.map((t) => [t, otherTerms(t)]));
+    const matrix = Object.fromEntries(LEGACY_TOOLS.map((t) => [t, otherTerms(t)]));
     expect(matrix).toEqual({
       // OpenTofu is an engine too, but Terraform's scenarios really run on it.
       terraform: ["choudoufu"],
@@ -181,7 +181,7 @@ describe("the branding table (behold#571)", () => {
     expect(otherTerms(null)).toEqual([]);
   });
   it("keeps the chant approve lines on every page, since chant is a pipeline and competes with no engine or orchestrator", () => {
-    for (const tool of VENDOR_TOOLS) expect(namesOther("chant approve tf-apply wave-2 --actor demo-reviewer --sign", tool), tool).toBe(false);
+    for (const tool of [...LEGACY_TOOLS, ...VENDOR_TOOLS]) expect(namesOther("chant approve tf-apply wave-2 --actor demo-reviewer --sign", tool), tool).toBe(false);
     expect(VENDORS.chant.url).toBe("https://intentius.io/chant/");
     expect(VENDORS.chant.owner).toBe("Intentius");
     expect(creditLines("chant").flat().filter((s) => s.url).map((s) => s.text)).toEqual(["chant", "OpenTofu"]);
@@ -310,7 +310,7 @@ describe("a page per fan-out tool (behold#746)", () => {
   const BANNED = /terragucci|opentofu|tofu/i;
 
   it("routes each fan-out tool to a page of its own, its product's name in the title", () => {
-    for (const t of FANOUTS) expect(VENDOR_TOOLS).toContain(t);
+    for (const t of FANOUTS) expect(LEGACY_TOOLS).toContain(t);
     expect([VENDORS["chant-fanout"].name, VENDORS["tofu-fanout"].name, VENDORS["choudoufu-fanout"].name]).toEqual(["chant", "OpenTofu", "choudoufu"]);
     expect(FANOUTS.map(toolCheckout)).toEqual(["demo-chant-fanout", "demo-fanout", "demo-choudoufu-fanout"]);
   });
