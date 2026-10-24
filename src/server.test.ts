@@ -171,61 +171,61 @@ describe("GET /api/ops — applyProgress + running surface the write state", () 
   });
 });
 
-// #70: tiers come from the served project's own `.behold.json`, not a
-// hardcoded loomster convention. `/api/project` is where the SPA's tier
+// #70, #470: tiers come from the served project's own `chant.config.ts`
+// `buildParams`, not a hardcoded loomster convention. `/api/project` is where the SPA's tier
 // picker gets its options (web/app.js initPickers gates on `info.tiers &&
 // info.tiers.length`) — these assert the two ends of that gate end-to-end.
-describe("GET /api/project — tier axis sourced from .behold.json (#70)", () => {
+describe("GET /api/project — tier axis sourced from chant.config.ts buildParams (#470)", () => {
   let dirs: string[] = [];
   afterEach(() => {
     dirs.forEach((d) => rmSync(d, { recursive: true, force: true }));
     dirs = [];
   });
-  const tmpProjectDir = (beholdJson: string | null) => {
+  const tmpProjectDir = (chantConfig: string | null, beholdJson?: string) => {
     const dir = mkdtempSync(join(tmpdir(), "behold-server-project-"));
-    if (beholdJson !== null) writeFileSync(join(dir, ".behold.json"), beholdJson);
+    if (chantConfig !== null) writeFileSync(join(dir, "chant.config.ts"), chantConfig);
+    if (beholdJson !== undefined) writeFileSync(join(dir, ".behold.json"), beholdJson);
     dirs.push(dir);
     return dir;
   };
+  const tiersOf = async (dir: string) => ((await (await makeAppFor(dir).request("/api/project")).json()) as { tiers?: string[] }).tiers;
 
-  it("no .behold.json — no tiers field at all, so the SPA's picker doesn't render", async () => {
-    const app = makeAppFor(tmpProjectDir(null));
-    const res = await app.request("/api/project");
-    const body = (await res.json()) as Record<string, unknown>;
+  it("no buildParams — no tiers field at all, so the SPA's picker doesn't render", async () => {
+    const app = makeAppFor(tmpProjectDir(`export default { lexicons: ["aws"] };`));
+    const body = (await (await app.request("/api/project")).json()) as Record<string, unknown>;
     expect(body.tiers).toBeUndefined();
     expect(body.tier).toBeUndefined();
   });
 
-  it(".behold.json with no tiers key — same as absent: no tiers field", async () => {
-    const app = makeAppFor(tmpProjectDir(JSON.stringify({})));
-    const res = await app.request("/api/project");
-    const body = (await res.json()) as Record<string, unknown>;
-    expect(body.tiers).toBeUndefined();
+  it("a buildParams entry with a string enum surfaces its values verbatim — the loomster parity shape", async () => {
+    const dir = tmpProjectDir(`export default { lexicons: ["aws"], buildParams: { tier: { type: "string", enum: ["light", "production", "production-ha"], env: "LOOM_TIER" } } };`);
+    expect(await tiersOf(dir)).toEqual(["light", "production", "production-ha"]);
   });
 
-  it("a declared .behold.json surfaces its values verbatim — the loomster parity shape", async () => {
-    const dir = tmpProjectDir(
-      JSON.stringify({ tiers: { envVar: "LOOM_TIER", values: ["light", "production", "production-ha"] } }),
-    );
-    const app = makeAppFor(dir);
-    const res = await app.request("/api/project");
-    const body = (await res.json()) as { tiers?: string[] };
-    expect(body.tiers).toEqual(["light", "production", "production-ha"]);
+  it("a parameter of the project's own name works too — never hardcoded", async () => {
+    expect(await tiersOf(tmpProjectDir(`export default { lexicons: ["aws"], buildParams: { size: { type: "string", enum: ["small", "big"] } } };`))).toEqual(["small", "big"]);
   });
 
-  it("a project's own envVar name (not LOOM_TIER) works too — never hardcoded", async () => {
-    const dir = tmpProjectDir(JSON.stringify({ tiers: { envVar: "DEPLOY_TIER", values: ["small", "big"] } }));
+  it("a .behold.json tiers block is no longer read", async () => {
+    const dir = tmpProjectDir(`export default { lexicons: ["aws"] };`, JSON.stringify({ tiers: { envVar: "LOOM_TIER", values: ["light", "production"] } }));
+    expect(await tiersOf(dir)).toBeUndefined();
+  });
+
+  it("is re-read per request: editing chant.config.ts needs no restart", async () => {
+    const dir = tmpProjectDir(`export default { lexicons: ["aws"] };`);
     const app = makeAppFor(dir);
-    const res = await app.request("/api/project");
-    const body = (await res.json()) as { tiers?: string[] };
-    expect(body.tiers).toEqual(["small", "big"]);
+    expect(((await (await app.request("/api/project")).json()) as { tiers?: string[] }).tiers).toBeUndefined();
+    // A new file name: Node caches an import by URL, so the edit is a new config file.
+    rmSync(join(dir, "chant.config.ts"));
+    writeFileSync(join(dir, "chant.config.mts"), `export default { lexicons: ["aws"], buildParams: { tier: { enum: ["a", "b"] } } };`);
+    expect(((await (await app.request("/api/project")).json()) as { tiers?: string[] }).tiers).toEqual(["a", "b"]);
   });
 });
 
 // #76 (follow-up to #71): the stack picker's options. `/api/project` is where
 // the SPA's stack picker gets its names (web/app.js initPickers gates on
 // `info.stacks` — mirrors the tier axis block above precisely, per #76's
-// design note). A `chant.config.ts` field, unlike tiers' `.behold.json`.
+// design note). A `chant.config.ts` field, like the tier axis since #470.
 describe("GET /api/project — stack axis sourced from chant.config.ts (#76)", () => {
   let dirs: string[] = [];
   afterEach(() => {
@@ -650,12 +650,12 @@ describe("GET/POST /api/layout — the hand-layout sidecar (#228)", () => {
 
   it("touches nothing else in the project", async () => {
     const dir = tmpProject();
-    writeFileSync(join(dir, ".behold.json"), JSON.stringify({ tiers: { envVar: "T", values: ["a"] } }));
+    writeFileSync(join(dir, ".behold.json"), JSON.stringify({ executor: { prod: { forge: "github", workflow: "d.yml" } } }));
     const before = readdirSync(dir).sort();
     await post(appFor({ projectDir: dir, port: 0 }), { lens: "components", deltas: { api: { dx: 1 } } });
     // #469: behold writes nothing in a served project.
     expect(readdirSync(dir).sort()).toEqual(before);
-    expect(JSON.parse(readFileSync(join(dir, ".behold.json"), "utf8"))).toEqual({ tiers: { envVar: "T", values: ["a"] } });
+    expect(JSON.parse(readFileSync(join(dir, ".behold.json"), "utf8"))).toEqual({ executor: { prod: { forge: "github", workflow: "d.yml" } } });
   });
 
   it("403s in preview mode, and says so — reads still answer", async () => {

@@ -735,7 +735,7 @@ block in M1.
 
 With a traffic level, `/api/overlay` predicts each member twice and carries
 both figures and their difference. The level is `?traffic=` on the request,
-else `.behold.json`'s `{"behaviour": {"traffic": "100 rps, p50"}}`, else none;
+else the per-user settings' `{"behaviour": {"traffic": "100 rps, p50"}}` (src/user-settings.ts, #470), else none;
 with none nothing is asked for and the payload is exactly M1's. behold never
 defaults a level, because every figure is *at* one.
 
@@ -1290,13 +1290,13 @@ chant never signs a person in (ws-052); the surface that does passes the person
 to chant as `--actor` (ws-080). behold has no login, so `src/approver.ts` names
 the person for each request, in this order:
 
-- `--identity-header <name>` (BEHOLD_IDENTITY_HEADER, `.behold.json`
+- `--identity-header <name>` (BEHOLD_IDENTITY_HEADER, the per-user settings'
   `approver.header`): behold sits behind a proxy that signed the person in
   through the forge or OIDC, and the header names them. A bare login is an
   account on `--identity-forge` (github unless set). A request without the
   header approves nothing (`403 no-identity`). Refused at startup with a
   `--host` other than loopback, since anyone reaching the port could send it.
-- `--as <principal>` (BEHOLD_APPROVER, `.behold.json` `approver.as`): one
+- `--as <principal>` (BEHOLD_APPROVER, the per-user settings' `approver.as`): one
   person runs behold and names themselves, `github:<login>` or a principal the
   signers file lists.
 - Neither: chant's own fallback (GITHUB_ACTOR, GITLAB_USER_LOGIN, USER), and
@@ -1311,7 +1311,7 @@ Every approve route (`/api/workspace/gates/approve`, the converge gate's
 behold"`. chant's ledger has no channel for a surface (its `origin` is `cli`,
 `mcp` or `acp`), so the note is where behold is named. A workspace gate that
 status marks `signed` is approved with `--sign <key>` when behold holds the
-person's key (`--signing-key` beside `--as`, or `.behold.json`'s
+person's key (`--signing-key` beside `--as`, or the per-user settings'
 `approver.keys` by principal) and refused `422 signed` with the line to run
 otherwise. The key path never reaches a page: `GET /api/workspace/gates`
 carries `approverIdentity: {principal, source, forge, signs}`, or `approver:
@@ -1577,8 +1577,8 @@ behold shows truth and triggers Ops. Authority stays in the committed source and
 executor.
 
 behold writes nothing in a served project (#469, ruled 2026-10-23). What it
-keeps for itself (the hand layout, dispatched CI run ids, recents, the serve
-registry) lives in the user's own home, cache or temp directory, keyed by the
+keeps for itself (the hand layout, the per-user settings, dispatched CI run
+ids, recents, the serve registry) lives in the user's own home, cache or temp directory, keyed by the
 project, never in the tree. The only files behold puts in a project are the
 ones a person asks for by name: `behold doctor --fix` writing
 `chant.workspace.json`, and the carve walkthrough writing into the demo copy
@@ -1660,6 +1660,18 @@ sha256 of the project directory's realpath, and `BEHOLD_CACHE_DIR` replacing
   has no file for the project, that file is read once and copied into the
   cache; it is never written, moved or deleted. Clearing the last lens keeps
   an empty cache file, so the old one is not read back in.
+
+The per-user settings (#470, src/user-settings.ts) sit beside it at
+`<user cache>/behold/settings/<key>.json`, same key, same modes: the operator's
+`approver` block and `behaviour.traffic`, which are not facts about the estate.
+No route writes them. When the cache has none for a project with a
+`.behold.json`, that file's two blocks are read once and copied in (key paths
+made absolute against the project), and a copy is kept even when neither
+block is there, so `.behold.json` is not read for them again. It is never
+written, moved or deleted. The tier axis is not a setting: it is the
+project's `chant.config.ts` `buildParams` entry with a string `enum`
+(src/project.ts `readTierParam`), read per request through `detectProject`
+and passed to `chant graph` as `--param`.
 
 `GET /api/layout` reads it back; `GET /api/graph?layout=1` (and `/api/overlay`)
 render with the deltas baked into the SVG, which is how `behold export` and

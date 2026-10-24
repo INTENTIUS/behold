@@ -37,7 +37,7 @@ import {
 import { registeredMemberKinds } from "./member-kind.ts";
 import { CHANT_FLOORS, floorMet } from "./chant-floors.ts";
 import { CHOUDOUFU_FLOOR, choudoufuBinary, choudoufuMeetsFloor, choudoufuVersion, readLiveCheck, type ChoudoufuVersion, type LiveCheckParse } from "./choudoufu-member.ts";
-import { detectProject, detectProjectShape, loadBeholdConfig, type ProjectKind } from "./project.ts";
+import { detectProject, detectProjectShape, hasRetiredTiers, loadBeholdConfig, type ProjectKind } from "./project.ts";
 import { terragucciConfig } from "./terragucci-repo.ts";
 import { drawnMembers, hasDeclaration, readWorkspace, undrawnMembers, unreadableMembers, type Workspace, type WorkspaceRead } from "./workspace.ts";
 import {
@@ -60,7 +60,7 @@ export type CheckStatus = "pass" | "warn" | "fail";
  * on it); `detail` is what behold found; `fix` is the single next step, set
  * whenever the status isn't a pass. */
 export interface DoctorCheck {
-  name: "project" | "chant" | "lexicons" | "targets" | "envs" | "kube" | "substrates" | "floor" | "ops" | "choudoufu" | "terraform";
+  name: "project" | "chant" | "lexicons" | "targets" | "envs" | "kube" | "substrates" | "floor" | "ops" | "choudoufu" | "terraform" | "tiers";
   status: CheckStatus;
   detail: string;
   fix?: string;
@@ -624,7 +624,25 @@ export async function diagnose(dir: string, probes: DoctorProbes = {}): Promise<
     checks.push(terraformCheck(terraformMembers, probes.terraform ?? { reader: () => terraformReaderState(), roots: (d) => discoverTerraformRoots(d) }));
   }
 
+  const retired = tiersRetiredCheck(root, chantTargets);
+  if (retired) checks.push(retired);
+
   return { behold, dir: root, kind: shape.kind, ok: !checks.some((c) => c.status === "fail"), checks };
+}
+
+/** #470: a `.behold.json` `tiers` block is no longer read; the tier axis is a
+ * `chant.config.ts` `buildParams` entry with a string `enum`. A warn, only
+ * where a file still carries the block, so the picker does not go missing
+ * without a word. */
+export function tiersRetiredCheck(root: string, dirs: readonly string[]): DoctorCheck | undefined {
+  const carrying = [...new Set([root, ...dirs])].filter((d) => hasRetiredTiers(d));
+  if (!carrying.length) return undefined;
+  return {
+    name: "tiers",
+    status: "warn",
+    detail: `.behold.json \`tiers\` is no longer read (#470): ${list(carrying.map((d) => relative(root, d) || "."))}`,
+    fix: "Declare the tier in chant.config.ts as a build-time parameter, e.g. `buildParams: { tier: { type: \"string\", enum: [\"light\", \"production\"], env: \"LOOM_TIER\" } }`, read it with `params.tier` from @intentius/chant/params, and delete `tiers` from .behold.json.",
+  };
 }
 
 /** Render a report for a terminal. Plain text, no colour: the output is meant

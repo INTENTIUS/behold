@@ -148,7 +148,8 @@ Options:
                       (BEHOLD_HUD_URL too). A proposed decision in a member's
                       or a card's "why" links to its review there (#471).
   --as <principal>    serve only: who behold approves a gate as (BEHOLD_APPROVER,
-                      or .behold.json's approver.as), passed to chant as
+                      or approver.as in behold's per-user settings for the
+                      project, <user cache>/behold/settings/), passed to chant as
                       --actor: a forge identity such as github:<login>, or a
                       principal .chant/allowed_signers lists. Without it chant
                       records the user running behold (#690).

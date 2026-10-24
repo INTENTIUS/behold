@@ -12,6 +12,10 @@
  * `sourceDir`/`stacks` (#71): also read here, alongside `environments`/
  * `lexicons`, so `chant.ts`'s `graphPath()` can honor the project's declared
  * infra source dir instead of guessing a literal `src/` convention.
+ *
+ * The tier axis (#470): read from `buildParams` here too, so the tier picker
+ * shows what chant knows the project varies on. `.behold.json`'s `tiers` is no
+ * longer read.
  */
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -50,21 +54,25 @@ export interface ProjectInfo {
    * (#76, follow-up to #71) — `graphPath()` warns rather than silently picking
    * one when this is set. */
   stacks?: StackInfo[];
+  /** The tier axis (#470): a `buildParams` entry with a string `enum`. Only
+   * populated when the authoritative config import succeeds. */
+  tiers?: TierConfig;
 }
 
-/** The deploy-tier axis a project declares (#70) — a dimension orthogonal to
- * `environment`, entirely the served project's own convention (chant has no
- * native tier concept). `envVar` is the env var name the project's source
- * branches on (loomster: `LOOM_TIER`); `values` are its valid settings
- * (loomster: light/production/production-ha) — the tier picker's options. */
+/** The deploy-tier axis a project declares (#70, #470) — a dimension
+ * orthogonal to `environment`. Since #470 it is a chant build-time parameter:
+ * a `chant.config.ts` `buildParams` entry with a string `enum` (one named
+ * `tier` first, else the first such entry). `param` is that entry's name,
+ * which behold passes to `chant graph` as `--param <param>=<value>`; `values`
+ * is its `enum`, the tier picker's options; `env` is the parameter's own `env`
+ * mapping when it declares one (chant reads it below `--param`), which is also
+ * where `deployAxes` reads the current tier from. */
 export interface TierConfig {
-  envVar: string;
+  param: string;
   values: string[];
+  env?: string;
 }
 
-/** behold's own project-root config (`.behold.json`) — distinct from
- * `chant.config.ts` (chant's own concerns): today just the optional tier
- * axis. Absent `tiers` means the project declares none. */
 /**
  * Which forge deploys an environment (#165, #61): `.behold.json`'s
  * `executor` block designates the committed WORKFLOW, not just the forge —
@@ -91,8 +99,11 @@ export type ExecutorDesignation = { forge: string; workflow: string } | { invali
  */
 export type MemberDecl = { dir: string; kind: MemberKind } | { dir: string; invalid: string };
 
+/** What behold still reads from a project's `.behold.json`. `tiers` moved to
+ * `chant.config.ts` `buildParams` and `approver`/`behaviour` to the per-user
+ * settings (src/user-settings.ts), both in #470; `executor` waits on
+ * chant#4402 and `members` on `chant.workspace.json`. */
 export interface BeholdConfig {
-  tiers?: TierConfig;
   /** Per-environment executor designations (#165). Absent means every env
    * deploys the way it always has (`chant run` on this machine). */
   executor?: Record<string, ExecutorDesignation>;
@@ -103,22 +114,6 @@ export interface BeholdConfig {
    * guessing. Absent when the file declares none (see `detectProjectShape`,
    * which then falls back to npm `workspaces`). */
   members?: MemberDecl[];
-  /** The behaviour overlay's inputs (#402). `traffic` is the level every
-   * prediction is asked for, verbatim, as chant's `--traffic` takes it
-   * ("100 rps, p50"). behold never picks one: with none here and none on the
-   * request (`?traffic=`), no prediction is asked for at all, which reads as
-   * "not looked" rather than as a refusal. */
-  behaviour?: { traffic: string };
-}
-
-/** `.behold.json`'s `behaviour.traffic`, when it is a non-blank string. A
- * wrong-typed or blank value is dropped like any other config typo: it means
- * "not looked", which is what an absent key means. */
-function readBehaviour(raw: Record<string, unknown>): { traffic: string } | undefined {
-  const b = raw.behaviour;
-  if (!b || typeof b !== "object" || Array.isArray(b)) return undefined;
-  const traffic = (b as { traffic?: unknown }).traffic;
-  return typeof traffic === "string" && traffic.trim() ? { traffic: traffic.trim() } : undefined;
 }
 
 /** Parse one `members[]` entry; undefined for an entry that is not a member
@@ -199,13 +194,35 @@ function readInfo(cfg: Record<string, unknown> | undefined): ProjectInfo {
   // names (the same list `--env` validates against downstream). Inferred only
   // when `environments` is absent/empty, so an explicit list always wins.
   const environments = envNames(cfg?.environments);
+  const tiers = readTierParam(cfg?.buildParams);
   return {
     environments: environments.length ? environments : Object.keys(k8sProfiles ?? {}),
     lexicons: arr(cfg?.lexicons),
     ...(k8sProfiles ? { k8sProfiles } : {}),
     ...(typeof cfg?.sourceDir === "string" ? { sourceDir: cfg.sourceDir } : {}),
     ...(stacks ? { stacks } : {}),
+    ...(tiers ? { tiers } : {}),
   };
+}
+
+/** The tier axis from `buildParams` (#470): the entry named `tier` when it has
+ * a string `enum`, else the first entry that does. An entry qualifies when its
+ * `type` is `"string"` or absent and its `enum` has at least one string; the
+ * non-string members of an `enum` are dropped. A non-string `env` mapping is
+ * ignored. Pure; exported for testing. */
+export function readTierParam(buildParams: unknown): TierConfig | undefined {
+  if (!buildParams || typeof buildParams !== "object" || Array.isArray(buildParams)) return undefined;
+  const of = (name: string, decl: unknown): TierConfig | undefined => {
+    if (!name || !decl || typeof decl !== "object" || Array.isArray(decl)) return undefined;
+    const d = decl as { type?: unknown; enum?: unknown; env?: unknown };
+    if (d.type !== undefined && d.type !== "string") return undefined;
+    const values = Array.isArray(d.enum) ? d.enum.filter((v): v is string => typeof v === "string") : [];
+    if (!values.length) return undefined;
+    return { param: name, values, ...(typeof d.env === "string" && d.env ? { env: d.env } : {}) };
+  };
+  const entries = Object.entries(buildParams as Record<string, unknown>);
+  const named = entries.find(([name]) => name === "tier");
+  return (named && of(...named)) ?? entries.map(([name, decl]) => of(name, decl)).find((t) => !!t);
 }
 
 /** Extract the string literals from a `key: [ "a", "b" ]` array in config source.
@@ -287,7 +304,7 @@ export async function detectProject(projectDir: string): Promise<ProjectInfo> {
       ? (JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>)
       : (((m) => (m.default ?? m.config ?? m) as Record<string, unknown>)((await import(pathToFileURL(path).href)) as Record<string, unknown>));
     const info = readInfo(cfg);
-    if (info.environments.length || info.lexicons.length || info.sourceDir || info.stacks?.length) return info;
+    if (info.environments.length || info.lexicons.length || info.sourceDir || info.stacks?.length || info.tiers) return info;
   } catch {
     // Import wouldn't run — fall through to a text parse.
   }
@@ -302,18 +319,6 @@ export async function detectProject(projectDir: string): Promise<ProjectInfo> {
     lexicons: parseStringArray(content, "lexicons"),
     ...(sourceDir ? { sourceDir } : {}),
   };
-}
-
-/** Validate a parsed `.behold.json`'s `tiers` block, keeping only a
- * well-formed one — a non-empty `envVar` string alongside a non-empty array
- * of string `values`. Anything else (missing, wrong shape, empty values)
- * degrades to "no tiers", the same as an absent file. Pure. */
-function readTiers(cfg: Record<string, unknown> | undefined): TierConfig | undefined {
-  const tiers = cfg?.tiers as Record<string, unknown> | undefined;
-  if (!tiers || typeof tiers.envVar !== "string" || !tiers.envVar) return undefined;
-  const values = Array.isArray(tiers.values) ? tiers.values.filter((v): v is string => typeof v === "string") : [];
-  if (!values.length) return undefined;
-  return { envVar: tiers.envVar, values };
 }
 
 /** The forges a designation may name. Only `github` has a trigger in behold
@@ -348,34 +353,36 @@ export function readExecutor(cfg: Record<string, unknown> | undefined): Record<s
   return Object.keys(out).length ? out : undefined;
 }
 
-/** Read `.behold.json` from the project root — behold's own config (#70),
- * kept separate from `chant.config.ts` so behold's concerns (like the tier
- * picker) don't leak into chant's. No file, unparseable JSON, or a malformed/
- * absent `tiers` key all degrade to `{}` (no tier axis) rather than throwing —
- * a project that doesn't opt in just doesn't get the picker. Sync: it's a
- * plain JSON read, no code to run (unlike `detectProject`'s `chant.config.ts`
- * import). Shape:
- * ```json
- * { "tiers": { "envVar": "LOOM_TIER", "values": ["light", "production", "production-ha"] } }
- * ```
- */
+/** Read `.behold.json` from the project root: what is left of behold's own
+ * project config (#70), its `members` and `executor` blocks. No file,
+ * unparseable JSON, or malformed blocks all degrade to `{}` rather than
+ * throwing. Sync: a plain JSON read, no code to run. `tiers`, `approver` and
+ * `behaviour` are not read here any more (#470, see {@link BeholdConfig}). */
 export function loadBeholdConfig(projectDir: string): BeholdConfig {
   const path = join(projectDir, BEHOLD_CONFIG_NAME);
   if (!existsSync(path)) return {};
   try {
     const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
-    const tiers = readTiers(raw);
     const members = Array.isArray(raw.members) ? raw.members.map(readMember).filter((m): m is MemberDecl => !!m) : [];
     const executor = readExecutor(raw);
-    const behaviour = readBehaviour(raw);
     return {
-      ...(tiers ? { tiers } : {}),
       ...(members.length ? { members } : {}),
       ...(executor ? { executor } : {}),
-      ...(behaviour ? { behaviour } : {}),
     };
   } catch {
     return {};
+  }
+}
+
+/** Whether `.behold.json` still carries a `tiers` block, which behold no
+ * longer reads (#470): `behold doctor` warns so the tier picker does not go
+ * missing without a word. */
+export function hasRetiredTiers(projectDir: string): boolean {
+  try {
+    const raw = JSON.parse(readFileSync(join(projectDir, BEHOLD_CONFIG_NAME), "utf8")) as Record<string, unknown>;
+    return !!raw && typeof raw === "object" && raw.tiers !== undefined;
+  } catch {
+    return false;
   }
 }
 

@@ -131,7 +131,8 @@ import {
   type OperatorLogMalformed,
 } from "./operator.ts";
 import { LIVE_IMPORT_LEXICONS } from "./adopt.ts";
-import { chantConfigPath, detectProject, loadBeholdConfig, executorDesignation, type ExecutorDesignation } from "./project.ts";
+import { chantConfigPath, detectProject, loadBeholdConfig, executorDesignation, type ExecutorDesignation, type TierConfig } from "./project.ts";
+import { readUserSettings } from "./user-settings.ts";
 
 /** What `/api/project` says about a designated env (#165): whether Deploy can
  * dispatch it right now, and if not, why — the SPA renders the reason on a
@@ -277,8 +278,8 @@ export interface ServerOptions {
    * "why" links to its review there; without it the decision is named by id. */
   hud?: string;
   /** #690: who an approval is recorded as, and the keys behold signs with
-   * (`--as`, `--signing-key`, `--identity-header`, `.behold.json`'s
-   * `approver`; src/approver.ts). Absent: chant's own fallback, as before. */
+   * (`--as`, `--signing-key`, `--identity-header`, the per-user settings'
+   * `approver`; src/approver.ts, src/user-settings.ts). Absent: chant's own fallback, as before. */
   approver?: ApproverOptions;
   /** All served project dirs (#31 multi-estate). Present with length > 1 only when
    * composing several projects; the source graph then merges them. */
@@ -358,13 +359,13 @@ export interface ServerOptions {
   port: number;
 }
 
-/** `tierEnvVar` is the served project's `.behold.json`-declared tier env var
- * name (#70, `loadBeholdConfig` — server.ts computes it once per `createApp`,
- * see `beholdConfig` below), threaded onto `opts.tierEnvVar` so a picked
- * `?tier=` can reach `envOverridesFor` (chant.ts) with a real var name to set.
- * Undefined when the project declares no tiers — `?tier=` is then parsed but
- * never makes it into a spawn's env (no name to set it under). */
-function optsFromQuery(url: URL, tierEnvVar?: string, projectDir?: string): GraphOptions {
+/** `tiers` is the served project's tier axis, its `chant.config.ts`
+ * `buildParams` entry with a string `enum` (#470, `tiersFor` in `createApp`,
+ * read per request), threaded onto `opts.tierParam`/`opts.tierEnv` so a
+ * picked `?tier=` reaches chant as `--param` (chant.ts `graphFlags`).
+ * Undefined when the project declares no tier axis: `?tier=` is then parsed
+ * but never passed (no parameter to set). */
+function optsFromQuery(url: URL, tiers?: TierConfig, projectDir?: string): GraphOptions {
   const q = url.searchParams;
   const opts: GraphOptions = {};
   const detail = q.get("detail");
@@ -383,13 +384,16 @@ function optsFromQuery(url: URL, tierEnvVar?: string, projectDir?: string): Grap
   // above. A project declaring no `stacks[]` ignores this entirely.
   const stack = q.get("stack");
   if (stack) opts.stack = stack;
-  // The tier/target lenses (M2, #54): `?tier=` overrides the project's tier
-  // env var (#70), `?target=` overrides AWS_ENDPOINT_URL, for this request's
-  // chant shell-outs (see chant.ts `envOverridesFor`) — neither is a chant CLI
-  // flag.
+  // The tier/target lenses (M2, #54): `?tier=` sets the project's tier
+  // build-time parameter (#470, `--param`), `?target=` overrides
+  // AWS_ENDPOINT_URL, for this request's chant shell-outs (chant.ts
+  // `graphFlags`, `envOverridesFor`).
   const tier = q.get("tier");
   if (tier) opts.tier = tier;
-  if (tierEnvVar) opts.tierEnvVar = tierEnvVar;
+  if (tiers) {
+    opts.tierParam = tiers.param;
+    if (tiers.env) opts.tierEnv = tiers.env;
+  }
   const target = q.get("target");
   if (target) {
     opts.target = target;
@@ -407,12 +411,13 @@ function optsFromQuery(url: URL, tierEnvVar?: string, projectDir?: string): Grap
  * threading into a chant call that wants a DIFFERENT env/live/overlay shape
  * than the query's own (e.g. `/api/resources`, `/api/reconcile`, which force
  * `live`/`overlay` themselves) but should still honour the picked lens.
- * Carries `tierEnvVar` along with `tier` — dropping it here would silently
- * strip the var name `envOverridesFor` needs to apply the picked tier. */
-function tierTargetOpts(opts: GraphOptions): Pick<GraphOptions, "tier" | "tierEnvVar" | "target"> {
-  const out: Pick<GraphOptions, "tier" | "tierEnvVar" | "target"> = {};
+ * Carries `tierParam`/`tierEnv` along with `tier` — dropping them here would
+ * silently strip the parameter the picked tier sets. */
+function tierTargetOpts(opts: GraphOptions): Pick<GraphOptions, "tier" | "tierParam" | "tierEnv" | "target"> {
+  const out: Pick<GraphOptions, "tier" | "tierParam" | "tierEnv" | "target"> = {};
   if (opts.tier) out.tier = opts.tier;
-  if (opts.tierEnvVar) out.tierEnvVar = opts.tierEnvVar;
+  if (opts.tierParam) out.tierParam = opts.tierParam;
+  if (opts.tierEnv) out.tierEnv = opts.tierEnv;
   if (opts.target) out.target = opts.target;
   return out;
 }
@@ -529,19 +534,19 @@ function errorResponse(c: Context, opts: GraphOptions, err: unknown) {
  * concept and already surfaces elsewhere (`cfg.env`/`currentEnv`); `target`
  * here is read straight from the served project's process environment — the
  * literal `AWS_ENDPOINT_URL` override (Floci's tell), not something behold
- * defines or names itself. `tier` is read from the *served project's own*
- * env var, named by `.behold.json`'s `tiers.envVar` (#70) — `tierEnvVar` is
- * undefined for a project that declares no tiers, so `tier` stays unset
- * rather than guessing a name. Deliberately generic and substrate-name-free
+ * defines or names itself. `tier` is read from the env var the project's tier
+ * build-time parameter maps (#470, its `env` in `buildParams`), the one place
+ * chant itself would read it from; a parameter with no `env` mapping, or a
+ * project with no tier axis, leaves `tier` unset rather than guessing a name. Deliberately generic and substrate-name-free
  * (behold has zero per-substrate logic, per the epic): this surfaces the raw
  * endpoint URL, not a hardcoded "Floci" label. */
 function deployAxes(
-  tierEnvVar: string | undefined,
+  tiers: TierConfig | undefined,
   lexicons: readonly string[] = [],
   k8sTarget?: K8sTarget,
 ): { tier?: string; target?: string } {
   const axes: { tier?: string; target?: string } = {};
-  if (tierEnvVar && process.env[tierEnvVar]) axes.tier = process.env[tierEnvVar];
+  if (tiers?.env && process.env[tiers.env]) axes.tier = process.env[tiers.env];
   // The k8s substrate's apiserver rides alongside the endpoint-variable
   // substrates (#106). It is resolved from the kubeconfig rather than an
   // ambient variable, and it is REPORTED, not overridable — chant binds it
@@ -1170,20 +1175,23 @@ export function createApp(
   // only scripts/dots-preview.ts sets it, never `behold serve`.
   if (cfg.dotsPreview) dotsPreviewRoutes(app, cfg.dotsPreview);
 
-  // behold's own project-root config (#70) — `.behold.json`'s `tiers` block,
-  // if any (src/project.ts `loadBeholdConfig`). Read once at app creation
-  // (like `cfg.projectDir` itself): unlike `chant.config.ts`'s environments/
-  // lexicons (re-read per `/api/project` call so editing them needs no
-  // restart), this is deploy metadata behold treats as static for the life of
-  // the server. Threads `tierEnvVar` into every `optsFromQuery` call below so
-  // a picked `?tier=` reaches `envOverridesFor` (chant.ts) with a real var
-  // name, and gates the `/api/project` tier picker + `deployAxes()`'s current-
-  // tier read.
-  // `let`, not `const` (#195): a project switch re-reads the new project's
-  // .behold.json — its tier axis is per-project state like everything else.
+  // The tier axis (#70, #470): the served project's `chant.config.ts`
+  // `buildParams` entry with a string `enum` (src/project.ts `readTierParam`).
+  // Read per request, through the same `detectProject` the env picker uses, so
+  // editing the config needs no restart and a project switch needs no reset.
+  // It feeds every `optsFromQuery` call below (a picked `?tier=` reaches chant
+  // as `--param`), the `/api/project` tier picker, `deployAxes()`'s current-
+  // tier read and the wrong-tier notes.
+  const tiersFor = async (dir: string = cfg.projectDir): Promise<TierConfig | undefined> =>
+    (await detectProject(dir).catch(() => undefined))?.tiers;
+  // What is left of `.behold.json` (#70): the executor block (until
+  // chant#4402) and members. `let` (#195): a project switch re-reads it.
   const predictDeps: PredictMemberDeps = cfg.behaviour ?? { read: graphIr };
   let beholdConfig = loadBeholdConfig(cfg.projectDir);
-  let tierEnvVar = beholdConfig.tiers?.envVar;
+  // The operator's settings for this project (#470, src/user-settings.ts):
+  // the behaviour overlay's traffic level. Per-user, outside the project; a
+  // project served before #470 has its `.behold.json` block read in once.
+  let userSettings = readUserSettings(cfg.projectDir);
   // The executor contract (#165, #61): which envs deploy through a forge, per
   // `.behold.json`. A designated env never deploys from this machine — not via
   // Deploy, not via a committed ApplyOp, not via auto-sync — and the only
@@ -1861,9 +1869,9 @@ export function createApp(
     public: () => !!cfg.public,
     preview: () => !!(cfg.preview || cfg.previewMode),
     offer: async () => {
-      const { environments } = await detectProject(cfg.projectDir).catch(() => ({ environments: [] as string[] }));
+      const { environments, tiers } = await detectProject(cfg.projectDir).catch((): { environments: string[]; tiers?: TierConfig } => ({ environments: [] }));
       const envs = environments.length === 0 && (cfg.projectDirs ?? [cfg.projectDir]).some((d) => memberKindOf(d) === "choudoufu") ? ["live"] : environments;
-      return { envs, ...(beholdConfig.tiers ? { tiers: beholdConfig.tiers.values } : {}) };
+      return { envs, ...(tiers ? { tiers: tiers.values } : {}) };
     },
     defaultEnv: () => cfg.env ?? null,
   });
@@ -1921,7 +1929,7 @@ export function createApp(
   // detail) instead of the env being a launch-only flag. `currentEnv` is the
   // launch `--env`, the picker's initial selection.
   app.get("/api/project", async (c) => {
-    const { environments: declaredEnvs, lexicons, stacks, k8sProfiles } = await detectProject(cfg.projectDir);
+    const { environments: declaredEnvs, lexicons, stacks, k8sProfiles, tiers } = await detectProject(cfg.projectDir);
     // #370: a choudoufu member declares no environments — it has one account,
     // reached by the ambient credentials — and the overlay needs a name to be
     // asked for. An estate whose chant members declare none but which holds a
@@ -1939,7 +1947,7 @@ export function createApp(
     const k8sTarget = lexicons.includes("k8s")
       ? resolveK8sTarget(k8sProfiles, cfg.env, await loadKubeconfig())
       : undefined;
-    const axes = deployAxes(tierEnvVar, lexicons, k8sTarget);
+    const axes = deployAxes(tiers, lexicons, k8sTarget);
     // Read at request time, like everything else here: a project built while
     // the tab is open grows the ops stop on the next /api/project, without a
     // restart.
@@ -2066,13 +2074,13 @@ export function createApp(
       ...(servedWorkspace()
         ? { workspace: { name: servedWorkspace()!.name, members: servedWorkspace()!.members.map((m) => ({ name: m.name, dir: m.dir, kind: m.kind })), hud: !!cfg.hud } }
         : {}),
-      // The tier picker's options (M2 #54, sourced #70): gated on the served
-      // project's `.behold.json` declaring a `tiers` block at all — NOT on
-      // whether its env var happens to be set in behold's own launch env
-      // (that's `axes.tier`, the *current* value, below). No `.behold.json` (or
-      // no `tiers` key) → no `tiers` field → the SPA's picker doesn't render
-      // and the graph loads with no tier selected (web/app.js `initPickers`).
-      ...(beholdConfig.tiers ? { tiers: beholdConfig.tiers.values } : {}),
+      // The tier picker's options (M2 #54, sourced #470): gated on the served
+      // project's `chant.config.ts` declaring a `buildParams` entry with a
+      // string `enum` — NOT on whether its env mapping happens to be set in
+      // behold's own launch env (that's `axes.tier`, the *current* value,
+      // below). None → no `tiers` field → the SPA's picker doesn't render and
+      // the graph loads with no tier selected (web/app.js `initPickers`).
+      ...(tiers ? { tiers: tiers.values } : {}),
       // The executor contract (#165): per designated env, whether Deploy can
       // dispatch right now and, if not, why — so the SPA disables the gesture
       // with the reason rather than offering a control that 4xxs.
@@ -2163,7 +2171,7 @@ export function createApp(
     // demo names its own serve env, which becomes the initial selection.
     cfg.env = env;
     beholdConfig = loadBeholdConfig(dirs[0]);
-    tierEnvVar = beholdConfig.tiers?.envVar;
+    userSettings = readUserSettings(dirs[0]);
     runner.retarget(dirs[0]);
     for (const d of dirs) addRecent(d);
     cfg.onProjectSwitch?.(dirs[0]);
@@ -2577,7 +2585,7 @@ export function createApp(
         {
           method: "GET",
           path: "/api/overlay",
-          desc: "live drift overlay for ?env= — same shape/params as /api/graph, plus runtime=1; each priced entity carries attrs._behaviour (cost/headroom/errorRate/resilience/rightSize/provenance, #398) and meta.behaviour holds the engine, its sums, a refusal or an absent line; with ?traffic= (or .behold.json behaviour.traffic) each member is predicted live and declared, and meta.behaviour adds live, declared and delta with attrs._behaviourDeclared per entity (#402)",
+          desc: "live drift overlay for ?env= — same shape/params as /api/graph, plus runtime=1; each priced entity carries attrs._behaviour (cost/headroom/errorRate/resilience/rightSize/provenance, #398) and meta.behaviour holds the engine, its sums, a refusal or an absent line; with ?traffic= (or the per-user settings' behaviour.traffic) each member is predicted live and declared, and meta.behaviour adds live, declared and delta with attrs._behaviourDeclared per entity (#402)",
         },
         { method: "GET", path: "/api/layout", desc: "hand layout (a per-user cache outside the project): ?lens=<key> → {lens, deltas, writable}; no lens → every lens" },
         { method: "POST", path: "/api/layout", desc: "store one lens's deltas: JSON body {lens, deltas: {<node id>: {dx,dy,dw,dh}}} (the only file behold writes in your project)" },
@@ -2747,7 +2755,7 @@ export function createApp(
 
   app.get("/api/graph", async (c) => {
     const url = new URL(c.req.url);
-    const opts = optsFromQuery(url, tierEnvVar, cfg.projectDir);
+    const opts = optsFromQuery(url, await tiersFor(), cfg.projectDir);
     try {
       // The ops lens (#284 item 1): the project's DECLARED Ops, read from the
       // `dist/ops/<name>/op.json` each `chant build` (>= 0.50, chant#1289)
@@ -3244,7 +3252,7 @@ export function createApp(
       // the collapse, so the figure adds the estate's entities and not the one
       // card a shut box leaves behind. Read through the member cache under the
       // member's source stamp, so a reload that changed no file spawns nothing.
-      const srcTraffic = components ? undefined : trafficFor(new URL(c.req.url).searchParams, beholdConfig);
+      const srcTraffic = components ? undefined : trafficFor(new URL(c.req.url).searchParams, userSettings);
       const srcBehaviour = srcTraffic
         ? attachDeclaredBehaviour(
             ir,
@@ -3422,7 +3430,7 @@ export function createApp(
   // user clicks. The whole pipeline is small (well under the CLI's 64KB
   // pipe-truncation limit), so fetch it once rather than shelling out per node.
   app.get("/api/ci", async (c) => {
-    const opts = optsFromQuery(new URL(c.req.url), tierEnvVar, cfg.projectDir);
+    const opts = optsFromQuery(new URL(c.req.url), await tiersFor(), cfg.projectDir);
     const env = opts.env ?? cfg.env;
     // Which forge, if any — behold asked for `gitlab` unconditionally, which is
     // wrong two ways. A project declaring no forge lexicon has no pipeline to
@@ -3585,13 +3593,13 @@ export function createApp(
       const { comparisons } = await compareEnvs(cfg.projectDir, env, to);
       return c.json({ env, to, comparisons });
     } catch (err) {
-      return errorResponse(c, optsFromQuery(url, tierEnvVar, cfg.projectDir), err);
+      return errorResponse(c, optsFromQuery(url, await tiersFor(), cfg.projectDir), err);
     }
   });
 
   // are live today, not just wired for a future fix.
   app.get("/api/resources", async (c) => {
-    const opts = optsFromQuery(new URL(c.req.url), tierEnvVar, cfg.projectDir);
+    const opts = optsFromQuery(new URL(c.req.url), await tiersFor(), cfg.projectDir);
     const env = opts.env ?? cfg.env;
     // #393 item 3: this facet is a chant-project convention match — it groups
     // the entity graph by the `src/<component>/` directory each node was
@@ -3641,7 +3649,7 @@ export function createApp(
   // and rows can say which of the N rebuild the resource. Zeros against a
   // chant that doesn't classify — the route's shape is otherwise unchanged.
   app.get("/api/reconcile", async (c) => {
-    const opts = optsFromQuery(new URL(c.req.url), tierEnvVar, cfg.projectDir);
+    const opts = optsFromQuery(new URL(c.req.url), await tiersFor(), cfg.projectDir);
     const env = opts.env ?? cfg.env;
     if (!env) {
       return c.json({ error: "reconcile needs an environment — pick one, or start behold with --env <name>" }, 400);
@@ -3713,7 +3721,8 @@ export function createApp(
   app.get("/api/overlay", async (c) => {
     // Env comes from the picker (`?env=`), falling back to the launch `--env`.
     // Either lets the overlay run without a restart; neither is a 400.
-    const query = optsFromQuery(new URL(c.req.url), tierEnvVar, cfg.projectDir);
+    const tiers = await tiersFor();
+    const query = optsFromQuery(new URL(c.req.url), tiers, cfg.projectDir);
     const env = query.env ?? cfg.env;
     if (!env) {
       return c.json({ error: "overlay needs an environment — pick one, or start behold with --env <name>" }, 400);
@@ -3821,7 +3830,7 @@ export function createApp(
         // read only: the progressive branch above answers before any live read
         // has settled, and a figure about the account belongs with the picture
         // of the account.
-        const traffic = trafficFor(new URL(c.req.url).searchParams, beholdConfig);
+        const traffic = trafficFor(new URL(c.req.url).searchParams, userSettings);
         const est = await composeEstateOverlay(cfg.projectDirs, { ...tierTargetOpts(query), detail, env, ...(traffic ? { traffic } : {}), ...(planWanted ? { plan: true } : {}) }, reclassifyOverlay, { fresh: planWanted });
         if (est.dropped.length === est.total) {
           return c.json({ error: `no project in the estate could be graphed — ${est.dropped.map((d) => `${d.name}: ${d.reason}`).join("; ")}` }, 500);
@@ -4018,7 +4027,7 @@ export function createApp(
       // sourceRef/dependsOn edges never made it into the IR either.
       // #402: the single-project half of the traffic level — see the estate
       // branch above.
-      const traffic = trafficFor(new URL(c.req.url).searchParams, beholdConfig);
+      const traffic = trafficFor(new URL(c.req.url).searchParams, userSettings);
       const ownKind = memberKindOf(cfg.projectDir) ?? "chant";
       const opts: GraphOptions = {
         ...query,
@@ -4109,7 +4118,7 @@ export function createApp(
         // same reason (behold#100). The wrong-tier note (#158) joins here too:
         // the logical view collapses to near-empty at a wrong tier exactly as
         // the detail tiers do, and until now only they said why.
-        const logicalTierNote = tierMismatchNote(projected, beholdConfig.tiers, query.tier);
+        const logicalTierNote = tierMismatchNote(projected, tiers, query.tier);
         const logicalNote = [logicalTierNote, notesFor("logical", projected, undefined, logicalBefore)].filter(Boolean).join(" · ");
         return c.json({ ir: projected, svg, byContainer, meta: { projectDir: cfg.projectDir, env, mode: "logical", vocabulary, ...(logicalNote ? { note: logicalNote } : {}) } });
       }
@@ -4181,7 +4190,7 @@ export function createApp(
       // The wrong-tier trap (see tierMismatchNote): joined ahead of the zoom
       // note so "you may be viewing the wrong tier" outranks "this tier is
       // empty" — the first explains the second.
-      const tierNote = tierMismatchNote(ir, beholdConfig.tiers, query.tier);
+      const tierNote = tierMismatchNote(ir, tiers, query.tier);
       // #192: the namespace-mismatch signature — all-pending namespaced k8s
       // objects over a resolving cluster read the OPPOSITE of the truth
       // without this aside. Ahead of the zoom notes: it explains the colours,

@@ -70,6 +70,14 @@ describe("graphFlags", () => {
     expect(graphFlags({ traffic: "" })).toEqual([]);
   });
 
+  it("passes a picked tier as the tier parameter's --param (#470)", () => {
+    expect(graphFlags({ tier: "production", tierParam: "tier" })).toEqual(["--param", "tier=production"]);
+    expect(graphFlags({ tier: "big", tierParam: "size", tierEnv: "DEPLOY_TIER" })).toEqual(["--param", "size=big"]);
+    // No tier axis: nothing to set.
+    expect(graphFlags({ tier: "production" })).toEqual([]);
+    expect(graphFlags({ tierParam: "tier" })).toEqual([]);
+  });
+
   it("maps detail, lens, direction, env", () => {
     expect(graphFlags({ detail: 1, lens: "blast:vpc", down: true, env: "prod" })).toEqual([
       "--detail",
@@ -107,12 +115,10 @@ describe("graphFlags", () => {
   });
 });
 
-// M2 (#54): the tier/target lenses. Not chant CLI flags — env overrides for
-// the shell-out (see envOverridesFor + runChantRaw's envOverride param).
-// #70: the tier's env var name is no longer hardcoded to LOOM_TIER — it comes
-// from `opts.tierEnvVar` (sourced from the served project's `.behold.json`,
-// src/project.ts `loadBeholdConfig`), so these tests thread it explicitly,
-// standing in for whatever a project's own `.behold.json` declares.
+// M2 (#54): the tier/target lenses as env overrides for the shell-out (see
+// envOverridesFor + runChantRaw's envOverride param). #470: the tier is a
+// build-time parameter; it reaches the env only through the parameter's own
+// `env` mapping (`tierEnv`), and `graphFlags` passes it as `--param`.
 describe("envOverridesFor", () => {
   it("carries a read's own spawn env, under a picked target (#402)", () => {
     expect(envOverridesFor({ spawnEnv: { AWS_ENDPOINT_URL: "http://emulator", AWS_REGION: "us-east-1" } })).toEqual({
@@ -129,16 +135,15 @@ describe("envOverridesFor", () => {
     expect(envOverridesFor({ env: "prod", live: true })).toBeUndefined();
   });
 
-  it("maps tier -> the configured tierEnvVar (loomster convention: LOOM_TIER)", () => {
-    expect(envOverridesFor({ tier: "full", tierEnvVar: "LOOM_TIER" })).toEqual({ LOOM_TIER: "full" });
+  it("maps tier -> the parameter's declared env mapping (loomster convention: LOOM_TIER)", () => {
+    expect(envOverridesFor({ tier: "full", tierParam: "tier", tierEnv: "LOOM_TIER" })).toEqual({ LOOM_TIER: "full" });
+    expect(envOverridesFor({ tier: "full", tierParam: "size", tierEnv: "DEPLOY_TIER" })).toEqual({ DEPLOY_TIER: "full" });
   });
 
-  it("maps tier -> whatever env var name a project's .behold.json declares — not hardcoded", () => {
-    expect(envOverridesFor({ tier: "full", tierEnvVar: "DEPLOY_TIER" })).toEqual({ DEPLOY_TIER: "full" });
-  });
-
-  it("drops tier with no tierEnvVar — no var name to set it under (a project declaring no tiers)", () => {
+  it("sets no env for a parameter with no env mapping, or a project with no tier axis", () => {
+    expect(envOverridesFor({ tier: "full", tierParam: "tier" })).toBeUndefined();
     expect(envOverridesFor({ tier: "full" })).toBeUndefined();
+    expect(envOverridesFor({ tier: "full", tierEnv: "LOOM_TIER" })).toBeUndefined();
   });
 
   it("maps target -> AWS_ENDPOINT_URL", () => {
@@ -148,7 +153,7 @@ describe("envOverridesFor", () => {
   });
 
   it("maps both together", () => {
-    expect(envOverridesFor({ tier: "light", tierEnvVar: "LOOM_TIER", target: "http://localhost:4566" })).toEqual({
+    expect(envOverridesFor({ tier: "light", tierParam: "tier", tierEnv: "LOOM_TIER", target: "http://localhost:4566" })).toEqual({
       LOOM_TIER: "light",
       AWS_ENDPOINT_URL: "http://localhost:4566",
     });

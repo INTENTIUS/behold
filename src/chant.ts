@@ -69,23 +69,21 @@ export interface GraphOptions {
    * cross-substrate topology survives; live status/ownership join per node by
    * id. See src/overlay.ts. */
   overlay?: boolean;
-  /** The tier lens (M2, #54): overrides the served project's own tier env var
-   * for this shell-out so chant re-evaluates its tier-conditioned source
-   * (loomster's components branch on `namingParams.tier`, read from
-   * `LOOM_TIER`). NOT a chant CLI flag — chant has no `--tier` concept; this is
-   * the served project's own env convention, named by `.behold.json`'s
-   * `tiers.envVar` (#70, `tierEnvVar` below — src/project.ts
-   * `loadBeholdConfig`), the same one `deployAxes()` (server.ts) already reads.
-   * Threaded as a per-request spawn env override (`envOverridesFor`), never a
+  /** The tier lens (M2, #54; #470): the picked value of the served project's
+   * tier build-time parameter, so chant re-evaluates its tier-conditioned
+   * source. chant has no `--tier`; `graphFlags` passes it to `chant graph` as
+   * `--param <tierParam>=<tier>`, and `envOverridesFor` also sets the
+   * parameter's own `env` mapping when it declares one (`tierEnv`), so a chant
+   * command that takes no `--param` still sees the pick. Per request, never a
    * `process.env` mutation, so concurrent requests on different tiers never
    * race. */
   tier?: string;
-  /** The env var name `tier` above overrides (#70) — sourced from the served
-   * project's `.behold.json` (`tiers.envVar`), never hardcoded. Undefined when
-   * the project declares no tiers, in which case `tier` (if somehow set) is
-   * never threaded into the shell-out's env: there's no var name to set it
-   * under. */
-  tierEnvVar?: string;
+  /** The `buildParams` entry `tier` sets (#470, src/project.ts `readTierParam`).
+   * Undefined when the project declares no tier axis, in which case `tier`
+   * (if somehow set) is never passed: there's no parameter to set. */
+  tierParam?: string;
+  /** That parameter's declared `env` mapping, when it has one (#470). */
+  tierEnv?: string;
   /** The target lens (M2, #54): overrides `AWS_ENDPOINT_URL` for this shell-out
    * — the literal Floci/AWS endpoint tell `deployAxes()` already reads. Not a
    * chant CLI flag either. Modelled the same way as `tier` even though there is
@@ -119,7 +117,7 @@ export interface GraphOptions {
    * verbatim. With it chant asks the project's predicting lexicon about the
    * estate this read is of: the file on a source read, the account under
    * `live`. Resolved by `trafficFor` (src/behaviour-delta.ts) from `?traffic=`
-   * or `.behold.json`; absent means no prediction is asked for. Only ever set
+   * or the per-user settings; absent means no prediction is asked for. Only ever set
    * for a member whose chant has the flag (0.75.0, chant#2377): an older chant
    * rejects an unknown flag outright (chant#1127). */
   traffic?: string;
@@ -131,19 +129,17 @@ export interface GraphOptions {
   spawnEnv?: Record<string, string>;
 }
 
-/** Env overrides for the tier/target lenses (M2, #54): `tier`/`target` above are
- * NOT chant CLI flags (`graphFlags` never emits them) — they're the served
- * project's own env conventions, threaded straight into the spawned chant
- * process's env so it re-evaluates for the picked lens. `tier`'s var name comes
- * from `tierEnvVar` (#70, sourced from `.behold.json` — never hardcoded); a
- * `tier` with no `tierEnvVar` is dropped, since there's no var name to set it
- * under. `target` still maps to the literal `AWS_ENDPOINT_URL` (Floci/AWS
+/** Env overrides for the tier/target lenses (M2, #54): threaded straight into
+ * the spawned chant process's env so it re-evaluates for the picked lens. A
+ * `tier` is set under its parameter's own `env` mapping (`tierEnv`, #470) when
+ * the parameter declares one; `graphFlags` passes it as `--param` either way.
+ * `target` still maps to the literal `AWS_ENDPOINT_URL` (Floci/AWS
  * endpoint tell — out of #70's scope). Returns undefined when neither ends up
  * set, so callers can skip the spawn's `env` override entirely (equivalent to
  * inheriting `process.env` as-is). Pure; exported for testing. */
 export function envOverridesFor(opts: GraphOptions): Record<string, string> | undefined {
   const overrides: Record<string, string> = { ...(opts.spawnEnv ?? {}) };
-  if (opts.tier && opts.tierEnvVar) overrides[opts.tierEnvVar] = opts.tier;
+  if (opts.tier && opts.tierParam && opts.tierEnv) overrides[opts.tierEnv] = opts.tier;
   if (opts.substrateTargets?.length) {
     // Each substrate gets its own endpoint, or all of them get the chosen one:
     // `target` stays a single global override rather than a control per
@@ -183,6 +179,8 @@ export function graphFlags(opts: GraphOptions): string[] {
   // read, not the build), and only ever set by the estate namespace join.
   if (opts.namespace) flags.push("--namespace", opts.namespace);
   if (opts.traffic) flags.push("--traffic", opts.traffic);
+  // #470: the tier lens is a build-time parameter (`chant graph --param`, chant 0.38.0).
+  if (opts.tier && opts.tierParam) flags.push("--param", `${opts.tierParam}=${opts.tier}`);
   return flags;
 }
 
