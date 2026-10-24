@@ -235,6 +235,8 @@ export function stepOf(d: Record<string, unknown>): ChantStep {
     // The schema has no `index`, `scenarios`, `beat`, `delivery` or `tool`: one demo, one page.
     scenarios: null,
     index: null,
+    act: null,
+    acts: null,
     tool: CHANT_DEMO_TOOL,
     repo: text(d.repo),
     delivery: null,
