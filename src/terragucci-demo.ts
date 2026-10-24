@@ -105,6 +105,54 @@ export interface Demo {
    * non-empty string.
    */
   highlight?: DemoHighlight;
+  /** behold#936: the prompt pane's one beat for this step (terragucci's `ask`); null without one, or one not of its form. */
+  ask?: DemoAsk | null;
+  /** behold#936: the step's beats played in order, in place of `ask`; null without any. */
+  asks?: DemoAsk[] | null;
+  /** behold#936: the line shown once in the pane at the scenario's first step; null without one. */
+  opening?: string | null;
+  /** behold#936: the line shown in the pane at the scenario's last step; null without one. */
+  closing?: string | null;
+}
+
+/**
+ * behold#936: one beat of the prompt pane. A prompt (typed, `>`) or an action (shown at once, a check mark), never
+ * both; a reply template filled from the step's report; and what the graph does (behold#937 reads light, paths, ghost).
+ */
+export interface DemoAsk {
+  prompt: string | null;
+  action: string | null;
+  reply: string | null;
+  light: string[] | null;
+  paths: boolean | null;
+  ghost: boolean | null;
+}
+
+/**
+ * behold#936: a demo.json `ask`, or null when it is not an object with a prompt, an action or a reply. A field of the
+ * wrong type is null. A reply alone is a beat: an applied step prints the agent's reply with no line of the person's.
+ */
+export function askOf(v: unknown): DemoAsk | null {
+  if (!isRecord(v)) return null;
+  const prompt = text(v.prompt);
+  const action = prompt ? null : text(v.action);
+  const reply = text(v.reply);
+  if (!prompt && !action && !reply) return null;
+  return {
+    prompt,
+    action,
+    reply,
+    light: Array.isArray(v.light) && v.light.every((x) => str(x) && x.trim()) ? (v.light as string[]).map((x) => x.trim()) : null,
+    paths: typeof v.paths === "boolean" ? v.paths : null,
+    ghost: typeof v.ghost === "boolean" ? v.ghost : null,
+  };
+}
+
+/** behold#936: a demo.json `asks`, its valid beats in order, or null when it has none. */
+export function asksOf(v: unknown): DemoAsk[] | null {
+  if (!Array.isArray(v)) return null;
+  const beats = v.map(askOf).filter((a): a is DemoAsk => a !== null);
+  return beats.length ? beats : null;
 }
 
 /** behold#757: a step's `highlight`, as the driver writes it. */
@@ -266,6 +314,10 @@ export function demoOf(d: Demo): Demo {
       const o = outsideOf((d as { outside?: unknown }).outside);
       return o ? { outside: o } : {};
     })(),
+    ask: askOf((d as { ask?: unknown }).ask),
+    asks: asksOf((d as { asks?: unknown }).asks),
+    opening: text((d as { opening?: unknown }).opening),
+    closing: text((d as { closing?: unknown }).closing),
     // behold#757: so is the step's highlight.
     ...((): { highlight?: DemoHighlight } => {
       const h = highlightOf((d as { highlight?: unknown }).highlight);

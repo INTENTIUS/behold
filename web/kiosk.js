@@ -35,7 +35,9 @@ import { repoParam, repoUrl, stepCheckout } from "./kiosk-repo.js";
 import { startKioskCarve } from "./kiosk-carve.js";
 import { drawWaveList, waveListKey } from "./kiosk-wave-list.js";
 import { readsFor, runsReadsFor } from "./kiosk-source.js";
-import { STATE_WORDS, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
+import { askEventHelp, askMode, askShot, createAskPane, hasAsk, replyValues } from "./kiosk-ask.js";
+import { STATE_WORDS, outcomesOf, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
+import { startKioskLight } from "./kiosk-light.js"; // behold#937
 
 /** The scenarios terragucci#1014 numbers. An id not here is shown by the title demo.json carries. */
 export const SCENARIOS = {
@@ -631,6 +633,8 @@ export function stepView(step) {
  * Without a demo step yet, the resources view.
  */
 export function kioskView(demo, { components = false, pick = null, now = Date.now() } = {}) {
+  // behold#939: a prompt-driven step draws every root expanded to its resources, whatever the toggle held.
+  if (hasAsk(demo)) return { view: "resources", pinned: false, secs: null };
   if (!components) return { view: "resources", pinned: false, secs: null };
   if (pick && VIEWS.some((v) => v.id === pick.view)) {
     const left = pick.at + PICK_HOLD_MS - now;
@@ -1699,6 +1703,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   let lastKey = "";
   let lastFocus;
   const shownView = () => kioskView(s.demo && s.demo.demo, { components: s.components, pick: s.pick, now: now().getTime() });
+  let unstacked = false;
   const tellFrame = (force) => {
     // behold#571: before the tool's first cycle the frame draws its repo on the base, with nothing in flight.
     const notRun = !!vendor && s.mode === "none";
@@ -1710,12 +1715,18 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     // The cycle's pull request, so a merge's frame never draws another cycle's plan (web/terragucci-change.js pinnedAnswer).
     const pull = framePull(d);
     const zoom = viewZoom(shownView().view);
-    const key = `${focus}|${run}|${pull}|${zoom}`;
+    // behold#939: a prompt-driven step draws every resource as its own card (the four of app, not "app x4").
+    const ask = !!d && hasAsk(d);
+    const key = `${focus}|${run}|${pull}|${zoom}|${ask ? "unstacked" : ""}`;
     if (!force && key === lastFocus) return;
     lastFocus = key;
-    post({ type: "behold:view", member: null, focus, run, pull, zoom });
+    // Leaving it gives the default (stacked) back.
+    post({ type: "behold:view", member: null, focus, run, pull, zoom, ...(ask ? { alike: false } : unstacked ? { alike: true } : {}) });
+    unstacked = ask;
     tellHover(s.hover);
   };
+  // behold#937: the pane's events (behold#936) light the graph and give the reply its {dependents} (web/kiosk-light.js).
+  if (typeof window !== "undefined") startKioskLight({ post, getAnswer: () => s.answer, getProgress: () => s.progress });
   const pickView = (view) => {
     s.pick = { view, at: now().getTime() };
     draw();
@@ -1809,10 +1820,33 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   // behold#571: the titles and names demo.json has carried, by scenario, for the runs' subtitles.
   const titles = {};
   const names = {};
+  // behold#936: the prompt pane (web/kiosk-ask.js), in the header's and the caption's place while a step has a prompt, in Watch.
+  const askValues = () => {
+    const d = s.demo && s.demo.demo;
+    const failed = [...outcomesOf(s.answer, s.progress).values()].find((o) => o.outcome === "failed" && o.error);
+    return replyValues(d ? matchingPull(s.answer, d) : null, failed ? failed.error : null, typeof window !== "undefined" && window.beholdAskTokens ? window.beholdAskTokens : {});
+  };
+  const applyAsk = () => {
+    if (typeof document !== "undefined" && document.body && document.body.classList) document.body.classList.toggle("k-ask", !!s.askOn && !!s.watchMode);
+  };
+  const askPane =
+    watch && watch.ask
+      ? createAskPane({
+          host: watch.ask,
+          fill: askValues,
+          now,
+          reduced: () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches,
+          onActive: (on) => {
+            s.askOn = on;
+            applyAsk();
+          },
+        })
+      : null;
   /** Take one narration (demo.json, or a replayed step), and ask for the run it is about when the step moved. */
   const setDemo = (answer) => {
     s.demo = answer;
     const d = answer && answer.demo;
+    if (askPane) askPane.setStep(d || null);
     // behold#571: when this page first saw the driver's deadline, for the next bar when demo.json has no next.from.
     s.nextSeen = nextSeen(s.nextSeen, d ? d.next || null : undefined, s.mode, shownNow().getTime());
     if (d && d.scenario && typeof d.title === "string" && d.title) titles[d.scenario] = d.title;
@@ -1976,6 +2010,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       if (s.watchMode && body && main.parentNode !== body) body.appendChild(main);
       if (!s.watchMode && runsParent && main.parentNode !== runsParent) runsParent.insertBefore(main, runsNext);
     }
+    applyAsk();
     if (watch) renderModeToggle(tools && tools.mode, s.watchMode ? "watch" : "inspect", setMode);
     if (carveCtl) carveCtl.tellMode();
   };
@@ -2027,6 +2062,11 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   }
   /** The caption shown now: Watch's own, or the live carve's while it has the camera (#715). */
   const shownCaption = () => (carveCtl && carveCtl.caption ? carveCtl.caption() || watch.caption : watch.caption);
+  /**
+   * The box the graph's room ends at: the prompt pane while it shows (the caption is hidden then, and a hidden box
+   * measures as zeros, which sent the trail to the top and left the graph no room), else the caption shown now.
+   */
+  const bottomBox = () => (s.askOn && s.watchMode && watch && watch.ask && !watch.ask.hidden ? watch.ask : shownCaption());
   /** behold#631: a chant kiosk's projected track (drawChantTrack), in the trail's place. */
   let trackHost = null;
   /** behold#571: the caption's top, or event-help's trail's when it sits over the caption. */
@@ -2039,7 +2079,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   const shotInsets = (shot) => {
     if (!watch || !frame || isPhone() || !frame.getBoundingClientRect) return {};
     const f = frame.getBoundingClientRect();
-    const cap = shownCaption().getBoundingClientRect();
+    const cap = bottomBox().getBoundingClientRect();
     const bottom = Math.max(0, f.bottom - captionTop(cap)) + 16;
     const side = shot.kind === "held" ? watch.callout : shot.kind === "active" ? watch.drawer : shot.kind === "result" ? watch.result : null;
     // The result card sits right beside the graph (placeBeside's gap): an inset of its width and that gap centres the two together.
@@ -2056,6 +2096,11 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   function captionRoomPx() {
     if (!watch || !frame || isPhone() || !frame.getBoundingClientRect || typeof getComputedStyle !== "function") return 0;
     const f = frame.getBoundingClientRect();
+    // behold#936: the prompt pane, when it shows, is the caption's place; its height is fixed, so the room is too.
+    if (s.askOn && watch.ask && !watch.ask.hidden) {
+      const a = watch.ask.getBoundingClientRect();
+      return Math.round(Math.max(0, f.bottom - a.bottom) + a.height + 16);
+    }
     const cap = watch.caption;
     const c = cap.getBoundingClientRect();
     const fs = parseFloat(getComputedStyle(cap).fontSize) || 16;
@@ -2081,10 +2126,10 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const insets = shotInsets(s.shot);
     // The caption's tallest, for a held small stage's one framing; a stage that isn't held never reads it.
     const room = captionRoomPx();
-    const key = `${s.shot.id}|${insets.right || 0}|${Math.round((insets.bottom || 0) / 12)}|${s.shot.roots.join(",")}|${Math.round(room / 12)}`;
+    const key = `${s.shot.id}|${s.shot.ask ? "ask" : ""}|${insets.right || 0}|${Math.round((insets.bottom || 0) / 12)}|${s.shot.roots.join(",")}|${Math.round(room / 12)}`;
     if (!force && key === lastShot) return;
     lastShot = key;
-    post(shotMessage({ roots: s.shot.roots, waves: s.shot.waves, whole: s.shot.whole, insets, id: s.shot.id, room }));
+    post(shotMessage({ roots: s.shot.roots, waves: s.shot.waves, whole: s.shot.whole, insets, id: s.shot.id, room, ask: s.shot.ask === true }));
   }
   // behold#631: the projected cycle track, a chant kiosk's bottom band in place of the chip strip and the rail.
   const trackState = { cycle: null, pulls: [], key: null, since: null };
@@ -2126,7 +2171,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     if (model) model.onSeek = s.seekTo;
     drawTrack(trackHost, model);
     // In the trail's place: over the caption.
-    const cap = shownCaption().getBoundingClientRect();
+    const cap = bottomBox().getBoundingClientRect();
     if (trackHost.style) trackHost.style.bottom = cap.height ? `${Math.round((typeof window !== "undefined" ? window.innerHeight : 0) - cap.top)}px` : "";
     // The "Waiting on…" modal: a quiet stretch on a step that waits on something, never while the apply's events come in.
     // Once the play shows anything of this run under way (a wave or a card), nothing waits on the apply to start.
@@ -2141,13 +2186,13 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     drawChantTrack(d, at);
     const hold = d ? holdModel(s, d) : null;
     const gate = !!hold && (hold.kind === "approval" || hold.kind === "driver");
-    const shot = shotFor(d, { answer: s.answer, progress: s.progress, held: s.held, gate, runDoc: runsApi && runsApi.run ? runsApi.run.doc : null, waves: s.waves });
+    const shot = askShot(shotFor(d, { answer: s.answer, progress: s.progress, held: s.held, gate, runDoc: runsApi && runsApi.run ? runsApi.run.doc : null, waves: s.waves }), askMode(s));
     s.shot = shot;
     const nums = waveBadges(s.metrics);
     const opened = drawerWave !== null;
     // On a held small stage nothing overlays the graph (web/kiosk-watch.js watchOverlays): the approval, the result and the
     // running job are the caption's quiet lines there. Any other stage shows its cards as it always has.
-    const shows = watchOverlays({ kind: shot.kind, opened, held: !!s.stageHeld });
+    const shows = watchOverlays({ kind: shot.kind, opened, held: !!s.stageHeld, ask: askMode(s) });
     const call = shows.callout && shot.kind === "held" && gate;
     watch.callout.hidden = !call;
     if (call) drawCallout(watch.callout, s, hold, badgeTitle(nums[hold.wave]));
@@ -2268,7 +2313,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     }
     const L = watch.layer.getBoundingClientRect();
     const F = frame.getBoundingClientRect();
-    const capTop = captionTop(shownCaption().getBoundingClientRect()) - L.top;
+    const capTop = captionTop(bottomBox().getBoundingClientRect()) - L.top;
     const view = { x: F.left - L.left, y: F.top - L.top, w: F.width, h: capTop - (F.top - L.top) };
     const boxOf = (n) => {
       const waves = (s.boxes && s.boxes.waves) || {};
@@ -2424,7 +2469,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
           const d = s.demo && s.demo.demo;
           if (!d) return null;
           const appr = pendingApproval(d, s.progress);
-          return {
+          // behold#939: in ask mode no bubble, modal or strip; the pane and the graph tell it.
+          return askEventHelp({
             demo: d,
             answer: s.answer,
             // behold#741: told at the pace the graph plays the waves, while a terragucci story is on.
@@ -2450,7 +2496,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
             frame,
             watch: s.watchMode,
             // The caption shown now: the live carve's while it has the camera (web/kiosk-carve.js).
-            caption: watch ? shownCaption() : null,
+            caption: watch ? bottomBox() : null,
             replay: s.mode === "replay",
             approveLine: appr ? appr.approve : null,
             label: d.label || "",
@@ -2460,7 +2506,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
             waveTraces: s.waveTraces,
             strip: s.stripReady() ? s.strip : null,
             stripReady: s.stripReady(),
-          };
+          }, askMode(s));
         },
       })
     : null;

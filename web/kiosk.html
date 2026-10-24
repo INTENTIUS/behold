@@ -506,6 +506,27 @@
         body.k-watch #k-change.k-open .k-change-label::after, body.k-watch #k-waves.k-open .k-wl-title::after { content: " · hide"; }
         body.k-watch #k-waves:not(.k-open) .k-wl-hint { display: none; }
       }
+      /* behold#936: the prompt pane. Sized to its entries (the last three faded, and the current one), at most 30% of the screen (behold#939); the script keeps it from shrinking within a scenario, so the room the graph keeps does not breathe as it types. The entries sit at its foot. */
+      #k-ask { position: absolute; left: 5px; right: 5px; bottom: 5px; height: auto; max-height: 30vh; box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-end; gap: 0.35em; overflow: hidden;
+        padding: var(--s3) 1.4em var(--s4); font: 600 clamp(1.1rem, 1.9vw, 1.8rem)/1.3 var(--font-mono); color: var(--fg);
+        background: var(--surface-pane-b); border-top: 1px solid var(--rule); border-radius: 0 0 8px 8px; box-shadow: 0 -10px 30px color-mix(in srgb, var(--bg) 70%, transparent); }
+      #k-ask[hidden] { display: none; }
+      #k-ask .ask-entry { display: flex; flex-direction: column; gap: 0.15em; min-width: 0; }
+      #k-ask .ask-line { display: flex; gap: 0.6em; }
+      #k-ask .ask-mark { color: var(--pending, var(--fg)); flex: none; min-width: 1ch; }
+      #k-ask .ask-text, #k-ask .ask-reply { overflow-wrap: anywhere; }
+      #k-ask .ask-reply { padding-left: 1.6em; color: var(--ink2, var(--fg)); font-weight: 500; }
+      #k-ask .ask-old { opacity: 0.55; }
+      #k-ask .ask-old-2 { opacity: 0.4; }
+      #k-ask .ask-old-3, #k-ask .ask-old-4 { opacity: 0.28; }
+      #k-ask .ask-typing .ask-text::after { content: "\2588"; margin-left: 0.1em; }
+      #k-ask .ask-status { padding-left: 1.6em; font-size: 0.7em; font-weight: 500; color: var(--muted); }
+      body.k-ask #bar, body.k-ask #k-caption, body.k-ask #views { display: none; }
+      /* behold#939: ask mode leaves the graph and the pane alone: no approval card, result card, badges, log drawer, tip or modal, and no chip strip. */
+      body.k-ask #k-callout, body.k-ask #k-result, body.k-ask #k-badges, body.k-ask #k-drawer, body.k-ask #eh-tips, body.k-ask #eh-modals, body.k-ask #eh-trail, body.k-ask #k-track, body.k-ask #eh-strip { display: none !important; }
+      @media (max-width: 600px) {
+        body.k-watch #k-ask { position: static; order: 1; height: auto; max-height: 50vh; border-radius: 0; box-shadow: none; }
+      }
       /* The caption: the title, what changes, the step. One of the two beats leads. */
       #k-caption { position: absolute; left: 5px; right: 5px; bottom: 5px; display: grid; grid-template-rows: auto calc(2 * 1.25em * 1.3) calc(2 * 1.25em * 1.3); gap: 0.25em; padding: var(--s3) 1.4em var(--s4);
         background: var(--surface-pane-b); border-top: 1px solid var(--rule); border-radius: 0 0 8px 8px; box-shadow: 0 -10px 30px color-mix(in srgb, var(--bg) 70%, transparent); }
@@ -772,6 +793,8 @@
           <div id="k-traces" data-k-mount="traces"></div>
         </section>
         <aside id="k-result" class="k-over" aria-label="The result" hidden></aside>
+        <!-- behold#936: the prompt pane, in the header's and the caption's place while a step has a prompt (web/kiosk-ask.js). -->
+        <section id="k-ask" aria-live="polite" aria-label="The prompt" hidden></section>
         <footer id="k-caption" aria-live="polite"></footer>
         <!-- behold#781, behold#776: a phone's Watch only: the change's facts by the story, and the graph's marks as a list. -->
         <section id="k-change" aria-label="The change" hidden></section>
@@ -809,7 +832,7 @@
           bar: document.getElementById("bar"), frame: document.getElementById("view"), read: document.getElementById("k-read"), side: document.getElementById("runs-side"), main: document.getElementById("runs-main"), views: document.getElementById("views"),
           tools: { what: document.querySelector(".k-what"), pop: document.getElementById("k-what-pop"), theme: document.getElementById("k-theme"), runsToggle: document.getElementById("k-runs-toggle"), mode: document.getElementById("k-mode") },
           eh: { switchHost: document.getElementById("k-tools"), trailHost: document.getElementById("eh-trail"), tipsHost: document.getElementById("eh-tips"), modalHost: document.getElementById("eh-modals") },
-          watch: { layer: document.getElementById("k-watch"), caption: document.getElementById("k-caption"), change: document.getElementById("k-change"), waves: document.getElementById("k-waves"), callout: document.getElementById("k-callout"), drawer: document.getElementById("k-drawer"), badges: document.getElementById("k-badges"), result: document.getElementById("k-result") },
+          watch: { layer: document.getElementById("k-watch"), caption: document.getElementById("k-caption"), change: document.getElementById("k-change"), waves: document.getElementById("k-waves"), callout: document.getElementById("k-callout"), ask: document.getElementById("k-ask"), drawer: document.getElementById("k-drawer"), badges: document.getElementById("k-badges"), result: document.getElementById("k-result") },
         },
         { tool: pageTool(document), source: pageSource(document), runs: pageRuns(document) },
       );

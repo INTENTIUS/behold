@@ -40,6 +40,7 @@ import { FORGES, MARK, componentsForge, forgeOfName, iconSvg, markLink, markTitl
 import { TOOLS, orderTools } from "./tool-mark.js";
 import { STATE_WORDS as tgStateWords, changeSection as tgChangeSection, readCardIds as tgReadCardIds, readEdges as tgReadEdges, readLabel as tgReadLabel, readLine as tgReadLine, readTag as tgReadTag, rootStates as tgRootStates, viewCaption as tgViewCaption, pinnedAnswer as tgPinnedAnswer, pinnedCaption as tgPinnedCaption, pinsCommit as tgPinsCommit, pinWaits as tgPinWaits } from "./terragucci-change.js";
 import { auditLines as yrAuditLines, cornerText as yrCorner, datedWords as yrDated, environmentLines as yrEnvLines, joinMarks as yrJoin, legend as yrLegend, markLine as yrMarkLine } from "./yodel-report.js";
+import { drawLight as klDraw } from "./kiosk-light-frame.js"; // behold#937
 import { cardProgress as tgCardProgress, progressLines as tgProgressLines, progressSection as tgProgressSection, stampProgress as tgStampProgress } from "./terragucci-progress.js";
 import { seconds, whyQuery, whyView } from "./why.js";
 import { edgeKey, edgeLabel, edgeLegend, edgeTitle, isCiKind, viaIndex } from "./edge-kind.js";
@@ -129,7 +130,7 @@ import { danglingFor, danglingRows, danglingHeading, DANGLING_EXPLAINED } from "
 import { comparisonRow, comparisonSummary } from "./cross-env.js";
 // The marker-vs-derived mark on a choudoufu card: how its identity was found.
 import { identityMark, tagGlyphSvg } from "./identity-mark.js";
-import { shotFromMessage, shotViewBox, tweenViewBox, unionBox, sameViewBox, heldFrame, heldInsets, heldTarget, holdsStage, medianWidth, smallStage } from "./kiosk-shot.js"; // behold#571: Watch's camera
+import { ASK_MAX_SCALE, shotFromMessage, shotViewBox, tweenViewBox, unionBox, sameViewBox, heldFrame, heldInsets, heldTarget, holdsStage, medianWidth, smallStage } from "./kiosk-shot.js"; // behold#571: Watch's camera
 import { SHOT_ATTR, SHOT_CAPTION_PX, SHOT_DIM, queryFrame, readShotFrame, shotCaption, shotLit, shotProvenance, shotState } from "./shot-frame.js"; // behold#915: the page `behold shot` photographs
 import { countsLine, groupLabel, groupMarks, queryLine, queryMarks, searchKey, searchUrl, stackIndex, uncapturedLine } from "./search-view.js"; // behold#913: `q` drawn; behold#922: groups
 // #712, #715: the dots layer, the zoom past the cards. Mounted for a live
@@ -4613,6 +4614,14 @@ function paintTgProgress() {
   drawTgReads(); // #568: the run view's reads, once the change merged
   renderTerragucciPanel();
 }
+// behold#937: the kiosk's last `behold:light` message and what draws it (web/kiosk-light-frame.js).
+let klMsg = null;
+let klCtx = null;
+const klPulsed = { token: null };
+function klRedraw() {
+  if (!klCtx || !klMsg || !klCtx.svg.isConnected) return;
+  klDraw(klCtx.svg, klMsg, klCtx.drawnAnswer, tgStoryOn() ? tgPacedProgress() : tgProgress, { cardsOf: klCtx.cardsOf, rootBox: klCtx.rootBox, compMode: klCtx.compMode, pulsed: klCtx.pulsed, below: document.documentElement.classList.contains("kiosk-ask") });
+}
 // #568: the reads edges between roots of one repo, drawn over the card view.
 // #569: drawn so the view shows the change without the panel: each read is a
 // line from the reader (its data card when the checkout draws one, else its
@@ -4841,7 +4850,7 @@ function drawTgReads() {
       const shown = lines.slice(0, 1);
       if (lines.length > 1) shown[0] += " …";
       shown.forEach((t, i) => {
-        mark.appendChild(make("text", { x: local.x + local.width - 14, y: local.y + local.height - 10 - (shown.length - 1 - i) * 15, "text-anchor": "end", "font-size": 12.5, "font-weight": 600, fill }, t));
+        mark.appendChild(make("text", { x: local.x + local.width - 14, y: local.y + local.height - 10 - (shown.length - 1 - i) * 15, "text-anchor": "end", "font-size": 12.5, "font-weight": 600, fill, "data-tg-box-facts": "1" }, t));
       });
     }
   }
@@ -5069,6 +5078,11 @@ function drawTgReads() {
   }
   tgReadEdgesNow = edges;
   tgReadShow(svg);
+  // behold#937: a demo step's lighting, the states' files and looks, the unknown slots, over the marks just drawn.
+  if (embedOpts.bare) {
+    klCtx = { svg, drawnAnswer, rootBox, compMode, cardsOf, pulsed: klPulsed };
+    klRedraw();
+  }
 
   // Which run the marks come from, above the boxes.
   // #569: a pin that holds the view off every plan says why in its own words.
@@ -5479,6 +5493,7 @@ function ensureTgReadStyle() {
 #graph g[data-tg-read-pill].tg-flash { animation: tg-read-flash 6s linear both; }
 #graph line[data-tg-read].tg-hot { stroke-width: 5; filter: drop-shadow(0 0 3px var(--bg)); }
 #graph g[data-tg-read-covers] { display: none !important; }
+html.kiosk-ask #view-toggles, html.kiosk-ask #graph text[data-tg-reads="caption"], html.kiosk-ask #graph text[data-tg-root="wave-fact"], html.kiosk-ask #graph text[data-tg-box-facts] { display: none; }
 @keyframes tg-read-flash { 0% { opacity: 0; } 4%, 80% { opacity: 1; } 100% { opacity: 0; } }
 @keyframes tg-read-flash-step { 0%, 99.9% { opacity: 1; } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
@@ -6474,7 +6489,8 @@ function kioskShotBox() {
   }
   kioskHeld = null;
   document.documentElement.classList.remove("kiosk-held");
-  return shotViewBox(kioskShotTarget(svg, kioskShot), pane, { ...insets, right: Math.max(insets.right, railInset(pane)) });
+  // behold#939: a prompt-driven step fills the room above the pane (the graph is small, and the pane says the rest).
+  return shotViewBox(kioskShotTarget(svg, kioskShot), pane, { ...insets, right: Math.max(insets.right, railInset(pane)) }, kioskShot.ask ? { maxScale: ASK_MAX_SCALE } : undefined);
 }
 /** The whole-graph framing Watch holds on a small stage while the graph and the pane stay (web/kiosk-shot.js heldFrame); null on a bigger one. */
 var kioskHeld = null;
@@ -6738,10 +6754,12 @@ window.addEventListener("message", (e) => {
     shotAnim = null;
     kioskShot = null;
     document.documentElement.classList.remove("kiosk-held"); // Inspect: the zoom rail is the viewer's again
+    document.documentElement.classList.remove("kiosk-ask");
     fitGraph();
     return;
   }
   kioskShot = shot;
+  document.documentElement.classList.toggle("kiosk-ask", !!shot.ask);
   applyKioskShot(true);
 });
 
@@ -6808,6 +6826,11 @@ function wireKioskFrame() {
   window.addEventListener("message", (e) => {
     if (!embedOpts.host || e.origin !== embedOpts.host) return;
     if (e.data && e.data.type === "behold:unpin") return kioskPopEvent({ type: "outside" });
+    // behold#937: the demo step's lighting from the kiosk (web/kiosk-light.js lightMessage).
+    if (e.data && e.data.type === "behold:light") {
+      klMsg = { labels: e.data.labels === true, lit: e.data.lit === true, ids: Array.isArray(e.data.ids) ? e.data.ids.filter((x) => typeof x === "string") : [], roots: Array.isArray(e.data.roots) ? e.data.roots.filter((x) => typeof x === "string") : [], ghost: e.data.ghost === true, token: e.data.token ?? null };
+      return klRedraw();
+    }
     // behold#571: the kiosk's theme picker moved; follow it here without a reload.
     if (e.data && e.data.type === "behold:theme" && typeof e.data.name === "string") return void setTheme(e.data.name, { persist: false });
     // behold#741: the scenario carries chapters (or stopped carrying them): the kiosk's look, and the wave blocks, follow.

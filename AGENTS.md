@@ -369,6 +369,34 @@ checkout declares no Terraform root (`controlRepo` in
   structural check otherwise. The page (`web/terragucci-estate.js`) draws it
   in a layer over the graph area.
 
+
+### The kiosk's prompt pane (#936)
+
+A step of terragucci's `demo.json` may carry an `ask` (or `asks`, a list of
+them played in order), and the file may carry `opening` and `closing` strings
+(src/terragucci-demo.ts parses them; a field of the wrong type is null, and an
+ask with none of a prompt, an action and a reply is dropped; a reply alone prints with no line of the person's, as an applied step's does). While a step has an ask,
+the pane (`#k-ask`, web/kiosk-ask.js) takes the place of `#bar` and
+`#k-caption` in Watch: a big monospace block at the foot of the screen. A
+`prompt` is typed after `>` at 40 ms a character; an `action` shows at once
+after a check mark; the `reply` prints after it, with `{roots}`, `{creates}`,
+`{updates}`, `{deletes}` and `{error}` filled from the step's report (an
+unknown token, or one without a value, is empty). The last three entries stay
+above, faded. `opening` shows once at the scenario's first step
+(`pull-request` or `planned`), `closing` at `applied`. While a job runs
+(`pull-request`, `approved`, `merged`, `applying`, `resumed`) a status line
+gives what is happening, the time since `started_at`, and `next`. With
+`prefers-reduced-motion` everything shows at once. The pane's height is fixed
+and replaces the caption in `captionRoomPx`, so it never covers the graph. A
+step without an ask looks as it always did.
+
+The pane tells the page through window events, each with detail
+`{ ask, step, scenario }`: `behold:ask-start` before a beat is typed,
+`behold:ask-done` when its reply has printed, and `behold:ask-clear` on a new
+step with no ask. `{dependents}` is left to the lighting: it sets
+`window.beholdAskTokens = { dependents: n }` on `behold:ask-start`, and the
+reply reads it when it prints.
+
 ## Releases per environment, from the release ledger (#525)
 
 `GET /api/lifecycle/releases[?fresh=1]` (src/lifecycle-releases.ts) reads
