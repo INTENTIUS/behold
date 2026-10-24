@@ -621,7 +621,7 @@ try {
   await page.screenshot({ path: join(SHOTS, "7-layout.png") });
 
   // …and both went to the sidecar too (the stub holds it in memory; the real
-  // server writes `.behold/layout.json`). Debounced, so a drag is one write.
+  // server writes its per-user layout cache, #469). Debounced, so a drag is one write.
   const sidecar = () => server.layout.get("components") || {};
   await page.waitForTimeout(800);
   check("the finished drag reached the sidecar", Math.abs((sidecar().api || {}).dx - wantDx) < 2);

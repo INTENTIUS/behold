@@ -116,7 +116,7 @@ export const READ_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD", "OPTION
  * is refused until someone puts it here, whatever its method.
  */
 export const TERRAGUCCI_ALLOWED_WRITES: readonly { method: string; pattern: RegExp; why: string }[] = [
-  { method: "POST", pattern: /^\/api\/layout$/, why: "the layout sidecar, .behold/layout.json" },
+  { method: "POST", pattern: /^\/api\/layout$/, why: "the hand layout, a per-user cache outside the repo (#469)" },
   { method: "POST", pattern: /^\/api\/project\/open$/, why: "switching what is served" },
   { method: "POST", pattern: /^\/api\/project\/reveal$/, why: "opening the served directory in the file manager" },
   { method: "POST", pattern: /^\/api\/demos\/open$/, why: "loading a bundled demo into a copy behold makes, and serving it" },

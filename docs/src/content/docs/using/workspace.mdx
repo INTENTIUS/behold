@@ -47,8 +47,8 @@ stays viewable.
 | `other`, or a nested `workspace` | Nothing. It is listed when behold starts and in `behold doctor` |
 
 Node ids are `<member>/<id>`, with the member's declared name. That is the id
-chant composes too. The hand layout lives in the workspace root's
-`.behold/layout.json`.
+chant composes too. The hand layout is kept per user, outside the project, and
+keyed by the workspace root.
 
 Several directories on the command line (`behold serve a b c`) are still the
 loose view behold composes itself, with no declaration involved.
@@ -92,11 +92,11 @@ It then runs `chant workspace check` on what it wrote.
   a chant `terraform` member is a single root.
 - Any `terraform` or `choudoufu` member makes the declaration pin
   `@intentius/chant-lexicon-terraform`, which supplies both kinds.
-- The saved layout in the first member's `.behold/layout.json` is copied into
-  the root, and its node ids are rewritten to the declared names.
+- The saved layout of the first member is copied to the root's entry in the
+  per-user layout cache, and its node ids are rewritten to the declared names.
 
 <Aside type="note" title="What --fix writes">
-Two files: `chant.workspace.json` and `.behold/layout.json`, both in the estate
-root. The old layout file and `.behold.json` stay as they were. Every other
-doctor run writes nothing.
+One file in the estate root, `chant.workspace.json`, and the root's layout in
+the per-user cache outside it. The first member's layout and `.behold.json`
+stay as they were. Every other doctor run writes nothing.
 </Aside>

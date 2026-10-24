@@ -9,7 +9,7 @@
  * left one Back away (web/app.js `agentMove`).
  *
  * It writes nothing: not to infrastructure, not to the project, not to
- * `.behold/layout.json`, and nothing is kept server-side. That is why it is on
+ * the layout cache, and nothing is kept server-side. That is why it is on
  * the terragucci write allowlist (src/terragucci-repo.ts).
  *
  * Refused under `--public` (anyone could steer a stranger's tab) and under

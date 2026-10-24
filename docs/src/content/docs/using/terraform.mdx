@@ -52,9 +52,8 @@ the tree and the lexicon where behold's reader does not look.
 <Aside type="note" title="Nothing is written under your estate">
 chant resolves a lexicon from its config file's location, so behold generates
 the reader config in a scratch directory of its own and points chant at that.
-The estate is read exactly as it sits. behold's one in-project write is
-`.behold/layout.json`, and a Terraform estate does not even get that unless you
-move a card.
+The estate is read exactly as it sits, and behold writes nothing inside it: a
+card you move is remembered in a per-user cache outside the estate.
 </Aside>
 
 ## Roots are discovered, and the skips are reported

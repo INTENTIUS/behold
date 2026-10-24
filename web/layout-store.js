@@ -12,9 +12,9 @@
 // web/layout-store.test.js). app.js owns the pointer work and the SVG.
 //
 // Two tiers, and the second one lands here too: `localStorage` (free, per
-// browser) and the `.behold/layout.json` sidecar behind `GET/POST /api/layout`
-// (shareable, versionable, and what a server-side export bakes in — see
-// src/layout.ts). `mergeLayouts` decides who wins when both have an opinion,
+// browser) and the server's per-user layout cache behind `GET/POST /api/layout`
+// (kept outside the project since #469; it survives a cleared browser and is
+// what a server-side export bakes in — see src/layout.ts). `mergeLayouts` decides who wins when both have an opinion,
 // and every server call degrades to localStorage-only without a word.
 
 const PREFIX = "behold.layout";

@@ -94,11 +94,11 @@ With a level, `/api/overlay` asks chant twice for each member: once about the ac
 
 The figures are an engine's, reached by chant through `CHANT_BEHAVIOUR_ENGINE`. behold calls no engine and holds no key. A choudoufu or Terraform member reads through `@intentius/chant-lexicon-terraform`, which behold installs with itself (#909), since that lexicon is what predicts a `.tf` root.
 
-## Optional: a shared hand layout
+## Your hand layout
 
-Drag a card or resize a containment box and behold remembers the offset, in your browser and (if the project directory is writable) in a `.behold/layout.json` sidecar next to it. That sidecar is the one file behold writes inside your project. It stores offsets rather than positions, so the graph underneath stays chant's, and `behold export` bakes it into the exported SVGs.
+Drag a card or resize a containment box and behold remembers the offset, in your browser and in a per-user cache outside the project (`~/Library/Caches/behold/layouts/` on macOS, `~/.cache/behold/layouts/` on Linux, `%LOCALAPPDATA%\behold\layouts\` on Windows; `BEHOLD_CACHE_DIR` moves it). behold writes nothing inside your project, so there is nothing to gitignore. The layout stores offsets rather than positions, so the graph underneath stays chant's, and `behold export` bakes it into the exported SVGs.
 
-Add `.behold/` to the project's `.gitignore`: unlike `.behold.json` above, which is config worth tracking, a layout is per-user state. Commit it only if you actually want everyone looking at the same arrangement.
+A `.behold/layout.json` left by an older behold is read once into the cache and never changed or deleted.
 
 <Aside type="caution" title="If every tier renders the same graph">
 Your project's chant needs to resolve build parameters in `chant graph`, which landed in chant 0.38.0. A caret on a `0.x` pins the minor, so `^0.37.x` cannot reach it. Bump to `^0.38.0`.

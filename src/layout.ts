@@ -1,34 +1,40 @@
 /**
- * The hand-layout sidecar (#228, server half) — `.behold/layout.json` inside
- * the served project, and the delta→SVG math that makes an export honour it.
+ * The hand layout (#228, server half; #469 moved it out of the project): one
+ * per-user cache file per served project, and the delta->SVG math that makes
+ * an export honour it.
  *
- * THE WRITE BOUNDARY. This module is the ONLY place behold writes into a
- * served project, and it writes exactly one file: `<projectDir>/.behold/
- * layout.json` (through a sibling `.tmp` it renames over). No path here comes
- * from a request — the directory is `cfg.projectDir`, the basename is a
- * constant, and a lens key from the wire is slugged to `[a-z0-9+-]` before it
- * is ever used, and even then only as a JSON object key, never as a path
- * segment. Nothing else in the project is read for writing, created, or
- * removed.
+ * WHERE IT LIVES. Under the OS user cache directory, never in the served
+ * project (the 2026-10-23 ruling on #469: behold writes nothing in a served
+ * project). The file is `<cache>/behold/layouts/<key>.json`, where `<cache>`
+ * is `~/Library/Caches` on macOS, `%LOCALAPPDATA%` on Windows and
+ * `$XDG_CACHE_HOME` (or `~/.cache`) elsewhere, and `<key>` is the first 32 hex
+ * characters of the sha256 of the project directory's realpath. Same
+ * placement rules as the MCP serve registry (src/serve-registry.ts): the
+ * directory is the user's own (0700, files 0600), and `BEHOLD_CACHE_DIR`
+ * replaces `<cache>/behold` (the tests use it). It is a cache in the full
+ * sense: deleting it loses one operator's arrangement and nothing else.
  *
- * That is deliberately a much smaller claim than "behold writes now". The
- * invariant stands: behold never mutates the cloud, and never mutates your
- * chant source. A layout sidecar is workspace metadata about how YOU want the
- * picture arranged — the same category as an editor's fold state — and it is
- * per-user, so a project that tracks `.behold.json` (config, shared) should
- * still ignore `.behold/` (state, yours). See README "Configuration".
+ * MIGRATION. A project served before #469 may carry `.behold/layout.json`.
+ * When the cache has no file for the project, that old file is read once and
+ * its lenses copied into the cache; after that only the cache is read. The old
+ * file is never written, moved or deleted.
+ *
+ * No path here comes from a request: the key is a hash of `cfg.projectDir`
+ * (or the workspace root), and a lens key from the wire is slugged to
+ * `[a-z0-9+-]` before it is used, and then only as a JSON object key.
  *
  * The file:
- *   { "version": 1, "lenses": { "<lens>": { "<node id>": {dx,dy,dw,dh} } } }
+ *   { "version": 1, "projectDir": "<realpath>", "lenses": { "<lens>": { "<node id>": {dx,dy,dw,dh} } } }
  *
- * Deltas, never absolute positions — see web/layout-store.js for why that
- * ordering matters. `<lens>` is the same key shape the client's `lensKeyOf`
- * builds (zoom stop + `+radial` / `+stack-<name>`); the project half of the
- * client's localStorage key is implicit here, because the file lives in the
- * project.
+ * `projectDir` is there for a person reading the cache; it is not trusted on
+ * read. Deltas, never absolute positions: see web/layout-store.js for why
+ * that ordering matters. `<lens>` is the same key shape the client's
+ * `lensKeyOf` builds (zoom stop + `+radial` / `+stack-<name>`).
  */
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync, accessSync, constants } from "node:fs";
-import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { accessSync, chmodSync, constants, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { isAbsolute, join, resolve } from "node:path";
 
 export interface LayoutDelta {
   dx?: number;
@@ -42,9 +48,10 @@ export interface LayoutFile {
   lenses: Record<string, LayoutDeltas>;
 }
 
-/** The sidecar's directory name inside the served project. */
-export const LAYOUT_DIR = ".behold";
-export const LAYOUT_FILE = "layout.json";
+/** Where layouts were kept before #469: `<projectDir>/.behold/layout.json`.
+ * Read once for migration, never written. */
+export const LEGACY_LAYOUT_DIR = ".behold";
+export const LEGACY_LAYOUT_FILE = "layout.json";
 
 /** Caps. A hand layout is a few dozen deltas; everything above is a mistake or
  * an attack, and either way the answer is a polite refusal, not a 40MB file in
@@ -122,13 +129,50 @@ export function lensFromQuery(params: URLSearchParams): string {
   return [slug(zoom), params.get("radial") === "1" ? "radial" : null, stack ? slug(`stack-${stack}`) : null].filter(Boolean).join("+");
 }
 
-export function layoutPath(projectDir: string): string {
-  return join(projectDir, LAYOUT_DIR, LAYOUT_FILE);
+/** The OS's per-user cache directory (not behold's own subdirectory). */
+export function userCacheDir(platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env, home: string = homedir()): string {
+  if (platform === "darwin") return join(home, "Library", "Caches");
+  if (platform === "win32") return env.LOCALAPPDATA || join(home, "AppData", "Local");
+  const xdg = env.XDG_CACHE_HOME;
+  return xdg && isAbsolute(xdg) ? xdg : join(home, ".cache");
 }
 
-/** Why this project can't take a layout write, or null when it can. The
- * preview/static gates live in server.ts (they're about the MODE, not the
- * directory); this is the directory's own answer. */
+/** behold's cache root: `BEHOLD_CACHE_DIR`, else `<user cache>/behold`. */
+export function beholdCacheDir(): string {
+  return process.env.BEHOLD_CACHE_DIR || join(userCacheDir(), "behold");
+}
+
+/** Where the layout files live. */
+export function layoutCacheDir(root: string = beholdCacheDir()): string {
+  return join(root, "layouts");
+}
+
+function realDir(dir: string): string {
+  try {
+    return realpathSync(resolve(dir));
+  } catch {
+    return resolve(dir);
+  }
+}
+
+/** A project's cache key: sha256 of its realpath, 32 hex characters. */
+export function layoutKey(projectDir: string): string {
+  return createHash("sha256").update(realDir(projectDir)).digest("hex").slice(0, 32);
+}
+
+/** The cache file holding a project's layout. Outside the project, always. */
+export function layoutPath(projectDir: string, root?: string): string {
+  return join(layoutCacheDir(root), `${layoutKey(projectDir)}.json`);
+}
+
+/** The pre-#469 location, inside the project. Only ever read. */
+export function legacyLayoutPath(projectDir: string): string {
+  return join(projectDir, LEGACY_LAYOUT_DIR, LEGACY_LAYOUT_FILE);
+}
+
+/** Why this project directory can't be written, or null when it can. Used by
+ * carve mode's demo copy (src/carve-actions.ts); the layout no longer writes
+ * into a project, so the layout routes ask `layoutUnwritableReason`. */
 export function unwritableReason(projectDir: string): string | null {
   if (!projectDir || !existsSync(projectDir)) return `no such project directory: ${projectDir || "(none)"}`;
   try {
@@ -139,70 +183,122 @@ export function unwritableReason(projectDir: string): string | null {
   return null;
 }
 
-/** Read the whole sidecar. Missing, oversized, unparseable, or the wrong shape
- * all read as empty — a layout is a nicety and must never break a render. */
-export function readLayoutFile(projectDir: string): LayoutFile {
-  const empty: LayoutFile = { version: 1, lenses: {} };
-  const file = layoutPath(projectDir);
+/** Why a layout for this project can't be saved, or null when it can: the
+ * project has to exist (a cache for nothing is a leak), and the cache
+ * directory has to be writable. */
+export function layoutUnwritableReason(projectDir: string, root?: string): string | null {
+  if (!projectDir || !existsSync(projectDir)) return `no such project directory: ${projectDir || "(none)"}`;
+  const dir = layoutCacheDir(root);
   try {
-    if (!existsSync(file)) return empty;
-    const raw = readFileSync(file, "utf8");
-    if (raw.length > MAX_FILE_BYTES) return empty;
-    const parsed = JSON.parse(raw) as { lenses?: unknown };
-    if (!parsed || typeof parsed !== "object" || !parsed.lenses || typeof parsed.lenses !== "object") return empty;
-    const lenses: Record<string, LayoutDeltas> = {};
-    for (const [lens, deltas] of Object.entries(parsed.lenses as Record<string, unknown>)) {
-      const key = normalizeLens(lens);
-      if (!key) continue;
-      const clean = normalizeDeltas(deltas);
-      if (Object.keys(clean).length) lenses[key] = clean;
-      if (Object.keys(lenses).length >= MAX_LENSES) break;
-    }
-    return { version: 1, lenses };
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    accessSync(dir, constants.W_OK);
   } catch {
-    return empty;
+    return `the layout cache ${dir} isn't writable`;
+  }
+  return null;
+}
+
+/** Parse a layout file's text. Oversized, unparseable or the wrong shape all
+ * read as null. */
+function parseLayout(raw: string): LayoutFile | null {
+  if (raw.length > MAX_FILE_BYTES) return null;
+  const parsed = JSON.parse(raw) as { lenses?: unknown };
+  if (!parsed || typeof parsed !== "object" || !parsed.lenses || typeof parsed.lenses !== "object") return null;
+  const lenses: Record<string, LayoutDeltas> = {};
+  for (const [lens, deltas] of Object.entries(parsed.lenses as Record<string, unknown>)) {
+    const key = normalizeLens(lens);
+    if (!key) continue;
+    const clean = normalizeDeltas(deltas);
+    if (Object.keys(clean).length) lenses[key] = clean;
+    if (Object.keys(lenses).length >= MAX_LENSES) break;
+  }
+  return { version: 1, lenses };
+}
+
+function readParsed(file: string): LayoutFile | null {
+  try {
+    return existsSync(file) ? parseLayout(readFileSync(file, "utf8")) : null;
+  } catch {
+    return null;
   }
 }
 
+/** Write a project's cache file through a sibling `.tmp` + rename. */
+function writeCache(projectDir: string, lenses: Record<string, LayoutDeltas>, root?: string): number {
+  const body = JSON.stringify({ version: 1, projectDir: realDir(projectDir), lenses }, null, 2) + "\n";
+  if (body.length > MAX_FILE_BYTES) throw new LayoutTooLarge(`a layout is capped at ${MAX_FILE_BYTES} bytes`);
+  const file = layoutPath(projectDir, root);
+  mkdirSync(layoutCacheDir(root), { recursive: true, mode: 0o700 });
+  const tmp = `${file}.${process.pid}.tmp`;
+  writeFileSync(tmp, body, { encoding: "utf8", mode: 0o600 });
+  renameSync(tmp, file);
+  try {
+    chmodSync(file, 0o600);
+  } catch {
+    /* best-effort */
+  }
+  return body.length;
+}
+
+/** Replace a project's whole layout in the cache (doctor --fix uses it to
+ * carry a loose estate's layout to its workspace root). */
+export function writeLayoutFile(projectDir: string, file: LayoutFile, root?: string): string {
+  writeCache(projectDir, file.lenses, root);
+  return layoutPath(projectDir, root);
+}
+
+/** Whether the cache already holds a layout for this project. */
+export function hasCachedLayout(projectDir: string, root?: string): boolean {
+  return existsSync(layoutPath(projectDir, root));
+}
+
+/** Read a project's whole layout. The cache file when there is one; else
+ * the pre-#469 `.behold/layout.json`, copied into the cache so it is read only
+ * this once (best-effort: a cache that can't be written just means it's read
+ * again next time). Missing, oversized, unparseable or the wrong shape all
+ * read as empty: a layout is a nicety and must never break a render. */
+export function readLayoutFile(projectDir: string, root?: string): LayoutFile {
+  const empty: LayoutFile = { version: 1, lenses: {} };
+  if (!projectDir) return empty;
+  if (hasCachedLayout(projectDir, root)) return readParsed(layoutPath(projectDir, root)) ?? empty;
+  const legacy = readParsed(legacyLayoutPath(projectDir));
+  if (!legacy) return empty;
+  try {
+    writeCache(projectDir, legacy.lenses, root);
+  } catch {
+    /* read again next time */
+  }
+  return legacy;
+}
+
 /** One lens's deltas — `{}` when the file, the lens, or the disk isn't there. */
-export function readLens(projectDir: string, lens: string): LayoutDeltas {
+export function readLens(projectDir: string, lens: string, root?: string): LayoutDeltas {
   const key = normalizeLens(lens);
   if (!key) return {};
-  return readLayoutFile(projectDir).lenses[key] ?? {};
+  return readLayoutFile(projectDir, root).lenses[key] ?? {};
 }
 
 export class LayoutTooLarge extends Error {}
 
 /**
- * Replace one lens's deltas and persist. An empty map drops the lens; the last
- * lens leaving drops the file. Writes through a sibling `.tmp` + rename so a
- * crash mid-write can't leave a half-written sidecar behind.
+ * Replace one lens's deltas and persist them to the project's cache file. An
+ * empty map drops the lens. The file stays even when the last lens leaves, so
+ * an old `.behold/layout.json` is not migrated back in over a cleared layout.
  *
  * Returns what was actually stored (normalized), so the caller echoes truth
  * rather than the request.
  */
-export function writeLens(projectDir: string, lens: string, deltas: unknown): { lens: string; deltas: LayoutDeltas; bytes: number } {
+export function writeLens(projectDir: string, lens: string, deltas: unknown, root?: string): { lens: string; deltas: LayoutDeltas; bytes: number } {
   const key = normalizeLens(lens);
   if (!key) throw new Error(`not a lens key: ${String(lens)}`);
   const clean = normalizeDeltas(deltas);
-  const current = readLayoutFile(projectDir);
+  const current = readLayoutFile(projectDir, root);
   const lenses = { ...current.lenses };
   if (Object.keys(clean).length) lenses[key] = clean;
   else delete lenses[key];
-  if (Object.keys(lenses).length > MAX_LENSES) throw new LayoutTooLarge(`a layout sidecar holds at most ${MAX_LENSES} lenses`);
-
-  const file = layoutPath(projectDir);
-  if (!Object.keys(lenses).length) {
-    rmSync(file, { force: true });
-    return { lens: key, deltas: clean, bytes: 0 };
-  }
-  const body = JSON.stringify({ version: 1, lenses }, null, 2) + "\n";
-  if (body.length > MAX_FILE_BYTES) throw new LayoutTooLarge(`a layout sidecar is capped at ${MAX_FILE_BYTES} bytes`);
-  mkdirSync(join(projectDir, LAYOUT_DIR), { recursive: true });
-  const tmp = `${file}.tmp`;
-  writeFileSync(tmp, body, "utf8");
-  renameSync(tmp, file);
-  return { lens: key, deltas: clean, bytes: body.length };
+  if (Object.keys(lenses).length > MAX_LENSES) throw new LayoutTooLarge(`a layout holds at most ${MAX_LENSES} lenses`);
+  const bytes = writeCache(projectDir, lenses, root);
+  return { lens: key, deltas: clean, bytes };
 }
 
 // --- The delta → SVG math ---------------------------------------------------

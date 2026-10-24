@@ -179,7 +179,7 @@ describe("POST /api/view (#914)", () => {
       expect(Date.parse(ev.movedAt)).not.toBeNaN();
     }
     for (const t of tabs) await t.close();
-    // Nothing in the project, .behold/layout.json included.
+    // Nothing in the project (#469: behold writes nothing there at all).
     expect(tree(dir)).toEqual(before);
   });
 
