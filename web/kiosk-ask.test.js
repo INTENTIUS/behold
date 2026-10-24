@@ -32,10 +32,10 @@ describe("typing (behold#936)", () => {
   it("shows everything at once with reduced motion", () => {
     expect(typedChars(10, 0, { reduced: true })).toBe(10);
   });
-  it("types a prompt at about 65 ms a character after a 600 ms cursor, and a reply at about 25", () => {
-    expect(TYPE_MS).toBe(65);
+  it("types a prompt at about 90 ms a character after a 600 ms cursor, and a reply at about 35", () => {
+    expect(TYPE_MS).toBe(90);
     expect(CURSOR_PAUSE_MS).toBe(600);
-    expect(REPLY_TYPE_MS).toBe(25);
+    expect(REPLY_TYPE_MS).toBe(35);
     expect(BUSY_MIN_MS).toBe(1200);
     expect(ELLIPSIS_MS).toBe(400);
   });

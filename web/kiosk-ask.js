@@ -49,11 +49,11 @@
  */
 
 /** Milliseconds per typed character of a prompt (a phone viewer has to be able to read it as it comes). */
-export const TYPE_MS = 65;
+export const TYPE_MS = 90;
 /** The blinking cursor shows alone this long before a prompt starts to type. */
 export const CURSOR_PAUSE_MS = 600;
 /** Milliseconds per character of a reply, which types faster than the person. */
-export const REPLY_TYPE_MS = 25;
+export const REPLY_TYPE_MS = 35;
 /** The busy line shows at least this long before a reply types, and before a status-only step lets the graph go. */
 export const BUSY_MIN_MS = 1200;
 /** From a beat's end to the next beat's start. */
