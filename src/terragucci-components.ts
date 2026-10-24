@@ -213,3 +213,47 @@ export function componentRootMap(decl: TerragucciComponents): Record<string, str
   }
   return out;
 }
+
+/**
+ * The component DAG of a declaration, in the shape `chant graph --components
+ * --format ir` emits: one `Component` node per declared component, a `ref`
+ * edge from each consumer to what it `dependsOn`, and `groups.byWave` (wave
+ * 1 holds the components with no dependency; any other sits one wave after its
+ * deepest dependency).
+ *
+ * behold draws this itself rather than asking chant. chant's graph gate
+ * refuses to emit when the scratch project's lint finds errors, and the
+ * scratch project holds the repo's real roots, so a demo whose providers carry
+ * literal test credentials (TF008) is refused at the components zoom even with
+ * `graph.lint: "report"`, which the components path ignores. The declaration
+ * is all there is to read, so there is nothing for chant to add.
+ */
+export function componentsIrFromDeclaration(decl: TerragucciComponents): GraphIR {
+  const byName = new Map(decl.components.map((c) => [c.name, c]));
+  const waveOf = new Map<string, number>();
+  const visiting = new Set<string>();
+  const wave = (name: string): number => {
+    const known = waveOf.get(name);
+    if (known !== undefined) return known;
+    // A cycle is not drawable as waves; break it rather than recurse forever.
+    if (visiting.has(name)) return 1;
+    visiting.add(name);
+    const deps = (byName.get(name)?.dependsOn ?? []).filter((d) => byName.has(d) && d !== name);
+    const w = deps.length ? 1 + Math.max(...deps.map(wave)) : 1;
+    visiting.delete(name);
+    waveOf.set(name, w);
+    return w;
+  };
+  const nodes = decl.components.map((c) => ({
+    id: c.name,
+    kind: "Component",
+    lexicon: "chant",
+    attrs: { wave: wave(c.name), liveNames: [c.name], archetype: "infra" },
+    sourceLoc: { file: TERRAGUCCI_COMPONENT_MODULE },
+  }));
+  const edges = decl.components.flatMap((c) => c.dependsOn.filter((d) => byName.has(d) && d !== c.name).map((d) => ({ from: c.name, to: d, kind: "ref" })));
+  const byWave: Record<string, string[]> = {};
+  for (const n of nodes) (byWave[`wave-${n.attrs.wave}`] ??= []).push(n.id);
+  const sorted = Object.fromEntries(Object.entries(byWave).sort(([a], [b]) => Number(a.slice(5)) - Number(b.slice(5))));
+  return { version: 1, nodes, edges, groups: { byWave: sorted } } as unknown as GraphIR;
+}
