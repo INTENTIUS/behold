@@ -281,8 +281,9 @@ function fakeDoc() {
       prepend(c) {
         n.appendChild(c);
       },
-      replaceChildren() {
+      replaceChildren(...kids) {
         n.children = [];
+        for (const k of kids) n.appendChild(k);
       },
       setAttribute() {},
       addEventListener(ev, fn) {

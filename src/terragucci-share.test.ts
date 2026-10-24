@@ -43,15 +43,11 @@ describe("link previews (behold#571)", () => {
     expect(html.indexOf('property="og:image"')).toBeLessThan(html.indexOf("</head>"));
   });
 
-  it("gives each tool's page its own title and URL, and the tool's tag stays", async () => {
+  it("sends each tool's path to /, where the live demo's preview is", async () => {
     for (const tool of VENDOR_TOOLS) {
-      const html = await (await app().request(`https://x/${tool}`, { headers: { host: HOST, "x-forwarded-proto": "https" } })).text();
-      const m = metas(html);
-      expect(m["og:title"]).toBe(`behold · ${VENDOR_NAMES[tool]}`);
-      expect(m["og:url"]).toBe(`https://${HOST}/${tool}`);
-      expect(m["og:image"]).toBe(`https://${HOST}/share.png`);
-      expect(m["kiosk-tool"]).toBe(tool);
-      expect(html).toContain(`<title>behold · ${VENDOR_NAMES[tool]}</title>`);
+      const r = await app().request(`https://x/${tool}`, { headers: { host: HOST, "x-forwarded-proto": "https" }, redirect: "manual" });
+      expect(r.status).toBe(302);
+      expect(r.headers.get("location")).toBe("/");
     }
   });
 
@@ -59,7 +55,7 @@ describe("link previews (behold#571)", () => {
     // The request guard refuses such a request before any route.
     expect((await app().request("http://x/kiosk", { headers: { host: "evil.example" } })).status).toBe(421);
     // And the tags never echo one: loopback is let in, but isn't on the allowed list.
-    for (const path of ["/", "/terragrunt-choudoufu"]) {
+    for (const path of ["/"]) {
       const html = await (await app().request(`http://x${path}`, { headers: { host: "localhost:4600", "x-forwarded-proto": "https" } })).text();
       const m = metas(html);
       expect(m["og:title"]).toBeTruthy();
