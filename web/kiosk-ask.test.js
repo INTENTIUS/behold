@@ -175,7 +175,7 @@ describe("createAskPane: a session of turns", () => {
   const flat = (n) => [n.textContent, ...n.children.map(flat)].join("|");
   const T0 = Date.parse("2026-10-24T10:00:00Z");
   const demo = (step, extra = {}) => ({ cycle: 1, scenario: "compose-edit", step, started_at: "2026-10-24T10:00:00Z", next: null, ...extra });
-  const names = (events) => events.map((e) => e[0]);
+  const names = (events) => events.map((e) => e[0]).filter((n) => n !== "behold:ask-busy");
   function make(clock, reduced = false) {
     const events = [];
     const win = { dispatchEvent: (e) => events.push([e.type, e.detail]) };
@@ -225,6 +225,27 @@ describe("createAskPane: a session of turns", () => {
     expect(names(events)).toEqual(["behold:ask-hold", "behold:ask-start", "behold:ask-done"]);
     expect(flat(host)).toContain("All 3 states.");
     expect(events[1][1]).toEqual({ ask, step: "planned", scenario: "compose-edit" });
+  });
+  it("tells the tip cards when a busy line shows and when it ends (ask-busy)", () => {
+    const clock = { t: T0 };
+    const { pane, events, tick } = make(clock);
+    const tips = [{ title: "t", body: "b" }];
+    const busy = () => events.filter((e) => e[0] === "behold:ask-busy").map((e) => [e[1].busy, e[1].tips]);
+    // A status-only step: busy at once, with the status's tips.
+    pane.setStep(demo("applying", { ask: { status: "Applying", tips } }));
+    expect(busy()).toEqual([[true, tips]]);
+    clock.t += BUSY_MIN_MS + 10;
+    tick();
+    // The next step is a turn: the status line ends, and no busy shows while the prompt types.
+    pane.setStep(demo("planned", { ask: { prompt: "go", status: "Planning", reply: "ok", tips: [{ title: "x", body: "y" }] } }));
+    expect(busy()).toEqual([[true, tips], [false, null]]);
+    // The turn's wait, then its reply: the busy event follows the busy line only.
+    clock.t += CURSOR_PAUSE_MS + 2 * TYPE_MS + 100;
+    tick();
+    expect(busy().slice(2)).toEqual([[true, [{ title: "x", body: "y" }]]]);
+    clock.t += BUSY_MIN_MS + 10;
+    tick();
+    expect(busy().slice(3)).toEqual([[false, null]]);
   });
   it("lights the edge again between beats and once a reply is done, while another prompt can follow", () => {
     const clock = { t: T0 };

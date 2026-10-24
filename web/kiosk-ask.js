@@ -362,6 +362,8 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
   let wanted = null;
   // The status that is a busy line of its own: one that no beat with a line or a reply carries (that beat's busy line shows it).
   let tail = null;
+  let tailTips;
+  let busyId = null;
   let startedAt = 0;
   let started = -1;
   let finished = -1;
@@ -379,6 +381,12 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
 
   const emit = (type, detail) => {
     if (win && typeof win.dispatchEvent === "function" && typeof CustomEvent === "function") win.dispatchEvent(new CustomEvent(type, { detail }));
+  };
+  /** `behold:ask-busy` whenever the busy line changes: `{ busy, id, tips, cycle, scenario, step }` (id null when none shows). */
+  const setBusy = (id, part) => {
+    if (id === busyId) return;
+    busyId = id;
+    emit("behold:ask-busy", { busy: id !== null, id, tips: part && part.tips ? part.tips : null, cycle: demo ? demo.cycle : null, scenario: demo ? demo.scenario : null, step: demo ? demo.step : null });
   };
   const detailOf = (beat) => ({ ask: beat, step: demo.step, scenario: demo.scenario });
   const el = (cls, text) => {
@@ -442,7 +450,7 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
     for (const f of pb.frames) {
       const beat = beats[f.index];
       const tn = f.lined || beat.note ? { mark: f.mark, text: f.text, note: !!beat.note, typing: f.typing || f.ready, ready: f.ready, parts: [] } : { cont: true, mark: "", text: "", parts: [] };
-      if (f.busy) tn.parts.push({ k: "busy", label: label(beat), since: startedAt + f.busySince });
+      if (f.busy) tn.parts.push({ k: "busy", label: label(beat), since: startedAt + f.busySince, tips: beat.tips, bid: `b${f.index}` });
       else if (f.sumSecs !== null) tn.parts.push({ k: "sum", label: label(beat), secs: f.sumSecs });
       if (f.replied) tn.parts.push({ k: "reply", text: (replies[f.index] || "").slice(0, f.replyChars), typing: f.replyTyping });
       turns.push(tn);
@@ -453,7 +461,7 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
     if (pb.done && tail && !(last && last.busy)) {
       const since = beats.length ? startedAt + pb.end : Math.min(t, elapsedSince());
       busyAt = since - startedAt;
-      const part = { k: "busy", label: busyLabel(tail), since };
+      const part = { k: "busy", label: busyLabel(tail), since, tips: tailTips, bid: "tail" };
       if (turns.length) turns[turns.length - 1].parts.push(part);
       else turns.push({ cont: true, mark: "", text: "", parts: [part] });
     }
@@ -512,6 +520,9 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
       if (tail) emit("behold:ask-status", { status: tail, step: demo.step, scenario: demo.scenario });
       else if (!beats.some((x) => !x.note && (x.prompt || x.action || x.reply))) emit("behold:ask-clear", { step: demo.step, scenario: demo.scenario });
     }
+    // behold#tips: the busy line showing now (a status-only step's, or a turn's wait), for the tip cards (web/kiosk-ask-tips.js).
+    const bp = b.turns.flatMap((x) => x.parts).find((p) => p.k === "busy");
+    setBusy(bp ? `${key}|${bp.bid}` : null, bp);
     const view = { turns: mergeTurns(transcript, b.turns), ready: b.ready, hostReady: b.hostReady };
     lastView = view;
     const next = JSON.stringify([view.turns.slice(-(MAX_TURNS)).map((x) => [x.mark, x.text, x.typing, x.ready, x.parts.map((p) => [p.k, p.label, p.secs, p.text, p.typing])]), view.ready, view.hostReady]);
@@ -579,6 +590,8 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
     if (d && d.closing && d.step === CLOSING_STEP) beats.push({ note: d.closing });
     wanted = statusText(d);
     const lastStatus = asked.filter((a) => typeof a.status === "string" && a.status.trim()).pop();
+    const withTips = asked.filter((a) => a.tips && a.tips.length).pop();
+    tailTips = (lastStatus && lastStatus.tips) || (withTips && withTips.tips) || undefined;
     tail = wanted && !(lastStatus && (lastStatus.prompt || lastStatus.action || lastStatus.reply)) ? wanted : null;
     started = -1;
     finished = -1;
@@ -600,6 +613,7 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
       draw();
       if (timer === null && demo === d) timer = setTimer(draw, 40);
     } else {
+      setBusy(null, null);
       host.replaceChildren();
       if (host.classList && host.classList.remove) host.classList.remove("ask-ready");
       if (host.style) host.style.minHeight = "";
