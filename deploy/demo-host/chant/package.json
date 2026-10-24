@@ -15,9 +15,9 @@
     "tsc": "tsc --noEmit"
   },
   "dependencies": {
-    "@intentius/chant": "0.124.49",
-    "@intentius/chant-lexicon-aws": "0.124.49",
-    "@intentius/chant-lexicon-docker": "0.124.49"
+    "@intentius/chant": "0.124.50",
+    "@intentius/chant-lexicon-aws": "0.124.50",
+    "@intentius/chant-lexicon-docker": "0.124.50"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
