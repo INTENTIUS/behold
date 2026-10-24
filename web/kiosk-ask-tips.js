@@ -48,13 +48,13 @@ export function safeLink(l) {
 
 /**
  * What a busy step with no tips of its own shows, in order: the viewer's takeaways, then where to look next. Minimal
- * and positive, and linted clean at strictness 3 with the sentences package's destink linter.
+ * and positive, and each linted clean on its own at strictness 3 with the sentences package's destink linter.
  */
 export const DEFAULT_TIPS = [
-  { title: "All at once", body: "Every estate plans together, the new subnet's id included. Most tools go one root at a time.", link: { label: "How it plans across estates", url: "https://intentius.io/choudoufu/how-it-works/across-estates/" } },
+  { title: "All at once", body: "Every estate plans together, and the plan already holds the new subnet's id. Most tools go one root at a time.", link: { label: "How it plans across estates", url: "https://intentius.io/choudoufu/how-it-works/across-estates/" } },
   { title: "terragucci", body: "terragucci runs stock Terraform and OpenTofu in waves from your own pipeline.", link: { label: "How waves work", url: "https://intentius.io/terragucci/concepts/waves-and-approvals/" } },
   { title: "choudoufu", body: "choudoufu is a fork of OpenTofu. It plans and applies every estate in one pass. Resource-level locking at the cloud level.", link: { label: "How the locking works", url: "https://intentius.io/choudoufu/how-it-works/locking/" } },
-  { title: "Free, nothing to host", body: "Free and open source. Everything runs in your CI pipeline: no server, no database.", link: { label: "choudoufu on GitHub", url: "https://github.com/INTENTIUS/choudoufu" } },
+  { title: "Free, nothing to host", body: "Both are free and open source. Everything runs in your own CI pipeline. There is no server or database to host.", link: { label: "choudoufu on GitHub", url: "https://github.com/INTENTIUS/choudoufu" } },
   { title: "Inspect", body: "Open Inspect to explore every resource and the plan behind it." },
 ];
 /** The same, on a phone: the last card says this is the short version. */
