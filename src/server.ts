@@ -72,7 +72,7 @@ import { ChantDemo, chantDemoRoutes } from "./chant-demo.ts";
 import { ciReportUrlOf, ciRunsRoutes, readCiRunIndex, type CiRunEntry } from "./ci-run-index.ts";
 import { localRunRoutes } from "./ci-local-run.ts";
 import type { GitRun } from "./terragucci-lifecycle.ts";
-import { TERRAGUCCI_COMPONENTS_FILE, componentJobs, componentRootMap, readTerragucciComponents, waveTitles, type TerragucciComponents } from "./terragucci-components.ts";
+import { TERRAGUCCI_COMPONENTS_FILE, componentJobs, componentsIrFromDeclaration, componentRootMap, readTerragucciComponents, waveTitles, type TerragucciComponents } from "./terragucci-components.ts";
 import { hasTerragruntUnits } from "./terragrunt-units.ts";
 import { summarizePlan } from "./reconcile.ts";
 import { renderGraph, renderArchitecture, renderBanded, renderCarveEstate, renderCarveMorph, renderMoveMorph } from "./render.ts";
@@ -174,7 +174,7 @@ import { readWhy, whyRegion, withChain } from "./workspace-why.ts";
 import { floorFor, floorMet, floorRefusal } from "./chant-floors.ts";
 import { allowedHostsFrom, guardRequest } from "./request-guard.ts";
 import { applyMemberPasses, memberKindOf, memberKindSpec, memberPassNote, servesAsEstate, type MemberPassRun } from "./member-kind.ts";
-import { TerraformReadError, terraformMemberProject, terraformMemberWorkspace, terraformReaderState, terraformVia } from "./terraform-member.ts";
+import { TerraformReadError, terraformMemberWorkspace, terraformReaderState, terraformVia } from "./terraform-member.ts";
 import { paintTerraformPlan, readTerraformPlan, terraformPlanNote, type MemberPlanAnswer, type PlanReadDeps, type TerraformPlanRead } from "./terraform-plan.ts";
 import { normalizeTerraformNodes } from "./terraform-lens.ts";
 import { invalidateMember, memberIr, memberIrCacheStats, memberSourceStamp } from "./member-ir.ts";
@@ -2687,10 +2687,11 @@ export function createApp(
 
   /** #571: the components picture of a terragucci repo — see the graph route. */
   const terragucciComponentsGraph = async (decl: TerragucciComponents, opts: GraphOptions, { childBlocks = false, row = false }: { childBlocks?: boolean; row?: boolean } = {}) => {
-    const state = terraformReaderState();
-    if (state.refusal) throw new TerraformReadError(state.refusal, cfg.projectDir);
-    const { project } = terraformMemberProject(cfg.projectDir);
-    const ir = await componentGraphIr(project, tierTargetOpts(opts));
+    // Drawn from the declaration, not from `chant graph --components` over the
+    // scratch project: that call refuses when lint finds errors in the repo's
+    // roots (a demo's literal test credentials, TF008), and the declaration
+    // already says everything the picture shows.
+    const ir = componentsIrFromDeclaration(decl);
     const titles = waveTitles(ir, decl);
     // behold#571: the forge and the tools, for each wave box's marks (src/pipeline-marks.ts).
     const forge = pipelineForge(decl, cfg.projectDir, tgConfig());

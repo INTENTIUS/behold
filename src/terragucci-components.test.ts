@@ -14,6 +14,7 @@ import {
   TERRAGUCCI_COMPONENT_MODULE,
   componentJobs,
   componentRootMap,
+  componentsIrFromDeclaration,
   declaredRootScan,
   readTerragucciComponents,
   terragucciComponentModule,
@@ -168,5 +169,45 @@ describe("the facets (#571)", () => {
     expect(by.network!.map((r) => r.id)).toEqual(["network/terraform_data.release"]);
     expect(by.app!.map((r) => r.id)).toEqual(["app/data.terraform_remote_state.network"]);
     expect(by.edge).toEqual([]);
+  });
+});
+
+describe("the components graph from the declaration, never from chant", () => {
+  it("has one Component node per component, dependsOn edges consumer -> producer, and waves by depth", () => {
+    const ir = componentsIrFromDeclaration(decl());
+    expect(ir.nodes.map((n) => [n.id, n.kind, (n.attrs as { wave: number }).wave])).toEqual([
+      ["network", "Component", 1],
+      ["other", "Component", 1],
+      ["app", "Component", 2],
+      ["edge", "Component", 3],
+    ]);
+    expect(ir.edges.map((e) => `${e.from}->${e.to}`)).toEqual(expect.arrayContaining(["app->network", "edge->app"]));
+    expect((ir.groups as { byWave: Record<string, string[]> }).byWave).toEqual({ "wave-1": ["network", "other"], "wave-2": ["app"], "wave-3": ["edge"] });
+  });
+
+  it("matches the wave titles the jobs give, so the boxes keep their pipeline names", () => {
+    expect(waveTitles(componentsIrFromDeclaration(decl()), decl())).toEqual({ "wave-1": "apply-wave-1", "wave-2": "apply-wave-2", "wave-3": "apply-wave-3" });
+  });
+
+  it("ignores a dependsOn that names nothing and survives a cycle", () => {
+    const d = decl();
+    const odd: TerragucciComponents = {
+      ...d,
+      components: [
+        { name: "a", dependsOn: ["b", "ghost", "a"], deploy: [] },
+        { name: "b", dependsOn: ["a"], deploy: [] },
+      ],
+    };
+    const ir = componentsIrFromDeclaration(odd);
+    expect(ir.nodes).toHaveLength(2);
+    expect(ir.edges.map((e) => `${e.from}->${e.to}`).sort()).toEqual(["a->b", "b->a"]);
+  });
+
+  it("draws a repo whose roots carry lint errors (literal provider credentials), with no chant run", () => {
+    const dir = tmp();
+    cpSync(REPO, dir, { recursive: true });
+    writeFileSync(join(dir, "network", "main.tf"), 'provider "aws" {\n  access_key = "test"\n  secret_key = "test"\n}\n');
+    const ir = componentsIrFromDeclaration(readTerragucciComponents(dir)!);
+    expect(ir.nodes.map((n) => n.id)).toEqual(["network", "other", "app", "edge"]);
   });
 });
