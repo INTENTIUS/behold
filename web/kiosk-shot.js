@@ -264,11 +264,15 @@ export function heldFrame(held, { key, pane, insets = {}, target }) {
 /** How long after the last size change a refit waits, in ms: a drag or a Firefox resize burst refits once, at its end. */
 export const REFIT_WAIT_MS = 120;
 
+// The page's timers are called as methods of `timers`, and setTimeout is not a method of it: each is wrapped (a bare
+// `{ set: setTimeout }` throws "Illegal invocation" on the first call, and the trailing refit then never ran).
+export const PAGE_TIMERS = { set: (fn, ms) => setTimeout(fn, ms), clear: (id) => clearTimeout(id) };
+
 /**
  * `fn` run once, `wait` ms after the last call (trailing debounce). `.cancel()` drops a pending run. `timers` is for tests.
  * The refit it guards sets the view directly: it never changes the box the observers watch, so it cannot loop.
  */
-export function debounced(fn, wait = REFIT_WAIT_MS, timers = { set: setTimeout, clear: clearTimeout }) {
+export function debounced(fn, wait = REFIT_WAIT_MS, timers = PAGE_TIMERS) {
   let t = null;
   const run = (...args) => {
     if (t !== null) timers.clear(t);

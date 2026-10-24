@@ -191,3 +191,13 @@ export function drawScene(svg, model) {
   }
   svg.appendChild(scene);
 }
+
+/**
+ * Whether the scene drawn on `svg` should stay when its data goes missing: it is there, and the graph's own elements
+ * set aside under it hold no card to go back to (a composed run's graph has none, so going back is a blank pane).
+ */
+export function sceneHoldsOn(svg) {
+  if (!svg || !svg.__klStash || !svg.querySelector(":scope > [data-kl-scene]")) return false;
+  const own = svg.__klStash.some((el) => (el.hasAttribute && el.hasAttribute("data-node-id")) || (el.querySelector && el.querySelector("[data-node-id]")));
+  return !own;
+}
