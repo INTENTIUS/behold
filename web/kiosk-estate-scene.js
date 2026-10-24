@@ -10,17 +10,17 @@
 // The positions come from web/kiosk-ask-layout.js; the first two are pure.
 
 import { askLayout, orderRoots } from "./kiosk-ask-layout.js";
-import { applyOf, cardTitle, unknownSlots } from "./kiosk-light.js";
+import { applyOf, cardLines, cardTitle } from "./kiosk-light.js";
 
 /** What hangs under a card for each unknown value it carries (web/kiosk-light-frame.js drawSlots). */
 export const SLOT_ROW = 26;
 export const CARD_W = 340;
 export const CARD_H = 60;
 
-/** How many unknown slots each card id carries. */
+/** How many attribute lines (at most two) each card id carries. */
 export function slotCounts(plan) {
   const out = {};
-  for (const s of unknownSlots(plan)) if (s.cardId) out[s.cardId] = (out[s.cardId] || 0) + 1;
+  for (const s of cardLines(plan)) if (s.cardId) out[s.cardId] = (out[s.cardId] || 0) + 1;
   return out;
 }
 

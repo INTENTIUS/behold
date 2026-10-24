@@ -7,6 +7,7 @@
 //   behold:ask-start  detail { ask, step, scenario }  before the reply types; we set
 //                     window.beholdAskTokens = { dependents } so the reply can fill it.
 //   behold:ask-done   same detail, after the reply; we light the graph.
+//   behold:ask-status a step that carries only a status (no prompt): lit like ask-done.
 //   behold:ask-clear  a new step with no ask; the lighting goes.
 //
 // Everything is read from what the kiosk already holds: /api/terragucci (the
@@ -37,6 +38,17 @@ function addressOfBlock(block) {
 }
 
 /**
+ * The roots a step can light: the checkout's, then every estate the composed run names that the checkout does not list
+ * (the scene carries those). Each is `{ member, name, path }`.
+ */
+export function rootsOf(answer) {
+  const base = answer && Array.isArray(answer.roots) ? answer.roots : [];
+  const scene = answer && answer.estateScene && Array.isArray(answer.estateScene.roots) ? answer.estateScene.roots : [];
+  const extra = scene.filter((r) => r && !base.some((b) => b.path === r.path));
+  return [...base, ...extra];
+}
+
+/**
  * The plan as the kiosk's terragucci read holds it: the changed resources by
  * `<root>/<address>` (with the card each is, when the checkout has one), the
  * reads edges between roots, and the blast radius' resource reaches.
@@ -44,7 +56,7 @@ function addressOfBlock(block) {
 export function planOf(answer, progress = null) {
   const out = { roots: [], resources: new Map(), edges: [], reaches: new Map(), reads: [] };
   if (!answer || answer.error || !Array.isArray(answer.roots)) return out;
-  out.roots = answer.roots.map((r) => ({ path: r.path, member: r.member, name: r.name }));
+  out.roots = rootsOf(answer).map((r) => ({ path: r.path, member: r.member, name: r.name }));
   const rootAt = (id) => {
     let best = null;
     for (const r of answer.roots) {
@@ -109,6 +121,19 @@ export function planOf(answer, progress = null) {
   return out;
 }
 
+const TAG_PATHS = new Set(["tags", "tags_all"]);
+
+/**
+ * Whether a changed resource of a downstream root is one that depends on what the root reads: a resource the apply
+ * creates or replaces, or one whose changed attributes are more than its tags. A tag-only update (the estate's own
+ * bookkeeping, unknown at plan) depends on nothing upstream.
+ */
+export function dependsOnUpstream(res) {
+  if (res.action !== "update") return true;
+  const values = Array.isArray(res.values) ? res.values : [];
+  return !values.length || values.some((v) => !TAG_PATHS.has(v.path));
+}
+
 /**
  * Which resources a step lights. `ask.light` names seeds as `<root>/<address>`
  * (an unmatched one is skipped, never an error); `ask.paths` adds what is
@@ -145,7 +170,7 @@ export function selectLight(plan, ask) {
         queue.push(e.to);
       }
     }
-    for (const r of plan.resources.values()) if (roots.has(r.root) && !seeds.includes(r.key) && !seeds.some((s) => plan.resources.get(s).root === r.root)) downstream.add(r.key);
+    for (const r of plan.resources.values()) if (roots.has(r.root) && !seeds.includes(r.key) && !seeds.some((s) => plan.resources.get(s).root === r.root) && dependsOnUpstream(r)) downstream.add(r.key);
   }
   const lit = [...seeds, ...[...downstream].filter((k) => !seeds.includes(k))];
   const cards = lit.map((k) => plan.resources.get(k).cardId).filter(Boolean);
@@ -214,7 +239,7 @@ const LOOK_OF = { applied: "applied", "no-changes": "applied", partial: "partial
 
 /** Each root's state: `{ file, from, written, look }`. `look` is applied, partial, not-applied, or null while nothing is decided. */
 export function stateMarks(answer, progress) {
-  const roots = answer && Array.isArray(answer.roots) ? answer.roots.map((r) => r.path) : progress && Array.isArray(progress.reads) ? progress.reads.map((r) => r.root) : [];
+  const roots = answer && Array.isArray(answer.roots) ? rootsOf(answer).map((r) => r.path) : progress && Array.isArray(progress.reads) ? progress.reads.map((r) => r.root) : [];
   // behold#940: an estate of choudoufu's has no state file: it holds records, one per resource, written as each applies.
   const estate = !!(answer && answer.estateScene && Array.isArray(answer.estateScene.roots) && answer.estateScene.roots.length);
   const out = {};
@@ -269,6 +294,62 @@ export function unknownSlots(plan) {
   return slots;
 }
 
+/** The most attribute lines a card shows in ask mode. */
+export const MAX_CARD_LINES = 2;
+
+const isEmptyValue = (v) => v === undefined || v === null || (Array.isArray(v) && !v.length);
+const show = (v) => (typeof v === "string" ? v : JSON.stringify(v));
+
+/**
+ * The attribute lines a card shows in ask mode, at most MAX_CARD_LINES for each card id: the attributes that were
+ * unknown at plan and read another estate's value (the ones the root's reads name, `subnet_id`, `vpc_id`, and any
+ * attribute an `ask.light` address names as `<root>/<address>.<attribute>`), then the attributes whose known value
+ * changed. Every other attribute is left out. Each line is `{ key, cardId, root, address, path, kind, producer,
+ * producerRoot, producerName, before, after }` with kind `unknown` or `changed`.
+ */
+export function cardLines(plan, light = []) {
+  const named = new Map();
+  for (const w of Array.isArray(light) ? light : []) {
+    if (typeof w !== "string") continue;
+    for (const res of plan.resources.values()) if (w.startsWith(`${res.key}.`) || w.startsWith(`${bare(res.key)}.`)) {
+      const tail = w.slice(w.indexOf(res.key) === 0 ? res.key.length + 1 : bare(res.key).length + 1);
+      if (!named.has(res.key)) named.set(res.key, new Set());
+      named.get(res.key).add(tail);
+    }
+  }
+  const lines = [];
+  for (const res of plan.resources.values()) {
+    if (!res.cardId) continue;
+    const readNames = new Set(plan.reads.filter((r) => r.root === res.root).flatMap((r) => r.unknown || []));
+    const asked = named.get(res.key) || new Set();
+    const reads = res.values.filter((v) => v.unknown && !("before" in v) && (readNames.has(v.path) || asked.has(v.path) || v.path === "subnet_id" || v.path === "vpc_id"));
+    const rank = (v) => (asked.has(v.path) ? 0 : readNames.has(v.path) ? 1 : v.path === "subnet_id" ? 2 : 3);
+    reads.sort((a, b) => rank(a) - rank(b));
+    const changed = res.values.filter((v) => !v.unknown && "before" in v && "after" in v && !isEmptyValue(v.before) && JSON.stringify(v.before) !== JSON.stringify(v.after));
+    const producer = reads.length ? producerOf(plan, res) : res;
+    const row = (v, kind) => ({ key: res.key, cardId: res.cardId, root: res.root, address: res.address, path: v.path, kind, producer: producer.key, producerRoot: producer.root, producerName: producer.name, before: v.before, after: v.after });
+    for (const v of [...reads.map((x) => [x, "unknown"]), ...changed.map((x) => [x, "changed"])].slice(0, MAX_CARD_LINES)) lines.push(row(v[0], v[1]));
+  }
+  return lines;
+}
+
+/**
+ * A card line's look and words: unknown reads "known after apply" (amber, dashed); applied reads the real value (green),
+ * or the producer it was filled from when the apply report gives no value; a changed value reads `before -> after`.
+ * `{ state: "unknown" | "applied" | "changed", text }`.
+ */
+export function lineState(line, answer, progress) {
+  if (line.kind === "unknown") {
+    const st = slotState({ key: line.key, cardId: line.cardId, path: line.path, producer: line.producer, producerRoot: line.producerRoot }, answer, progress);
+    if (!st.filled) return { state: "unknown", text: `${line.path}: known after apply` };
+    const path = st.path || line.path;
+    return { state: "applied", text: st.value !== undefined ? `${path}: ${show(st.value)}` : `${line.path}: filled from ${line.producerName}` };
+  }
+  const a = applyOf(line.root, progress);
+  const done = !!a && (a.apply === "applied" || a.apply === "no-changes");
+  return { state: done ? "applied" : "changed", text: `${line.path}: ${show(line.before)} -> ${show(line.after)}` };
+}
+
 /**
  * Whether a slot has been filled, and with what. Filled once the producer's root
  * has applied (the run view's member or wave). Its value is shown only when an
@@ -303,6 +384,7 @@ export function lightMessage(sel, ask, token) {
     roots: sel ? sel.roots : [],
     lit: !!sel,
     ghost: !!(ask && ask.ghost === true),
+    light: ask && Array.isArray(ask.light) ? ask.light.filter((x) => typeof x === "string") : [],
     token,
   };
 }
@@ -347,6 +429,8 @@ export function startKioskLight({ post, getAnswer, getProgress, win = typeof win
     };
     attempt(0);
   };
+  // A step that carries only a status has no reply to wait for: it lights as soon as the pane says so.
+  const onStatus = (e) => onDone(e);
   const onClear = () => {
     n += 1;
     win.beholdAskTokens = {};
@@ -358,11 +442,13 @@ export function startKioskLight({ post, getAnswer, getProgress, win = typeof win
   };
   win.addEventListener("behold:ask-start", onStart);
   win.addEventListener("behold:ask-done", onDone);
+  win.addEventListener("behold:ask-status", onStatus);
   win.addEventListener("behold:ask-clear", onClear);
   win.addEventListener("message", onMessage);
   return () => {
     win.removeEventListener("behold:ask-start", onStart);
     win.removeEventListener("behold:ask-done", onDone);
+    win.removeEventListener("behold:ask-status", onStatus);
     win.removeEventListener("behold:ask-clear", onClear);
     win.removeEventListener("message", onMessage);
   };

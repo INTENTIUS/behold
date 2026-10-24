@@ -6,7 +6,7 @@ import { joinTerragucci, type CheckoutRoot } from "./terragucci-overlay.ts";
 import { readTerragucci, INDEX_SCHEMA } from "./terragucci-reports.ts";
 import { terragucciSource } from "./terragucci-source.ts";
 // @ts-expect-error the kiosk's browser modules have no declaration files
-import { dependentsOf, planOf, selectLight, slotState, stateMarks, stateWords, unknownSlots } from "../web/kiosk-light.js";
+import { cardLines, dependentsOf, lineState, planOf, selectLight, slotState, startKioskLight, stateMarks, stateWords, unknownSlots } from "../web/kiosk-light.js";
 // @ts-expect-error see above
 import { sceneModel } from "../web/kiosk-estate-scene.js";
 // @ts-expect-error see above
@@ -131,5 +131,106 @@ describe("a composed choudoufu run's scene (behold#940)", () => {
     write(d, "p/plan/report.json", plan);
     const read = await readTerragucci(terragucciSource(d), { roots: ROOTS.map((r) => r.path) });
     expect(joinTerragucci(read, [], ROOTS).estateScene).toBeUndefined();
+  });
+});
+
+// A real apply report of a create cycle (choudoufu-compose-create): network creates the subnet, app reads its id
+// through data.terraform_estate_outputs.network, edge reads app's dns_name. The checkout here lists only app and edge,
+// as a checkout whose network root is not found would: the scene still draws all three estates.
+describe("a real composed create report (behold#940)", () => {
+  const REAL = "report-chou-apply-real.json";
+  function realBucket(): string {
+    const d = mkdtempSync(join(tmpdir(), "behold-estate-real-"));
+    made.push(d);
+    const project = "forgejo:3000/terragucci-admin/demo-choudoufu-compose";
+    const commit = "67377db0864a0f156829607e916d5afdcfb5771c";
+    const apply = doc(REAL);
+    const plan = { ...doc(REAL), run: { ...apply.run, stage: "tf-plan", pull_request: "41", finished: "2026-10-24T15:20:00.000Z" } };
+    write(d, "p/plan/report.json", plan);
+    write(d, "p/apply/report.json", apply);
+    write(d, "index.json", {
+      schema: INDEX_SCHEMA,
+      reports: [
+        { project, commit, stage: "tf-plan", finished: "2026-10-24T15:20:00.000Z", path: "p/plan", pull_request: "41" },
+        { project, commit, stage: "tf-apply", wave: 1, finished: apply.run.finished, path: "p/apply", approval: "not-required", applied: apply.run.finished },
+      ],
+    });
+    return d;
+  }
+  async function realAnswer(rootNames: string[]) {
+    const roots: CheckoutRoot[] = rootNames.map((n) => ({ member: "demo", name: n, path: n }));
+    const read = await readTerragucci(terragucciSource(realBucket()), { roots: roots.map((r) => r.path) });
+    const marks = joinTerragucci(read, [], roots);
+    return { ...marks, roots: marks.roots.map((r) => ({ member: r.member, name: r.name, path: r.path })), pull_request: read.pull_request };
+  }
+  const ASK = { light: ["network/aws_subnet.subnet"], paths: true };
+
+  it("draws every estate the run names, the network one among them", async () => {
+    for (const names of [["network", "app", "edge"], ["app", "edge"]]) {
+      const a = await realAnswer(names);
+      expect(a.estateScene!.roots.map((r) => r.path).sort()).toEqual(["app", "edge", "network"]);
+      const m = sceneModel(a, planOf(a), null, { width: 390, height: 460 });
+      expect(m.roots.map((r: { path: string }) => r.path)).toEqual(["network", "app", "edge"]);
+      expect(m.roots[0].cards.map((c: { address: string }) => c.address)).toEqual(["aws_subnet.subnet"]);
+    }
+  });
+
+  it("counts what depends on the subnet: app's four and edge's dns_upstream", async () => {
+    const a = await realAnswer(["app", "edge"]);
+    const sel = selectLight(planOf(a), ASK);
+    expect(sel.seeds).toEqual(["network/aws_subnet.subnet"]);
+    expect(sel.dependents).toBe(5);
+    expect(dependentsOf(a, null, ASK)).toBe(5);
+    expect(sel.lit).not.toContain("app/aws_sqs_queue.listener");
+    expect(sel.lit).not.toContain("edge/aws_sqs_queue.upstream");
+    expect(sel.lit).toContain("edge/aws_sqs_queue.dns_upstream");
+  });
+
+  it("shows a card at most two lines: the values read from another estate, never the attribute dump", async () => {
+    const a = await realAnswer(["network", "app", "edge"]);
+    const lines = cardLines(planOf(a));
+    const by = (addr: string) => lines.filter((l: { address: string }) => l.address === addr).map((l: { path: string; kind: string }) => `${l.kind}:${l.path}`);
+    expect(by("aws_network_interface.network_interface")).toEqual(["unknown:subnet_id"]);
+    expect(by("aws_route_table.route_table")).toEqual(["unknown:vpc_id"]);
+    expect(by("aws_security_group.security_group")).toEqual(["unknown:vpc_id"]);
+    expect(by("aws_instance.instance")).toEqual(["unknown:subnet_id"]);
+    expect(by("aws_subnet.subnet")).toEqual([]);
+    for (const id of new Set(lines.map((l: { cardId: string }) => l.cardId))) expect(lines.filter((l: { cardId: string }) => l.cardId === id).length).toBeLessThanOrEqual(2);
+    expect(lines).toHaveLength(4);
+  });
+
+  it("reads 'known after apply' while unknown and goes green once the network applied", async () => {
+    const a = await realAnswer(["network", "app", "edge"]);
+    const nic = cardLines(planOf(a)).find((l: { address: string }) => l.address === "aws_network_interface.network_interface");
+    expect(lineState(nic, a, null)).toEqual({ state: "unknown", text: "subnet_id: known after apply" });
+    const done = lineState(nic, a, progressApplied);
+    expect(done.state).toBe("applied");
+    expect(done.text).toContain("subnet_id");
+  });
+
+  it("shows a changed known value as before -> after", () => {
+    const plan = {
+      reads: [],
+      reaches: new Map(),
+      resources: new Map([["app/aws_sqs_queue.listener", { key: "app/aws_sqs_queue.listener", root: "app", address: "aws_sqs_queue.listener", cardId: "demo/app/aws_sqs_queue.listener", name: "listener", action: "update", values: [{ path: "port", before: 8080, after: 8090 }, { path: "tags", unknown: true, before: {} }, { path: "region", after: "x" }] }]]),
+    };
+    const lines = cardLines(plan);
+    expect(lines).toHaveLength(1);
+    expect(lineState(lines[0], null, null)).toEqual({ state: "changed", text: "port: 8080 -> 8090" });
+  });
+
+  it("lights on ask-done and on ask-status, and not on ask-start", async () => {
+    const a = await realAnswer(["network", "app", "edge"]);
+    const sent: { lit: boolean }[] = [];
+    const handlers = new Map<string, (e: unknown) => void>();
+    const win = { addEventListener: (t: string, f: (e: unknown) => void) => handlers.set(t, f), removeEventListener: () => {}, setTimeout: () => 0 };
+    startKioskLight({ post: (m: { lit: boolean }) => sent.push(m), getAnswer: () => a, getProgress: () => null, win });
+    handlers.get("behold:ask-start")!({ detail: { ask: ASK } });
+    expect(sent).toHaveLength(0);
+    expect((win as { beholdAskTokens?: unknown }).beholdAskTokens).toEqual({ dependents: 5 });
+    handlers.get("behold:ask-done")!({ detail: { ask: ASK } });
+    expect(sent.map((m) => m.lit)).toEqual([true]);
+    handlers.get("behold:ask-status")!({ detail: { ask: { status: "Applying" } } });
+    expect(sent.map((m) => m.lit)).toEqual([true, false]);
   });
 });
