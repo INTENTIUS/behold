@@ -12,6 +12,8 @@
  *   a step that ends or changes never cuts a card short, it only changes which card comes next;
  * - while a step is busy, the next card replaces a read one; the last stays until the busy line ends, then it hides
  *   (the host fades it out within {@link TIP_FADE_MS});
+ * - a card with a link pauses its timer while it is hovered or focused ({@link LINK_RESUME_MS} left at least on
+ *   leaving), so a reader can click; reduced motion changes nothing about this;
  * - a step with no tips of its own gets the built-in three, in order, one cycle's worth: a card shown is not shown
  *   again in that scenario cycle.
  */
@@ -21,16 +23,38 @@ import { modalStyle, openEventModal } from "./event-help-modal.js";
 export const TIP_MIN_MS = 8_000;
 /** A card whose step ended fades out in this long (under 400 ms). */
 export const TIP_FADE_MS = 300;
+/** A card with a link, left after a hover or focus, has at least this long still to show. */
+export const LINK_RESUME_MS = 3_000;
+
+/**
+ * A tip's link, or null: only an https URL on intentius.io (or a subdomain) or under github.com/INTENTIUS, with a
+ * non-empty label (the default is "Read how"). Anything else is dropped.
+ */
+export function safeLink(l) {
+  if (!l || typeof l.url !== "string") return null;
+  let u;
+  try {
+    u = new URL(l.url);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "https:" || u.username || u.password || u.port) return null;
+  const host = u.hostname.toLowerCase();
+  const ok = host === "intentius.io" || host.endsWith(".intentius.io") || (host === "github.com" && (u.pathname === "/INTENTIUS" || u.pathname.startsWith("/INTENTIUS/")));
+  if (!ok) return null;
+  const label = typeof l.label === "string" && l.label.trim() ? l.label.trim() : "Read how";
+  return { label, url: u.href };
+}
 
 /**
  * What a busy step with no tips of its own shows, in order: the viewer's takeaways, then where to look next. Minimal
  * and positive, and linted clean at strictness 3 with the sentences package's destink linter.
  */
 export const DEFAULT_TIPS = [
-  { title: "All at once", body: "Every estate plans together, the new subnet's id included. Most tools go one root at a time." },
-  { title: "terragucci", body: "terragucci runs stock Terraform and OpenTofu in waves from your own pipeline." },
-  { title: "choudoufu", body: "choudoufu is a fork of OpenTofu. It plans and applies every estate in one pass. Resource-level locking at the cloud level." },
-  { title: "Free, nothing to host", body: "Free and open source. Everything runs in your CI pipeline: no server, no database." },
+  { title: "All at once", body: "Every estate plans together, the new subnet's id included. Most tools go one root at a time.", link: { label: "How it plans across estates", url: "https://intentius.io/choudoufu/how-it-works/across-estates/" } },
+  { title: "terragucci", body: "terragucci runs stock Terraform and OpenTofu in waves from your own pipeline.", link: { label: "How waves work", url: "https://intentius.io/terragucci/concepts/waves-and-approvals/" } },
+  { title: "choudoufu", body: "choudoufu is a fork of OpenTofu. It plans and applies every estate in one pass. Resource-level locking at the cloud level.", link: { label: "How the locking works", url: "https://intentius.io/choudoufu/how-it-works/locking/" } },
+  { title: "Free, nothing to host", body: "Free and open source. Everything runs in your CI pipeline: no server, no database.", link: { label: "choudoufu on GitHub", url: "https://github.com/INTENTIUS/choudoufu" } },
   { title: "Inspect", body: "Open Inspect to explore every resource and the plan behind it." },
 ];
 /** The same, on a phone: the last card says this is the short version. */
@@ -41,18 +65,31 @@ export const PHONE_TIPS = [
 /** The phone layout's width (web/kiosk.html, ask mode). */
 const PHONE = "(max-width: 700px)";
 
-const validTips = (v) => (Array.isArray(v) ? v.filter((t) => t && typeof t.title === "string" && t.title && typeof t.body === "string" && t.body) : []);
+const validTips = (v) =>
+  Array.isArray(v)
+    ? v
+        .filter((t) => t && typeof t.title === "string" && t.title && typeof t.body === "string" && t.body)
+        .map((t) => {
+          const { link, ...rest } = t;
+          const ok = safeLink(link);
+          return ok ? { ...rest, link: ok } : rest;
+        })
+    : [];
 
 /**
  * `show(tip)` puts a card up (replacing any), `hide()` takes the current one down. `enabled()` is the Tips switch.
  * `busy(detail)` takes a `behold:ask-busy` detail. `dismiss()`: the viewer closed the card; no more for this busy line.
  */
-export function createTipSequencer({ show, hide, enabled = () => true, defaults = DEFAULT_TIPS, minMs = TIP_MIN_MS, setTimer = setTimeout, clearTimer = clearTimeout }) {
+export function createTipSequencer({ show, hide, enabled = () => true, defaults = DEFAULT_TIPS, minMs = TIP_MIN_MS, setTimer = setTimeout, clearTimer = clearTimeout, now = Date.now }) {
   let id = null;
   let timer = null;
   let up = false;
   // The current card has been up its whole reading time.
   let read = false;
+  // The card on screen, when its timer is running: when it ends, and what is left while it is paused.
+  let current = null;
+  let due = 0;
+  let paused = null;
   // Cards waiting for the current one to be read: { tip, builtin, cycle }.
   let queue = [];
   // Built-in cards shown so far, by scenario cycle.
@@ -66,6 +103,15 @@ export function createTipSequencer({ show, hide, enabled = () => true, defaults 
     if (up) hide();
     up = false;
     read = false;
+    paused = null;
+  };
+  const arm = (ms) => {
+    due = now() + ms;
+    timer = setTimer(() => {
+      timer = null;
+      read = true;
+      next();
+    }, ms);
   };
   // The next waiting card, or, once the current card is read and nothing waits, down when no step is busy.
   const next = () => {
@@ -74,12 +120,10 @@ export function createTipSequencer({ show, hide, enabled = () => true, defaults 
       show(tip);
       up = true;
       read = false;
+      current = tip;
+      paused = null;
       if (builtin) given.set(cycle, (given.get(cycle) || 0) + 1);
-      timer = setTimer(() => {
-        timer = null;
-        read = true;
-        next();
-      }, holdMs(tip, minMs));
+      arm(holdMs(tip, minMs));
       return;
     }
     if (id === null) down();
@@ -102,8 +146,22 @@ export function createTipSequencer({ show, hide, enabled = () => true, defaults 
         next();
       }
     },
+    /** The viewer hovers or focuses the card: a card with a link holds still. */
+    pause() {
+      if (!up || read || paused !== null || timer === null || !current || !current.link) return;
+      paused = Math.max(0, due - now());
+      stop();
+    },
+    /** The viewer moved away: the card goes on with at least {@link LINK_RESUME_MS} left. */
+    resume() {
+      if (paused === null) return;
+      const left = Math.max(paused, LINK_RESUME_MS);
+      paused = null;
+      arm(left);
+    },
     dismiss() {
       stop();
+      paused = null;
       up = false;
       read = false;
       queue = [];
@@ -127,6 +185,7 @@ const STYLE_ID = "k-ask-tips-style";
 const STYLE = `
 #k-ask-tips { position: fixed; left: 0; right: 0; top: 0; height: 0; z-index: 50; pointer-events: none; overflow: hidden; }
 #k-ask-tips .eh-modal-wrap { position: absolute; inset: 0; z-index: auto; background: transparent; align-items: flex-start; padding: 12px 16px 0; box-sizing: border-box; pointer-events: none; }
+#k-ask-tips .eh-modal-link { display: inline-block; margin-top: 0.4em; font-size: 0.9em; color: var(--focus, inherit); text-decoration: underline; }
 #k-ask-tips .eh-modal { pointer-events: auto; width: min(32em, 100%); max-height: calc(100% - 12px); font-size: 1em; }
 @media (max-width: 700px) { #k-ask-tips .eh-modal { font-size: 0.9em; padding: 0.7em 1em 0.8em; } #k-ask-tips .eh-modal-title { font-size: 1.15em; margin-bottom: 0.3em; } }
 @media (prefers-reduced-motion: no-preference) {
@@ -165,6 +224,15 @@ export function mountAskTips({ win = window, doc = document, askHost, reduced = 
     const seen = box && box.getClientRects().length > 0;
     return !seen || box.checked;
   };
+  const linkNode = (l) => {
+    const a = doc.createElement("a");
+    a.className = "eh-modal-link";
+    a.href = l.url;
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.textContent = l.label;
+    return a;
+  };
   const fading = new Set();
   const stopMeasure = () => {
     if (measure !== null) win.clearInterval(measure);
@@ -190,7 +258,7 @@ export function mountAskTips({ win = window, doc = document, askHost, reduced = 
       mine.api = openEventModal(host, {
         mode: "narrated",
         kind: "tip",
-        data: { title: tip.title, lines: [{ text: tip.body }] },
+        data: { title: tip.title, lines: [{ text: tip.body }], ...(tip.link ? { panel: linkNode(tip.link) } : {}) },
         doc,
         reduced: reduced(),
         onClose: (s) => {
@@ -218,6 +286,12 @@ export function mountAskTips({ win = window, doc = document, askHost, reduced = 
       }, TIP_FADE_MS);
     },
   });
+  // A card with a link holds still while it is hovered or has focus (the sequencer ignores a card without one).
+  const onCard = (e) => e.target && e.target.closest && e.target.closest("#k-ask-tips .eh-modal");
+  host.addEventListener("mouseover", (e) => onCard(e) && seq.pause());
+  host.addEventListener("focusin", (e) => onCard(e) && seq.pause());
+  host.addEventListener("mouseout", (e) => onCard(e) && !(e.relatedTarget && onCard({ target: e.relatedTarget })) && !host.querySelector(".eh-modal:focus-within") && seq.resume());
+  host.addEventListener("focusout", (e) => onCard(e) && !(e.relatedTarget && onCard({ target: e.relatedTarget })) && !host.querySelector(".eh-modal:hover") && seq.resume());
   win.addEventListener("behold:ask-busy", (e) => seq.busy(e.detail));
   doc.addEventListener("change", (e) => {
     if (e.target && e.target.matches && e.target.matches(".eh-switch input") && !e.target.checked) seq.off();

@@ -138,6 +138,25 @@ export interface DemoAsk {
 export interface DemoTip {
   title: string;
   body: string;
+  /** A small link at the end of the card: https on intentius.io or github.com/INTENTIUS only; absent otherwise. */
+  link?: { label: string; url: string };
+}
+
+/** A tip's `link`: a label (default "Read how") and an https URL on intentius.io or github.com/INTENTIUS; undefined otherwise. */
+export function tipLinkOf(v: unknown): { label: string; url: string } | undefined {
+  if (!isRecord(v)) return undefined;
+  const raw = text(v.url);
+  if (!raw) return undefined;
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return undefined;
+  }
+  if (u.protocol !== "https:" || u.username || u.password || u.port) return undefined;
+  const host = u.hostname.toLowerCase();
+  const ok = host === "intentius.io" || host.endsWith(".intentius.io") || (host === "github.com" && (u.pathname === "/INTENTIUS" || u.pathname.startsWith("/INTENTIUS/")));
+  return ok ? { label: text(v.label) ?? "Read how", url: u.href } : undefined;
 }
 
 /** An ask's `tips`: the entries with a non-empty title and body, in order; undefined when none are valid. */
@@ -148,7 +167,8 @@ export function tipsOf(v: unknown): DemoTip[] | undefined {
     if (!isRecord(t)) continue;
     const title = text(t.title);
     const body = text(t.body);
-    if (title && body) tips.push({ title, body });
+    const link = tipLinkOf(t.link);
+    if (title && body) tips.push({ title, body, ...(link ? { link } : {}) });
   }
   return tips.length ? tips : undefined;
 }

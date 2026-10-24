@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_TIPS, PHONE_TIPS, TIP_FADE_MS, TIP_MIN_MS, createTipSequencer, holdMs } from "./kiosk-ask-tips.js";
+import { DEFAULT_TIPS, LINK_RESUME_MS, PHONE_TIPS, TIP_FADE_MS, TIP_MIN_MS, createTipSequencer, holdMs, safeLink } from "./kiosk-ask-tips.js";
 
 function rig(opts = {}) {
   const log = [];
@@ -17,6 +17,7 @@ function rig(opts = {}) {
       const i = timers.indexOf(x);
       if (i >= 0) timers.splice(i, 1);
     },
+    now: () => t,
     ...opts,
   });
   const advance = (ms) => {
@@ -146,5 +147,70 @@ describe("tip cards: the built-in cards", () => {
   });
   it("fades well inside 400 ms", () => {
     expect(TIP_FADE_MS).toBeLessThan(400);
+  });
+});
+
+describe("tip cards: links", () => {
+  it("allows only https on intentius.io or github.com/INTENTIUS", () => {
+    expect(safeLink({ label: "L", url: "https://intentius.io/a/" })).toEqual({ label: "L", url: "https://intentius.io/a/" });
+    expect(safeLink({ url: "https://www.intentius.io/a" }).label).toBe("Read how");
+    expect(safeLink({ url: "https://github.com/INTENTIUS/choudoufu" })).not.toBeNull();
+    for (const url of ["http://intentius.io/", "https://evil.example/", "https://intentius.io.evil.example/", "https://github.com/other/x", "https://github.com/INTENTIUSX/x", "https://user@intentius.io/", "javascript:alert(1)", "nope"]) {
+      expect(safeLink({ label: "L", url })).toBeNull();
+    }
+    expect(safeLink(null)).toBeNull();
+  });
+  it("drops a bad link from a step's own tip and keeps the card", () => {
+    const { seq, log } = rig();
+    const shown = [];
+    const r = rig({ show: (tip) => shown.push(tip) });
+    r.seq.busy(busy("a", { tips: [{ title: "T", body: "b", link: { label: "x", url: "https://evil.example/" } }] }));
+    expect(shown).toEqual([{ title: "T", body: "b" }]);
+    seq.busy(idle);
+    expect(log).toEqual([]);
+  });
+  it("gives the built-in links their exact URLs, none on Inspect or the phone card", () => {
+    const by = Object.fromEntries(DEFAULT_TIPS.map((t) => [t.title, t.link]));
+    expect(by["All at once"]).toEqual({ label: "How it plans across estates", url: "https://intentius.io/choudoufu/how-it-works/across-estates/" });
+    expect(by.terragucci).toEqual({ label: "How waves work", url: "https://intentius.io/terragucci/concepts/waves-and-approvals/" });
+    expect(by.choudoufu).toEqual({ label: "How the locking works", url: "https://intentius.io/choudoufu/how-it-works/locking/" });
+    expect(by["Free, nothing to host"]).toEqual({ label: "choudoufu on GitHub", url: "https://github.com/INTENTIUS/choudoufu" });
+    expect(by.Inspect).toBeUndefined();
+    expect(PHONE_TIPS.at(-1).link).toBeUndefined();
+    for (const t of DEFAULT_TIPS) if (t.link) expect(safeLink(t.link)).toEqual(t.link);
+  });
+  it("hover pauses a linked card; leaving resumes with at least 3 s left", () => {
+    const { seq, log, advance } = rig();
+    const linked = [{ title: "A", body: "a", link: { label: "L", url: "https://intentius.io/a/" } }, { title: "B", body: "b" }];
+    seq.busy(busy("a", { tips: linked }));
+    advance(2_000);
+    seq.pause();
+    advance(60_000);
+    expect(log).toHaveLength(1);
+    seq.resume();
+    // 6 s were left: they come back whole.
+    advance(TIP_MIN_MS - 2_000 - 1);
+    expect(log).toHaveLength(1);
+    advance(1);
+    expect(log.at(-1)).toEqual(["show", "B", 62_000 + TIP_MIN_MS - 2_000]);
+  });
+  it("gives at least 3 s after leaving when little was left", () => {
+    const { seq, log, advance } = rig();
+    seq.busy(busy("a", { tips: [{ title: "A", body: "a", link: { label: "L", url: "https://intentius.io/a/" } }, { title: "B", body: "b" }] }));
+    advance(TIP_MIN_MS - 500);
+    seq.pause();
+    advance(5_000);
+    seq.resume();
+    advance(LINK_RESUME_MS - 1);
+    expect(log).toHaveLength(1);
+    advance(1);
+    expect(log).toHaveLength(2);
+  });
+  it("does not pause a card without a link", () => {
+    const { seq, log, advance } = rig();
+    seq.busy(busy("a", { tips }));
+    seq.pause();
+    advance(TIP_MIN_MS);
+    expect(log).toHaveLength(2);
   });
 });
