@@ -164,9 +164,10 @@ import { cachedChoudoufuPlan, setChoudoufuChantDeps, type ChoudoufuChantDeps, ty
 import { choudoufuLexiconNote, setEstateLexiconRead, type LexiconRead } from "./choudoufu-refs.ts";
 import { readTerralith } from "./terralith-demo.ts";
 import { discoverSplitPlans, moveMembers, moveReceipt, movesPayload, readSplitPlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
-import { servedWorkspace, setServedWorkspace, workspaceMemberOf, type Workspace } from "./workspace.ts";
+import { isOrgWorkspace, servedWorkspace, setServedWorkspace, workspaceMemberOf, type Workspace } from "./workspace.ts";
 import { approveArgs, isEnvName, isOverrideGate, isPointGate, readWorkspaceGates } from "./workspace-gates.ts";
 import { pointsFloorRefusal, readOpenPoints } from "./decision-points.ts";
+import { orgFloorRefusal, readOrgRepos } from "./org-workspace.ts";
 import { approverFlags, approverFor, approverView, type ApproverOptions, type ApproverRead } from "./approver.ts";
 import { readWhy, whyRegion, withChain } from "./workspace-why.ts";
 import { floorFor, floorMet, floorRefusal } from "./chant-floors.ts";
@@ -1753,6 +1754,23 @@ export function createApp(
     return c.json({ workspace: true, chant: version ?? null, ...read.points });
   });
 
+  // behold#931: an org-level workspace's repo members (chant#3168): each one's
+  // URL and pinned revision, the members of that repository's workspace with
+  // their status and reason, and the identity chant read it as. One `chant
+  // workspace graph` at the root; chant fetches the revisions into its own
+  // cache and composes them, behold fetches and joins nothing, and writes
+  // nothing in the served project. A failed fetch carries chant's reason.
+  app.get("/api/workspace/repos", async (c) => {
+    const ws = servedWorkspace();
+    if (!ws) return c.json({ workspace: false, refusal: { error: "behold isn't serving a declared chant workspace, so there are no repo members to read.", code: "no-workspace", remedy: "Serve the directory that holds chant.workspace.json." } });
+    const version = resolveChant(ws.root).version;
+    const tooOld = orgFloorRefusal(version);
+    if (tooOld) return c.json({ workspace: true, chant: version ?? null, repos: [], refusal: tooOld, degraded: floorFor("org workspace").degraded ?? null });
+    const read = await readOrgRepos(ws);
+    if (!read.ok) return c.json({ workspace: true, chant: version ?? null, repos: [], refusal: read.refusal });
+    return c.json({ workspace: true, chant: version ?? null, ...read.org });
+  });
+
   // #471: why a member or a node is the way it is, from `chant workspace graph
   // --intent <region> --json`. Read when the page asks (a click on "why"),
   // never at boot: on a large repository it takes tens of seconds. It is a
@@ -2072,7 +2090,7 @@ export function createApp(
       // #471: the declared workspace's members, so the inspect pane offers a
       // member's or a card's "why" only where chant can answer it.
       ...(servedWorkspace()
-        ? { workspace: { name: servedWorkspace()!.name, members: servedWorkspace()!.members.map((m) => ({ name: m.name, dir: m.dir, kind: m.kind })), hud: !!cfg.hud } }
+        ? { workspace: { name: servedWorkspace()!.name, members: servedWorkspace()!.members.map((m) => ({ name: m.name, dir: m.dir, kind: m.kind, ...(m.repo ? { repo: m.repo } : {}) })), ...(servedWorkspace()!.repo !== undefined ? { repo: servedWorkspace()!.repo } : {}), org: isOrgWorkspace(servedWorkspace()!), hud: !!cfg.hud } }
         : {}),
       // The tier picker's options (M2 #54, sourced #470): gated on the served
       // project's `chant.config.ts` declaring a `buildParams` entry with a
@@ -2626,6 +2644,7 @@ export function createApp(
         { method: "GET", path: "/api/workspace/change-set", desc: "a waiting gate's stored change set for the graph overlay (#681): ?gate=<member>/<op>/<gate>&env=<env>; the gate and its digest from chant workspace status <env> --json, the change set from chant change-set show <digest> --member <member> --json; gate {key, gitSha, runId, releaseDigest}, digest, planned {releaseDigest, environment} for a release gate, graph {member, at}, entries [{address, action, bucket create|change|delete, node or null, attributes}], nodes {<id>: {bucket, actions}}, counts, gaps; a chant below 0.124.28 is refused with refusal code chant-too-old" },
         { method: "GET", path: "/api/workspace/flags", desc: "the workspace's feature flags (#683), from chant workspace status <env> --json featureFlags (chant#4024): environments in promotion order, flags [{key, member, id, param, owner, work, implements, stale, kind, path, values, envs {<env>: {value, state on|off|default|set}}, waiting [{env, gate, changeSet, before, after, entries}], turnOn [{env, lines}]}], nodes member (every card of the flag's member), unreadable, refusals; a waiting flip comes from the gate's stored change set (chant change-set show); behold writes no flag record; a chant below 0.124.29 is refused with refusal code chant-too-old and degraded" },
         { method: "GET", path: "/api/workspace/collisions", desc: "the graph nodes two or more in-flight work items touch (#684), from chant workspace status <env> --json overlap (chant#4025): nodes [{node, items, entries [{changeSet, member, address, source, items}]}], files [{items, files}] for files two items changed (no node), unplaced for shared entries chant mapped to no node, items [{item, path, state, commits, with}] (every in-flight item, with empty when it collides with none), changeSets, unattributed; overlap absent (an older chant) or null (no work kind declared, or the read failed) is a refusal with code no-overlap or overlap-unavailable; behold records and locks nothing; a chant below 0.124.29 is refused with refusal code chant-too-old and degraded" },
+        { method: "GET", path: "/api/workspace/repos", desc: "an org-level workspace's repo members (behold#931, chant#3168), from one chant workspace graph at the root: repo (the org's own workspace.repo), repos [{name, url, rev, workspace, status, reason, read, workspaceName, label, members [{name, kind, status, reason}]}]; a failed fetch is status failed with chant's reason (command-failed); behold fetches and writes nothing; a chant below 0.124.47 is refused with refusal code chant-too-old and degraded" },
         { method: "GET", path: "/api/workspace/why", desc: "why a member (?member=) or a node (?node=<member>/<id>) is the way it is: the decisions covering it, the runs and commits behind it, and from chant 0.124.29 the chain from each commit's work item to its green tag, release, gate resolution and deploys (trace, #682), from chant workspace graph --intent <region> --json; read on demand, cancelled with the request (#471)" },
         { method: "GET", path: "/api/workspace/points", desc: "the workspace's open decision points (#472), from chant workspace points --open --json: points [{id, point, title, question, questionType, candidates, subject, gate {op, gate, env} when a gate asked it, state, quorum {count, roles}, model, askedOn, askedBy, stale, path, command}], unread answer kinds with chant's reason; a gate in /api/workspace/gates whose answer.id is a point's id waits on it; behold answers none and has no write route; a chant below 0.107.0 is refused with refusal code chant-too-old and degraded" },
         { method: "POST", path: "/api/workspace/gates/approve", desc: "approve one workspace gate: JSON body {key, env}; env and plan come from a fresh status read; recorded as the request's approver with --actor and --note, a signed gate signed with that person's key or refused 422 code signed (#690); preview-locked (#477); a policy-override gate answers 422 code override with its command (#519); a gate that waits on a decision point answers 422 code decision-point with the points answer line (#472)" },

@@ -7230,6 +7230,70 @@ function renderFlagsTab() {
 }
 initFlags();
 
+// behold#931: the Repos tab of an org-level workspace. One entry per repo
+// member: its URL and pinned revision, then the members of that repository's
+// workspace with each one's status and reason, from /api/workspace/repos (one
+// chant workspace graph). A failed fetch shows chant's reason as given.
+let orgHost = null;
+let orgRead = false;
+async function initOrgRepos() {
+  if (staticMode || publicMode) return; // /api/workspace/* is refused in a public view
+  const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
+  if (!project.workspace || !project.workspace.org) return;
+  orgHost = addPanelTab("repos", "Repos", "The repositories this org workspace names, each with its pinned revision and the members of its workspace. Read from chant when you open the tab.");
+  if (!orgHost) return;
+  orgHost.id = "tab-repos";
+  const tab = document.querySelector('#panel-tabs button[data-tab="repos"]');
+  if (tab) tab.addEventListener("click", () => orgRead || loadOrgRepos());
+  if (orgHost.classList.contains("active")) loadOrgRepos();
+}
+async function loadOrgRepos() {
+  orgRead = true;
+  const reading = document.createElement("div");
+  reading.className = "tg-legend";
+  reading.textContent = "reading the repositories from chant (it fetches each pinned revision)";
+  orgHost.replaceChildren(reading);
+  const answer = await apiFetch("/api/workspace/repos")
+    .then((r) => r.json())
+    .catch((e) => ({ error: String(e) }));
+  renderOrgRepos(answer);
+}
+function renderOrgRepos(answer) {
+  orgHost.replaceChildren();
+  const line = (cls, text, title, host = orgHost) => {
+    const d = document.createElement("div");
+    d.className = cls;
+    d.textContent = text;
+    if (title) d.title = title;
+    host.appendChild(d);
+    return d;
+  };
+  if (answer.error || answer.refusal) {
+    const r = answer.refusal || { error: answer.error, remedy: "" };
+    line("tg-refusal", [r.error, r.remedy].filter(Boolean).join(" "));
+    if (answer.degraded) line("tg-legend", "Without it, " + answer.degraded + ".");
+    return;
+  }
+  line("fl-title", answer.repos.length + " repositor" + (answer.repos.length === 1 ? "y" : "ies") + (answer.repo ? " in " + answer.repo : ""));
+  for (const r of answer.repos) {
+    const box = document.createElement("div");
+    box.className = "fl-flag";
+    line("fl-flag-title", r.name + " · " + r.url + " @ " + r.rev.slice(0, 12), r.rev, box);
+    line("fl-facts", (r.workspaceName ? "workspace " + r.workspaceName + " · " : "") + (r.read ? "read as " + r.read + " · " : "") + r.status, "", box);
+    if (r.reason) line("tg-refusal", r.reason.code + ": " + r.reason.message, "", box);
+    for (const m of r.members) {
+      line("fl-facts", m.name + " (" + m.kind + ") " + m.status + (m.reason ? " · " + m.reason.code + ": " + m.reason.message : ""), "", box);
+    }
+    orgHost.appendChild(box);
+  }
+  if (!staticMode) {
+    const again = button("Read again", "", () => loadOrgRepos());
+    again.title = "Fetch and read every repository's pinned revision again.";
+    orgHost.appendChild(again);
+  }
+}
+initOrgRepos();
+
 // --- #684: collision marks, nodes touched by two in-flight work items --------
 // The Collisions tab reads /api/workspace/collisions when it is opened: the
 // in-flight work items chant reports (workspace status overlap, chant#4025),

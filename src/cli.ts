@@ -675,7 +675,7 @@ async function declaredWorkspace(root: string, verb: "serve" | "export"): Promis
   const drawn = drawnMembers(ws);
   process.stdout.write(`behold: serving chant workspace ${ws.name} (${ws.file}), ${drawn.length} of ${ws.members.length} members drawn\n`);
   for (const m of unreadableMembers(ws)) process.stdout.write(`        ${m.name}: unreadable, ${m.reason!.code}: ${m.reason!.message}\n`);
-  for (const m of undrawnMembers(ws)) process.stdout.write(`        ${m.name}: kind ${m.kind}, listed and not drawn${m.because ? ` (${m.because})` : ""}\n`);
+  for (const m of undrawnMembers(ws)) process.stdout.write(`        ${m.name}: ${m.repo ? `repo ${m.repo.url} at ${m.repo.rev.slice(0, 12)}` : `kind ${m.kind}`}, listed and not drawn${m.because ? ` (${m.because})` : ""}\n`);
   if (loadBeholdConfig(root).members) {
     process.stderr.write(`behold: warning — ${root}/.behold.json lists members, and chant.workspace.json does too; the declaration wins and .behold.json's members are ignored.\n`);
   }
