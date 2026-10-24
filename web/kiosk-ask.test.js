@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BEAT_GAP_MS, BUSY_MIN_MS, CURSOR_PAUSE_MS, ELLIPSIS_MS, KEEP, REPLY_TYPE_MS, SPINNER, TYPE_MS, askBeats, busyLabel, ellipsisAt, mergeTurns, settleTurns, spinnerAt, askEventHelp, askMode, askShot, beatTiming, createAskPane, elapsedSecs, fillReply, firstSentence, hasAsk, paneHeight, playback, replyValues, statusText, typedChars } from "./kiosk-ask.js";
+import { DIFF_MS, diffLines, diffParts, BEAT_GAP_MS, BUSY_MIN_MS, CURSOR_PAUSE_MS, ELLIPSIS_MS, KEEP, REPLY_TYPE_MS, SPINNER, TYPE_MS, askBeats, busyLabel, ellipsisAt, mergeTurns, settleTurns, spinnerAt, askEventHelp, askMode, askShot, beatTiming, createAskPane, elapsedSecs, fillReply, firstSentence, hasAsk, paneHeight, playback, replyValues, statusText, typedChars } from "./kiosk-ask.js";
 
 describe("fillReply (behold#936)", () => {
   it("fills the report's tokens", () => {
@@ -429,5 +429,68 @@ describe("ask mode (behold#939)", () => {
     expect(paneHeight(0, 120)).toBe(120);
     expect(paneHeight(200, 120)).toBe(200);
     expect(paneHeight(200, NaN)).toBe(200);
+  });
+});
+
+describe("diff under a reply", () => {
+  const beat = { prompt: "go", reply: "Opened pull request #12.", diff: ["+ network  aws_subnet.subnet_b  10.0.2.0/24", "~ edge     terraform_data.allowlist  + 10.0.2.0/24", "- app      old", 5, ""] };
+  const R = "Opened pull request #12.";
+  it("keeps strings only, and only under a reply", () => {
+    expect(diffLines(beat)).toHaveLength(3);
+    expect(diffLines({ prompt: "go", diff: ["+ a"] })).toEqual([]);
+  });
+  it("splits the sign column", () => {
+    expect(diffParts("+ network  x")).toEqual({ sign: "+", rest: "network  x" });
+    expect(diffParts("~ edge")).toEqual({ sign: "~", rest: "edge" });
+    expect(diffParts("plain")).toEqual({ sign: "", rest: "plain" });
+  });
+  it("lines appear one per DIFF_MS after the reply has typed, and the beat ends after them", () => {
+    const t = beatTiming(beat, { reply: R });
+    expect(t.diffMs).toBe(3 * DIFF_MS);
+    expect(t.end).toBe(t.replyAt + t.replyType + 3 * DIFF_MS);
+    const at = (ms) => playback([beat], ms, { replies: [R] }).frames[0];
+    const start = t.replyAt + t.replyType;
+    expect(at(start - 1).diffShown).toBe(0);
+    expect(at(start).diffShown).toBe(1);
+    expect(at(start + DIFF_MS).diffShown).toBe(2);
+    expect(at(start + 10 * DIFF_MS).diffShown).toBe(3);
+    expect(at(start + DIFF_MS).over).toBe(false);
+    expect(at(t.end).over).toBe(true);
+  });
+  it("shows at once under reduced motion", () => {
+    const f = playback([beat], 0, { reduced: true, replies: [R] }).frames[0];
+    expect(f.diffShown).toBe(3);
+    expect(f.over).toBe(true);
+  });
+  it("fires ask-done only after the diff has shown, and renders the lines", () => {
+    const T = Date.parse("2026-10-24T10:00:00Z");
+    const clock = { t: T };
+    const events = [];
+    const mk = (tag) => {
+      const n = { tag, className: "", textContent: "", children: [], hidden: false, attrs: {}, classes: [], ownerDocument: null };
+      n.classList = { add: (c) => n.classes.push(c), remove: () => {}, toggle: () => {} };
+      n.setAttribute = () => {};
+      n.append = (...c) => n.children.push(...c);
+      n.appendChild = (c) => n.children.push(c);
+      n.replaceChildren = (...c) => (n.children = c);
+      return n;
+    };
+    const host = mk("section");
+    host.ownerDocument = { createElement: mk };
+    let timer = null;
+    const pane = createAskPane({ host, win: { dispatchEvent: (e) => events.push(e.type) }, now: () => new Date(clock.t), setTimer: (f) => ((timer = f), 1), clearTimer: () => (timer = null) });
+    const two = { ...beat, diff: ["+ a", "~ b"] };
+    pane.setStep({ cycle: 1, scenario: "s", step: "pull-request", started_at: "2026-10-24T10:00:00Z", ask: two });
+    const t = beatTiming(two, { reply: R });
+    clock.t = T + t.replyAt + t.replyType + 1;
+    timer();
+    expect(events).not.toContain("behold:ask-done");
+    const all = (n) => [n.className, n.textContent, ...n.children.map(all)].join("|");
+    expect(all(host)).toContain("ask-diff-add");
+    expect(all(host)).not.toContain("ask-diff-chg");
+    clock.t = T + t.end + 1;
+    timer();
+    expect(all(host)).toContain("ask-diff-chg");
+    expect(events).toContain("behold:ask-done");
   });
 });
