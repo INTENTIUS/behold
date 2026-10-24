@@ -133,7 +133,7 @@ import { danglingFor, danglingRows, danglingHeading, DANGLING_EXPLAINED } from "
 import { comparisonRow, comparisonSummary } from "./cross-env.js";
 // The marker-vs-derived mark on a choudoufu card: how its identity was found.
 import { identityMark, tagGlyphSvg } from "./identity-mark.js";
-import { ASK_MAX_SCALE, shotFromMessage, shotViewBox, tweenViewBox, unionBox, sameViewBox, heldFrame, heldInsets, heldTarget, holdsStage, medianWidth, smallStage } from "./kiosk-shot.js"; // behold#571: Watch's camera
+import { ASK_MAX_SCALE, afterFrames, debounced, shotFromMessage, shotViewBox, tweenViewBox, unionBox, sameViewBox, heldFrame, heldInsets, heldTarget, holdsStage, medianWidth, smallStage } from "./kiosk-shot.js"; // behold#571: Watch's camera
 import { SHOT_ATTR, SHOT_CAPTION_PX, SHOT_DIM, queryFrame, readShotFrame, shotCaption, shotLit, shotProvenance, shotState } from "./shot-frame.js"; // behold#915: the page `behold shot` photographs
 import { countsLine, groupLabel, groupMarks, queryLine, queryMarks, searchKey, searchUrl, stackIndex, uncapturedLine } from "./search-view.js"; // behold#913: `q` drawn; behold#922: groups
 // #712, #715: the dots layer, the zoom past the cards. Mounted for a live
@@ -4686,8 +4686,14 @@ function klArrange(svg) {
   const open = klRoom();
   const model = sceneModel(answer, plan, progress, open);
   if (model) {
+    const first = !klArranged;
     drawScene(svg, model);
     klArranged = true;
+    // The first draw: fit to it at once (no swoop from the graph's own framing), and again once layout and paint settle.
+    if (first) {
+      refitNow();
+      afterFrames(requestAnimationFrame, refitNow);
+    }
     return;
   }
   if (svg.__klStash) clearScene(svg); // a scene, and the run's reports no longer have one
@@ -6490,8 +6496,10 @@ function userBoxOf(svg, el) {
   } catch {
     return null;
   }
-  const ctm = el.getCTM && el.getCTM();
-  const root = svg.getCTM && svg.getCTM();
+  // getScreenCTM on both: svg.getCTM() is the viewBox's matrix in Chrome but the identity in Firefox, which put every box off
+  // screen there. The screen matrices both include the viewBox, so root^-1 * el is the element's matrix in the svg's user units.
+  const ctm = el.getScreenCTM && el.getScreenCTM();
+  const root = svg.getScreenCTM && svg.getScreenCTM();
   if (!ctm || !root || !(b.width > 0 || b.height > 0)) return null;
   const m = root.inverse().multiply(ctm);
   const pts = [[b.x, b.y], [b.x + b.width, b.y + b.height]].map(([x, y]) => new DOMPoint(x, y).matrixTransform(m));
@@ -6631,6 +6639,14 @@ function kioskPaneInsets(shot) {
 
 /** Move to the shot: a pan and zoom over its time, or at once (a re-render, a resize, reduced motion). */
 function applyKioskShot(animate) {
+  // "now": a refit (a resize, the fonts, the first draw settling) sets the view directly, over any move under way.
+  if (animate === "now") {
+    animate = false;
+    if (shotAnim) {
+      cancelAnimationFrame(shotAnim.raf);
+      shotAnim = null;
+    }
+  }
   // #715: while a live carve runs, its director has the camera; the shot waits for it to end.
   if (dotsCarving()) return kioskTellBoxes();
   const to = kioskShotBox();
@@ -9880,10 +9896,20 @@ function fitGraph() {
 let vbAtFit = false;
 function watchPaneForFit(host) {
   if (typeof ResizeObserver === "undefined") return;
-  new ResizeObserver(() => {
-    if (kioskShot) applyKioskShot(false);
-    else if (vbAtFit) fitGraph();
-  }).observe(host);
+  // The refit waits for the last size change and sets the view directly: no swoop, and a resize burst fits once.
+  // It moves the viewBox, never the host's box, so the observer cannot trigger itself.
+  // Each change also sets the view at once, so a box is never off screen on the old framing while the burst lasts.
+  const refit = debounced(refitNow);
+  const onSize = () => (refitNow(), refit());
+  new ResizeObserver(onSize).observe(host);
+  window.addEventListener("resize", onSize);
+  // Web fonts change the text's width, and with it the boxes.
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(refitNow, () => {});
+}
+/** Fit again as things stand, at once. Idempotent: a fit that is already right sets nothing. */
+function refitNow() {
+  if (kioskShot) applyKioskShot("now");
+  else if (vbAtFit) fitGraph();
 }
 
 // --- #396 item 7b: box titles and badges that survive the fit ---------------

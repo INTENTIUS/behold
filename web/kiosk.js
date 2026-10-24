@@ -23,7 +23,7 @@ import { graphWaves } from "./chant-pr-marks.js";
 import { createProgressPacer, trackWaves } from "./terragucci-live-pace.js";
 import { PICK_HOLD_MS, annMark, mergeRun, startRuns, statusIcon } from "./kiosk-runs.js";
 import { MODES, MODE_STORE, badges as waveBadges, badgeTitle, behindStep, steadyRun, captionModel, captionRoom, coneCaption, stepLine, watchOverlays, doraLine, modeStored, placeBeside, quietWords, recordKey, resultModel, runningStep, shotFor, stepTone, tailLines } from "./kiosk-watch.js";
-import { shotMessage } from "./kiosk-shot.js";
+import { REFIT_WAIT_MS, debounced, shotMessage } from "./kiosk-shot.js";
 import { mountTrace } from "./kiosk-trace.js";
 import { startEventHelp } from "./kiosk-event-help-ui.js";
 import { miniWaterfall, phaseWords, waveTraces } from "./kiosk-wave-traces.js";
@@ -2149,7 +2149,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const trailLineH = chip ? chip.getBoundingClientRect().height + 4 : 26;
     return captionRoom({ capHeight: c.height, extras, rowH, trailH, trailLineH, below: Math.max(0, f.bottom - c.bottom) });
   }
-  function tellShot(force) {
+  function tellShot(force, still) {
     if (!frame || !frame.contentWindow || !watch) return;
     // behold#940: ask mode holds in the frame between prompts and between shots, so it is told on its own, when it changes.
     if (askMode(s) !== askTold) {
@@ -2170,7 +2170,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const key = `${s.shot.id}|${s.shot.ask ? "ask" : ""}|${insets.right || 0}|${Math.round((insets.top || 0) / 12)}|${Math.round((insets.left || 0) / 12)}|${Math.round((insets.bottom || 0) / 12)}|${s.shot.roots.join(",")}|${Math.round(room / 12)}`;
     if (!force && key === lastShot) return;
     lastShot = key;
-    post(shotMessage({ roots: s.shot.roots, waves: s.shot.waves, whole: s.shot.whole, insets, id: s.shot.id, room, ask: s.shot.ask === true }));
+    post(shotMessage({ roots: s.shot.roots, waves: s.shot.waves, whole: s.shot.whole, insets, id: s.shot.id, room, ask: s.shot.ask === true, ...(still ? { ms: 0 } : {}) }));
   }
   // behold#631: the projected cycle track, a chant kiosk's bottom band in place of the chip strip and the rail.
   const trackState = { cycle: null, pulls: [], key: null, since: null };
@@ -2940,7 +2940,22 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   let bufferTimer = null;
   const bootAt = now().getTime();
   let bootRetry = null;
+  // The graph's room changes after the first shot (the banner, the pane's height, web fonts, the frame's own box): tell the
+  // frame again, once, at the end of the change, without a move. The key keeps it cheap when nothing moved.
+  const refitShot = debounced(() => tellShot(false, true), REFIT_WAIT_MS);
+  const watched = new Set();
+  const watchBox = (el) => {
+    if (!el || watched.has(el) || typeof ResizeObserver === "undefined") return;
+    watched.add(el);
+    new ResizeObserver(refitShot).observe(el);
+  };
+  if (typeof window !== "undefined") {
+    window.addEventListener("resize", refitShot);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => tellShot(false, true), () => {});
+  }
   const wireLoad = (el) => {
+    watchBox(el);
+    watchBox(watch && watch.ask);
     el.addEventListener("load", () => {
       // A new frame takes Watch's shot before it draws, so it opens on it and never on the fit.
       tellShot(true);
