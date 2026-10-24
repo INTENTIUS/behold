@@ -8,9 +8,9 @@
     "front-door": "tsx scripts/front-door.ts all --out export"
   },
   "dependencies": {
-    "@intentius/chant": "^0.124.50",
-    "@intentius/chant-lexicon-aws": "^0.124.50",
-    "@intentius/chant-lexicon-azure": "^0.124.50",
-    "@intentius/chant-lexicon-gcp": "^0.124.50"
+    "@intentius/chant": "^0.124.51",
+    "@intentius/chant-lexicon-aws": "^0.124.51",
+    "@intentius/chant-lexicon-azure": "^0.124.51",
+    "@intentius/chant-lexicon-gcp": "^0.124.51"
   }
 }

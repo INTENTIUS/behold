@@ -48,9 +48,9 @@
   "dependencies": {
     "@cdktn/hcl2json": "^0.24.0",
     "@hono/node-server": "^2.0.5",
-    "@intentius/chant": "^0.124.50",
-    "@intentius/chant-k8s-client": "^0.124.50",
-    "@intentius/chant-lexicon-terraform": "^0.124.50",
+    "@intentius/chant": "^0.124.51",
+    "@intentius/chant-k8s-client": "^0.124.51",
+    "@intentius/chant-lexicon-terraform": "^0.124.51",
     "@intentius/pinhole": "^0.5.0",
     "@modelcontextprotocol/sdk": "1.30.1",
     "ajv": "^8.20.0",
@@ -65,7 +65,7 @@
     }
   },
   "devDependencies": {
-    "@intentius/chant-lexicon-sql": "^0.124.50",
+    "@intentius/chant-lexicon-sql": "^0.124.51",
     "@types/node": "^26.4.1",
     "esbuild": "^0.28.0",
     "playwright": "^1.62.1",
