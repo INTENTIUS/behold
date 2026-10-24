@@ -350,6 +350,9 @@ export function cardLines(plan, light = []) {
     reads.sort((a, b) => rank(a) - rank(b));
     // Rule 5: never a false or empty default (a created resource's `assign_ipv6_address_on_creation: false`): the before is a real value.
     const changed = res.values.filter((v) => !v.unknown && v.path !== "id" && "before" in v && "after" in v && !isEmptyValue(v.before) && JSON.stringify(v.before) !== JSON.stringify(v.after));
+    // A report that names the property an update touches but states neither value (chant's change-set entries: property
+    // names only) still shows the line, as "Value: updated".
+    const touched = res.action === "update" ? res.values.filter((v) => !v.unknown && v.path !== "id" && !("before" in v) && !("after" in v)) : [];
     const producer = reads.length ? producerOf(plan, res) : res;
     // A lit resource, or a created one with nothing else to show, is never a blank card: it shows its id.
     const isLit = lit.has(res.key) || lit.has(bare(res.key));
@@ -358,7 +361,7 @@ export function cardLines(plan, light = []) {
     const idUnknownAtPlan = res.action === "create" && !idKnown;
     const idLine = !idKnown && (isLit || idUnknownAtPlan) ? [[{ path: "id", unknown: true }, "unknown", res]] : [];
     const row = (v, kind, prod) => ({ key: res.key, cardId: res.cardId, root: res.root, address: res.address, path: v.path, kind, producer: prod.key, producerRoot: prod.root, producerName: prod.name, before: v.before, after: v.after });
-    for (const v of [...idLine, ...reads.map((x) => [x, "unknown"]), ...changed.map((x) => [x, "changed"])].slice(0, MAX_CARD_LINES)) lines.push(row(v[0], v[1], v[2] || producer));
+    for (const v of [...idLine, ...reads.map((x) => [x, "unknown"]), ...changed.map((x) => [x, "changed"]), ...touched.map((x) => [x, "changed"])].slice(0, MAX_CARD_LINES)) lines.push(row(v[0], v[1], v[2] || producer));
   }
   return lines;
 }
@@ -379,7 +382,8 @@ export function lineState(line, answer, progress) {
   }
   const a = applyOf(line.root, progress);
   const done = !!a && (a.apply === "applied" || a.apply === "no-changes");
-  return { state: done ? "applied" : "changed", text: `${line.path}: ${show(line.before)} -> ${show(line.after)}` };
+  const stated = "before" in line && "after" in line && (line.before !== undefined || line.after !== undefined);
+  return { state: done ? "applied" : "changed", text: stated ? `${line.path}: ${show(line.before)} -> ${show(line.after)}` : `${line.path}: updated` };
 }
 
 /**

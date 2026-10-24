@@ -1,8 +1,8 @@
 // The demo banner: the example's name and act, the live demo's products, and a link to its code. Everything shown is live.
 // Pure: the model from a tool id and the list; web/kiosk.html draws it.
 //
-// Logo policy (web/kiosk-vendor.js): a logo appears only where its owner's published rules allow one. choudoufu's and
-// terragucci's are ours. Terragrunt's and Atmos's icons, from gruntwork-io/terragrunt (docs/src/assets/icons/terragrunt-icon.svg)
+// Logo policy (web/kiosk-vendor.js): a logo appears only where its owner's published rules allow one. choudoufu's,
+// chant's (the chant repo's docs/public/brand/mark.svg) and terragucci's are ours. Terragrunt's and Atmos's icons, from gruntwork-io/terragrunt (docs/src/assets/icons/terragrunt-icon.svg)
 // and cloudposse/atmos (docs/img/atmos-logo-128.svg), appear on the demos that use those tools (maintainer, 2026-10-24). OpenTofu, Terragrunt and Atmos are shown by name, as text, and link to their official sites.
 
 import { vendorOf } from "./kiosk-vendor.js";
@@ -13,6 +13,7 @@ export const CODE_BASE = "https://github.com/INTENTIUS/terragucci/tree/main/";
 /** The products a banner may show: the name, the site, and the logo (null where no rule allows one). */
 export const PRODUCTS = {
   choudoufu: { name: "choudoufu", url: "https://intentius.io/choudoufu/", logo: { src: "/vendors/choudoufu.svg" } },
+  chant: { name: "chant", url: "https://intentius.io/chant/", logo: { src: "/vendors/chant.svg" } },
   terragucci: { name: "terragucci", url: "https://intentius.io/terragucci/", logo: { src: "/vendors/terragucci.svg" } },
   opentofu: { name: "OpenTofu", url: "https://opentofu.org/", logo: null },
   terragrunt: { name: "Terragrunt", url: "https://terragrunt.com/", logo: { src: "/vendors/terragrunt.svg" } },
@@ -61,7 +62,7 @@ export function bannerModel(tool, act = null) {
   if (!v || !v.tree || !v.title) return null;
   return {
     tool,
-    name: BANNER_TITLE,
+    name: v.heading || BANNER_TITLE,
     act,
     products: (v.products || []).map((id) => PRODUCTS[id]).filter(Boolean),
     code: { label: "See the code", short: "Code", url: `${CODE_BASE}${v.tree}` },

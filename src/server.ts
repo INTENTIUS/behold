@@ -67,6 +67,7 @@ import { addCompositeDepsCounted } from "./composite-deps.ts";
 import { notesFor, danglingNote, tierMismatchNote, namespaceMismatchNote, namespaceJoinNote, unchangedZoomNote, type Zoom } from "./zoom-notes.ts";
 import { resourcesByComponent, resourcesByRoot, nonResourceEntities } from "./resources.ts";
 import { configKeys, declaredRootTools, pipelineForge, repoTools, toolOfBinary } from "./pipeline-marks.ts";
+import { chantComposedFeedRoutes } from "./chant-compose-feed.ts";
 import { chantPrFacets, chantPrRoute, prLoopOf, reportSourceOf } from "./chant-pr.ts";
 import { ChantDemo, chantDemoRoutes } from "./chant-demo.ts";
 import { ciReportUrlOf, ciRunsRoutes, readCiRunIndex, type CiRunEntry } from "./ci-run-index.ts";
@@ -1123,6 +1124,18 @@ export function createApp(
   // #490: the reports' marks, when serve was given --terragucci.
   // behold#749: under --repos, a request for another checkout reads that checkout's project, not the pinned one.
   const viewRepos = cfg.viewRepos;
+  // behold#969: a served chant repo whose pipeline writes composed pr-report/v1 documents answers the ask mode's two
+  // reads from them, ahead of the terragucci read; any other checkout falls through to it.
+  if (cfg.terragucci) {
+    const t = cfg.terragucci;
+    const via = { ...(t.aws ? { aws: t.aws } : {}), ...(t.fetch ? { fetch: t.fetch } : {}) };
+    chantComposedFeedRoutes(app, () => cfg.projectDir, {
+      ...(cfg.chantReportUrl ? { reportUrl: cfg.chantReportUrl } : {}),
+      reportSource: (url) => reportSourceOf(url, via),
+      dependsOn: (d) => chantNeeds.get(d)?.needs,
+      ...(t.aws ? { aws: t.aws } : {}),
+    });
+  }
   if (cfg.terragucci) terragucciRoutes(app, { ...cfg.terragucci, ...(viewRepos ? { otherRepo: () => readsOtherRepo(viewRepos) } : {}) }, () => cfg.projectDirs ?? [cfg.projectDir]);
   // #509: a control repo's projects, from estate.json and each project's run view.
   if (cfg.terragucci) terragucciEstateRoutes(app, cfg.terragucci, () => cfg.projectDirs ?? [cfg.projectDir]);

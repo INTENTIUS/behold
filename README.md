@@ -449,7 +449,7 @@ The docs' terragucci page says what it shows.
 The demo is served at `/`: the live demo's page, else the first listed one.
 `/kiosk` redirects to `/`. The listed demos are the multi-state plan-and-apply
 ones, each at a path of its own (`/choudoufu-compose`, `/terragrunt-choudoufu`,
-`/atmos-choudoufu`); one is listed once its tool has a published cycle
+`/atmos-choudoufu`, `/chant-compose`); one is listed once its tool has a published cycle
 (`cycles/<tool>/latest.json` beside `demo.json`) or is live, and
 `/api/terragucci/demos` says which. A page shows the demo's live run, or replays
 its latest cycle, under a banner with the example's name, its products, a link to

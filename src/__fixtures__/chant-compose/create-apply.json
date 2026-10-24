@@ -1,0 +1,312 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/pr-report/v1/pr-report.schema.json",
+  "contract": 1,
+  "stage": "apply",
+  "pr": 2,
+  "env": "demo",
+  "base": "3ab3c03f9b6def146afedaa525c5be5aa2bd43e5",
+  "head": "9d5964cbb98e5830cbdba91987eea41a6d1d19d1",
+  "op": "pr-2",
+  "gate": "pr-apply",
+  "digest": "jcs1-sha256:503dd22fac5c93fe6a75a524daf74b89143b808107ac7923d80cade3a03d03de",
+  "status": "applied",
+  "plannedOutputs": {
+    "app": [
+      "ListenerPort"
+    ],
+    "network": [
+      "HttpProxyPort",
+      "SubnetAId",
+      "VpcId"
+    ]
+  },
+  "rounds": [
+    {
+      "round": 2,
+      "gate": "pr-apply-round-2",
+      "digest": "jcs1-sha256:6b239552b3286ba2ed9c2149b2deb910fd8a27c06746fe55764b29179ec8f66f",
+      "components": [
+        "app",
+        "edge"
+      ],
+      "approval": {
+        "status": "approved",
+        "approvedBy": [
+          "forgejo@forgejo:3000:demo-reviewer"
+        ]
+      },
+      "status": "applied",
+      "covered": {
+        "digest": "jcs1-sha256:503dd22fac5c93fe6a75a524daf74b89143b808107ac7923d80cade3a03d03de",
+        "filledInputs": [
+          "network.SubnetBId"
+        ]
+      },
+      "changeSet": {
+        "$schema": "https://intentius.io/chant/schemas/workspace/change-set/v1/change-set.schema.json",
+        "contract": 1,
+        "digest": "jcs1-sha256:6b239552b3286ba2ed9c2149b2deb910fd8a27c06746fe55764b29179ec8f66f",
+        "members": [
+          {
+            "member": "app",
+            "lexicon": "aws",
+            "planner": "chant",
+            "status": "planned",
+            "planDigest": "jcs1-sha256:63790e73f901b76a2aae96eac2343425e60b355dbed12760670af59cb586b57d",
+            "holes": []
+          },
+          {
+            "member": "edge",
+            "lexicon": "aws",
+            "planner": "chant",
+            "status": "planned",
+            "planDigest": "jcs1-sha256:ac8e8d8414821e93f00ea1a387d9888fc50d009e8064aca69f103807c61b5e56",
+            "holes": []
+          }
+        ],
+        "entries": [
+          {
+            "member": "app",
+            "lexicon": "aws",
+            "planner": "chant",
+            "address": "workerInterface",
+            "type": "AWS::EC2::NetworkInterface",
+            "name": "workerInterface",
+            "attributes": [],
+            "action": "create"
+          },
+          {
+            "member": "edge",
+            "lexicon": "aws",
+            "planner": "chant",
+            "address": "allowlist",
+            "type": "AWS::SSM::Parameter",
+            "name": "allowlist",
+            "attributes": [
+              {
+                "path": "Value"
+              }
+            ],
+            "action": "update",
+            "disruption": "in-place"
+          }
+        ],
+        "summary": {
+          "members": 2,
+          "entries": 2,
+          "actions": {
+            "create": 1,
+            "update": 1,
+            "replace": 0,
+            "delete": 0,
+            "read": 0,
+            "no-op": 0,
+            "forget": 0
+          },
+          "types": {
+            "AWS::EC2::NetworkInterface": {
+              "create": 1
+            },
+            "AWS::SSM::Parameter": {
+              "update": 1
+            }
+          },
+          "byMember": {
+            "app": {
+              "create": 1
+            },
+            "edge": {
+              "update": 1
+            }
+          },
+          "deletes": [],
+          "replacements": [],
+          "failed": [],
+          "holes": 0
+        }
+      }
+    }
+  ],
+  "approval": {
+    "status": "approved",
+    "approvedBy": [
+      "forgejo@forgejo:3000:demo-reviewer"
+    ]
+  },
+  "selection": {
+    "changed": [
+      "network",
+      "app",
+      "edge"
+    ],
+    "dependents": [],
+    "unclaimed": [],
+    "indeterminate": [],
+    "waves": [
+      [
+        "network"
+      ],
+      [
+        "app"
+      ],
+      [
+        "edge"
+      ]
+    ]
+  },
+  "members": [
+    {
+      "member": "app",
+      "component": "app",
+      "planDigest": "jcs1-sha256:63790e73f901b76a2aae96eac2343425e60b355dbed12760670af59cb586b57d",
+      "status": "applied",
+      "counts": {
+        "create": 1,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      },
+      "unknownInputs": [
+        "network.SubnetBId"
+      ],
+      "round": 2
+    },
+    {
+      "member": "edge",
+      "component": "edge",
+      "planDigest": "jcs1-sha256:ac8e8d8414821e93f00ea1a387d9888fc50d009e8064aca69f103807c61b5e56",
+      "status": "applied",
+      "counts": {
+        "create": 0,
+        "update": 1,
+        "replace": 0,
+        "delete": 0
+      },
+      "round": 2
+    },
+    {
+      "member": "network",
+      "component": "network",
+      "planDigest": "jcs1-sha256:5f707c0c7d5d13737d72b31b440fd48e72d227cf64ec6356c557ee1cc966a1ba",
+      "status": "applied",
+      "counts": {
+        "create": 1,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    }
+  ],
+  "changeSet": {
+    "$schema": "https://intentius.io/chant/schemas/workspace/change-set/v1/change-set.schema.json",
+    "contract": 1,
+    "digest": "jcs1-sha256:503dd22fac5c93fe6a75a524daf74b89143b808107ac7923d80cade3a03d03de",
+    "members": [
+      {
+        "member": "app",
+        "lexicon": "aws",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:f64595dad31235bd2a7066587f9cf527ec90e9dfbe6866c9bf69bd0f685e5b3c",
+        "holes": []
+      },
+      {
+        "member": "edge",
+        "lexicon": "aws",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:ac8e8d8414821e93f00ea1a387d9888fc50d009e8064aca69f103807c61b5e56",
+        "holes": []
+      },
+      {
+        "member": "network",
+        "lexicon": "aws",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:5f707c0c7d5d13737d72b31b440fd48e72d227cf64ec6356c557ee1cc966a1ba",
+        "holes": []
+      }
+    ],
+    "entries": [
+      {
+        "member": "app",
+        "lexicon": "aws",
+        "planner": "chant",
+        "address": "workerInterface",
+        "type": "AWS::EC2::NetworkInterface",
+        "name": "workerInterface",
+        "attributes": [
+          {
+            "path": "SubnetId",
+            "unknown": true
+          }
+        ],
+        "action": "create"
+      },
+      {
+        "member": "edge",
+        "lexicon": "aws",
+        "planner": "chant",
+        "address": "allowlist",
+        "type": "AWS::SSM::Parameter",
+        "name": "allowlist",
+        "attributes": [
+          {
+            "path": "Value"
+          }
+        ],
+        "action": "update",
+        "disruption": "in-place"
+      },
+      {
+        "member": "network",
+        "lexicon": "aws",
+        "planner": "chant",
+        "address": "subnetB",
+        "type": "AWS::EC2::Subnet",
+        "name": "subnetB",
+        "attributes": [],
+        "action": "create"
+      }
+    ],
+    "summary": {
+      "members": 3,
+      "entries": 3,
+      "actions": {
+        "create": 2,
+        "update": 1,
+        "replace": 0,
+        "delete": 0,
+        "read": 0,
+        "no-op": 0,
+        "forget": 0
+      },
+      "types": {
+        "AWS::EC2::NetworkInterface": {
+          "create": 1
+        },
+        "AWS::EC2::Subnet": {
+          "create": 1
+        },
+        "AWS::SSM::Parameter": {
+          "update": 1
+        }
+      },
+      "byMember": {
+        "app": {
+          "create": 1
+        },
+        "edge": {
+          "update": 1
+        },
+        "network": {
+          "create": 1
+        }
+      },
+      "deletes": [],
+      "replacements": [],
+      "failed": [],
+      "holes": 0
+    }
+  }
+}

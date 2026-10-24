@@ -1,0 +1,235 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/pr-report/v1/pr-report.schema.json",
+  "contract": 1,
+  "stage": "apply",
+  "pr": 1,
+  "env": "demo",
+  "base": "3ab3c03f9b6def146afedaa525c5be5aa2bd43e5",
+  "head": "f97fa21effb924712aa6cda6de86cf705ab649e5",
+  "op": "pr-1",
+  "gate": "pr-apply",
+  "digest": "jcs1-sha256:e50bdf89b8504d534b46d43c404aeeb3f0f0de6f49e7db797e77bb89962c6c53",
+  "status": "applied",
+  "plannedOutputs": {
+    "app": [
+      "AdminListenerPort",
+      "ListenerPort"
+    ],
+    "network": [
+      "AdminPort",
+      "HttpProxyPort",
+      "SubnetAId",
+      "VpcId"
+    ]
+  },
+  "approval": {
+    "status": "approved",
+    "approvedBy": [
+      "forgejo@forgejo:3000:demo-reviewer"
+    ]
+  },
+  "selection": {
+    "changed": [
+      "network",
+      "app",
+      "edge"
+    ],
+    "dependents": [],
+    "unclaimed": [],
+    "indeterminate": [],
+    "waves": [
+      [
+        "network"
+      ],
+      [
+        "app"
+      ],
+      [
+        "edge"
+      ]
+    ]
+  },
+  "members": [
+    {
+      "member": "app",
+      "component": "app",
+      "planDigest": "jcs1-sha256:65a12decf84a78586f93688068a7bb222f8b8aa56fc2efe655c7b12976a5ab39",
+      "status": "applied",
+      "counts": {
+        "create": 1,
+        "update": 1,
+        "replace": 0,
+        "delete": 0
+      }
+    },
+    {
+      "member": "edge",
+      "component": "edge",
+      "planDigest": "jcs1-sha256:75bdfb83a83a520a7413e5ad14892946ada08689f426b8175adc5718ff665f9d",
+      "status": "applied",
+      "counts": {
+        "create": 1,
+        "update": 1,
+        "replace": 0,
+        "delete": 0
+      }
+    },
+    {
+      "member": "network",
+      "component": "network",
+      "planDigest": "jcs1-sha256:b7565b6bef49b6cf999f9203911b86f53c5d2c2b62998fdedd0d62458cbadbf0",
+      "status": "applied",
+      "counts": {
+        "create": 1,
+        "update": 1,
+        "replace": 0,
+        "delete": 0
+      }
+    }
+  ],
+  "changeSet": {
+    "$schema": "https://intentius.io/chant/schemas/workspace/change-set/v1/change-set.schema.json",
+    "contract": 1,
+    "digest": "jcs1-sha256:e50bdf89b8504d534b46d43c404aeeb3f0f0de6f49e7db797e77bb89962c6c53",
+    "members": [
+      {
+        "member": "app",
+        "lexicon": "aws",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:65a12decf84a78586f93688068a7bb222f8b8aa56fc2efe655c7b12976a5ab39",
+        "holes": []
+      },
+      {
+        "member": "edge",
+        "lexicon": "aws",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:75bdfb83a83a520a7413e5ad14892946ada08689f426b8175adc5718ff665f9d",
+        "holes": []
+      },
+      {
+        "member": "network",
+        "lexicon": "aws",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:b7565b6bef49b6cf999f9203911b86f53c5d2c2b62998fdedd0d62458cbadbf0",
+        "holes": []
+      }
+    ],
+    "entries": [
+      {
+        "member": "app",
+        "lexicon": "aws",
+        "planner": "chant",
+        "address": "adminListenerPort",
+        "type": "AWS::SSM::Parameter",
+        "name": "adminListenerPort",
+        "attributes": [],
+        "action": "create"
+      },
+      {
+        "member": "app",
+        "lexicon": "aws",
+        "planner": "chant",
+        "address": "listenerPort",
+        "type": "AWS::SSM::Parameter",
+        "name": "listenerPort",
+        "attributes": [
+          {
+            "path": "Value"
+          }
+        ],
+        "action": "update",
+        "disruption": "in-place"
+      },
+      {
+        "member": "edge",
+        "lexicon": "aws",
+        "planner": "chant",
+        "address": "adminUpstream",
+        "type": "AWS::SSM::Parameter",
+        "name": "adminUpstream",
+        "attributes": [],
+        "action": "create"
+      },
+      {
+        "member": "edge",
+        "lexicon": "aws",
+        "planner": "chant",
+        "address": "upstream",
+        "type": "AWS::SSM::Parameter",
+        "name": "upstream",
+        "attributes": [
+          {
+            "path": "Value"
+          }
+        ],
+        "action": "update",
+        "disruption": "in-place"
+      },
+      {
+        "member": "network",
+        "lexicon": "aws",
+        "planner": "chant",
+        "address": "adminPort",
+        "type": "AWS::SSM::Parameter",
+        "name": "adminPort",
+        "attributes": [],
+        "action": "create"
+      },
+      {
+        "member": "network",
+        "lexicon": "aws",
+        "planner": "chant",
+        "address": "httpProxyPort",
+        "type": "AWS::SSM::Parameter",
+        "name": "httpProxyPort",
+        "attributes": [
+          {
+            "path": "Value"
+          }
+        ],
+        "action": "update",
+        "disruption": "in-place"
+      }
+    ],
+    "summary": {
+      "members": 3,
+      "entries": 6,
+      "actions": {
+        "create": 3,
+        "update": 3,
+        "replace": 0,
+        "delete": 0,
+        "read": 0,
+        "no-op": 0,
+        "forget": 0
+      },
+      "types": {
+        "AWS::SSM::Parameter": {
+          "create": 3,
+          "update": 3
+        }
+      },
+      "byMember": {
+        "app": {
+          "create": 1,
+          "update": 1
+        },
+        "edge": {
+          "create": 1,
+          "update": 1
+        },
+        "network": {
+          "create": 1,
+          "update": 1
+        }
+      },
+      "deletes": [],
+      "replacements": [],
+      "failed": [],
+      "holes": 0
+    }
+  }
+}

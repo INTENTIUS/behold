@@ -138,9 +138,9 @@ export interface DemoAsk {
   ghost: boolean | null;
 }
 
-/** A tip card: a title and a body, both non-empty. */
+/** A tip card: a non-empty body, and a title unless the tip was written as a plain string. */
 export interface DemoTip {
-  title: string;
+  title?: string;
   body: string;
   /** A small link at the end of the card: https on intentius.io or github.com/INTENTIUS only; absent otherwise. */
   link?: { label: string; url: string };
@@ -163,16 +163,29 @@ export function tipLinkOf(v: unknown): { label: string; url: string } | undefine
   return ok ? { label: text(v.label) ?? "Read how", url: u.href } : undefined;
 }
 
-/** An ask's `tips`: the entries with a non-empty title and body, in order; undefined when none are valid. */
+/**
+ * An ask's `tips`: each entry with a non-empty body, in order; undefined when none are valid. An entry may be a plain
+ * string, which is a body with no title (the Terragrunt and Atmos demos wrote theirs so). An entry that is neither is
+ * dropped with a line on stderr, so a tip is never lost without a trace.
+ */
 export function tipsOf(v: unknown): DemoTip[] | undefined {
   if (!Array.isArray(v)) return undefined;
   const tips: DemoTip[] = [];
   for (const t of v) {
-    if (!isRecord(t)) continue;
+    if (typeof t === "string") {
+      const body = text(t);
+      if (body) tips.push({ body });
+      else console.warn("behold: a demo tip was an empty string and is not shown");
+      continue;
+    }
+    const body = isRecord(t) ? text(t.body) : undefined;
+    if (!isRecord(t) || !body) {
+      console.warn(`behold: a demo tip needs a body (a string, or an object with a body) and is not shown: ${JSON.stringify(t)?.slice(0, 80)}`);
+      continue;
+    }
     const title = text(t.title);
-    const body = text(t.body);
     const link = tipLinkOf(t.link);
-    if (title && body) tips.push({ title, body, ...(link ? { link } : {}) });
+    tips.push({ ...(title ? { title } : {}), body, ...(link ? { link } : {}) });
   }
   return tips.length ? tips : undefined;
 }
@@ -547,7 +560,7 @@ export function shareImageRoute(app: Hono, webRoot: string): void {
  * The demos with a page of their own, in the order they are listed: the multi-state plan-and-apply ones. web/kiosk-vendor.js
  * VENDORS has their banner words. A demo is listed once its tool has a published cycle or is live ({@link listedDemos}).
  */
-export const VENDOR_TOOLS = ["choudoufu-compose", "terragrunt-choudoufu", "atmos-choudoufu"] as const;
+export const VENDOR_TOOLS = ["choudoufu-compose", "terragrunt-choudoufu", "atmos-choudoufu", "chant-compose"] as const;
 export type VendorTool = (typeof VENDOR_TOOLS)[number];
 
 /** Each demo's name for the page's title. web/kiosk-vendor.js VENDORS has the same names. */
@@ -555,6 +568,7 @@ export const VENDOR_NAMES: Record<VendorTool, string> = {
   "choudoufu-compose": "terragucci and choudoufu",
   "terragrunt-choudoufu": "choudoufu with Terragrunt",
   "atmos-choudoufu": "choudoufu with Atmos",
+  "chant-compose": "chant",
 };
 
 /** The tools that had a page before the list narrowed to the demos above: their URLs redirect to `/`. */

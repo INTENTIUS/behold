@@ -71,8 +71,15 @@ export interface ComposedReport {
   digest: string | null;
   approval: string | null;
   gate: string | null;
+  /** The pull request's number and the commit the stage ran on (the head for a plan, the merge for an apply). */
+  pr: number | null;
+  head: string | null;
+  /** The upstream members whose outputs the plan states (`plannedOutputs`' keys). */
+  planned: string[];
   /** `selection.waves` flattened: the apply order, upstreams first. */
   order: string[];
+  /** `selection.waves` as the report gives them. */
+  waves: string[][];
   members: ComposedMember[];
   entries: ComposedEntry[];
   rounds: ComposedRound[];
@@ -131,7 +138,10 @@ export function composedReportOf(doc: unknown): ComposedReport | undefined {
       entries: entriesOf(r.changeSet),
     });
   }
-  if (!members.some((m) => m.unknownInputs.length) && !rounds.length) return undefined;
+  // A composed run reads outputs between its stacks: an unknown input, a round, or upstreams whose outputs the plan
+  // states (`plannedOutputs`, which an edit that moves only known values still has). A plain fan-out has none.
+  const planned = isRecord(doc.plannedOutputs) ? Object.keys(doc.plannedOutputs) : [];
+  if (!members.some((m) => m.unknownInputs.length) && !rounds.length && !planned.length) return undefined;
   const sel = doc.selection;
   const order = isRecord(sel) && Array.isArray(sel.waves) ? sel.waves.flatMap((w) => strings(w)) : [];
   const approval = isRecord(doc.approval) && typeof doc.approval.status === "string" ? doc.approval.status : null;
@@ -141,6 +151,10 @@ export function composedReportOf(doc: unknown): ComposedReport | undefined {
     digest: typeof doc.digest === "string" ? doc.digest : null,
     approval,
     gate: typeof doc.gate === "string" ? doc.gate : null,
+    planned,
+    waves: isRecord(sel) && Array.isArray(sel.waves) ? sel.waves.map((w) => strings(w)) : [],
+    pr: typeof doc.pr === "number" ? doc.pr : null,
+    head: typeof doc.head === "string" ? doc.head : null,
     order,
     members,
     entries: entriesOf(cs),
@@ -154,6 +168,18 @@ export interface ComposedViewOptions {
   /** When each stage finished, to order the apply after the plan. The kiosk compares them as ISO strings. */
   planAt?: string;
   applyAt?: string;
+  /**
+   * Component -> the components it depends on (the components graph's `dependsOn`), for the edge between two stacks the
+   * report records no read for: edge reads nothing the plan could not state, but it still runs after app. A report names
+   * only the reads it marked unknown.
+   */
+  dependsOn?: Record<string, readonly string[]>;
+  /**
+   * The outputs the applied stacks hold now, by member then output name. A pr-report/v1 states no value for what an
+   * apply created (CloudFormation change-set entries carry property names only), so the real subnet id comes from the
+   * stack that published it. Used only for a stack the apply report says applied.
+   */
+  outputs?: Record<string, Record<string, string>>;
 }
 
 /** What the kiosk's two terragucci reads are told, plus the chant facts behind them. */
@@ -208,6 +234,24 @@ export function composedView(plan: ComposedReport | undefined, apply: ComposedRe
     }
   }
 
+  for (const m of memberRows) {
+    for (const dep of opts.dependsOn?.[m.component] ?? opts.dependsOn?.[m.member] ?? []) {
+      const up = nameOf(dep);
+      if (up !== m.member && names.includes(up) && !(upstreams[m.member] ?? []).includes(up)) (upstreams[m.member] ??= []).push(up);
+    }
+  }
+
+  // No graph to ask, and the report names only the reads it marked unknown: an upstream whose outputs the plan states is
+  // read by the next wave's stacks, which is what the demo's chain is. A graph's `dependsOn` above says so when known.
+  if (!opts.dependsOn) {
+    const waves = (plan ?? apply)!.waves.map((w) => w.map(nameOf));
+    waves.forEach((w, i) => {
+      for (const up of w) {
+        if (!(plan ?? apply)!.planned.some((p) => nameOf(p) === up)) continue;
+        for (const reader of waves[i + 1] ?? []) if (!(upstreams[reader] ??= []).includes(up)) upstreams[reader]!.push(up);
+      }
+    });
+  }
   const appliedMembers = new Set((apply?.members ?? []).filter((m) => m.status === "applied").map((m) => m.member));
   // Values an apply states: the properties of the final plan of each member that carry an `after`.
   const finalEntries = (member: string): ComposedEntry[] => {
@@ -231,14 +275,39 @@ export function composedView(plan: ComposedReport | undefined, apply: ComposedRe
     if (done) {
       for (const e of finalEntries(root.path)) {
         const values = e.attributes.filter((a) => !a.unknown && "after" in a).map((a) => ({ address: e.address, ...a }));
-        if (values.length) (applied[`${root.member}/${root.name}/${e.address}`] ??= { values: [], run: { stage: "tf-apply", finished: opts.applyAt ?? EPOCH, commit: "", report: "" } }).values.push(...values);
+        if (values.length) (applied[`${root.member}/${root.name}/${e.address}`] ??= { values: [], run: { stage: "tf-apply", finished: opts.applyAt ?? EPOCH, commit: apply?.head ?? "", report: "" } }).values.push(...values);
       }
     }
     if (resources.length) scene.push({ ...root, resources });
   }
+  // The real values: an output of an applied stack that a reader's unknown input names. The resource it came from gets
+  // its id (the output `SubnetBId` is `subnetB`'s), and the reader's attribute the preview marked unknown gets the value.
+  const run = { stage: "tf-apply", finished: opts.applyAt ?? EPOCH, commit: apply?.head ?? "", report: "" };
+  const say = (member: string, address: string, path: string, after: string) => {
+    const slot = (applied[`chant/${member}/${address}`] ??= { values: [], run });
+    if (!slot.values.some((v) => v.path === path)) slot.values.push({ address, path, after });
+  };
+  for (const m of memberRows) {
+    const found: { up: string; out: string; value: string }[] = [];
+    for (const ref of inputsOf(m)) {
+      const dot = ref.indexOf(".");
+      if (dot < 0) continue;
+      const up = nameOf(ref.slice(0, dot));
+      const out = ref.slice(dot + 1);
+      const value = appliedMembers.has(up) ? opts.outputs?.[up]?.[out] : undefined;
+      if (typeof value === "string" && value) found.push({ up, out, value });
+    }
+    for (const f of found) {
+      const stem = f.out.replace(/Id$/, "").toLowerCase();
+      const made = planEntries.find((e) => e.member === f.up && e.action === "create" && e.address.toLowerCase() === stem);
+      if (made) say(f.up, made.address, "id", f.value);
+    }
+    // One value is unambiguous: every attribute the preview marked unknown on this stack's resources reads it.
+    if (found.length === 1 && appliedMembers.has(m.member)) for (const e of planEntries.filter((x) => x.member === m.member)) for (const a of e.attributes) if (a.unknown) say(m.member, e.address, a.path, found[0]!.value);
+  }
 
   const pullRequest = {
-    run: { commit: "", finished: opts.planAt ?? EPOCH, pull_request: "", report: "" },
+    run: { commit: (plan ?? base).head ?? "", finished: opts.planAt ?? EPOCH, pull_request: (plan ?? base).pr === null ? "" : String((plan ?? base).pr), report: "" },
     reads,
     roots: ordered,
     waves: [
@@ -286,7 +355,7 @@ export function composedView(plan: ComposedReport | undefined, apply: ComposedRe
     }));
     const changed = apply.members.filter((m) => Object.values(m.counts).some((n) => n > 0) || m.status === "applied").map((m) => m.member);
     progress = {
-      run: { commit: "", key: "", present: true, updated: opts.applyAt ?? "9999-12-31T00:00:00.000Z" },
+      run: { commit: apply.head ?? "", key: "", present: true, updated: opts.applyAt ?? "9999-12-31T00:00:00.000Z" },
       states: [
         {
           number: 1,
