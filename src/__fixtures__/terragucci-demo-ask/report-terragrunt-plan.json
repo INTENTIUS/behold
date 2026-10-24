@@ -1,0 +1,542 @@
+{
+  "schema": "terragucci.report/v1",
+  "minor": 48,
+  "run": {
+    "project": "forgejo:3000/terragucci-admin/demo-terragrunt-choudoufu",
+    "commit": "a148cfac282fef6ccd7c093760bee48f702aa1e3",
+    "stage": "tf-plan",
+    "binary": "choudoufu",
+    "runtime": "ci",
+    "started": "2026-10-24T20:32:32Z",
+    "finished": "2026-10-24T20:32:32Z",
+    "job_url": "http://forgejo:3000/terragucci-admin/demo-terragrunt-choudoufu/actions/runs/436",
+    "commit_url": "http://forgejo:3000/terragucci-admin/demo-terragrunt-choudoufu/commit/a148cfac282fef6ccd7c093760bee48f702aa1e3",
+    "pull_request": "36",
+    "pull_request_url": "http://forgejo:3000/terragucci-admin/demo-terragrunt-choudoufu/pulls/36"
+  },
+  "change_set": "jcs1-sha256:28c55ccb384d9bc817e35e331c9925cf523dad8b62abf7a034a09a856fddd060",
+  "unit": "member",
+  "units": 3,
+  "totals": {
+    "create": 2,
+    "update": 1,
+    "replace": 0,
+    "delete": 0,
+    "read": 4,
+    "no-op": 7,
+    "forget": 0
+  },
+  "totals_roots": 3,
+  "groups": [
+    {
+      "id": "6e794b7c9f9f",
+      "units": [
+        "estates/app"
+      ],
+      "outlier": true,
+      "noChanges": false,
+      "changes": [
+        {
+          "line": "+ aws_network_interface.worker",
+          "action": "create",
+          "count": 1
+        },
+        {
+          "line": "<= data.terraform_estate_outputs.network",
+          "action": "read",
+          "count": 1
+        },
+        {
+          "line": "<= data.terraform_estate_outputs.network_new",
+          "action": "read",
+          "count": 1
+        }
+      ],
+      "destroys": 0,
+      "varies": [],
+      "fold": "open",
+      "why": [
+        "outlier: read it on its own"
+      ]
+    },
+    {
+      "id": "0c645dd1ecba",
+      "units": [
+        "estates/edge"
+      ],
+      "outlier": true,
+      "noChanges": false,
+      "changes": [
+        {
+          "line": "<= data.terraform_estate_outputs.app",
+          "action": "read",
+          "count": 1
+        },
+        {
+          "line": "<= data.terraform_estate_outputs.network",
+          "action": "read",
+          "count": 1
+        },
+        {
+          "line": "~ terraform_data.allowlist: input, output",
+          "action": "update",
+          "count": 1
+        }
+      ],
+      "destroys": 0,
+      "varies": [],
+      "fold": "open",
+      "why": [
+        "outlier: read it on its own"
+      ]
+    },
+    {
+      "id": "3826b8ab0a5d",
+      "units": [
+        "estates/network"
+      ],
+      "outlier": true,
+      "noChanges": false,
+      "changes": [
+        {
+          "line": "+ aws_subnet.subnet_b",
+          "action": "create",
+          "count": 1
+        }
+      ],
+      "destroys": 0,
+      "varies": [],
+      "fold": "open",
+      "why": [
+        "outlier: read it on its own"
+      ]
+    }
+  ],
+  "roots": [
+    {
+      "path": "estates/app",
+      "binary": {
+        "name": "choudoufu"
+      },
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:298548ae0590de87821f8f72d09e1f8d8bbbd68ee079c18bf09dfb64892c9281",
+      "counts": {
+        "no-op": 3,
+        "create": 1,
+        "read": 2
+      },
+      "group": "6e794b7c9f9f",
+      "plan": {},
+      "reads": [
+        {
+          "upstream": "estates/network",
+          "data": "network",
+          "outputs": "planned",
+          "composed": true
+        },
+        {
+          "upstream": "estates/network",
+          "data": "network_new",
+          "outputs": "planned",
+          "unknown": [
+            "subnet_b_id"
+          ],
+          "composed": true
+        }
+      ],
+      "job_url": "http://forgejo:3000/terragucci-admin/demo-terragrunt-choudoufu/actions/runs/436",
+      "changes": [
+        {
+          "address": "aws_network_interface.worker",
+          "type": "aws_network_interface",
+          "action": "create",
+          "attributes": [
+            {
+              "path": "arn",
+              "unknown": true
+            },
+            {
+              "path": "attachment",
+              "unknown": true
+            },
+            {
+              "path": "ena_srd_specification",
+              "after": []
+            },
+            {
+              "path": "enable_primary_ipv6",
+              "unknown": true
+            },
+            {
+              "path": "id",
+              "unknown": true
+            },
+            {
+              "path": "interface_type",
+              "unknown": true
+            },
+            {
+              "path": "ipv4_prefix_count",
+              "unknown": true
+            },
+            {
+              "path": "ipv4_prefixes",
+              "unknown": true
+            },
+            {
+              "path": "ipv6_address_count",
+              "unknown": true
+            },
+            {
+              "path": "ipv6_address_list",
+              "unknown": true
+            },
+            {
+              "path": "ipv6_address_list_enabled",
+              "after": false
+            },
+            {
+              "path": "ipv6_addresses",
+              "unknown": true
+            },
+            {
+              "path": "ipv6_prefix_count",
+              "unknown": true
+            },
+            {
+              "path": "ipv6_prefixes",
+              "unknown": true
+            },
+            {
+              "path": "mac_address",
+              "unknown": true
+            },
+            {
+              "path": "outpost_arn",
+              "unknown": true
+            },
+            {
+              "path": "owner_id",
+              "unknown": true
+            },
+            {
+              "path": "private_dns_name",
+              "unknown": true
+            },
+            {
+              "path": "private_ip",
+              "unknown": true
+            },
+            {
+              "path": "private_ip_list",
+              "unknown": true
+            },
+            {
+              "path": "private_ip_list_enabled",
+              "after": false
+            },
+            {
+              "path": "private_ips",
+              "unknown": true
+            },
+            {
+              "path": "private_ips_count",
+              "unknown": true
+            },
+            {
+              "path": "region",
+              "after": "us-east-1"
+            },
+            {
+              "path": "security_groups",
+              "unknown": true
+            },
+            {
+              "path": "source_dest_check",
+              "after": true
+            },
+            {
+              "path": "subnet_id",
+              "unknown": true
+            },
+            {
+              "path": "tags",
+              "after": {
+                "tofu-address": "aws_network_interface.worker",
+                "tofu-estate": "tgc-app"
+              }
+            },
+            {
+              "path": "tags_all",
+              "after": {
+                "tofu-address": "aws_network_interface.worker",
+                "tofu-estate": "tgc-app"
+              }
+            }
+          ],
+          "fold": "open"
+        },
+        {
+          "address": "data.terraform_estate_outputs.network",
+          "type": "terraform_estate_outputs",
+          "action": "read",
+          "attributes": [],
+          "fold": "open"
+        },
+        {
+          "address": "data.terraform_estate_outputs.network_new",
+          "type": "terraform_estate_outputs",
+          "action": "read",
+          "attributes": [],
+          "fold": "open"
+        }
+      ],
+      "highlights": [],
+      "fold": "open",
+      "why": [],
+      "composed": {
+        "wave": 1,
+        "module": "module.app"
+      }
+    },
+    {
+      "path": "estates/edge",
+      "binary": {
+        "name": "choudoufu"
+      },
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:c268fb1ffd92561bdf89386e6dfa2d33f3caa5ff7928b63dc555a6905b1fa84b",
+      "counts": {
+        "read": 2,
+        "update": 1,
+        "no-op": 1
+      },
+      "group": "0c645dd1ecba",
+      "plan": {},
+      "reads": [
+        {
+          "upstream": "estates/app",
+          "data": "app",
+          "outputs": "planned",
+          "composed": true
+        },
+        {
+          "upstream": "estates/network",
+          "data": "network",
+          "outputs": "planned",
+          "composed": true
+        }
+      ],
+      "job_url": "http://forgejo:3000/terragucci-admin/demo-terragrunt-choudoufu/actions/runs/436",
+      "changes": [
+        {
+          "address": "data.terraform_estate_outputs.app",
+          "type": "terraform_estate_outputs",
+          "action": "read",
+          "attributes": [],
+          "fold": "open"
+        },
+        {
+          "address": "data.terraform_estate_outputs.network",
+          "type": "terraform_estate_outputs",
+          "action": "read",
+          "attributes": [],
+          "fold": "open"
+        },
+        {
+          "address": "terraform_data.allowlist",
+          "type": "terraform_data",
+          "action": "update",
+          "disruption": "in-place",
+          "attributes": [
+            {
+              "path": "input",
+              "before": [
+                "10.0.1.0/24"
+              ],
+              "after": [
+                "10.0.1.0/24",
+                "10.0.2.0/24"
+              ]
+            },
+            {
+              "path": "output",
+              "before": [
+                "10.0.1.0/24"
+              ],
+              "unknown": true
+            }
+          ],
+          "fold": "open"
+        }
+      ],
+      "highlights": [],
+      "fold": "open",
+      "why": [],
+      "composed": {
+        "wave": 1,
+        "module": "module.edge"
+      }
+    },
+    {
+      "path": "estates/network",
+      "binary": {
+        "name": "choudoufu"
+      },
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:a06330beed8f1788996608dd7581bb76a97b298e2de71ffb4a34182bea8b1c01",
+      "counts": {
+        "no-op": 3,
+        "create": 1
+      },
+      "group": "3826b8ab0a5d",
+      "plan": {},
+      "job_url": "http://forgejo:3000/terragucci-admin/demo-terragrunt-choudoufu/actions/runs/436",
+      "changes": [
+        {
+          "address": "aws_subnet.subnet_b",
+          "type": "aws_subnet",
+          "action": "create",
+          "attributes": [
+            {
+              "path": "arn",
+              "unknown": true
+            },
+            {
+              "path": "assign_ipv6_address_on_creation",
+              "after": false
+            },
+            {
+              "path": "availability_zone",
+              "unknown": true
+            },
+            {
+              "path": "availability_zone_id",
+              "unknown": true
+            },
+            {
+              "path": "cidr_block",
+              "after": "10.0.2.0/24"
+            },
+            {
+              "path": "enable_dns64",
+              "after": false
+            },
+            {
+              "path": "enable_resource_name_dns_a_record_on_launch",
+              "after": false
+            },
+            {
+              "path": "enable_resource_name_dns_aaaa_record_on_launch",
+              "after": false
+            },
+            {
+              "path": "id",
+              "unknown": true
+            },
+            {
+              "path": "ipv6_cidr_block",
+              "unknown": true
+            },
+            {
+              "path": "ipv6_cidr_block_association_id",
+              "unknown": true
+            },
+            {
+              "path": "ipv6_native",
+              "after": false
+            },
+            {
+              "path": "map_public_ip_on_launch",
+              "after": false
+            },
+            {
+              "path": "owner_id",
+              "unknown": true
+            },
+            {
+              "path": "private_dns_hostname_type_on_launch",
+              "unknown": true
+            },
+            {
+              "path": "region",
+              "after": "us-east-1"
+            },
+            {
+              "path": "tags",
+              "after": {
+                "tofu-address": "aws_subnet.subnet_b",
+                "tofu-estate": "tgc-network"
+              }
+            },
+            {
+              "path": "tags_all",
+              "after": {
+                "tofu-address": "aws_subnet.subnet_b",
+                "tofu-estate": "tgc-network"
+              }
+            },
+            {
+              "path": "vpc_id",
+              "after": "vpc-55e80725"
+            }
+          ],
+          "fold": "open"
+        }
+      ],
+      "highlights": [],
+      "fold": "open",
+      "why": [],
+      "composed": {
+        "wave": 1,
+        "module": "module.network"
+      }
+    }
+  ],
+  "waves": [
+    {
+      "number": 1,
+      "roots": [
+        "estates/app",
+        "estates/edge",
+        "estates/network"
+      ],
+      "set_digest": "jcs1-sha256:0e07a3606ece11cc1ace5ba3d88eddc4eb6c0fe7bb3adc8c4b3486b567c496e9",
+      "approval": "not-requested",
+      "state": "planned",
+      "composed": {
+        "plan_digest": "jcs1-sha256:0e07a3606ece11cc1ace5ba3d88eddc4eb6c0fe7bb3adc8c4b3486b567c496e9",
+        "members": [
+          {
+            "root": "estates/app",
+            "module": "module.app"
+          },
+          {
+            "root": "estates/edge",
+            "module": "module.edge"
+          },
+          {
+            "root": "estates/network",
+            "module": "module.network"
+          }
+        ]
+      }
+    }
+  ],
+  "named": [],
+  "holes": [],
+  "redaction": {
+    "marker": "(sensitive, redacted by terragucci)",
+    "values": 0
+  },
+  "compose": {
+    "roots": [
+      "estates/app",
+      "estates/edge",
+      "estates/network"
+    ],
+    "max": 3,
+    "wave": 1,
+    "estate": true
+  }
+}
