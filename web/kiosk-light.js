@@ -4,6 +4,7 @@
 // startKioskLight wires the pane's events (behold#936) to both.
 //
 // The contract with the pane (behold#936):
+//   behold:ask-hold   a step began: the graph holds still (nothing changes on its own) until a turn replies.
 //   behold:ask-start  detail { ask, step, scenario }  before the reply types; we set
 //                     window.beholdAskTokens = { dependents } so the reply can fill it.
 //   behold:ask-done   same detail, after the reply; we light the graph.
@@ -410,6 +411,8 @@ export function startKioskLight({ post, getAnswer, getProgress, win = typeof win
     post(m);
   };
   const askOf = (e) => (e && e.detail && e.detail.ask && typeof e.detail.ask === "object" ? e.detail.ask : null);
+  // Every step holds the graph the moment it begins, so a status-only step cannot let progress through before its busy line has shown.
+  const onHold = () => post({ type: "behold:hold" });
   const onStart = (e) => {
     const ask = askOf(e);
     const d = ask ? dependentsOf(getAnswer(), getProgress(), ask) : null;
@@ -446,12 +449,14 @@ export function startKioskLight({ post, getAnswer, getProgress, win = typeof win
   const onMessage = (e) => {
     if (last && e && e.data && e.data.type === "behold:drawn") post(last);
   };
+  win.addEventListener("behold:ask-hold", onHold);
   win.addEventListener("behold:ask-start", onStart);
   win.addEventListener("behold:ask-done", onDone);
   win.addEventListener("behold:ask-status", onStatus);
   win.addEventListener("behold:ask-clear", onClear);
   win.addEventListener("message", onMessage);
   return () => {
+    win.removeEventListener("behold:ask-hold", onHold);
     win.removeEventListener("behold:ask-start", onStart);
     win.removeEventListener("behold:ask-done", onDone);
     win.removeEventListener("behold:ask-status", onStatus);
