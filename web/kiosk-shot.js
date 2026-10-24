@@ -10,6 +10,9 @@ export const SHOT_MS = 750;
 /** The most a shot zooms in: one svg unit to this many pixels. */
 export const SHOT_MAX_SCALE = 1.3;
 
+/** behold#939: the most a prompt-driven step zooms in, so the graph fills the room above the pane. */
+export const ASK_MAX_SCALE = 8;
+
 /** Room kept round a shot's target, in svg units. */
 export const SHOT_PAD = 36;
 
@@ -18,7 +21,7 @@ export const SHOT_PAD = 36;
  * pixels. `room`: the caption's tallest in the cycle, as a bottom inset in px
  * (web/kiosk-watch.js captionRoom), which only a held small stage keeps.
  */
-export function shotMessage({ roots = [], waves = [], whole = false, insets = {}, ms = SHOT_MS, id = null, room = 0 } = {}) {
+export function shotMessage({ roots = [], waves = [], whole = false, insets = {}, ms = SHOT_MS, id = null, room = 0, ask = false } = {}) {
   const px = (v) => (Number.isFinite(v) && v > 0 ? Math.round(v) : 0);
   return {
     type: "behold:shot",
@@ -29,6 +32,8 @@ export function shotMessage({ roots = [], waves = [], whole = false, insets = {}
     insets: { top: px(insets.top), right: px(insets.right), bottom: px(insets.bottom), left: px(insets.left) },
     ms: Number.isFinite(ms) && ms >= 0 ? ms : SHOT_MS,
     ...(px(room) ? { room: px(room) } : {}),
+    // behold#939: a prompt-driven step's shot fills the room (the frame zooms in further, and drops its own caption line).
+    ...(ask === true ? { ask: true } : {}),
   };
 }
 
@@ -40,7 +45,7 @@ export function shotFromMessage(event, host) {
   // Inspect: no shot; the frame fits the graph as it always has.
   if (d.release === true) return { type: "behold:shot", release: true };
   const list = (v) => (Array.isArray(v) ? v : []);
-  return shotMessage({ roots: list(d.roots), waves: list(d.waves), whole: d.whole, insets: d.insets && typeof d.insets === "object" ? d.insets : {}, ms: d.ms, id: d.id ?? null, room: d.room });
+  return shotMessage({ roots: list(d.roots), waves: list(d.waves), whole: d.whole, insets: d.insets && typeof d.insets === "object" ? d.insets : {}, ms: d.ms, id: d.id ?? null, room: d.room, ask: d.ask === true });
 }
 
 /** The smallest box round several `{x, y, x2, y2}`, or null for none. */

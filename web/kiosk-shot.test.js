@@ -1,7 +1,7 @@
 // behold#571: Watch mode's camera, as arithmetic: where a shot puts its
 // target, how a move goes, and which messages the frame takes.
 import { describe, expect, it } from "vitest";
-import { HELD_CAPTION_PX, HELD_FILL, HELD_MAX_SCALE, HELD_PAD, HOLD_RESERVE_PX, SHOT_MS, SMALL_STAGE_CARD_PX, ease, heldFrame, heldInsets, heldTarget, holdsStage, medianWidth, sameViewBox, shotFromMessage, shotMessage, shotViewBox, smallStage, tweenViewBox, unionBox } from "./kiosk-shot.js";
+import { ASK_MAX_SCALE, HELD_CAPTION_PX, HELD_FILL, HELD_MAX_SCALE, HELD_PAD, HOLD_RESERVE_PX, SHOT_MS, SMALL_STAGE_CARD_PX, ease, heldFrame, heldInsets, heldTarget, holdsStage, medianWidth, sameViewBox, shotFromMessage, shotMessage, shotViewBox, smallStage, tweenViewBox, unionBox } from "./kiosk-shot.js";
 import { captionRoom, shotFor } from "./kiosk-watch.js";
 
 const pane = { width: 1600, height: 900 };
@@ -297,5 +297,27 @@ describe("the held scale is the open stage over the graph, nothing else", () => 
     expect(shotMessage({ whole: true })).not.toHaveProperty("room");
     expect(shotFromMessage({ origin: "https://k", data: { type: "behold:shot", whole: true, room: 245 } }, "https://k").room).toBe(245);
     expect(heldInsets({ bottom: 300 }, 245).bottom).toBe(300);
+  });
+});
+
+describe("a prompt-driven step's shot (behold#939)", () => {
+  it("carries ask only when true, and reads it back", () => {
+    expect(shotMessage({ whole: true })).not.toHaveProperty("ask");
+    expect(shotMessage({ whole: true, ask: true }).ask).toBe(true);
+    const ev = { origin: "http://h", data: shotMessage({ whole: true, ask: true }) };
+    expect(shotFromMessage(ev, "http://h").ask).toBe(true);
+    expect(shotFromMessage({ origin: "http://h", data: shotMessage({ whole: true }) }, "http://h")).not.toHaveProperty("ask");
+  });
+
+  it("zooms a small graph up to fill the room when allowed, and not past the usual cap otherwise", () => {
+    const target = { x: 0, y: 0, x2: 400, y2: 300 };
+    const pane = { width: 1920, height: 1080 };
+    const insets = { top: 20, bottom: 340, left: 20, right: 20 };
+    const usual = shotViewBox(target, pane, insets);
+    const ask = shotViewBox(target, pane, insets, { maxScale: ASK_MAX_SCALE });
+    expect(pane.width / usual[2]).toBeCloseTo(1.3, 5);
+    expect(pane.width / ask[2]).toBeGreaterThan(1.8);
+    // The graph still sits in the open part: its scaled height is within the room above the pane.
+    expect((300 + 72) * (pane.width / ask[2])).toBeLessThanOrEqual(1080 - 340 - 20 + 0.5);
   });
 });
