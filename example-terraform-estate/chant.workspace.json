@@ -4,7 +4,7 @@
   "pins": [
     {
       "package": "@intentius/chant-lexicon-terraform",
-      "version": "0.124.46"
+      "version": "0.124.51"
     }
   ],
   "members": [
