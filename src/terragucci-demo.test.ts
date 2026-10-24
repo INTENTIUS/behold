@@ -125,6 +125,25 @@ describe("demo.json's ask, asks, opening and closing (behold#936)", () => {
     expect(both.demo!.ask).toMatchObject({ prompt: "p", action: null });
   });
 
+  it("keeps a tip's link only for https intentius.io or github.com/INTENTIUS", async () => {
+    const l = (url: string, label?: string) => ({ title: "T", body: "b", link: { url, label } });
+    const tips = [
+      l("https://intentius.io/x/", "Go"),
+      l("https://github.com/INTENTIUS/choudoufu"),
+      l("http://intentius.io/x/", "no"),
+      l("https://evil.example/x", "no"),
+      l("https://intentius.io.evil.example/", "no"),
+      l("https://github.com/other/repo", "no"),
+      l("https://github.com/INTENTIUSX/repo", "no"),
+      l("javascript:alert(1)", "no"),
+    ];
+    const a = await readDemo(source({ ...fixture("demo-failed.json"), ask: { status: "Applying", tips } }));
+    const got = a.demo!.ask!.tips!.map((t) => t.link);
+    expect(got[0]).toEqual({ label: "Go", url: "https://intentius.io/x/" });
+    expect(got[1]).toEqual({ label: "Read how", url: "https://github.com/INTENTIUS/choudoufu" });
+    expect(got.slice(2).every((x) => x === undefined)).toBe(true);
+    expect(a.demo!.ask!.tips).toHaveLength(8);
+  });
   it("passes tips through, keeping the valid cards in order", async () => {
     const tips = [{ title: " A ", body: " one " }, { title: "", body: "x" }, { title: "B" }, "no", { title: "C", body: "three" }];
     const a = await readDemo(source({ ...fixture("demo-failed.json"), ask: { status: "Applying", tips }, asks: [{ prompt: "p", tips: [] }, { status: "s", tips: "nope" }] }));
