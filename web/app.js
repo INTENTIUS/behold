@@ -6921,7 +6921,7 @@ function wireKioskFrame() {
     // behold#937: the demo step's lighting from the kiosk (web/kiosk-light.js lightMessage).
     if (e.data && e.data.type === "behold:hold") {
       if (klHold) clearTimeout(klHold);
-      klHold = setTimeout(klReleaseHold, 30000); // a step that never finishes does not freeze the graph for good
+      klHold = setTimeout(klReleaseHold, 120000); // slow typing and queued steps hold it for a while; a step that never finishes does not freeze the graph for good
       return;
     }
     if (e.data && e.data.type === "behold:light") {
