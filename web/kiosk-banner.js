@@ -25,13 +25,29 @@ export const demoPath = (tool) => `/${tool}`;
  * The banner for `tool`, or null for a page that is no listed demo. `listed` is the tools the server lists
  * (/api/terragucci/demos); the switcher shows when it names more than one.
  */
-export function bannerModel(tool, listed = []) {
+/** "I", "II", "III"...: an act's number as the banner writes it. */
+export function actNumeral(n) {
+  const r = [["X", 10], ["IX", 9], ["V", 5], ["IV", 4], ["I", 1]];
+  let out = "";
+  for (let [s, v] of r) while (n >= v) { out += s; n -= v; }
+  return out;
+}
+
+/** The act the loop is on, "Act I", from demo.json's index and scenario count; null for one act, another tool's run or none. */
+export function actOf(tool, demo) {
+  const d = demo && demo.demo ? demo.demo : demo;
+  if (!d || d.tool !== tool || !Number.isInteger(d.index) || !Number.isInteger(d.scenarios) || d.scenarios < 2 || d.index < 1) return null;
+  return `Act ${actNumeral(d.index)}`;
+}
+
+export function bannerModel(tool, listed = [], act = null) {
   const v = vendorOf(tool);
   if (!v || !v.tree || !v.title) return null;
   const tools = Array.isArray(listed) ? listed.filter((t) => { const x = vendorOf(t); return x && x.tree; }) : [];
   return {
     tool,
     name: v.title,
+    act,
     products: (v.products || []).map((id) => PRODUCTS[id]).filter(Boolean),
     code: { label: "See the code", short: "Code", url: `${CODE_BASE}${v.tree}` },
     switcher: tools.length > 1 ? tools.map((t) => ({ tool: t, path: demoPath(t), label: switchLabel(t), current: t === tool })) : [],
@@ -79,7 +95,9 @@ export function drawBanner(host, model, doc = document) {
     prods.appendChild(link("kb-product", p.url, ...kids));
   }
   const code = link("kb-code", model.code.url, el("span", "kb-code-long", model.code.label), el("span", "kb-code-short", model.code.short));
-  host.append(el("span", "kb-name", model.name), prods);
+  const name = el("span", "kb-name", model.name);
+  if (model.act) name.append(el("span", "kb-act", ` - ${model.act}`));
+  host.append(name, prods);
   if (model.switcher.length) {
     const nav = el("nav", "kb-switch");
     nav.setAttribute("aria-label", "Demos");

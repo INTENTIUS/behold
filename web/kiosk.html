@@ -866,7 +866,7 @@
       });
       import { startKiosk } from "/kiosk.js";
       import { pageTool } from "/kiosk-vendor.js";
-      import { bannerModel, drawBanner } from "/kiosk-banner.js";
+      import { actOf, bannerModel, drawBanner } from "/kiosk-banner.js";
       import { pageRuns, pageSource, readsFor } from "/kiosk-source.js";
       import { installMotion } from "/motion.js";
       initTheme(KIOSK_THEME);
@@ -894,11 +894,22 @@
       {
         const host = document.getElementById("k-banner");
         const tool = pageTool(document);
-        drawBanner(host, bannerModel(tool, [tool]));
+        let listed = [tool];
+        let act = null;
+        const draw = () => drawBanner(host, bannerModel(tool, listed, act));
+        draw();
         fetch("/api/terragucci/demos", { cache: "no-store" })
           .then((r) => (r.ok ? r.json() : null))
-          .then((a) => { if (a && Array.isArray(a.demos)) drawBanner(host, bannerModel(tool, a.demos.map((d) => d.tool))); })
+          .then((a) => { if (a && Array.isArray(a.demos)) { listed = a.demos.map((d) => d.tool); draw(); } })
           .catch(() => {});
+        // The act the loop is on, after the title: "One plan, one apply, across estates - Act I".
+        const readAct = () =>
+          fetch("/api/terragucci/demo", { cache: "no-store" })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => { const a = actOf(tool, d); if (a !== act) { act = a; draw(); } })
+            .catch(() => {});
+        readAct();
+        setInterval(readAct, 3000);
       }
       // behold#571: the repo's numbers from Prometheus, a pane of its own in Inspect (web/kiosk-metrics.js), and Watch's badges and delivery line.
       import("/kiosk-metrics.js").then((m) => m.startMetrics(document.getElementById("k-metrics"), { tool: pageTool(document), reads: readsFor(pageSource(document)), onModel: (model) => kiosk.setMetrics(model) }));
