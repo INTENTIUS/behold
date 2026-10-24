@@ -788,8 +788,8 @@ export function startStub(port, { carve = false, nonChant = false, choudoufu = f
   if (why) choudoufu = true;
   /** #471: every why read the page made, so the smoke can say none happened at boot. */
   const whyGets = [];
-  // #228: the hand-layout sidecar, in memory instead of `.behold/layout.json`
-  // — the SAME wire contract src/server.ts serves (lens-keyed deltas, a
+  // #228: the hand layout, in memory instead of the per-user layout cache
+  // (#469) — the SAME wire contract src/server.ts serves (lens-keyed deltas, a
   // `writable` flag on the read), so the smoke drives the client's whole sync
   // layer without a project on disk. `server.layout` lets the test read and
   // seed it as if it were the file.

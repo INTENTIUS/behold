@@ -68,6 +68,8 @@ export interface WorkspaceMember {
   /** Why chant can't read the member, or null when it can. */
   reason: WorkspaceReason | null;
   because: string | null;
+  /** behold#931: for a member of kind `repo`, the other repository's workspace it names. Its `dir` is chant's `@repo/<name>` marker, which names no directory, so `abs` is empty. */
+  repo?: { url: string; rev: string; workspace: string };
 }
 
 export interface Workspace {
@@ -81,6 +83,8 @@ export interface Workspace {
   members: WorkspaceMember[];
   /** #818: the declaration's `ci.reportUrl` (chant#4160), s3:// or file://, from a chant at or above its floor. */
   ciReportUrl?: string;
+  /** behold#931: the redacted origin URL of the repository the document came from (`workspace.repo`, chant 0.124.47), or null. */
+  repo?: string | null;
 }
 
 export type WorkspaceRead = { ok: true; workspace: Workspace } | { ok: false; refusal: WorkspaceRefusal };
@@ -140,11 +144,14 @@ export function workspaceFromLs(doc: WorkspaceDocument, root: string): Workspace
       return refuse("A member in the workspace ls document has no name, dir or kind.", "workspace-ls", "Run `chant workspace ls --json` in the workspace root.");
     }
     const reason = isRecord(m.reason) ? { code: String(m.reason.code), message: String(m.reason.message ?? "") } : null;
+    const ref = m.kind === "repo" ? repoRefOf(m.repo) : undefined;
     members.push({
       name: m.name,
       dir: m.dir,
       kind: m.kind,
-      abs: m.dir === "." ? resolve(root) : resolve(root, m.dir),
+      // A repo member's dir is a marker, not a path: nothing is resolved, watched or written there.
+      abs: m.kind === "repo" ? "" : m.dir === "." ? resolve(root) : resolve(root, m.dir),
+      ...(ref ? { repo: ref } : {}),
       reason,
       because: typeof m.because === "string" ? m.because : null,
     });
@@ -152,8 +159,27 @@ export function workspaceFromLs(doc: WorkspaceDocument, root: string): Workspace
   const ciReportUrl = declaredReportUrl(doc);
   return {
     ok: true,
-    workspace: { name: ws.name, root: resolve(root), file: typeof ws.file === "string" ? ws.file : "chant.workspace.json", chant: String(doc.chant ?? ""), members, ...(ciReportUrl ? { ciReportUrl } : {}) },
+    workspace: {
+      name: ws.name,
+      root: resolve(root),
+      file: typeof ws.file === "string" ? ws.file : "chant.workspace.json",
+      chant: String(doc.chant ?? ""),
+      members,
+      ...(ciReportUrl ? { ciReportUrl } : {}),
+      ...(typeof ws.repo === "string" || ws.repo === null ? { repo: ws.repo } : {}),
+    },
   };
+}
+
+/** behold#931: a repo member's `repo` object, when it has the three strings. */
+function repoRefOf(v: unknown): { url: string; rev: string; workspace: string } | undefined {
+  if (!isRecord(v) || typeof v.url !== "string" || typeof v.rev !== "string") return undefined;
+  return { url: v.url, rev: v.rev, workspace: typeof v.workspace === "string" ? v.workspace : "." };
+}
+
+/** behold#931: an org workspace holds only repo members (chant WSP013), so a declaration of nothing else is one. */
+export function isOrgWorkspace(ws: Workspace): boolean {
+  return ws.members.length > 0 && ws.members.every((m) => m.kind === "repo");
 }
 
 /**
@@ -203,10 +229,10 @@ const byDir = new Map<string, WorkspaceMember>();
 export function setServedWorkspace(ws: Workspace | undefined): void {
   served = ws;
   byDir.clear();
-  for (const m of ws?.members ?? []) byDir.set(m.abs, m);
+  for (const m of ws?.members ?? []) if (m.kind !== "repo") byDir.set(m.abs, m);
   // A root member's source is the root minus every other member's directory.
   const root = ws?.members.find((m) => m.dir === ".");
-  setStampExclusions(root && ws ? new Map([[root.abs, ws.members.filter((m) => m !== root).map((m) => m.abs)]]) : new Map());
+  setStampExclusions(root && ws ? new Map([[root.abs, ws.members.filter((m) => m !== root && m.kind !== "repo").map((m) => m.abs)]]) : new Map());
 }
 
 export function servedWorkspace(): Workspace | undefined {
@@ -221,9 +247,10 @@ export function workspaceMemberOf(dir: string): WorkspaceMember | undefined {
 /**
  * Kinds whose members draw a box. `other` is a directory chant does not read
  * and a nested `workspace` is opaque to this one: both are listed, and draw
- * nothing.
+ * nothing. So is a `repo` member (behold#931): it names another repository,
+ * shown in the Repos tab from the nested members chant reads for it.
  */
-const UNDRAWN_KINDS = new Set(["other", "workspace"]);
+const UNDRAWN_KINDS = new Set(["other", "workspace", "repo"]);
 
 /** The members behold reads: readable, and of a kind that draws a box. */
 export function drawnMembers(ws: Workspace): WorkspaceMember[] {

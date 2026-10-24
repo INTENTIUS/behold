@@ -54,7 +54,7 @@ import { memberTakesTraffic, TRAFFIC_FLOOR, type GraphOptions } from "./chant.ts
 import type { MemberKind } from "./member-kind.ts";
 import { memberIr, type MemberVia } from "./member-ir.ts";
 import { overlayIr } from "./overlay-ir.ts";
-import type { BeholdConfig } from "./project.ts";
+import type { UserSettings } from "./user-settings.ts";
 import { choudoufuSpawnOverride } from "./choudoufu-member.ts";
 import {
   TERRAFORM_LEXICON_PKG,
@@ -77,8 +77,8 @@ import {
 export const DECLARED_ATTR = "_behaviourDeclared";
 
 /** The traffic level this request predicts at: `?traffic=`, else the served
- * root's `.behold.json`, else none. Blank is none. */
-export function trafficFor(query: URLSearchParams, config: BeholdConfig): string | undefined {
+ * root's per-user settings (src/user-settings.ts, #470), else none. Blank is none. */
+export function trafficFor(query: URLSearchParams, config: UserSettings): string | undefined {
   const asked = query.get("traffic")?.trim();
   return asked || config.behaviour?.traffic || undefined;
 }

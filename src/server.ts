@@ -131,7 +131,9 @@ import {
   type OperatorLogMalformed,
 } from "./operator.ts";
 import { LIVE_IMPORT_LEXICONS } from "./adopt.ts";
-import { chantConfigPath, detectProject, loadBeholdConfig, executorDesignation, type ExecutorDesignation } from "./project.ts";
+import { chantConfigPath, detectProject, loadBeholdConfig, type TierConfig } from "./project.ts";
+import { executorDesignation, executorsOf, resetExecutorCache, type ExecutorDesignation } from "./executor.ts";
+import { readUserSettings } from "./user-settings.ts";
 
 /** What `/api/project` says about a designated env (#165): whether Deploy can
  * dispatch it right now, and if not, why — the SPA renders the reason on a
@@ -163,9 +165,10 @@ import { cachedChoudoufuPlan, setChoudoufuChantDeps, type ChoudoufuChantDeps, ty
 import { choudoufuLexiconNote, setEstateLexiconRead, type LexiconRead } from "./choudoufu-refs.ts";
 import { readTerralith } from "./terralith-demo.ts";
 import { discoverSplitPlans, moveMembers, moveReceipt, movesPayload, readSplitPlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
-import { servedWorkspace, setServedWorkspace, workspaceMemberOf, type Workspace } from "./workspace.ts";
+import { isOrgWorkspace, servedWorkspace, setServedWorkspace, workspaceMemberOf, type Workspace } from "./workspace.ts";
 import { approveArgs, isEnvName, isOverrideGate, isPointGate, readWorkspaceGates } from "./workspace-gates.ts";
 import { pointsFloorRefusal, readOpenPoints } from "./decision-points.ts";
+import { orgFloorRefusal, readOrgRepos } from "./org-workspace.ts";
 import { approverFlags, approverFor, approverView, type ApproverOptions, type ApproverRead } from "./approver.ts";
 import { readWhy, whyRegion, withChain } from "./workspace-why.ts";
 import { floorFor, floorMet, floorRefusal } from "./chant-floors.ts";
@@ -193,10 +196,10 @@ import {
   normalizeLens,
   readLayoutFile,
   readLens,
+  layoutUnwritableReason,
   writeLens,
   LayoutTooLarge,
   MAX_BODY_BYTES,
-  unwritableReason,
 } from "./layout.ts";
 import { emulatorDirs, emulatorsDown, emulatorsUp, mergedEnv, type EmulatorInfo } from "./emulator.ts";
 import { productRefusal, refusedWrite, servedProductRepo, terragucciRefusal } from "./terragucci-repo.ts";
@@ -251,7 +254,7 @@ export interface ServerOptions {
   projectDir: string;
   /** #464: the declared chant workspace being served, when `serve` was pointed
    * at a root with a `chant.workspace.json`. `projectDirs` are then its drawn
-   * members, and the hand layout lives in the workspace root rather than in the
+   * members, and the hand layout is keyed by the workspace root rather than by the
    * first member. */
   workspace?: Workspace;
   /** #490: `--terragucci`: paint the estate from terragucci's reports (src/terragucci-view.ts). */
@@ -277,8 +280,8 @@ export interface ServerOptions {
    * "why" links to its review there; without it the decision is named by id. */
   hud?: string;
   /** #690: who an approval is recorded as, and the keys behold signs with
-   * (`--as`, `--signing-key`, `--identity-header`, `.behold.json`'s
-   * `approver`; src/approver.ts). Absent: chant's own fallback, as before. */
+   * (`--as`, `--signing-key`, `--identity-header`, the per-user settings'
+   * `approver`; src/approver.ts, src/user-settings.ts). Absent: chant's own fallback, as before. */
   approver?: ApproverOptions;
   /** All served project dirs (#31 multi-estate). Present with length > 1 only when
    * composing several projects; the source graph then merges them. */
@@ -321,12 +324,12 @@ export interface ServerOptions {
    * scripts write and nothing else; like carve mode, there is no chant
    * project behind it, so nothing is watched, polled or captured. */
   terralithDemo?: TerralithDemo;
-  /** #228: may this server write the hand-layout sidecar (`.behold/layout.json`
-   * in the served project)? Default true for a live `serve`. `runExport` sets
-   * it false: a static capture reads the sidecar (to bake it into the snapshot
-   * SVGs) and must never write one — the bundle it produces has no backend at
-   * all. The other two "no" answers are computed, not configured: preview mode,
-   * and a project directory that isn't writable. */
+  /** #228: may this server save the hand layout (a per-user cache file
+   * outside the served project, src/layout.ts, #469)? Default true for a live
+   * `serve`. `runExport` sets it false: a static capture reads the layout (to
+   * bake it into the snapshot SVGs) and must never write one; the bundle it
+   * produces has no backend at all. The other "no" answers are computed, not
+   * configured: preview mode, and a cache directory that isn't writable. */
   layoutWrites?: boolean;
   /** #195: called by POST /api/project/open after the cfg has been re-pointed
    * at a switched project — startServer uses it to re-aim the source watcher,
@@ -358,13 +361,13 @@ export interface ServerOptions {
   port: number;
 }
 
-/** `tierEnvVar` is the served project's `.behold.json`-declared tier env var
- * name (#70, `loadBeholdConfig` — server.ts computes it once per `createApp`,
- * see `beholdConfig` below), threaded onto `opts.tierEnvVar` so a picked
- * `?tier=` can reach `envOverridesFor` (chant.ts) with a real var name to set.
- * Undefined when the project declares no tiers — `?tier=` is then parsed but
- * never makes it into a spawn's env (no name to set it under). */
-function optsFromQuery(url: URL, tierEnvVar?: string, projectDir?: string): GraphOptions {
+/** `tiers` is the served project's tier axis, its `chant.config.ts`
+ * `buildParams` entry with a string `enum` (#470, `tiersFor` in `createApp`,
+ * read per request), threaded onto `opts.tierParam`/`opts.tierEnv` so a
+ * picked `?tier=` reaches chant as `--param` (chant.ts `graphFlags`).
+ * Undefined when the project declares no tier axis: `?tier=` is then parsed
+ * but never passed (no parameter to set). */
+function optsFromQuery(url: URL, tiers?: TierConfig, projectDir?: string): GraphOptions {
   const q = url.searchParams;
   const opts: GraphOptions = {};
   const detail = q.get("detail");
@@ -383,13 +386,16 @@ function optsFromQuery(url: URL, tierEnvVar?: string, projectDir?: string): Grap
   // above. A project declaring no `stacks[]` ignores this entirely.
   const stack = q.get("stack");
   if (stack) opts.stack = stack;
-  // The tier/target lenses (M2, #54): `?tier=` overrides the project's tier
-  // env var (#70), `?target=` overrides AWS_ENDPOINT_URL, for this request's
-  // chant shell-outs (see chant.ts `envOverridesFor`) — neither is a chant CLI
-  // flag.
+  // The tier/target lenses (M2, #54): `?tier=` sets the project's tier
+  // build-time parameter (#470, `--param`), `?target=` overrides
+  // AWS_ENDPOINT_URL, for this request's chant shell-outs (chant.ts
+  // `graphFlags`, `envOverridesFor`).
   const tier = q.get("tier");
   if (tier) opts.tier = tier;
-  if (tierEnvVar) opts.tierEnvVar = tierEnvVar;
+  if (tiers) {
+    opts.tierParam = tiers.param;
+    if (tiers.env) opts.tierEnv = tiers.env;
+  }
   const target = q.get("target");
   if (target) {
     opts.target = target;
@@ -407,12 +413,13 @@ function optsFromQuery(url: URL, tierEnvVar?: string, projectDir?: string): Grap
  * threading into a chant call that wants a DIFFERENT env/live/overlay shape
  * than the query's own (e.g. `/api/resources`, `/api/reconcile`, which force
  * `live`/`overlay` themselves) but should still honour the picked lens.
- * Carries `tierEnvVar` along with `tier` — dropping it here would silently
- * strip the var name `envOverridesFor` needs to apply the picked tier. */
-function tierTargetOpts(opts: GraphOptions): Pick<GraphOptions, "tier" | "tierEnvVar" | "target"> {
-  const out: Pick<GraphOptions, "tier" | "tierEnvVar" | "target"> = {};
+ * Carries `tierParam`/`tierEnv` along with `tier` — dropping them here would
+ * silently strip the parameter the picked tier sets. */
+function tierTargetOpts(opts: GraphOptions): Pick<GraphOptions, "tier" | "tierParam" | "tierEnv" | "target"> {
+  const out: Pick<GraphOptions, "tier" | "tierParam" | "tierEnv" | "target"> = {};
   if (opts.tier) out.tier = opts.tier;
-  if (opts.tierEnvVar) out.tierEnvVar = opts.tierEnvVar;
+  if (opts.tierParam) out.tierParam = opts.tierParam;
+  if (opts.tierEnv) out.tierEnv = opts.tierEnv;
   if (opts.target) out.target = opts.target;
   return out;
 }
@@ -529,19 +536,19 @@ function errorResponse(c: Context, opts: GraphOptions, err: unknown) {
  * concept and already surfaces elsewhere (`cfg.env`/`currentEnv`); `target`
  * here is read straight from the served project's process environment — the
  * literal `AWS_ENDPOINT_URL` override (Floci's tell), not something behold
- * defines or names itself. `tier` is read from the *served project's own*
- * env var, named by `.behold.json`'s `tiers.envVar` (#70) — `tierEnvVar` is
- * undefined for a project that declares no tiers, so `tier` stays unset
- * rather than guessing a name. Deliberately generic and substrate-name-free
+ * defines or names itself. `tier` is read from the env var the project's tier
+ * build-time parameter maps (#470, its `env` in `buildParams`), the one place
+ * chant itself would read it from; a parameter with no `env` mapping, or a
+ * project with no tier axis, leaves `tier` unset rather than guessing a name. Deliberately generic and substrate-name-free
  * (behold has zero per-substrate logic, per the epic): this surfaces the raw
  * endpoint URL, not a hardcoded "Floci" label. */
 function deployAxes(
-  tierEnvVar: string | undefined,
+  tiers: TierConfig | undefined,
   lexicons: readonly string[] = [],
   k8sTarget?: K8sTarget,
 ): { tier?: string; target?: string } {
   const axes: { tier?: string; target?: string } = {};
-  if (tierEnvVar && process.env[tierEnvVar]) axes.tier = process.env[tierEnvVar];
+  if (tiers?.env && process.env[tiers.env]) axes.tier = process.env[tiers.env];
   // The k8s substrate's apiserver rides alongside the endpoint-variable
   // substrates (#106). It is resolved from the kubeconfig rather than an
   // ambient variable, and it is REPORTED, not overridable — chant binds it
@@ -1170,43 +1177,46 @@ export function createApp(
   // only scripts/dots-preview.ts sets it, never `behold serve`.
   if (cfg.dotsPreview) dotsPreviewRoutes(app, cfg.dotsPreview);
 
-  // behold's own project-root config (#70) — `.behold.json`'s `tiers` block,
-  // if any (src/project.ts `loadBeholdConfig`). Read once at app creation
-  // (like `cfg.projectDir` itself): unlike `chant.config.ts`'s environments/
-  // lexicons (re-read per `/api/project` call so editing them needs no
-  // restart), this is deploy metadata behold treats as static for the life of
-  // the server. Threads `tierEnvVar` into every `optsFromQuery` call below so
-  // a picked `?tier=` reaches `envOverridesFor` (chant.ts) with a real var
-  // name, and gates the `/api/project` tier picker + `deployAxes()`'s current-
-  // tier read.
-  // `let`, not `const` (#195): a project switch re-reads the new project's
-  // .behold.json — its tier axis is per-project state like everything else.
+  // The tier axis (#70, #470): the served project's `chant.config.ts`
+  // `buildParams` entry with a string `enum` (src/project.ts `readTierParam`).
+  // Read per request, through the same `detectProject` the env picker uses, so
+  // editing the config needs no restart and a project switch needs no reset.
+  // It feeds every `optsFromQuery` call below (a picked `?tier=` reaches chant
+  // as `--param`), the `/api/project` tier picker, `deployAxes()`'s current-
+  // tier read and the wrong-tier notes.
+  const tiersFor = async (dir: string = cfg.projectDir): Promise<TierConfig | undefined> =>
+    (await detectProject(dir).catch(() => undefined))?.tiers;
+  // What is left of `.behold.json` (#70, #470): the deprecated members list.
+  // `let` (#195): a project switch re-reads it.
   const predictDeps: PredictMemberDeps = cfg.behaviour ?? { read: graphIr };
   let beholdConfig = loadBeholdConfig(cfg.projectDir);
-  let tierEnvVar = beholdConfig.tiers?.envVar;
+  // The operator's settings for this project (#470, src/user-settings.ts):
+  // the behaviour overlay's traffic level. Per-user, outside the project; a
+  // project served before #470 has its `.behold.json` block read in once.
+  let userSettings = readUserSettings(cfg.projectDir);
   // The executor contract (#165, #61): which envs deploy through a forge, per
-  // `.behold.json`. A designated env never deploys from this machine — not via
+  // the member's `chant.config.ts` environments, read through chant's
+  // `workspace graph --composites` (#470, src/executor.ts). A designated env never deploys from this machine — not via
   // Deploy, not via a committed ApplyOp, not via auto-sync — and the only
   // approval affordance it gets is the run's own address on the forge, because
   // a GitHub environment protection rule is cleared by a GitHub identity behold
   // does not have and must not acquire. Fail-closed: an entry behold cannot
   // honour still disables local Deploy for its env, and says why.
-  const executorFor = (env: string | undefined): ExecutorDesignation | undefined =>
-    env ? beholdConfig.executor?.[env] : undefined;
+  const executorFor = (env: string | undefined): Promise<ExecutorDesignation | undefined> => executorDesignation(cfg.projectDir, env);
   /** What Deploy can do for a designated env right now, for the SPA and the
    * dispatch route: dispatchable through gh, or disabled with the reason. */
   const executorStatus = (env: string, d: ExecutorDesignation, pipeline?: CiPipeline): ExecutorStatus => {
     if ("invalid" in d) return { ok: false, reason: d.invalid };
     if (d.forge !== "github") {
-      return { forge: d.forge, workflow: d.workflow, ok: false, reason: `env ${env} deploys through ${d.forge} per .behold.json, and behold has no ${d.forge} trigger (only GitHub Actions, via your gh) — Deploy stays disabled here; run the pipeline on the forge` };
+      return { forge: d.forge, workflow: d.workflow, ok: false, reason: `env ${env} deploys through ${d.forge} per chant.config.ts, and behold has no ${d.forge} trigger (only GitHub Actions, via your gh) — Deploy stays disabled here; run the pipeline on the forge` };
     }
     const r = resolveWorkflow(cfg.projectDir, pipeline ?? { stages: [], jobs: [] }, d.workflow);
     return "workflow" in r ? { forge: d.forge, workflow: d.workflow, ok: true } : { forge: d.forge, workflow: d.workflow, ok: false, reason: r.reason };
   };
   const forgeRefusal = (env: string, d: ExecutorDesignation, what: string) => ({
-    error: `${what} is refused: env ${env} deploys through ${"invalid" in d ? "a forge" : `${d.forge} (${d.workflow})`} per .behold.json's executor block — behold never runs it from this machine`,
+    error: `${what} is refused: env ${env} deploys through ${"invalid" in d ? "a forge" : `${d.forge} (${d.workflow})`} per chant.config.ts's environment executor — behold never runs it from this machine`,
     code: "executor-forge",
-    remedy: "invalid" in d ? `Fix .behold.json: ${d.invalid}` : `Use Deploy (POST /api/ci/dispatch?env=${env}), which dispatches the designated workflow through your gh login.`,
+    remedy: "invalid" in d ? `Fix chant.config.ts: ${d.invalid}` : `Use Deploy (POST /api/ci/dispatch?env=${env}), which dispatches the designated workflow through your gh login.`,
   });
 
   // The kube context chant binds for an environment (`k8s.profiles.<env>.
@@ -1330,7 +1340,7 @@ export function createApp(
     }),
   );
 
-  app.post("/api/ops/:name/run", (c) => {
+  app.post("/api/ops/:name/run", async (c) => {
     // Preview: committed Ops (Sync/Adopt/generic) are git/PR or unscoped writes —
     // not part of the locked-down Loom-on-Floci demo. Local deploy goes via
     // /api/apply instead. (The SPA also hides these controls; this is the guard.)
@@ -1344,7 +1354,7 @@ export function createApp(
     // in a different coat (#165): refused the same way, for the same reason.
     // Asked of the Op's OWN member — a composed estate's member designates in
     // its own `.behold.json`, and the primary's says nothing about it.
-    const designatedEnv = info.kind === "apply" ? executorDesignation(info.dir, info.env) : undefined;
+    const designatedEnv = info.kind === "apply" ? await executorDesignation(info.dir, info.env) : undefined;
     if (designatedEnv && info.env) return c.json(forgeRefusal(info.env, designatedEnv, `running ${name}`), 409);
     if (!runner.trigger(name, info.env, info.dir)) {
       return c.json({ error: `an Op is already running (${runner.running})` }, 409);
@@ -1745,6 +1755,23 @@ export function createApp(
     return c.json({ workspace: true, chant: version ?? null, ...read.points });
   });
 
+  // behold#931: an org-level workspace's repo members (chant#3168): each one's
+  // URL and pinned revision, the members of that repository's workspace with
+  // their status and reason, and the identity chant read it as. One `chant
+  // workspace graph` at the root; chant fetches the revisions into its own
+  // cache and composes them, behold fetches and joins nothing, and writes
+  // nothing in the served project. A failed fetch carries chant's reason.
+  app.get("/api/workspace/repos", async (c) => {
+    const ws = servedWorkspace();
+    if (!ws) return c.json({ workspace: false, refusal: { error: "behold isn't serving a declared chant workspace, so there are no repo members to read.", code: "no-workspace", remedy: "Serve the directory that holds chant.workspace.json." } });
+    const version = resolveChant(ws.root).version;
+    const tooOld = orgFloorRefusal(version);
+    if (tooOld) return c.json({ workspace: true, chant: version ?? null, repos: [], refusal: tooOld, degraded: floorFor("org workspace").degraded ?? null });
+    const read = await readOrgRepos(ws);
+    if (!read.ok) return c.json({ workspace: true, chant: version ?? null, repos: [], refusal: read.refusal });
+    return c.json({ workspace: true, chant: version ?? null, ...read.org });
+  });
+
   // #471: why a member or a node is the way it is, from `chant workspace graph
   // --intent <region> --json`. Read when the page asks (a click on "why"),
   // never at boot: on a large repository it takes tens of seconds. It is a
@@ -1861,9 +1888,9 @@ export function createApp(
     public: () => !!cfg.public,
     preview: () => !!(cfg.preview || cfg.previewMode),
     offer: async () => {
-      const { environments } = await detectProject(cfg.projectDir).catch(() => ({ environments: [] as string[] }));
+      const { environments, tiers } = await detectProject(cfg.projectDir).catch((): { environments: string[]; tiers?: TierConfig } => ({ environments: [] }));
       const envs = environments.length === 0 && (cfg.projectDirs ?? [cfg.projectDir]).some((d) => memberKindOf(d) === "choudoufu") ? ["live"] : environments;
-      return { envs, ...(beholdConfig.tiers ? { tiers: beholdConfig.tiers.values } : {}) };
+      return { envs, ...(tiers ? { tiers: tiers.values } : {}) };
     },
     defaultEnv: () => cfg.env ?? null,
   });
@@ -1921,7 +1948,8 @@ export function createApp(
   // detail) instead of the env being a launch-only flag. `currentEnv` is the
   // launch `--env`, the picker's initial selection.
   app.get("/api/project", async (c) => {
-    const { environments: declaredEnvs, lexicons, stacks, k8sProfiles } = await detectProject(cfg.projectDir);
+    const { environments: declaredEnvs, lexicons, stacks, k8sProfiles, tiers } = await detectProject(cfg.projectDir);
+    const executors = cfg.public ? {} : await executorsOf(cfg.projectDir);
     // #370: a choudoufu member declares no environments — it has one account,
     // reached by the ambient credentials — and the overlay needs a name to be
     // asked for. An estate whose chant members declare none but which holds a
@@ -1939,7 +1967,7 @@ export function createApp(
     const k8sTarget = lexicons.includes("k8s")
       ? resolveK8sTarget(k8sProfiles, cfg.env, await loadKubeconfig())
       : undefined;
-    const axes = deployAxes(tierEnvVar, lexicons, k8sTarget);
+    const axes = deployAxes(tiers, lexicons, k8sTarget);
     // Read at request time, like everything else here: a project built while
     // the tab is open grows the ops stop on the next /api/project, without a
     // restart.
@@ -2064,20 +2092,20 @@ export function createApp(
       // #471: the declared workspace's members, so the inspect pane offers a
       // member's or a card's "why" only where chant can answer it.
       ...(servedWorkspace()
-        ? { workspace: { name: servedWorkspace()!.name, members: servedWorkspace()!.members.map((m) => ({ name: m.name, dir: m.dir, kind: m.kind })), hud: !!cfg.hud } }
+        ? { workspace: { name: servedWorkspace()!.name, members: servedWorkspace()!.members.map((m) => ({ name: m.name, dir: m.dir, kind: m.kind, ...(m.repo ? { repo: m.repo } : {}) })), ...(servedWorkspace()!.repo !== undefined ? { repo: servedWorkspace()!.repo } : {}), org: isOrgWorkspace(servedWorkspace()!), hud: !!cfg.hud } }
         : {}),
-      // The tier picker's options (M2 #54, sourced #70): gated on the served
-      // project's `.behold.json` declaring a `tiers` block at all — NOT on
-      // whether its env var happens to be set in behold's own launch env
-      // (that's `axes.tier`, the *current* value, below). No `.behold.json` (or
-      // no `tiers` key) → no `tiers` field → the SPA's picker doesn't render
-      // and the graph loads with no tier selected (web/app.js `initPickers`).
-      ...(beholdConfig.tiers ? { tiers: beholdConfig.tiers.values } : {}),
+      // The tier picker's options (M2 #54, sourced #470): gated on the served
+      // project's `chant.config.ts` declaring a `buildParams` entry with a
+      // string `enum` — NOT on whether its env mapping happens to be set in
+      // behold's own launch env (that's `axes.tier`, the *current* value,
+      // below). None → no `tiers` field → the SPA's picker doesn't render and
+      // the graph loads with no tier selected (web/app.js `initPickers`).
+      ...(tiers ? { tiers: tiers.values } : {}),
       // The executor contract (#165): per designated env, whether Deploy can
       // dispatch right now and, if not, why — so the SPA disables the gesture
       // with the reason rather than offering a control that 4xxs.
-      ...(beholdConfig.executor
-        ? { executor: Object.fromEntries(Object.entries(beholdConfig.executor).map(([env, d]) => [env, executorStatus(env, d)])) }
+      ...(Object.keys(executors).length
+        ? { executor: Object.fromEntries(Object.entries(executors).map(([env, d]) => [env, executorStatus(env, d)])) }
         : {}),
       // The stack picker's options (#76, follow-up to #71): gated exactly like
       // `tiers` above — only present when `chant.config.ts` declares `stacks[]`
@@ -2163,7 +2191,8 @@ export function createApp(
     // demo names its own serve env, which becomes the initial selection.
     cfg.env = env;
     beholdConfig = loadBeholdConfig(dirs[0]);
-    tierEnvVar = beholdConfig.tiers?.envVar;
+    resetExecutorCache();
+    userSettings = readUserSettings(dirs[0]);
     runner.retarget(dirs[0]);
     for (const d of dirs) addRecent(d);
     cfg.onProjectSwitch?.(dirs[0]);
@@ -2302,38 +2331,34 @@ export function createApp(
     }
   });
 
-  // --- The hand-layout sidecar (#228) -------------------------------------
+  // --- The hand layout (#228, #469) ----------------------------------------
   // #464: a declared workspace keeps its layout in the workspace root, the one
   // directory that is the whole estate; a loose estate keeps it in its first member.
   const layoutDir = (): string => cfg.workspace?.root ?? cfg.projectDir;
-  // behold's FIRST write into a served project, and the boundary is drawn
-  // tightly on purpose (src/layout.ts carries the full statement of it):
+  // The layout is a per-user cache outside the project (#469): behold writes
+  // nothing in a served project. src/layout.ts carries the full statement.
   //
-  //   * ONE file, `<projectDir>/.behold/layout.json`, path built from
-  //     `cfg.projectDir` + two constants. No path, prefix or segment from the
-  //     request reaches the filesystem — a lens key off the wire is slugged and
-  //     used only as a JSON object key.
-  //   * The invariant is untouched. behold still never mutates the cloud and
-  //     never mutates your chant source; authority stays in the committed
-  //     source and the executor (AGENTS.md). A layout sidecar is workspace
-  //     metadata about how you want the picture arranged — per-user state, the
-  //     category `.behold.json` (config, tracked) is deliberately NOT in.
+  //   * ONE file per project, `<user cache>/behold/layouts/<sha256 of the
+  //     project's realpath>.json`. No path, prefix or segment from the request
+  //     reaches the filesystem: a lens key off the wire is slugged and used
+  //     only as a JSON object key.
+  //   * A pre-#469 `.behold/layout.json` in the project is read once, into the
+  //     cache, and never written or removed.
   //   * Four ways to be told no, all polite: preview mode, an export capture,
-  //     a project directory that isn't writable, and the size caps.
+  //     a cache directory that isn't writable, and the size caps.
   //
   // The client keeps its own localStorage tier and merges local OVER server
-  // (web/layout-store.js `mergeLayouts`), so this is share-and-export, never a
-  // remote authority over the browser you're looking at.
+  // (web/layout-store.js `mergeLayouts`), so this is persistence and export,
+  // never a remote authority over the browser you're looking at.
   const layoutWriteBlock = (): string | null => {
-    if (cfg.previewMode) return "the layout sidecar is read-only in preview mode";
-    if (cfg.public) return "a public view doesn't write to the project";
+    if (cfg.previewMode) return "the hand layout is read-only in preview mode";
+    if (cfg.public) return "a public view doesn't save a layout";
     // #252: carve mode's `projectDir` is wherever the report file happens to
-    // sit — a Downloads folder, someone's Terraform repo. There is no project
-    // there to keep a hand layout in, and dropping `.behold/` into a stranger's
-    // directory is not a thing to do quietly.
+    // sit (a Downloads folder, someone's Terraform repo). There is no project
+    // there to keep a hand layout for.
     if (cfg.carveReport) return "a carve report isn't a project — there's nowhere to keep a hand layout";
-    if (cfg.layoutWrites === false) return "a static export captures a snapshot — it doesn't write to the project";
-    return unwritableReason(layoutDir());
+    if (cfg.layoutWrites === false) return "a static export captures a snapshot — it doesn't save a layout";
+    return layoutUnwritableReason(layoutDir());
   };
 
   app.get("/api/layout", (c) => {
@@ -2382,7 +2407,7 @@ export function createApp(
     }
   });
 
-  // `?layout=1` on a graph/overlay read bakes the sidecar's translate deltas
+  // `?layout=1` on a graph/overlay read bakes the hand layout's translate deltas
   // into the SVG before it goes out (src/layout.ts `applyLayoutToSvg`) — that
   // is what makes `behold export` and a static snapshot honour a hand layout.
   //
@@ -2581,9 +2606,9 @@ export function createApp(
         {
           method: "GET",
           path: "/api/overlay",
-          desc: "live drift overlay for ?env= — same shape/params as /api/graph, plus runtime=1; each priced entity carries attrs._behaviour (cost/headroom/errorRate/resilience/rightSize/provenance, #398) and meta.behaviour holds the engine, its sums, a refusal or an absent line; with ?traffic= (or .behold.json behaviour.traffic) each member is predicted live and declared, and meta.behaviour adds live, declared and delta with attrs._behaviourDeclared per entity (#402)",
+          desc: "live drift overlay for ?env= — same shape/params as /api/graph, plus runtime=1; each priced entity carries attrs._behaviour (cost/headroom/errorRate/resilience/rightSize/provenance, #398) and meta.behaviour holds the engine, its sums, a refusal or an absent line; with ?traffic= (or the per-user settings' behaviour.traffic) each member is predicted live and declared, and meta.behaviour adds live, declared and delta with attrs._behaviourDeclared per entity (#402)",
         },
-        { method: "GET", path: "/api/layout", desc: "hand-layout sidecar (.behold/layout.json): ?lens=<key> → {lens, deltas, writable}; no lens → every lens" },
+        { method: "GET", path: "/api/layout", desc: "hand layout (a per-user cache outside the project): ?lens=<key> → {lens, deltas, writable}; no lens → every lens" },
         { method: "POST", path: "/api/layout", desc: "store one lens's deltas: JSON body {lens, deltas: {<node id>: {dx,dy,dw,dh}}} (the only file behold writes in your project)" },
         { method: "GET", path: "/api/health", desc: "runtime health for ?env= from chant lifecycle health (chant 0.124.33+): {env, nodes: {<id>: {state: healthy|unhealthy|unknown|unobserved|absent, detail, observedAt, checkedAt?, reason?}}, rotation: {<record id>: {check, inRotation: true|false|null, line}}, members, counts}; cached 30 s, ?fresh=1 reads again (#825)" },
         { method: "GET", path: "/api/diff", desc: "per-node live diff for ?env= — {env, nodes: {<id>: {observed, diff, health, fieldDrift}}}" },
@@ -2622,6 +2647,7 @@ export function createApp(
         { method: "GET", path: "/api/workspace/change-set", desc: "a waiting gate's stored change set for the graph overlay (#681): ?gate=<member>/<op>/<gate>&env=<env>; the gate and its digest from chant workspace status <env> --json, the change set from chant change-set show <digest> --member <member> --json; gate {key, gitSha, runId, releaseDigest}, digest, planned {releaseDigest, environment} for a release gate, graph {member, at}, entries [{address, action, bucket create|change|delete, node or null, attributes}], nodes {<id>: {bucket, actions}}, counts, gaps; a chant below 0.124.28 is refused with refusal code chant-too-old" },
         { method: "GET", path: "/api/workspace/flags", desc: "the workspace's feature flags (#683), from chant workspace status <env> --json featureFlags (chant#4024): environments in promotion order, flags [{key, member, id, param, owner, work, implements, stale, kind, path, values, envs {<env>: {value, state on|off|default|set}}, waiting [{env, gate, changeSet, before, after, entries}], turnOn [{env, lines}]}], nodes member (every card of the flag's member), unreadable, refusals; a waiting flip comes from the gate's stored change set (chant change-set show); behold writes no flag record; a chant below 0.124.29 is refused with refusal code chant-too-old and degraded" },
         { method: "GET", path: "/api/workspace/collisions", desc: "the graph nodes two or more in-flight work items touch (#684), from chant workspace status <env> --json overlap (chant#4025): nodes [{node, items, entries [{changeSet, member, address, source, items}]}], files [{items, files}] for files two items changed (no node), unplaced for shared entries chant mapped to no node, items [{item, path, state, commits, with}] (every in-flight item, with empty when it collides with none), changeSets, unattributed; overlap absent (an older chant) or null (no work kind declared, or the read failed) is a refusal with code no-overlap or overlap-unavailable; behold records and locks nothing; a chant below 0.124.29 is refused with refusal code chant-too-old and degraded" },
+        { method: "GET", path: "/api/workspace/repos", desc: "an org-level workspace's repo members (behold#931, chant#3168), from one chant workspace graph at the root: repo (the org's own workspace.repo), repos [{name, url, rev, workspace, status, reason, read, workspaceName, label, members [{name, kind, status, reason}]}]; a failed fetch is status failed with chant's reason (command-failed); behold fetches and writes nothing; a chant below 0.124.47 is refused with refusal code chant-too-old and degraded" },
         { method: "GET", path: "/api/workspace/why", desc: "why a member (?member=) or a node (?node=<member>/<id>) is the way it is: the decisions covering it, the runs and commits behind it, and from chant 0.124.29 the chain from each commit's work item to its green tag, release, gate resolution and deploys (trace, #682), from chant workspace graph --intent <region> --json; read on demand, cancelled with the request (#471)" },
         { method: "GET", path: "/api/workspace/points", desc: "the workspace's open decision points (#472), from chant workspace points --open --json: points [{id, point, title, question, questionType, candidates, subject, gate {op, gate, env} when a gate asked it, state, quorum {count, roles}, model, askedOn, askedBy, stale, path, command}], unread answer kinds with chant's reason; a gate in /api/workspace/gates whose answer.id is a point's id waits on it; behold answers none and has no write route; a chant below 0.107.0 is refused with refusal code chant-too-old and degraded" },
         { method: "POST", path: "/api/workspace/gates/approve", desc: "approve one workspace gate: JSON body {key, env}; env and plan come from a fresh status read; recorded as the request's approver with --actor and --note, a signed gate signed with that person's key or refused 422 code signed (#690); preview-locked (#477); a policy-override gate answers 422 code override with its command (#519); a gate that waits on a decision point answers 422 code decision-point with the points answer line (#472)" },
@@ -2751,7 +2777,7 @@ export function createApp(
 
   app.get("/api/graph", async (c) => {
     const url = new URL(c.req.url);
-    const opts = optsFromQuery(url, tierEnvVar, cfg.projectDir);
+    const opts = optsFromQuery(url, await tiersFor(), cfg.projectDir);
     try {
       // The ops lens (#284 item 1): the project's DECLARED Ops, read from the
       // `dist/ops/<name>/op.json` each `chant build` (>= 0.50, chant#1289)
@@ -3248,7 +3274,7 @@ export function createApp(
       // the collapse, so the figure adds the estate's entities and not the one
       // card a shut box leaves behind. Read through the member cache under the
       // member's source stamp, so a reload that changed no file spawns nothing.
-      const srcTraffic = components ? undefined : trafficFor(new URL(c.req.url).searchParams, beholdConfig);
+      const srcTraffic = components ? undefined : trafficFor(new URL(c.req.url).searchParams, userSettings);
       const srcBehaviour = srcTraffic
         ? attachDeclaredBehaviour(
             ir,
@@ -3426,7 +3452,7 @@ export function createApp(
   // user clicks. The whole pipeline is small (well under the CLI's 64KB
   // pipe-truncation limit), so fetch it once rather than shelling out per node.
   app.get("/api/ci", async (c) => {
-    const opts = optsFromQuery(new URL(c.req.url), tierEnvVar, cfg.projectDir);
+    const opts = optsFromQuery(new URL(c.req.url), await tiersFor(), cfg.projectDir);
     const env = opts.env ?? cfg.env;
     // Which forge, if any — behold asked for `gitlab` unconditionally, which is
     // wrong two ways. A project declaring no forge lexicon has no pipeline to
@@ -3466,11 +3492,11 @@ export function createApp(
   app.post("/api/ci/dispatch", async (c) => {
     // The env decides everything below: which pipeline chant generates (its
     // job run-lines freeze the env in, chant#2046), which committed workflow
-    // runs it, and whether `.behold.json` designated one. Since chant 0.54.0
+    // runs it, and whether the member's chant.config.ts designated one. Since chant 0.54.0
     // the generated workflow is named for its env, so the picker can see it.
     const env = new URL(c.req.url).searchParams.get("env") ?? cfg.env;
-    const designated = executorFor(env);
-    if (designated && "invalid" in designated) return c.json({ error: designated.invalid, code: "executor-forge", remedy: "Fix .behold.json's executor block." }, 400);
+    const designated = await executorFor(env);
+    if (designated && "invalid" in designated) return c.json({ error: designated.invalid, code: "executor-forge", remedy: "Fix the environment's executor in chant.config.ts." }, 400);
     if (designated && designated.forge !== "github") {
       return c.json({ error: executorStatus(env!, designated).reason, code: "executor-forge" }, 400);
     }
@@ -3589,13 +3615,13 @@ export function createApp(
       const { comparisons } = await compareEnvs(cfg.projectDir, env, to);
       return c.json({ env, to, comparisons });
     } catch (err) {
-      return errorResponse(c, optsFromQuery(url, tierEnvVar, cfg.projectDir), err);
+      return errorResponse(c, optsFromQuery(url, await tiersFor(), cfg.projectDir), err);
     }
   });
 
   // are live today, not just wired for a future fix.
   app.get("/api/resources", async (c) => {
-    const opts = optsFromQuery(new URL(c.req.url), tierEnvVar, cfg.projectDir);
+    const opts = optsFromQuery(new URL(c.req.url), await tiersFor(), cfg.projectDir);
     const env = opts.env ?? cfg.env;
     // #393 item 3: this facet is a chant-project convention match — it groups
     // the entity graph by the `src/<component>/` directory each node was
@@ -3645,7 +3671,7 @@ export function createApp(
   // and rows can say which of the N rebuild the resource. Zeros against a
   // chant that doesn't classify — the route's shape is otherwise unchanged.
   app.get("/api/reconcile", async (c) => {
-    const opts = optsFromQuery(new URL(c.req.url), tierEnvVar, cfg.projectDir);
+    const opts = optsFromQuery(new URL(c.req.url), await tiersFor(), cfg.projectDir);
     const env = opts.env ?? cfg.env;
     if (!env) {
       return c.json({ error: "reconcile needs an environment — pick one, or start behold with --env <name>" }, 400);
@@ -3717,7 +3743,8 @@ export function createApp(
   app.get("/api/overlay", async (c) => {
     // Env comes from the picker (`?env=`), falling back to the launch `--env`.
     // Either lets the overlay run without a restart; neither is a 400.
-    const query = optsFromQuery(new URL(c.req.url), tierEnvVar, cfg.projectDir);
+    const tiers = await tiersFor();
+    const query = optsFromQuery(new URL(c.req.url), tiers, cfg.projectDir);
     const env = query.env ?? cfg.env;
     if (!env) {
       return c.json({ error: "overlay needs an environment — pick one, or start behold with --env <name>" }, 400);
@@ -3825,7 +3852,7 @@ export function createApp(
         // read only: the progressive branch above answers before any live read
         // has settled, and a figure about the account belongs with the picture
         // of the account.
-        const traffic = trafficFor(new URL(c.req.url).searchParams, beholdConfig);
+        const traffic = trafficFor(new URL(c.req.url).searchParams, userSettings);
         const est = await composeEstateOverlay(cfg.projectDirs, { ...tierTargetOpts(query), detail, env, ...(traffic ? { traffic } : {}), ...(planWanted ? { plan: true } : {}) }, reclassifyOverlay, { fresh: planWanted });
         if (est.dropped.length === est.total) {
           return c.json({ error: `no project in the estate could be graphed — ${est.dropped.map((d) => `${d.name}: ${d.reason}`).join("; ")}` }, 500);
@@ -4022,7 +4049,7 @@ export function createApp(
       // sourceRef/dependsOn edges never made it into the IR either.
       // #402: the single-project half of the traffic level — see the estate
       // branch above.
-      const traffic = trafficFor(new URL(c.req.url).searchParams, beholdConfig);
+      const traffic = trafficFor(new URL(c.req.url).searchParams, userSettings);
       const ownKind = memberKindOf(cfg.projectDir) ?? "chant";
       const opts: GraphOptions = {
         ...query,
@@ -4113,7 +4140,7 @@ export function createApp(
         // same reason (behold#100). The wrong-tier note (#158) joins here too:
         // the logical view collapses to near-empty at a wrong tier exactly as
         // the detail tiers do, and until now only they said why.
-        const logicalTierNote = tierMismatchNote(projected, beholdConfig.tiers, query.tier);
+        const logicalTierNote = tierMismatchNote(projected, tiers, query.tier);
         const logicalNote = [logicalTierNote, notesFor("logical", projected, undefined, logicalBefore)].filter(Boolean).join(" · ");
         return c.json({ ir: projected, svg, byContainer, meta: { projectDir: cfg.projectDir, env, mode: "logical", vocabulary, ...(logicalNote ? { note: logicalNote } : {}) } });
       }
@@ -4185,7 +4212,7 @@ export function createApp(
       // The wrong-tier trap (see tierMismatchNote): joined ahead of the zoom
       // note so "you may be viewing the wrong tier" outranks "this tier is
       // empty" — the first explains the second.
-      const tierNote = tierMismatchNote(ir, beholdConfig.tiers, query.tier);
+      const tierNote = tierMismatchNote(ir, tiers, query.tier);
       // #192: the namespace-mismatch signature — all-pending namespaced k8s
       // objects over a resolving cluster read the OPPOSITE of the truth
       // without this aside. Ahead of the zoom notes: it explains the colours,
@@ -4560,7 +4587,7 @@ export function createApp(
     // A designated env is never applied from here — before any other guard,
     // so a typo in the designation cannot route a prod deploy back to the
     // laptop by falling through (#165 §4).
-    const designated = executorFor(env);
+    const designated = await executorFor(env);
     if (designated) return c.json(forgeRefusal(env, designated, "apply"), 409);
     // Guard against re-applying an already-deployed stack. On a local emulator
     // that can't re-apply idempotently (Floci #16), a second apply re-creates
@@ -4758,9 +4785,12 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
     // An ApplyOp for a designated env is not a candidate (#165): auto-sync
     // declines it out loud rather than healing prod from the laptop. The
     // designation is the Op's own member's (`.behold.json` beside it).
-    const { routed, local } = splitForgeRouted(discoverEstateOps(cfg.projectDirs ?? [cfg.projectDir]), executorDesignation);
+    const estateOps = discoverEstateOps(cfg.projectDirs ?? [cfg.projectDir]);
+    const designations = new Map<string, ExecutorDesignation | undefined>();
+    for (const o of estateOps) if (o.kind === "apply" && o.env) designations.set(`${o.dir}\0${o.env}`, await executorDesignation(o.dir, o.env));
+    const { routed, local } = splitForgeRouted(estateOps, (d, e) => designations.get(`${d}\0${e}`));
     for (const { op: o, designation: d } of routed) {
-      broadcaster.emit("op", `⟳ auto-sync (${autoSync})${memberTag(dir)} declined ${o.name}: env ${o.env} deploys through ${"invalid" in d ? "a forge" : d.forge} per ${basename(o.dir)}/.behold.json — never applied from here`);
+      broadcaster.emit("op", `⟳ auto-sync (${autoSync})${memberTag(dir)} declined ${o.name}: env ${o.env} deploys through ${"invalid" in d ? "a forge" : d.forge} per ${basename(o.dir)}/chant.config.ts — never applied from here`);
     }
     const { picks, declined } = pickAutoSyncOps(
       autoSync,

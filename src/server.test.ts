@@ -67,6 +67,7 @@ import { Broadcaster } from "./events.ts";
 import { FrameBuffer } from "./frames.ts";
 import { shortStackNames } from "@intentius/pinhole";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, readdirSync, existsSync } from "node:fs";
+import { layoutPath } from "./layout.ts";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -170,61 +171,61 @@ describe("GET /api/ops — applyProgress + running surface the write state", () 
   });
 });
 
-// #70: tiers come from the served project's own `.behold.json`, not a
-// hardcoded loomster convention. `/api/project` is where the SPA's tier
+// #70, #470: tiers come from the served project's own `chant.config.ts`
+// `buildParams`, not a hardcoded loomster convention. `/api/project` is where the SPA's tier
 // picker gets its options (web/app.js initPickers gates on `info.tiers &&
 // info.tiers.length`) — these assert the two ends of that gate end-to-end.
-describe("GET /api/project — tier axis sourced from .behold.json (#70)", () => {
+describe("GET /api/project — tier axis sourced from chant.config.ts buildParams (#470)", () => {
   let dirs: string[] = [];
   afterEach(() => {
     dirs.forEach((d) => rmSync(d, { recursive: true, force: true }));
     dirs = [];
   });
-  const tmpProjectDir = (beholdJson: string | null) => {
+  const tmpProjectDir = (chantConfig: string | null, beholdJson?: string) => {
     const dir = mkdtempSync(join(tmpdir(), "behold-server-project-"));
-    if (beholdJson !== null) writeFileSync(join(dir, ".behold.json"), beholdJson);
+    if (chantConfig !== null) writeFileSync(join(dir, "chant.config.ts"), chantConfig);
+    if (beholdJson !== undefined) writeFileSync(join(dir, ".behold.json"), beholdJson);
     dirs.push(dir);
     return dir;
   };
+  const tiersOf = async (dir: string) => ((await (await makeAppFor(dir).request("/api/project")).json()) as { tiers?: string[] }).tiers;
 
-  it("no .behold.json — no tiers field at all, so the SPA's picker doesn't render", async () => {
-    const app = makeAppFor(tmpProjectDir(null));
-    const res = await app.request("/api/project");
-    const body = (await res.json()) as Record<string, unknown>;
+  it("no buildParams — no tiers field at all, so the SPA's picker doesn't render", async () => {
+    const app = makeAppFor(tmpProjectDir(`export default { lexicons: ["aws"] };`));
+    const body = (await (await app.request("/api/project")).json()) as Record<string, unknown>;
     expect(body.tiers).toBeUndefined();
     expect(body.tier).toBeUndefined();
   });
 
-  it(".behold.json with no tiers key — same as absent: no tiers field", async () => {
-    const app = makeAppFor(tmpProjectDir(JSON.stringify({})));
-    const res = await app.request("/api/project");
-    const body = (await res.json()) as Record<string, unknown>;
-    expect(body.tiers).toBeUndefined();
+  it("a buildParams entry with a string enum surfaces its values verbatim — the loomster parity shape", async () => {
+    const dir = tmpProjectDir(`export default { lexicons: ["aws"], buildParams: { tier: { type: "string", enum: ["light", "production", "production-ha"], env: "LOOM_TIER" } } };`);
+    expect(await tiersOf(dir)).toEqual(["light", "production", "production-ha"]);
   });
 
-  it("a declared .behold.json surfaces its values verbatim — the loomster parity shape", async () => {
-    const dir = tmpProjectDir(
-      JSON.stringify({ tiers: { envVar: "LOOM_TIER", values: ["light", "production", "production-ha"] } }),
-    );
-    const app = makeAppFor(dir);
-    const res = await app.request("/api/project");
-    const body = (await res.json()) as { tiers?: string[] };
-    expect(body.tiers).toEqual(["light", "production", "production-ha"]);
+  it("a parameter of the project's own name works too — never hardcoded", async () => {
+    expect(await tiersOf(tmpProjectDir(`export default { lexicons: ["aws"], buildParams: { size: { type: "string", enum: ["small", "big"] } } };`))).toEqual(["small", "big"]);
   });
 
-  it("a project's own envVar name (not LOOM_TIER) works too — never hardcoded", async () => {
-    const dir = tmpProjectDir(JSON.stringify({ tiers: { envVar: "DEPLOY_TIER", values: ["small", "big"] } }));
+  it("a .behold.json tiers block is no longer read", async () => {
+    const dir = tmpProjectDir(`export default { lexicons: ["aws"] };`, JSON.stringify({ tiers: { envVar: "LOOM_TIER", values: ["light", "production"] } }));
+    expect(await tiersOf(dir)).toBeUndefined();
+  });
+
+  it("is re-read per request: editing chant.config.ts needs no restart", async () => {
+    const dir = tmpProjectDir(`export default { lexicons: ["aws"] };`);
     const app = makeAppFor(dir);
-    const res = await app.request("/api/project");
-    const body = (await res.json()) as { tiers?: string[] };
-    expect(body.tiers).toEqual(["small", "big"]);
+    expect(((await (await app.request("/api/project")).json()) as { tiers?: string[] }).tiers).toBeUndefined();
+    // A new file name: Node caches an import by URL, so the edit is a new config file.
+    rmSync(join(dir, "chant.config.ts"));
+    writeFileSync(join(dir, "chant.config.mts"), `export default { lexicons: ["aws"], buildParams: { tier: { enum: ["a", "b"] } } };`);
+    expect(((await (await app.request("/api/project")).json()) as { tiers?: string[] }).tiers).toEqual(["a", "b"]);
   });
 });
 
 // #76 (follow-up to #71): the stack picker's options. `/api/project` is where
 // the SPA's stack picker gets its names (web/app.js initPickers gates on
 // `info.stacks` — mirrors the tier axis block above precisely, per #76's
-// design note). A `chant.config.ts` field, unlike tiers' `.behold.json`.
+// design note). A `chant.config.ts` field, like the tier axis since #470.
 describe("GET /api/project — stack axis sourced from chant.config.ts (#76)", () => {
   let dirs: string[] = [];
   afterEach(() => {
@@ -601,11 +602,13 @@ describe("GET/POST /api/layout — the hand-layout sidecar (#228)", () => {
     expect(wrote.status).toBe(200);
     expect(await wrote.json()).toMatchObject({ ok: true, lens: "components", count: 1, deltas: { api: { dx: 12, dy: -4 } } });
 
-    // On disk, at the one path behold is allowed to write.
-    expect(JSON.parse(readFileSync(join(dir, ".behold", "layout.json"), "utf8"))).toEqual({
+    // On disk, in the per-user cache outside the project (#469), and nothing in the project.
+    expect(JSON.parse(readFileSync(layoutPath(dir), "utf8"))).toMatchObject({
       version: 1,
       lenses: { components: { api: { dx: 12, dy: -4 } } },
     });
+    expect(layoutPath(dir).startsWith(dir)).toBe(false);
+    expect(existsSync(join(dir, ".behold"))).toBe(false);
 
     // A FRESH app (nothing cached) reads the same thing back.
     const read = await appFor({ projectDir: dir, port: 0 }).request("/api/layout?lens=components");
@@ -621,24 +624,38 @@ describe("GET/POST /api/layout — the hand-layout sidecar (#228)", () => {
     expect(((await (await app.request("/api/layout?lens=components")).json()) as { deltas: unknown }).deltas).toEqual({ api: { dx: 1 } });
   });
 
-  it("an empty map is the reset — the lens goes, and with the last lens the file", async () => {
+  it("an empty map is the reset — the lens goes, and the cache keeps an empty layout", async () => {
     const dir = tmpProject();
     const app = appFor({ projectDir: dir, port: 0 });
     await post(app, { lens: "components", deltas: { api: { dx: 1 } } });
     const res = await post(app, { lens: "components", deltas: {} });
     expect(res.status).toBe(200);
-    expect(existsSync(join(dir, ".behold", "layout.json"))).toBe(false);
+    expect(JSON.parse(readFileSync(layoutPath(dir), "utf8")).lenses).toEqual({});
+  });
+
+  it("reads a pre-#469 .behold/layout.json once into the cache, and never touches it", async () => {
+    const dir = tmpProject();
+    const legacy = join(dir, ".behold", "layout.json");
+    mkdirSync(join(dir, ".behold"));
+    const text = JSON.stringify({ version: 1, lenses: { components: { api: { dx: 7 } } } });
+    writeFileSync(legacy, text);
+    const app = appFor({ projectDir: dir, port: 0 });
+    expect(((await (await app.request("/api/layout?lens=components")).json()) as { deltas: unknown }).deltas).toEqual({ api: { dx: 7 } });
+    expect(existsSync(layoutPath(dir))).toBe(true);
+    await post(app, { lens: "components", deltas: {} });
+    // Cleared in the cache; the old file is not migrated back in, and is unchanged.
+    expect(((await (await app.request("/api/layout?lens=components")).json()) as { deltas: unknown }).deltas).toEqual({});
+    expect(readFileSync(legacy, "utf8")).toBe(text);
   });
 
   it("touches nothing else in the project", async () => {
     const dir = tmpProject();
-    writeFileSync(join(dir, ".behold.json"), JSON.stringify({ tiers: { envVar: "T", values: ["a"] } }));
+    writeFileSync(join(dir, ".behold.json"), JSON.stringify({ executor: { prod: { forge: "github", workflow: "d.yml" } } }));
     const before = readdirSync(dir).sort();
     await post(appFor({ projectDir: dir, port: 0 }), { lens: "components", deltas: { api: { dx: 1 } } });
-    expect(readdirSync(dir).sort()).toEqual([...before, ".behold"].sort());
-    // …and the config it sits beside is untouched (`.behold.json` is tracked
-    // config; `.behold/` is per-user state — two different things, #228).
-    expect(JSON.parse(readFileSync(join(dir, ".behold.json"), "utf8"))).toEqual({ tiers: { envVar: "T", values: ["a"] } });
+    // #469: behold writes nothing in a served project.
+    expect(readdirSync(dir).sort()).toEqual(before);
+    expect(JSON.parse(readFileSync(join(dir, ".behold.json"), "utf8"))).toEqual({ executor: { prod: { forge: "github", workflow: "d.yml" } } });
   });
 
   it("403s in preview mode, and says so — reads still answer", async () => {

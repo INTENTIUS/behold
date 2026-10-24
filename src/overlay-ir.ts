@@ -46,7 +46,7 @@
  * ---------------------------------------------------------------------------
  *
  * Everything here is in memory and per process. behold keeps no database and
- * writes nothing outside `.behold/layout.json` (AGENTS.md, "Invariant").
+ * writes nothing in a served project (AGENTS.md, "Invariant").
  */
 import type { GraphIR } from "@intentius/chant";
 import type { GraphOptions } from "./chant.ts";

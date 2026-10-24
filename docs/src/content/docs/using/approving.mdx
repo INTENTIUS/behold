@@ -39,11 +39,17 @@ npx @intentius/behold serve ./estate --as github:alice
 `<forge>@<host>:<login>` for Forgejo, Gitea or a self-hosted GitHub or GitLab,
 such as `forgejo@codeberg.org:alice`. It also takes any principal your
 workspace's `.chant/allowed_signers` lists. `BEHOLD_APPROVER` sets the same
-thing, and so does the `approver` block in `.behold.json`:
+thing, and so does the `approver` block in behold's per-user settings for the
+project (`<cache>/behold/settings/<key>.json`, outside the project, beside the
+hand layout; `BEHOLD_CACHE_DIR` moves it):
 
 ```json
 { "approver": { "as": "github:alice", "signingKey": "~/.ssh/id_ed25519" } }
 ```
+
+A project served before #470 that had this block in `.behold.json` has it
+copied into the settings on the first read, with relative key paths made
+absolute against the project. behold never writes or deletes `.behold.json`.
 
 A workspace whose `chant.workspace.json` sets `identity.attribution` to
 `identified` refuses a plain user name, so on such a workspace start behold with
@@ -88,7 +94,7 @@ behold then runs `chant approve <op> <gate> --plan <digest> --actor
 github:alice --note "approved in behold" --sign ~/.ssh/id_ed25519`, and chant
 checks the seal against the signers at base before it writes anything.
 `BEHOLD_SIGNING_KEY` sets the same key. Behind a proxy, list a key per person in
-`.behold.json`:
+the per-user settings:
 
 ```json
 { "approver": { "header": "x-forwarded-user", "keys": { "github:alice": "/srv/keys/alice", "github:bob": "/srv/keys/bob" } } }

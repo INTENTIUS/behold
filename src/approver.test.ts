@@ -1,18 +1,19 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseForgeIdentity } from "@intentius/chant/workspace/identity";
 import {
   approverFlags,
   approverFor,
-  approverFromBeholdJson,
+  approverFromSettings,
   approverOptionsProblem,
   approverView,
   isForgeIdentity,
   resolveApproverOptions,
   type ApproverOptions,
 } from "./approver.ts";
+import { writeUserSettings } from "./user-settings.ts";
 
 const made: string[] = [];
 afterAll(() => {
@@ -94,18 +95,29 @@ describe("approverOptionsProblem (#690)", () => {
   });
 });
 
-describe(".behold.json's approver block (#690)", () => {
-  it("is read, with key paths resolved against the file's directory, under the flags and the environment", () => {
+describe("the approver settings (#690, #470)", () => {
+  it("are read from the per-user settings, key paths resolved against the project, under the flags and the environment", () => {
+    const dir = scratch();
+    const cache = scratch();
+    writeUserSettings(dir, { approver: { as: "github:alice", signingKey: "alice", keys: { "github:bob": "keys/bob" } } }, cache);
+    expect(approverFromSettings(dir, cache)).toEqual({ as: "github:alice", signingKey: join(dir, "alice"), keys: { "github:bob": join(dir, "keys/bob") } });
+  });
+  it("migrate a pre-#470 .behold.json block once, leaving the file as it was", () => {
     const dir = scratch();
     writeFileSync(join(dir, "alice"), "");
-    writeFileSync(join(dir, ".behold.json"), JSON.stringify({ approver: { as: "github:alice", signingKey: "alice", keys: { "github:bob": "keys/bob" } } }));
-    expect(approverFromBeholdJson(dir)).toEqual({ as: "github:alice", signingKey: join(dir, "alice"), keys: { "github:bob": join(dir, "keys/bob") } });
+    const text = JSON.stringify({ approver: { as: "github:alice", signingKey: "alice", keys: { "github:bob": "keys/bob" } } });
+    writeFileSync(join(dir, ".behold.json"), text);
+    expect(approverFromSettings(dir)).toEqual({ as: "github:alice", signingKey: join(dir, "alice"), keys: { "github:bob": join(dir, "keys/bob") } });
     expect(resolveApproverOptions({}, dir, {})).toMatchObject({ as: "github:alice", signingKey: join(dir, "alice") });
     expect(resolveApproverOptions({}, dir, { BEHOLD_APPROVER: "github:carol" }).as).toBe("github:carol");
     expect(resolveApproverOptions({ as: "github:dana" }, dir, { BEHOLD_APPROVER: "github:carol" }).as).toBe("github:dana");
     expect(resolveApproverOptions({ header: "X-Forwarded-User" }, dir, {}).header).toBe("x-forwarded-user");
+    // Read once: an edit to .behold.json after the first read is not picked up.
+    writeFileSync(join(dir, ".behold.json"), JSON.stringify({ approver: { as: "github:eve" } }));
+    expect(approverFromSettings(dir).as).toBe("github:alice");
+    expect(readFileSync(join(dir, ".behold.json"), "utf8")).toBe(JSON.stringify({ approver: { as: "github:eve" } }));
   });
-  it("is nothing when the file has no block", () => {
-    expect(approverFromBeholdJson(scratch())).toEqual({});
+  it("are nothing when there is no block", () => {
+    expect(approverFromSettings(scratch())).toEqual({});
   });
 });

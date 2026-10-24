@@ -391,7 +391,7 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
   let ok = 0;
   let failed = 0;
   for (const key of captureKeys(axes)) {
-    // `layout=1` asks the graph/overlay routes to bake the hand-layout sidecar's
+    // `layout=1` asks the graph/overlay routes to bake the hand layout's
     // deltas into the SVG (#228), so a bundle shows the estate arranged the way
     // it was arranged by hand. It is NOT a lens param — `canonicalKey` whitelists
     // the six that select a distinct snapshot and drops everything else — so the

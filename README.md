@@ -460,7 +460,7 @@ button says who chant will record before the click: the person `--as` names
 (`--as github:<login>`), the person an authenticating proxy names in the header
 `--identity-header` trusts, or else the user running behold. A gate the
 workspace names in `identity.gates` is signed with that person's key when
-`--signing-key` (or `.behold.json`'s `approver.keys`) gives one, and sent to the
+`--signing-key` (or `approver.keys` in behold's per-user settings) gives one, and sent to the
 command line otherwise (#690). Every approve route refuses in preview mode.
 
 In a declared workspace, the inspect pane of a member's box or a card has a
@@ -560,49 +560,66 @@ nothing else. Your Terraform is never edited; see AGENTS.md, "Invariant".
 ## Configuration: `.behold.json`
 
 An optional `.behold.json` in the served project's root is **behold's own**
-config, kept separate from `chant.config.ts` so behold's concerns (like the
-tier picker) don't leak into chant's. Three keys: `tiers` below, `executor`
-(which forge deploys an environment), and `members`, spelled `[{ "dir": "x", "kind":
+config, which #470 retired. One key is still read, `members`, spelled `[{ "dir": "x", "kind":
 "chant" | "choudoufu" | "terraform" }]`, how an estate root names what it
 composes, fail-closed on a kind behold has no reader for. `members` is
 deprecated: a chant workspace declaration (`chant.workspace.json`) lists an
 estate's members for every reader, and beside one, `.behold.json`'s list is
 ignored. `behold doctor --fix` writes the declaration from it (see
-[Serve a chant workspace](https://intentius.io/behold/using/workspace/)). First, the
-project's deploy-**tier** axis, a dimension orthogonal to `environment` (chant
-has no native tier concept; it is entirely a project convention, e.g. Loom's
-components branching on an env-conditioned `namingParams.tier`):
+[Serve a chant workspace](https://intentius.io/behold/using/workspace/)).
 
-```json
-{
-  "tiers": {
-    "envVar": "LOOM_TIER",
-    "values": ["light", "production", "production-ha"]
-  }
-}
+### The tier axis: `buildParams` in `chant.config.ts`
+
+The deploy-**tier** axis, a dimension orthogonal to `environment`, is a chant
+build-time parameter (#470): a `buildParams` entry with a string `enum`, the
+one named `tier` first, else the first such entry.
+
+```typescript
+buildParams: {
+  tier: { type: "string", enum: ["light", "production", "production-ha"], default: "light", env: "LOOM_TIER" },
+},
 ```
 
-- `envVar` is the env var name the project's source branches on; behold sets it
-  for the chant shell-out whenever a tier is picked (`?tier=` → this var, never
-  a chant CLI flag).
-- `values` is the tier picker's options.
+- The `enum` is the tier picker's options.
+- A picked tier (`?tier=`) reaches `chant graph` as `--param tier=<value>`, and
+  the parameter's `env` variable is set for the chant shell-out when it
+  declares one, so a chant command without `--param` sees it too.
+- The current tier in the header is that `env` variable's value in behold's
+  own environment, when the parameter declares one.
 
-**No `.behold.json` (or no `tiers` key) → no tier axis:** the picker doesn't
-render and the graph loads with no tier selected, which is the default for any
-project that doesn't opt in. There's no other tier config surface (not
-`chant.config.ts`, not an env var behold guesses the name of).
+No such parameter means no tier axis: the picker doesn't render and the graph
+loads with no tier selected. `.behold.json`'s old `tiers` block is not read;
+`behold doctor` warns where one is left.
+
+### Per-user settings: `approver` and `behaviour.traffic`
+
+Who is approving (`approver`, see [Approving](https://intentius.io/behold/using/approving/))
+and the traffic level the behaviour overlay predicts at (`behaviour.traffic`)
+are one operator's settings, so since #470 they live in a per-user file outside
+the project, beside the hand layout: `<cache>/behold/settings/<key>.json`
+(`~/Library/Caches/behold/settings/` on macOS, `~/.cache/behold/settings/` on Linux, `%LOCALAPPDATA%\behold\settings\` on Windows; `BEHOLD_CACHE_DIR` moves it), keyed by the project's realpath like the layout. A project
+whose `.behold.json` carried either block has it copied in on the first read
+(relative key paths made absolute against the project); `.behold.json` is
+never written or deleted.
 
 ### Deploy executors: `executor`
 
-The same file can designate which forge deploys an environment (#165):
+A member's `chant.config.ts` designates which forge deploys an environment
+(#165, #470), on the environment's entry:
 
-```json
-{
-  "executor": {
-    "prod": { "forge": "github", "workflow": "deploy-prod.yml" }
-  }
-}
+```ts
+environments: [
+  "staging",
+  { name: "prod", executor: { forge: "github", workflow: "deploy-prod.yml" } },
+],
 ```
+
+behold reads it from chant (`chant workspace graph --composites`, each
+`components[].environments[]` row's `executor`, chant 0.124.47 or newer), and
+never from the name of a generated `chant-components-<env>` workflow. A chant
+older than that, or an environment that declares none, reads as no designation.
+`.behold.json`'s old `executor` block is not read; `behold doctor` warns where
+one is left, with the entry to add.
 
 It names the committed **workflow**, not just the forge, because two
 environments' generated pipelines carry identical job ids and a picker cannot
@@ -624,33 +641,33 @@ state outside the project, so a behold restarted mid-deploy re-adopts the run
 and keeps following it. A follow whose stream dies is reported as `lost`, never
 as a verdict; `just e2e-ci-github` proves the whole contract against GitHub.
 
-### The hand-layout sidecar: `.behold/layout.json`
+### The hand layout: a per-user cache
 
 dagre places your nodes; you can move them. Drag a card, resize a containment
 box, and the offsets are remembered per project and lens: in `localStorage`
-first, and (when the served project is writable) in a `.behold/layout.json`
-sidecar beside it, so a layout is shareable, reviewable in a diff, and honoured
-by `behold export`:
+first, and in a per-user cache file outside the project, which is what
+`behold export` bakes into its SVGs:
 
 ```json
-{ "version": 1, "lenses": { "components": { "src/api#Component": { "dx": 40, "dy": -25 } } } }
+{ "version": 1, "projectDir": "/path/to/project", "lenses": { "components": { "src/api#Component": { "dx": 40, "dy": -25 } } } }
 ```
 
-This is the **only** file behold writes inside a served project. It stores
-deltas rather than absolute positions, so the graph stays chant's and your
-layout sits on top of it. A delta whose node has left the estate is dropped.
-`POST /api/layout` refuses politely in preview mode, during a static-export
-capture, on a read-only directory, and above its size caps. `↺ layout` in the
-graph clears the current lens on both tiers.
+The file is `<user cache>/behold/layouts/<key>.json`, where `<user cache>` is
+`~/Library/Caches` on macOS, `%LOCALAPPDATA%` on Windows and `$XDG_CACHE_HOME`
+(or `~/.cache`) elsewhere, and `<key>` is a hash of the project directory's
+realpath. `BEHOLD_CACHE_DIR` moves `<user cache>/behold`. behold writes nothing
+inside a served project (#469), so there is nothing to gitignore.
 
-**Gitignore it.** `.behold.json` (above) is config and belongs in the repo;
-`.behold/` is per-user state, one person's arrangement of the picture, so add
-it to the served project's `.gitignore` unless you actually want to share and
-review a layout:
+It stores deltas rather than absolute positions, so the graph stays chant's and
+your layout sits on top of it. A delta whose node has left the estate is
+dropped. `POST /api/layout` refuses politely in preview mode, during a
+static-export capture, when the cache isn't writable, and above its size caps.
+`↺ layout` in the graph clears the current lens on both tiers.
 
-```gitignore
-.behold/
-```
+A project served by an older behold may have a `.behold/layout.json`. The first
+time the cache has nothing for that project, behold reads the old file once
+and copies it into the cache. It never changes or deletes it; remove it
+yourself when you like.
 
 ## Layout
 

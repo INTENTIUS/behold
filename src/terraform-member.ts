@@ -9,8 +9,8 @@
  * one (INTENTIUS/waterpark#88 was withdrawn — the estate is more useful
  * untouched). So behold generates the reader config itself, in a scratch
  * directory of its own, and points chant at that. Nothing is written under the
- * served directory; the Invariant's one in-project write stays
- * `.behold/layout.json`.
+ * served directory, and behold writes nothing in a served project at all
+ * (AGENTS.md, "Invariant"; #469).
  *
  * Three decisions shape this, and each was a real trade (#384's own three open
  * questions).

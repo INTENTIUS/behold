@@ -148,7 +148,8 @@ Options:
                       (BEHOLD_HUD_URL too). A proposed decision in a member's
                       or a card's "why" links to its review there (#471).
   --as <principal>    serve only: who behold approves a gate as (BEHOLD_APPROVER,
-                      or .behold.json's approver.as), passed to chant as
+                      or approver.as in behold's per-user settings for the
+                      project, <user cache>/behold/settings/), passed to chant as
                       --actor: a forge identity such as github:<login>, or a
                       principal .chant/allowed_signers lists. Without it chant
                       records the user running behold (#690).
@@ -674,7 +675,7 @@ async function declaredWorkspace(root: string, verb: "serve" | "export"): Promis
   const drawn = drawnMembers(ws);
   process.stdout.write(`behold: serving chant workspace ${ws.name} (${ws.file}), ${drawn.length} of ${ws.members.length} members drawn\n`);
   for (const m of unreadableMembers(ws)) process.stdout.write(`        ${m.name}: unreadable, ${m.reason!.code}: ${m.reason!.message}\n`);
-  for (const m of undrawnMembers(ws)) process.stdout.write(`        ${m.name}: kind ${m.kind}, listed and not drawn${m.because ? ` (${m.because})` : ""}\n`);
+  for (const m of undrawnMembers(ws)) process.stdout.write(`        ${m.name}: ${m.repo ? `repo ${m.repo.url} at ${m.repo.rev.slice(0, 12)}` : `kind ${m.kind}`}, listed and not drawn${m.because ? ` (${m.because})` : ""}\n`);
   if (loadBeholdConfig(root).members) {
     process.stderr.write(`behold: warning — ${root}/.behold.json lists members, and chant.workspace.json does too; the declaration wins and .behold.json's members are ignored.\n`);
   }

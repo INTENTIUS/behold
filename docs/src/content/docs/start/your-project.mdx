@@ -63,24 +63,23 @@ Re-queries every 30 seconds and pushes updates to the browser. Add `--auto-sync`
 
 ## Optional: a tier picker
 
-If your project's source branches on a build parameter such as a deployment tier, declare it in a `.behold.json` at the project root and behold renders a picker for it:
+If your project's source branches on a deployment tier, declare it as a [build-time parameter](https://intentius.io/chant/concepts/build-time-parameters/) with an `enum` in `chant.config.ts`, and behold renders a picker for it:
 
-```json
-{
-  "tiers": {
-    "envVar": "KMV_TIER",
-    "values": ["minimal", "prod", "prod-ha"]
-  }
-}
+```typescript
+export default {
+  buildParams: {
+    tier: { type: "string", enum: ["minimal", "prod", "prod-ha"], default: "minimal", env: "KMV_TIER" },
+  },
+} satisfies ChantConfig;
 ```
 
-`envVar` is the variable your source reads; behold sets it for the chant shell-out when a tier is picked. No file, or no `tiers` key, means no picker, which is the default for every project that does not opt in.
+Your source reads it as `params.tier` from `@intentius/chant/params`. When a tier is picked, behold passes it to chant as `--param tier=<value>`, and also sets the parameter's `env` variable when it declares one. behold takes the parameter named `tier`, or else the first one with a string `enum`. A project with no such parameter gets no picker.
 
-This is behold's own config, deliberately separate from `chant.config.ts` so a viewer's concerns stay out of the compiler's.
+Before #470 the tier axis was a `tiers` block in `.behold.json`. behold no longer reads it, and `behold doctor` warns where one is left.
 
 ## Optional: a traffic level for live versus declared
 
-behold can show what your estate costs as the account stands beside what the file says it should, with the difference. Both figures are predictions at a traffic level, and behold never picks one for you. Name it in `.behold.json`:
+behold can show what your estate costs as the account stands beside what the file says it should, with the difference. Both figures are predictions at a traffic level, and behold never picks one for you. Name it in behold's per-user settings for the project, a file outside the project at `<cache>/behold/settings/<key>.json` (`~/Library/Caches/behold/settings/` on macOS, `~/.cache/behold/settings/` on Linux, `%LOCALAPPDATA%\behold\settings\` on Windows; `BEHOLD_CACHE_DIR` moves it), where `<key>` is the same as the hand layout's:
 
 ```json
 {
@@ -88,17 +87,19 @@ behold can show what your estate costs as the account stands beside what the fil
 }
 ```
 
+A project served before #470 that named it in `.behold.json` has that block copied into the settings on the first read. behold never writes or deletes `.behold.json`.
+
 The string goes to chant verbatim as `chant graph --traffic`. `?traffic=` on `/api/graph` and `/api/overlay` overrides it for one request. With neither, behold asks for no prediction, which reads as "not looked" and is not a refusal.
 
 With a level, `/api/overlay` asks chant twice for each member: once about the account (`--live`) and once about the file. The payload's `meta.behaviour` carries `live`, `declared` and `delta`, per member and for the estate, and a card the account no longer holds keeps its declared figure under `attrs._behaviourDeclared`. The live figure moves with drift. The declared one moves only when a file under the member changes, so behold reads it once per edit.
 
 The figures are an engine's, reached by chant through `CHANT_BEHAVIOUR_ENGINE`. behold calls no engine and holds no key. A choudoufu or Terraform member reads through `@intentius/chant-lexicon-terraform`, which behold installs with itself (#909), since that lexicon is what predicts a `.tf` root.
 
-## Optional: a shared hand layout
+## Your hand layout
 
-Drag a card or resize a containment box and behold remembers the offset, in your browser and (if the project directory is writable) in a `.behold/layout.json` sidecar next to it. That sidecar is the one file behold writes inside your project. It stores offsets rather than positions, so the graph underneath stays chant's, and `behold export` bakes it into the exported SVGs.
+Drag a card or resize a containment box and behold remembers the offset, in your browser and in a per-user cache outside the project (`~/Library/Caches/behold/layouts/` on macOS, `~/.cache/behold/layouts/` on Linux, `%LOCALAPPDATA%\behold\layouts\` on Windows; `BEHOLD_CACHE_DIR` moves it). behold writes nothing inside your project, so there is nothing to gitignore. The layout stores offsets rather than positions, so the graph underneath stays chant's, and `behold export` bakes it into the exported SVGs.
 
-Add `.behold/` to the project's `.gitignore`: unlike `.behold.json` above, which is config worth tracking, a layout is per-user state. Commit it only if you actually want everyone looking at the same arrangement.
+A `.behold/layout.json` left by an older behold is read once into the cache and never changed or deleted.
 
 <Aside type="caution" title="If every tier renders the same graph">
 Your project's chant needs to resolve build parameters in `chant graph`, which landed in chant 0.38.0. A caret on a `0.x` pins the minor, so `^0.37.x` cannot reach it. Bump to `^0.38.0`.
