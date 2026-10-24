@@ -58,6 +58,26 @@ export const DEFAULT_TIPS = [
   { title: "Inspect", body: "Open Inspect to explore every resource and the plan behind it." },
 ];
 /** The same, on a phone: the last card says this is the short version. */
+/**
+ * The Terragrunt and Atmos demos run their own tool's plain workflow with choudoufu as the binary: no terragucci in
+ * them. Their built-in cards leave terragucci out, and the free card names choudoufu alone.
+ */
+export const PLAIN_TIPS = [
+  DEFAULT_TIPS[0],
+  DEFAULT_TIPS[2],
+  { title: "Free, nothing to host", body: "choudoufu is free and open source. It runs in the CI pipeline you already have. There is no server or database to host; its records sit in a bucket you own.", link: { label: "choudoufu on GitHub", url: "https://github.com/INTENTIUS/choudoufu" } },
+  DEFAULT_TIPS[4],
+];
+
+/** Whether a scenario belongs to a plain-workflow demo (Terragrunt or Atmos on choudoufu). */
+export const plainScenario = (scenario) => typeof scenario === "string" && /^(terragrunt|atmos)-/.test(scenario);
+
+/** The built-in cards for a scenario, on a phone or not: the last card is Inspect, or on a phone the short-version note. */
+export function defaultTipsFor(scenario, phone = false) {
+  const base = plainScenario(scenario) ? PLAIN_TIPS : DEFAULT_TIPS;
+  return phone ? [...base.slice(0, -1), PHONE_TIPS[PHONE_TIPS.length - 1]] : base;
+}
+
 export const PHONE_TIPS = [
   ...DEFAULT_TIPS.slice(0, -1),
   { title: "The full view", body: "This is the short version. A laptop shows the full view and Inspect." },
@@ -142,7 +162,8 @@ export function createTipSequencer({ show, hide, enabled = () => true, defaults 
       if (id !== null && enabled() && cycleNow !== closedCycle) {
         const own = validTips(d.tips);
         const cycle = cycleNow;
-        const list = own.length ? own : defaults.slice(given.get(cycle) || 0);
+        const builtins = typeof defaults === "function" ? defaults(d.scenario) : defaults;
+        const list = own.length ? own : builtins.slice(given.get(cycle) || 0);
         queue = list.map((tip) => ({ tip, builtin: !own.length, cycle }));
       }
       if (!up || read) {
@@ -263,7 +284,7 @@ export function mountAskTips({ win = window, doc = document, askHost, reduced = 
     stopMeasure();
   };
   const seq = createTipSequencer({
-    defaults: typeof win.matchMedia === "function" && win.matchMedia(PHONE).matches ? PHONE_TIPS : DEFAULT_TIPS,
+    defaults: (scenario) => defaultTipsFor(scenario, typeof win.matchMedia === "function" && win.matchMedia(PHONE).matches),
     enabled,
     show(tip) {
       kill();

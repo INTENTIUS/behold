@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_TIPS, LINK_RESUME_MS, PHONE_TIPS, TIP_FADE_MS, TIP_MIN_MS, createTipSequencer, holdMs, safeLink, shouldDismiss } from "./kiosk-ask-tips.js";
+import { DEFAULT_TIPS, LINK_RESUME_MS, PHONE_TIPS, TIP_FADE_MS, TIP_MIN_MS, createTipSequencer, holdMs, safeLink, shouldDismiss, defaultTipsFor } from "./kiosk-ask-tips.js";
 
 function rig(opts = {}) {
   const log = [];
@@ -247,5 +247,17 @@ describe("tip cards: a press outside closes", () => {
     expect(shouldDismiss(outside, host)).toBe(true);
     expect(shouldDismiss(inside, host)).toBe(false);
     expect(shouldDismiss(null, host)).toBe(false);
+  });
+});
+
+describe("tip cards: per demo", () => {
+  it("leaves terragucci out of the Terragrunt and Atmos demos, and names choudoufu alone on their free card", () => {
+    for (const sc of ["terragrunt-choudoufu-create", "atmos-choudoufu-edit"]) {
+      const tips = defaultTipsFor(sc);
+      expect(tips.map((t) => t.title)).not.toContain("terragucci");
+      expect(tips.map((t) => `${t.title} ${t.body}`).join(" ")).not.toMatch(/terragucci|Both are free/);
+    }
+    expect(defaultTipsFor("choudoufu-compose-create").map((t) => t.title)).toContain("terragucci");
+    expect(defaultTipsFor("atmos-choudoufu-edit", true).at(-1).title).toBe("The full view");
   });
 });
