@@ -22,13 +22,24 @@ export const TIP_MIN_MS = 8_000;
 /** A card whose step ended fades out in this long (under 400 ms). */
 export const TIP_FADE_MS = 300;
 
-/** What a busy step with no tips of its own shows, in order. */
+/**
+ * What a busy step with no tips of its own shows, in order: the viewer's takeaways, then where to look next. Minimal
+ * and positive, and linted clean at strictness 3 with the sentences package's destink linter.
+ */
 export const DEFAULT_TIPS = [
-  { title: "One root at a time", body: "Most tools plan each root on its own, in order. A root can't see a value its upstream hasn't created yet until that upstream has applied." },
-  { title: "terragucci", body: "terragucci runs stock Terraform and OpenTofu roots in waves, each root planned and applied in order, from your own pipeline." },
-  { title: "choudoufu", body: "choudoufu, a fork of OpenTofu, plans every estate in one plan, a new subnet's id included, and applies them in one apply. Resource-level locking at the cloud level." },
-  { title: "Free, nothing to host", body: "Both are free and open source. There is no server and no database to run: it all runs in your CI pipeline, and the records sit in a storage bucket." },
+  { title: "All at once", body: "Every estate plans together, the new subnet's id included. Most tools go one root at a time." },
+  { title: "terragucci", body: "terragucci runs stock Terraform and OpenTofu in waves from your own pipeline." },
+  { title: "choudoufu", body: "choudoufu is a fork of OpenTofu. It plans and applies every estate in one pass. Resource-level locking at the cloud level." },
+  { title: "Free, nothing to host", body: "Free and open source. Everything runs in your CI pipeline: no server, no database." },
+  { title: "Inspect", body: "Open Inspect to explore every resource and the plan behind it." },
 ];
+/** The same, on a phone: the last card says this is the short version. */
+export const PHONE_TIPS = [
+  ...DEFAULT_TIPS.slice(0, -1),
+  { title: "The full view", body: "This is the short version. A laptop shows the full view and Inspect." },
+];
+/** The phone layout's width (web/kiosk.html, ask mode). */
+const PHONE = "(max-width: 700px)";
 
 const validTips = (v) => (Array.isArray(v) ? v.filter((t) => t && typeof t.title === "string" && t.title && typeof t.body === "string" && t.body) : []);
 
@@ -106,10 +117,10 @@ export function createTipSequencer({ show, hide, enabled = () => true, defaults 
   };
 }
 
-/** How long a card stays: long enough to read its title and body (about 4 words a second), and never under minMs. */
+/** How long a card stays: long enough to read its title and body (about 3 words a second, plus 3 s), never under minMs. */
 export function holdMs(tip, minMs = TIP_MIN_MS) {
   const words = `${tip.title} ${tip.body}`.split(/\s+/).filter(Boolean).length;
-  return Math.max(minMs, 2_000 + words * 250);
+  return Math.max(minMs, 3_000 + words * 330);
 }
 
 const STYLE_ID = "k-ask-tips-style";
@@ -170,6 +181,7 @@ export function mountAskTips({ win = window, doc = document, askHost, reduced = 
     stopMeasure();
   };
   const seq = createTipSequencer({
+    defaults: typeof win.matchMedia === "function" && win.matchMedia(PHONE).matches ? PHONE_TIPS : DEFAULT_TIPS,
     enabled,
     show(tip) {
       kill();
