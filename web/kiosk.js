@@ -1626,6 +1626,8 @@ export const TRACE_SETTLE_MS = 90_000;
 export const FRAME_SWAP_MS = 30_000;
 /** How long the pane's "drawing the graph" line waits for a frame that never says it drew. */
 export const FRAME_WAIT_MS = 10_000;
+/** How long the line outlasts a frame's first `behold:drawn`: the scene's layout and fit follow it. */
+export const FRAME_SETTLE_MS = 1_200;
 /** behold#571: how long the first frame load waits for demo.json, so it opens on the step's checkout. */
 export const FRAME_BOOT_WAIT_MS = 4_000;
 
@@ -2945,9 +2947,15 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   // While no frame has drawn on this page (a reload, a load in place) the pane says what it waits for (body.k-framewait),
   // dark and never empty; a frame that never says it drew gives the line up after FRAME_WAIT_MS.
   let waitTimer = null;
-  const frameWait = (on) => {
+  // A frame says it drew when its cards are in the svg, a moment before the scene is laid out and fitted: the line goes
+  // FRAME_SETTLE_MS after that, so the pane is never between the two with nothing in it.
+  const frameWait = (on, settle = 0) => {
     if (typeof document === "undefined" || !document.body || !document.body.classList) return;
     clearTimeout(waitTimer);
+    if (!on && settle > 0) {
+      waitTimer = setTimeout(() => document.body.classList.remove("k-framewait"), settle);
+      return;
+    }
     document.body.classList.toggle("k-framewait", !!on);
     if (on) waitTimer = setTimeout(() => document.body.classList.remove("k-framewait"), FRAME_WAIT_MS);
   };
@@ -3042,7 +3050,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     window.addEventListener("message", (e) => {
       if (e.origin !== origin || !e.data || e.data.type !== "behold:drawn") return;
       if (buffer && e.source === buffer.contentWindow) swapFrame();
-      else if (frame && e.source === frame.contentWindow) (frameDrawn = true), frameWait(false);
+      else if (frame && e.source === frame.contentWindow) (frameDrawn = true), frameWait(false, FRAME_SETTLE_MS);
     });
   }
   /** behold#571: the commit each served checkout holds, read again when a step names a new one. */
