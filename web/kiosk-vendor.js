@@ -135,11 +135,11 @@ export const VENDORS = {
   // The multi-state demos (the only ones listed): one plan and one apply across three estates, on choudoufu and OpenTofu.
   // choudoufu's logo is ours. OpenTofu, Terragrunt and Atmos show as text: their owners' published rules, where we found
   // any, don't give a third party's page a logo (see web/kiosk-banner.js). `title` is the example's name for the banner,
-  // `tree` its public directory in INTENTIUS/terragucci, `products` the banner's logos or names, in order.
+  // `code` the full URL of its public example in its product's repo, `products` the banner's logos or names, in order.
   "choudoufu-compose": {
     name: "terragucci and choudoufu",
     title: "One plan, one apply, across estates",
-    tree: "example-demo-choudoufu-compose",
+    code: "https://github.com/INTENTIUS/terragucci/tree/main/example-demo-choudoufu-compose",
     products: ["terragucci", "choudoufu"],
     owner: "Intentius",
     url: "https://intentius.io/choudoufu/",
@@ -152,7 +152,7 @@ export const VENDORS = {
   "terragrunt-choudoufu": {
     name: "choudoufu with Terragrunt",
     title: "One plan, one apply, across estates, with Terragrunt",
-    tree: "example-demo-terragrunt-choudoufu",
+    code: "https://github.com/INTENTIUS/choudoufu/tree/main/examples/demo-terragrunt",
     products: ["terragrunt", "choudoufu"],
     owner: "Intentius",
     url: "https://intentius.io/choudoufu/",
@@ -166,7 +166,7 @@ export const VENDORS = {
   "atmos-choudoufu": {
     name: "choudoufu with Atmos",
     title: "One plan, one apply, across estates, with Atmos",
-    tree: "example-demo-atmos-choudoufu",
+    code: "https://github.com/INTENTIUS/choudoufu/tree/main/examples/demo-atmos",
     products: ["atmos", "choudoufu"],
     owner: "Intentius",
     url: "https://intentius.io/choudoufu/",
@@ -183,7 +183,7 @@ export const VENDORS = {
     name: "chant",
     title: "One plan, one apply, across stacks",
     heading: "One plan, one apply, across stacks",
-    tree: "example-demo-chant-compose",
+    code: "https://github.com/INTENTIUS/chant/tree/main/examples/demo-composed-stacks",
     products: ["chant"],
     owner: "Intentius",
     url: "https://intentius.io/chant/",

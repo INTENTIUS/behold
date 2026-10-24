@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actNumeral, actOf, CODE_BASE, PRODUCTS, bannerModel, liveTool } from "./kiosk-banner.js";
+import { actNumeral, actOf, PRODUCTS, bannerModel, liveTool } from "./kiosk-banner.js";
 import { VENDORS } from "./kiosk-vendor.js";
 
 const ALL = ["choudoufu-compose", "terragrunt-choudoufu", "atmos-choudoufu", "chant-compose"];
@@ -11,9 +11,9 @@ describe("the demo banner model", () => {
   });
   it("links the public example tree", () => {
     expect(bannerModel("choudoufu-compose").code.url).toBe("https://github.com/INTENTIUS/terragucci/tree/main/example-demo-choudoufu-compose");
-    expect(bannerModel("atmos-choudoufu").code.url).toBe(`${CODE_BASE}example-demo-atmos-choudoufu`);
-    expect(bannerModel("terragrunt-choudoufu").code.url).toBe(`${CODE_BASE}example-demo-terragrunt-choudoufu`);
-    expect(bannerModel("chant-compose").code.url).toBe("https://github.com/INTENTIUS/terragucci/tree/main/example-demo-chant-compose");
+    expect(bannerModel("atmos-choudoufu").code.url).toBe("https://github.com/INTENTIUS/choudoufu/tree/main/examples/demo-atmos");
+    expect(bannerModel("terragrunt-choudoufu").code.url).toBe("https://github.com/INTENTIUS/choudoufu/tree/main/examples/demo-terragrunt");
+    expect(bannerModel("chant-compose").code.url).toBe("https://github.com/INTENTIUS/chant/tree/main/examples/demo-composed-stacks");
   });
   it("names the demo's own products: every product with its logo, never OpenTofu", () => {
     expect(PRODUCTS.choudoufu.logo.src).toBe("/vendors/choudoufu.svg");
@@ -47,7 +47,8 @@ describe("the demo banner model", () => {
       expect(text).not.toMatch(/atomic|transaction|terraform|pulumi|spacelift|env0|scalr|terramate|cdk/i);
       if (t !== "terragrunt-choudoufu") expect(text).not.toMatch(/gruntwork|terragrunt[^-]/i);
       if (t !== "atmos-choudoufu") expect(text).not.toMatch(/atmos|cloud posse/i);
-      if (t === "chant-compose") expect(text.replace(CODE_BASE, "")).not.toMatch(/choudoufu|terragrunt|opentofu|terragucci/i);
+      if (t !== "choudoufu-compose") expect(text).not.toMatch(/terragucci/i);
+      if (t === "chant-compose") expect(text).not.toMatch(/choudoufu|terragrunt|opentofu|terragucci/i);
     }
   });
 });

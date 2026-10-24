@@ -7,9 +7,6 @@
 
 import { vendorOf } from "./kiosk-vendor.js";
 
-/** The public example trees live here. */
-export const CODE_BASE = "https://github.com/INTENTIUS/terragucci/tree/main/";
-
 /** The products a banner may show: the name, the site, and the logo (null where no rule allows one). */
 export const PRODUCTS = {
   choudoufu: { name: "choudoufu", url: "https://intentius.io/choudoufu/", logo: { src: "/vendors/choudoufu.svg" } },
@@ -53,19 +50,19 @@ export function liveTool(demo) {
   // The base (a reset between scenarios) names the tool that just ran, not the one that is next: it is no demo going live.
   const t = d && typeof d.tool === "string" && d.scenario !== "base" ? d.tool : null;
   const v = t ? vendorOf(t) : null;
-  return v && v.tree && v.title ? t : null;
+  return v && v.code && v.title ? t : null;
 }
 
 /** The banner for the live demo `tool`, or null for a tool that is no listed demo. */
 export function bannerModel(tool, act = null) {
   const v = vendorOf(tool);
-  if (!v || !v.tree || !v.title) return null;
+  if (!v || !v.code || !v.title) return null;
   return {
     tool,
     name: v.heading || BANNER_TITLE,
     act,
     products: (v.products || []).map((id) => PRODUCTS[id]).filter(Boolean),
-    code: { label: "See the code", short: "Code", url: `${CODE_BASE}${v.tree}` },
+    code: { label: "See the code", short: "Code", url: v.code },
   };
 }
 
