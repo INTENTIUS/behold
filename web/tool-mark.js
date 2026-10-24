@@ -68,7 +68,7 @@ export const TOOLS = {
   // marketing division." A job label is another use, so no logo.
   terraform: { name: "Terraform", kind: "engine", icon: null },
   // choudoufu: ours, the PNG the kiosk's choudoufu page already shows. Relative, so a static export finds it.
-  choudoufu: { name: "choudoufu", kind: "engine", icon: { image: "vendors/choudoufu-128.png" } },
+  choudoufu: { name: "choudoufu", kind: "engine", icon: { image: "vendors/choudoufu.svg" } },
   // SQL Yodeler: ours, its cowboy hat from SQL Yodeler's docs
   // (sql-yodeler docs-site/public/brand/hat-small.png and hat-160.png), served
   // as /vendors/sql-yodeler-44.png and -160.png; the larger one draws the mark. After

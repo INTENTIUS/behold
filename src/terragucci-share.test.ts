@@ -27,9 +27,9 @@ describe("link previews (behold#571)", () => {
     const r = await app().request("https://x/", { headers: { host: HOST, "x-forwarded-proto": "https" } });
     expect(r.status).toBe(200);
     const html = await r.text();
-    expect(html).toContain("<title>behold · choudoufu</title>");
+    expect(html).toContain("<title>behold · terragucci and choudoufu</title>");
     expect(metas(html)).toMatchObject({
-      "og:title": "behold · choudoufu",
+      "og:title": "behold · terragucci and choudoufu",
       "og:type": "website",
       "og:url": `https://${HOST}/`,
       "og:image": `https://${HOST}/share.png`,
