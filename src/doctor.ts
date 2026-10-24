@@ -35,9 +35,9 @@ import {
   type ChantResolution,
 } from "./chant.ts";
 import { registeredMemberKinds } from "./member-kind.ts";
-import { CHANT_FLOORS, floorMet } from "./chant-floors.ts";
+import { CHANT_FLOORS, EXECUTOR_CHANT_FLOOR, floorMet } from "./chant-floors.ts";
 import { CHOUDOUFU_FLOOR, choudoufuBinary, choudoufuMeetsFloor, choudoufuVersion, readLiveCheck, type ChoudoufuVersion, type LiveCheckParse } from "./choudoufu-member.ts";
-import { detectProject, detectProjectShape, hasRetiredTiers, loadBeholdConfig, type ProjectKind } from "./project.ts";
+import { detectProject, detectProjectShape, hasRetiredTiers, retiredExecutorBlock, loadBeholdConfig, type ProjectKind } from "./project.ts";
 import { terragucciConfig } from "./terragucci-repo.ts";
 import { drawnMembers, hasDeclaration, readWorkspace, undrawnMembers, unreadableMembers, type Workspace, type WorkspaceRead } from "./workspace.ts";
 import {
@@ -60,7 +60,7 @@ export type CheckStatus = "pass" | "warn" | "fail";
  * on it); `detail` is what behold found; `fix` is the single next step, set
  * whenever the status isn't a pass. */
 export interface DoctorCheck {
-  name: "project" | "chant" | "lexicons" | "targets" | "envs" | "kube" | "substrates" | "floor" | "ops" | "choudoufu" | "terraform" | "tiers";
+  name: "project" | "chant" | "lexicons" | "targets" | "envs" | "kube" | "substrates" | "floor" | "ops" | "choudoufu" | "terraform" | "tiers" | "executor";
   status: CheckStatus;
   detail: string;
   fix?: string;
@@ -626,6 +626,8 @@ export async function diagnose(dir: string, probes: DoctorProbes = {}): Promise<
 
   const retired = tiersRetiredCheck(root, chantTargets);
   if (retired) checks.push(retired);
+  const retiredExec = executorRetiredCheck(root, chantTargets);
+  if (retiredExec) checks.push(retiredExec);
 
   return { behold, dir: root, kind: shape.kind, ok: !checks.some((c) => c.status === "fail"), checks };
 }
@@ -642,6 +644,24 @@ export function tiersRetiredCheck(root: string, dirs: readonly string[]): Doctor
     status: "warn",
     detail: `.behold.json \`tiers\` is no longer read (#470): ${list(carrying.map((d) => relative(root, d) || "."))}`,
     fix: "Declare the tier in chant.config.ts as a build-time parameter, e.g. `buildParams: { tier: { type: \"string\", enum: [\"light\", \"production\"], env: \"LOOM_TIER\" } }`, read it with `params.tier` from @intentius/chant/params, and delete `tiers` from .behold.json.",
+  };
+}
+
+/** #470: a `.behold.json` `executor` block is no longer read; the forge and
+ * workflow that deploy an environment are declared on the member's
+ * `chant.config.ts` environment entry (chant 0.124.47, chant#4402). A warn,
+ * only where a file still carries the block: until it moves, the env no
+ * longer routes away from this machine. */
+export function executorRetiredCheck(root: string, dirs: readonly string[]): DoctorCheck | undefined {
+  const carrying = [...new Set([root, ...dirs])].map((d) => ({ d, x: retiredExecutorBlock(d) })).filter((c) => c.x);
+  if (!carrying.length) return undefined;
+  const first = carrying[0].x!;
+  const env = Object.keys(first)[0];
+  return {
+    name: "executor",
+    status: "warn",
+    detail: `.behold.json \`executor\` is no longer read (#470), so these environments are no longer kept off this machine: ${list(carrying.map((c) => `${relative(root, c.d) || "."} (${Object.keys(c.x!).join(", ")})`))}`,
+    fix: `Declare it on the environment entry in that member's chant.config.ts, e.g. \`environments: [{ name: ${JSON.stringify(env)}, executor: ${JSON.stringify(first[env])} }]\` (chant ${EXECUTOR_CHANT_FLOOR} or newer), and delete \`executor\` from .behold.json.`,
   };
 }
 
