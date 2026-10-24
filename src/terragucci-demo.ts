@@ -526,7 +526,7 @@ export type VendorTool = (typeof VENDOR_TOOLS)[number];
 
 /** Each demo's name for the page's title. web/kiosk-vendor.js VENDORS has the same names. */
 export const VENDOR_NAMES: Record<VendorTool, string> = {
-  "choudoufu-compose": "choudoufu",
+  "choudoufu-compose": "terragucci and choudoufu",
   "terragrunt-choudoufu": "choudoufu with Terragrunt",
   "atmos-choudoufu": "choudoufu with Atmos",
 };
