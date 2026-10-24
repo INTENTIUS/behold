@@ -10,7 +10,7 @@
 //   - the resource's name first on its card, its type second.
 // All of it is removed and drawn again on each call, so a redraw of the marks is harmless.
 
-import { LOOK_WORDS, cardTitle, planOf, slotState, stateMarks, unknownSlots } from "./kiosk-light.js";
+import { cardTitle, planOf, slotState, stateMarks, stateWords, unknownSlots } from "./kiosk-light.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const make = (tag, attrs, text) => {
@@ -104,14 +104,17 @@ function drawStates(layer, answer, progress, h) {
   const marks = stateMarks(answer, progress);
   for (const r of answer.roots) {
     const m = marks[r.path];
-    const box = h.rootBox(r.path);
+    // behold#940: a label rides inside its box's own group when the graph has one, so it moves, grows and reflows with the box.
+    const host = h.boxHost ? h.boxHost(r.path) : null;
+    const box = host || h.rootBox(r.path);
     if (!m || !box) continue;
-    const x = box.x + 14;
     // behold#939: a prompt-driven step draws the roots' resources, which fill their boxes: the label goes under the box, off the cards.
     const y = h.below ? box.y2 + 26 : box.y2 - 12;
-    const g = make("g", { "data-kl-state": r.path, "data-kl-look": m.look || "none" });
-    const words = [`state ${m.file}`, m.look ? LOOK_WORDS[m.look] : null, m.written ? "written" : null].filter(Boolean).join(" · ");
+    const g = make("g", { "data-kl-state": r.path, "data-kl-look": m.look || "none", "pointer-events": "none" });
+    if (host) g.setAttribute("data-kl-layer", "1");
+    const words = stateWords(m);
     const w = Math.max(120, words.length * 7.4 + 20);
+    const x = box.x + 14;
     const rect = make("rect", { x, y: y - 17, width: w, height: 22, rx: 4, fill: "var(--panel, var(--bg))", stroke: "var(--frame-neutral, var(--neutral))", "stroke-width": 1.5 });
     // Three looks, by shape as well as colour: solid is applied, half filled with a dashed edge is partly applied, hollow dotted is not applied.
     let ink = "var(--fg)";
@@ -132,8 +135,8 @@ function drawStates(layer, answer, progress, h) {
       ink = "var(--muted)";
     } else g.appendChild(rect);
     g.appendChild(make("text", { x: x + 10, y: y - 1.5, "font-size": 13, "font-weight": 700, fill: ink }, words));
-    g.appendChild(make("title", {}, `${r.path}'s state file is ${m.file}${m.from === "path" ? " (named from the root's path)" : ""}${m.written ? "; the apply wrote it" : ""}`));
-    layer.appendChild(g);
+    g.appendChild(make("title", {}, m.estate ? `${r.path} is an estate: it keeps records, not a state file${m.written ? "; the apply wrote them" : ""}` : `${r.path}'s state file is ${m.file}${m.from === "path" ? " (named from the root's path)" : ""}${m.written ? "; the apply wrote it" : ""}`));
+    (host ? host.parent : layer).appendChild(g);
   }
 }
 
@@ -153,13 +156,19 @@ function drawSlots(layer, svg, plan, answer, progress, h) {
     slots.forEach((s, i) => {
       const st = slotState(s, answer, progress);
       const words = st.filled ? (st.value !== undefined ? `${s.path}: ${typeof st.value === "string" ? st.value : JSON.stringify(st.value)}` : `${s.path}: filled from ${s.text.replace(/^not known until /, "").replace(/ exists$/, "")}`) : `${s.path}: ${s.text}`;
-      const w = Math.min(b.width - 12, Math.max(90, words.length * 6.6 + 16));
-      const y = b.y + b.height - 3 + i * 22;
+      // behold#940: a card the scene drew (data-kl-synth) has room under it for its slots, in bigger type; a graph card's hang over its foot.
+      const synth = card.hasAttribute("data-kl-synth");
+      const size = synth ? 14 : 11.5;
+      const fit = Math.max(8, Math.floor((b.width - 28) / (size * 0.56)));
+      const shown = synth && words.length > fit ? `${words.slice(0, fit - 3)}...` : words;
+      const w = synth ? b.width - 12 : Math.min(b.width - 12, Math.max(90, shown.length * 6.6 + 16));
+      const rowH = synth ? 22 : 18;
+      const y = synth ? b.y + b.height + 6 + rowH + i * 26 : b.y + b.height - 3 + i * 22;
       const g = make("g", { "data-kl-slot": id, "data-kl-filled": st.filled ? "1" : "0" });
       g.setAttribute("transform", card.getAttribute("transform") || "");
       // Empty: a dashed outline with a hollow inside. Filled: solid, tinted.
-      g.appendChild(make("rect", { x: b.x + 6, y: y - 18, width: w, height: 18, rx: 3, fill: st.filled ? "var(--frame-managed, var(--managed))" : "var(--bg)", "fill-opacity": st.filled ? 0.25 : 1, stroke: st.filled ? "var(--frame-managed, var(--managed))" : "var(--frame-foreign, var(--foreign))", "stroke-width": 1.5, "stroke-dasharray": st.filled ? "none" : "4 3" }));
-      g.appendChild(make("text", { x: b.x + 12, y: y - 5, "font-size": 11.5, "font-weight": 600, fill: "var(--fg)" }, words));
+      g.appendChild(make("rect", { x: b.x + 6, y: y - rowH, width: w, height: rowH, rx: 3, fill: st.filled ? "var(--frame-managed, var(--managed))" : "var(--bg)", "fill-opacity": st.filled ? 0.25 : 1, stroke: st.filled ? "var(--frame-managed, var(--managed))" : "var(--frame-foreign, var(--foreign))", "stroke-width": 1.5, "stroke-dasharray": st.filled ? "none" : "4 3" }));
+      g.appendChild(make("text", { x: b.x + 12, y: y - (synth ? 6 : 5), "font-size": size, "font-weight": 600, fill: "var(--fg)" }, shown));
       layer.appendChild(g);
     });
   }

@@ -764,9 +764,14 @@ export function planFitsPin(pr, pin) {
 export function pinnedAnswer(answer, run, pull = null) {
   if (!answer || answer.error) return answer;
   const pin = pullPin(run);
-  if (run === "base" || (pin && !planFitsPin(answer.pull_request, pin))) return { ...answer, pull_request: null };
+  // behold#940: the estate scene is the plan's resources and what applied, so it goes where the plan does.
+  const none = () => {
+    const { estateScene: _scene, ...rest } = answer;
+    return { ...rest, pull_request: null };
+  };
+  if (run === "base" || (pin && !planFitsPin(answer.pull_request, pin))) return none();
   // A commit's run is the merge of the cycle's pull request (`pull`): another cycle's plan is never drawn for it.
-  if (pull && pinsCommit(run) && !mergedPull(answer.pull_request, pull)) return { ...answer, pull_request: null };
+  if (pull && pinsCommit(run) && !mergedPull(answer.pull_request, pull)) return none();
   return answer;
 }
 

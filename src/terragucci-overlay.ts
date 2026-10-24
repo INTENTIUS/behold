@@ -91,6 +91,27 @@ export interface UnmatchedChange {
   verdict: CardMark["verdict"];
 }
 
+/**
+ * behold#940: a composed choudoufu run's resources, per estate, as its reports state them. An estate keeps no state
+ * file and the checkout's graph is as of the base, so the kiosk's ask mode draws these in place of the graph's cards.
+ */
+export interface EstateResource {
+  address: string;
+  action: string;
+  /** `applied` once a newer apply report lists it, else `planned`. */
+  state: "planned" | "applied";
+  /** The plan's attributes (an unknown one is marked), by instance address. */
+  values: AttributeValue[];
+}
+
+export interface EstateRootScene extends CheckoutRoot {
+  resources: EstateResource[];
+}
+
+export interface EstateScene {
+  roots: EstateRootScene[];
+}
+
 export interface TerragucciMarks {
   /** Marks by card id. */
   cards: Record<string, CardMark[]>;
@@ -100,6 +121,8 @@ export interface TerragucciMarks {
   waiting: WaitingWave[];
   /** behold#571: by card id, the attributes the root's newest applied wave wrote. */
   applied: Record<string, AppliedValues>;
+  /** behold#940: with a composed choudoufu run (report minor 48, `compose.estate`): its resources by estate. Absent otherwise. */
+  estateScene?: EstateScene;
 }
 
 /** An instance address's block path, behold's way: module calls as segments, instance keys dropped. */
@@ -186,7 +209,8 @@ export function joinTerragucci(read: TerragucciRead, nodes: readonly Node[], roo
       // a person approves it, so they mark their cards like a plan's.
       if (slot === "apply" && run.approval !== "waiting") {
         // behold#571: what it wrote is what the state holds now, for the kiosk's popover.
-        const wrote = run.applied && !run.changes.length && runs.wrote ? runs.wrote : run;
+        // The push back to the base is a no-op apply with no approval, so it has no `applied` mark of its own.
+        const wrote = !run.changes.length && runs.wrote ? runs.wrote : run;
         if (wrote.applied) {
           for (const c of wrote.changes) {
             const id = blocks?.get(blockPath(c.address));
@@ -222,11 +246,52 @@ export function joinTerragucci(read: TerragucciRead, nodes: readonly Node[], roo
     }
     out.push(marks);
   }
+  const estateScene = read.pull_request?.compose?.estate === true ? estateSceneOf(read, roots, applied) : undefined;
   return {
     cards,
     roots: out,
     unmatched: { roots: Object.keys(read.roots).filter((p) => !known.has(p)).sort(), changes: unmatchedChanges },
     waiting: read.waiting,
     applied,
+    ...(estateScene ? { estateScene } : {}),
   };
+}
+
+/** The card id a scene's resource has: the id a graph card of it would have. */
+export const estateCardId = (root: CheckoutRoot, address: string): string => `${root.member}/${root.name}/${address}`;
+
+/**
+ * behold#940: each estate's resources from its newest reports. The plan lists what the change does; an apply report
+ * newer than it (one a person approved, not a waiting one) marks what applied and says the values the apply wrote,
+ * which join `applied` under the same card id. An apply that changed nothing (the push back to the base) is not
+ * newer than what it undoes: the run before it speaks.
+ */
+function estateSceneOf(read: TerragucciRead, roots: readonly CheckoutRoot[], applied: Record<string, AppliedValues>): EstateScene {
+  const listed = (c: { action: string }) => c.action !== "no-op" && c.action !== "read";
+  const out: EstateRootScene[] = [];
+  for (const root of roots) {
+    const runs = read.roots[root.path];
+    if (!runs) continue;
+    const waiting = runs.apply?.approval === "waiting" ? runs.apply : undefined;
+    const plan = runs.plan ?? waiting;
+    const settled = runs.apply && !waiting ? (!runs.apply.changes.length && runs.wrote ? runs.wrote : runs.apply) : undefined;
+    const done = settled && settled.applied && settled.changes.some(listed) && (!plan || settled.finished >= plan.finished) ? settled : undefined;
+    const byAddress = new Map<string, EstateResource>();
+    for (const c of plan?.changes ?? []) {
+      if (!listed(c)) continue;
+      byAddress.set(c.address, { address: c.address, action: c.action, state: "planned", values: (c.attributes ?? []).map((a) => ({ ...a, address: c.address })) });
+    }
+    for (const c of done?.changes ?? []) {
+      if (!listed(c)) continue;
+      const had = byAddress.get(c.address);
+      const values = (c.attributes ?? []).map((a) => ({ ...a, address: c.address }));
+      byAddress.set(c.address, { address: c.address, action: c.action, state: "applied", values: had ? had.values : values });
+      if (values.length) {
+        const id = estateCardId(root, c.address);
+        (applied[id] ??= { values: [], run: ref(done!) }).values.push(...values);
+      }
+    }
+    if (byAddress.size) out.push({ ...root, resources: [...byAddress.values()] });
+  }
+  return { roots: out };
 }

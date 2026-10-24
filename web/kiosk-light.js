@@ -63,6 +63,11 @@ export function planOf(answer, progress = null) {
     }
     out.resources.set(key, { key, root, address, ...cardTitle(address), cardId: null, action: null, values: [], ...extra });
   };
+  // behold#940: a composed choudoufu run's resources, as its reports state them (an estate keeps no state file, and the graph's cards are as of the base).
+  const scene = answer.estateScene && Array.isArray(answer.estateScene.roots) ? answer.estateScene.roots : [];
+  for (const r of scene) {
+    for (const res of r.resources || []) add(r.path, res.address, { cardId: `${r.member}/${r.name}/${res.address}`, action: res.action || null, values: Array.isArray(res.values) ? res.values : [] });
+  }
   for (const [id, marks] of Object.entries(answer.cards || {})) {
     const at = rootAt(id);
     if (!at) continue;
@@ -96,6 +101,11 @@ export function planOf(answer, progress = null) {
     for (const res of (pr.blast && pr.blast.resources) || []) out.reaches.set(lightKey(res.root, res.address), res.reaches || []);
   }
   if (progress && Array.isArray(progress.reads)) for (const r of progress.reads) for (const u of r.reads || []) edge(u, r.root);
+  // A composed run's members come in the order it applies them. When no read names an order, each reads the one before.
+  if (!out.edges.length) {
+    const members = pr && Array.isArray(pr.waves) ? (pr.waves.map((w) => w.composed && w.composed.members).find((m) => Array.isArray(m) && m.length > 1) || []) : [];
+    for (let i = 1; i < members.length; i++) edge(members[i - 1].root, members[i].root);
+  }
   return out;
 }
 
@@ -164,7 +174,7 @@ export function stateFile(root, progress) {
 }
 
 /** A composed member's, or a plain wave root's, apply outcome from the run view. */
-function applyOf(root, progress) {
+export function applyOf(root, progress) {
   const states = progress && Array.isArray(progress.states) ? progress.states : [];
   for (const w of states) {
     const m = w.composed && Array.isArray(w.composed.members) ? w.composed.members.find((x) => x.root === root) : null;
@@ -187,12 +197,20 @@ const LOOK_OF = { applied: "applied", "no-changes": "applied", partial: "partial
 /** Each root's state: `{ file, from, written, look }`. `look` is applied, partial, not-applied, or null while nothing is decided. */
 export function stateMarks(answer, progress) {
   const roots = answer && Array.isArray(answer.roots) ? answer.roots.map((r) => r.path) : progress && Array.isArray(progress.reads) ? progress.reads.map((r) => r.root) : [];
+  // behold#940: an estate of choudoufu's has no state file: it holds records, one per resource, written as each applies.
+  const estate = !!(answer && answer.estateScene && Array.isArray(answer.estateScene.roots) && answer.estateScene.roots.length);
   const out = {};
   for (const root of roots) {
     const a = applyOf(root, progress);
-    out[root] = { ...stateFile(root, progress), written: !!a && a.state === "written", look: a && a.apply ? LOOK_OF[a.apply] || null : null };
+    const file = estate ? { file: lastSegment(root), from: "estate", estate: true } : stateFile(root, progress);
+    out[root] = { ...file, written: !!a && a.state === "written", look: a && a.apply ? LOOK_OF[a.apply] || null : null };
   }
   return out;
+}
+
+/** The words of a state's label: its file (or an estate's name), its look, and that it was written. */
+export function stateWords(m) {
+  return [m.estate ? m.file : `state ${m.file}`, m.look ? LOOK_WORDS[m.look] : null, m.written ? (m.estate ? "records written" : "written") : null].filter(Boolean).join(" \u00b7 ");
 }
 
 // ---------------------------------------------------------------------------
@@ -264,6 +282,9 @@ export function lightMessage(sel, ask, token) {
   };
 }
 
+/** How long after a beat's reply to look again for the reads a step lights, while they are not in. */
+export const RETRY_MS = [400, 800, 1600, 3200];
+
 /**
  * Listen for the pane's events and tell the frame. `post` sends a message to the
  * frame; `getAnswer` and `getProgress` give the kiosk's current reads.
@@ -283,11 +304,23 @@ export function startKioskLight({ post, getAnswer, getProgress, win = typeof win
     const d = ask ? dependentsOf(getAnswer(), getProgress(), ask) : null;
     win.beholdAskTokens = d === null ? {} : { dependents: d };
   };
+  // behold#940: the lit state is drawn the moment the reply is done. When the reads the step lights are not in yet
+  // (the kiosk's own poll is behind the frame's), it asks again soon, never waiting for a poll's turn.
   const onDone = (e) => {
     const ask = askOf(e);
-    const sel = ask ? selectLight(planOf(getAnswer(), getProgress()), ask) : null;
-    n += 1;
-    send(lightMessage(sel, ask, n));
+    const wants = !!(ask && Array.isArray(ask.light) && ask.light.length);
+    const attempt = (k) => {
+      const sel = ask ? selectLight(planOf(getAnswer(), getProgress()), ask) : null;
+      n += 1;
+      const mine = n;
+      send(lightMessage(sel, ask, mine));
+      if (!sel && wants && k < RETRY_MS.length && typeof win.setTimeout === "function") {
+        win.setTimeout(() => {
+          if (n === mine) attempt(k + 1);
+        }, RETRY_MS[k]);
+      }
+    };
+    attempt(0);
   };
   const onClear = () => {
     n += 1;

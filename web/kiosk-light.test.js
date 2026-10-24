@@ -126,6 +126,39 @@ describe("the pane's events (behold#936 and behold#937)", () => {
     expect(win.beholdAskTokens).toEqual({});
   });
 
+  it("lights the moment its reads are in: asks again soon rather than waiting for a poll (behold#940)", () => {
+    const win = fake();
+    const timers = [];
+    win.setTimeout = (fn, ms) => timers.push({ fn, ms });
+    const sent = [];
+    let held = { roots: answer.roots, cards: {}, unmatched: { roots: [], changes: [] } };
+    startKioskLight({ post: (m) => sent.push(m), getAnswer: () => held, getProgress: () => null, win });
+    win.dispatchEvent(ev("behold:ask-done", { light: ["network/terraform_data.subnet"], paths: true }));
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ lit: false });
+    expect(timers).toHaveLength(1);
+    // The reads arrive; the next look lights, and stops looking.
+    held = answer;
+    timers.shift().fn();
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toMatchObject({ lit: true });
+    expect(sent[1].token).not.toBe(sent[0].token);
+    expect(timers).toHaveLength(0);
+  });
+
+  it("stops looking when a newer beat has come (behold#940)", () => {
+    const win = fake();
+    const timers = [];
+    win.setTimeout = (fn, ms) => timers.push({ fn, ms });
+    const sent = [];
+    startKioskLight({ post: (m) => sent.push(m), getAnswer: () => ({ roots: answer.roots, cards: {}, unmatched: { roots: [], changes: [] } }), getProgress: () => null, win });
+    win.dispatchEvent(ev("behold:ask-done", { light: ["network/terraform_data.subnet"] }));
+    win.dispatchEvent(ev("behold:ask-clear", null));
+    const before = sent.length;
+    timers.shift().fn();
+    expect(sent).toHaveLength(before);
+  });
+
   it("tells a frame that reloaded the last message when it has drawn", () => {
     const win = fake();
     const sent = [];
