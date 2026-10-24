@@ -632,15 +632,28 @@ export function stepView(step) {
  * holds until PICK_HOLD_MS after it; `secs` is how long it still holds.
  * Without a demo step yet, the resources view.
  */
-export function kioskView(demo, { components = false, pick = null, now = Date.now() } = {}) {
+export function kioskView(demo, { components = false, pick = null, now = Date.now(), ask = false } = {}) {
   // behold#939: a prompt-driven step draws every root expanded to its resources, whatever the toggle held.
-  if (hasAsk(demo)) return { view: "resources", pinned: false, secs: null };
+  // `ask`: the scenario is in ask mode (askHeld), so its steps without a prompt (merged, applying, waiting) draw the estate too, never a pipeline view.
+  if (ask || hasAsk(demo)) return { view: "resources", pinned: false, secs: null };
   if (!components) return { view: "resources", pinned: false, secs: null };
   if (pick && VIEWS.some((v) => v.id === pick.view)) {
     const left = pick.at + PICK_HOLD_MS - now;
     if (left > 0) return { view: pick.view, pinned: true, secs: Math.ceil(left / 1000) };
   }
   return { view: demo ? stepView(demo.step) : "components", pinned: false, secs: null };
+}
+
+/**
+ * Ask mode holds for a whole scenario. `held` is the key (`cycle|scenario`) the mode was on for; a step with a
+ * prompt turns it on for its scenario, a step without one keeps it while it is the same scenario, and a step of
+ * another scenario (a reset into one with no asks) lets it go. Returns the key to hold, or null.
+ */
+export function askHeld(held, demo) {
+  if (!demo) return null;
+  const key = `${demo.cycle}|${demo.scenario}`;
+  if (hasAsk(demo)) return key;
+  return held === key ? key : null;
 }
 
 /** behold#571: the static frame's title, over the legend; collapsed, its one line. */
@@ -1702,7 +1715,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   };
   let lastKey = "";
   let lastFocus;
-  const shownView = () => kioskView(s.demo && s.demo.demo, { components: s.components, pick: s.pick, now: now().getTime() });
+  const shownView = () => kioskView(s.demo && s.demo.demo, { components: s.components, pick: s.pick, now: now().getTime(), ask: !!s.askOn });
   let unstacked = false;
   let askTold = null;
   const tellFrame = (force) => {
@@ -1710,14 +1723,15 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const notRun = !!vendor && s.mode === "none";
     const d = notRun ? null : s.demo && s.demo.demo;
     if (!d && !notRun) return; // nothing said yet: the frame keeps its default until the narration is read
-    const roots = d ? focusRoots(d, s.answer, s.progress) : null;
+    // Ask mode draws the whole estate at every step, so no root is brought forward.
+    const roots = d && !s.askOn ? focusRoots(d, s.answer, s.progress) : null;
     const focus = roots ? roots.join(",") : null;
     const run = d ? runPin(d) : "base";
     // The cycle's pull request, so a merge's frame never draws another cycle's plan (web/terragucci-change.js pinnedAnswer).
     const pull = framePull(d);
     const zoom = viewZoom(shownView().view);
     // behold#939: a prompt-driven step draws every resource as its own card (the four of app, not "app x4").
-    const ask = !!d && hasAsk(d);
+    const ask = !!d && (hasAsk(d) || !!s.askOn);
     const key = `${focus}|${run}|${pull}|${zoom}|${ask ? "unstacked" : ""}`;
     if (!force && key === lastFocus) return;
     lastFocus = key;
@@ -1840,7 +1854,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
           now,
           reduced: () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches,
           onActive: (on) => {
-            s.askOn = on;
+            s.askPaneOn = on;
+            s.askOn = on || !!s.askHeld;
             applyAsk();
           },
         })
@@ -1849,7 +1864,13 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   const setDemo = (answer) => {
     s.demo = answer;
     const d = answer && answer.demo;
-    if (askPane) askPane.setStep(d || null);
+    if (askPane) {
+      // behold#942: ask mode holds for the scenario, so the steps between prompts keep the graph and the pane.
+      s.askHeld = askHeld(s.askHeld, d || null);
+      askPane.setStep(d || null);
+      s.askOn = !!s.askPaneOn || !!s.askHeld;
+      applyAsk();
+    }
     // behold#571: when this page first saw the driver's deadline, for the next bar when demo.json has no next.from.
     s.nextSeen = nextSeen(s.nextSeen, d ? d.next || null : undefined, s.mode, shownNow().getTime());
     if (d && d.scenario && typeof d.title === "string" && d.title) titles[d.scenario] = d.title;
@@ -2002,6 +2023,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   let drawerWave = null;
   let drawerView = null;
   const isPhone = () => typeof matchMedia === "function" && matchMedia("(max-width: 600px)").matches;
+  /** behold#942: ask mode on a phone (up to 700px) puts the pane under the graph, so nothing overlaps the frame. */
+  const askStacked = () => !!(s.askOn && s.watchMode) && typeof matchMedia === "function" && matchMedia("(max-width: 700px)").matches;
   const runsParent = main ? main.parentNode : null;
   const runsNext = main ? main.nextSibling : null;
   const applyMode = () => {
@@ -2080,7 +2103,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   };
   /** How much of the frame the overlays cover, in the frame's pixels: the caption below, and the callout, drawer or card beside the shot. */
   const shotInsets = (shot) => {
-    if (!watch || !frame || isPhone() || !frame.getBoundingClientRect) return {};
+    if (!watch || !frame || isPhone() || askStacked() || !frame.getBoundingClientRect) return {};
     const f = frame.getBoundingClientRect();
     const cap = bottomBox().getBoundingClientRect();
     const bottom = Math.max(0, f.bottom - captionTop(cap)) + 16;
@@ -2097,7 +2120,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
    * quiet line or the trail that comes later moves nothing. None on a phone, where the caption is under the graph.
    */
   function captionRoomPx() {
-    if (!watch || !frame || isPhone() || !frame.getBoundingClientRect || typeof getComputedStyle !== "function") return 0;
+    if (!watch || !frame || isPhone() || askStacked() || !frame.getBoundingClientRect || typeof getComputedStyle !== "function") return 0;
     const f = frame.getBoundingClientRect();
     // behold#936: the prompt pane, when it shows, is the caption's place; its height is fixed, so the room is too.
     if (s.askOn && watch.ask && !watch.ask.hidden) {

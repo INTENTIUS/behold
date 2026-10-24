@@ -1,0 +1,1264 @@
+{
+  "schema": "terragucci.report/v1",
+  "minor": 48,
+  "run": {
+    "project": "forgejo:3000/terragucci-admin/demo-choudoufu-compose",
+    "commit": "67377db0864a0f156829607e916d5afdcfb5771c",
+    "job_url": "http://forgejo:3000/terragucci-admin/demo-choudoufu-compose/actions/runs/18336",
+    "commit_url": "http://forgejo:3000/terragucci-admin/demo-choudoufu-compose/commit/67377db0864a0f156829607e916d5afdcfb5771c",
+    "stage": "tf-apply",
+    "wave": 1,
+    "binary": "choudoufu",
+    "runtime": "forge",
+    "started": "2026-10-24T15:26:42.148Z",
+    "finished": "2026-10-24T15:27:24.651Z",
+    "terragucci": "0.4.44",
+    "trace_id": "a388b9176509532bf14715da1b636ae9"
+  },
+  "change_set": "jcs1-sha256:f983c9df6ca04bc0f12fac96da023b8168813406560fb348a90f4488cf571f53",
+  "unit": "member",
+  "units": 3,
+  "totals": {
+    "create": 6,
+    "update": 2,
+    "replace": 0,
+    "delete": 0,
+    "read": 2,
+    "no-op": 3,
+    "forget": 0
+  },
+  "totals_roots": 3,
+  "groups": [
+    {
+      "id": "82b5c1e42a21",
+      "units": [
+        "app"
+      ],
+      "outlier": true,
+      "noChanges": false,
+      "changes": [
+        {
+          "line": "+ aws_instance.instance",
+          "action": "create",
+          "count": 1
+        },
+        {
+          "line": "+ aws_network_interface.network_interface",
+          "action": "create",
+          "count": 1
+        },
+        {
+          "line": "+ aws_route_table.route_table",
+          "action": "create",
+          "count": 1
+        },
+        {
+          "line": "+ aws_security_group.security_group",
+          "action": "create",
+          "count": 1
+        },
+        {
+          "line": "<= data.terraform_estate_outputs.network",
+          "action": "read",
+          "count": 1
+        },
+        {
+          "line": "~ aws_sqs_queue.listener: tags, tags_all",
+          "action": "update",
+          "count": 1
+        }
+      ],
+      "destroys": 0,
+      "varies": [],
+      "fold": "open",
+      "why": [
+        "outlier: read it on its own",
+        "security group: changes what traffic gets in or out"
+      ]
+    },
+    {
+      "id": "6ab12a3ad804",
+      "units": [
+        "edge"
+      ],
+      "outlier": true,
+      "noChanges": false,
+      "changes": [
+        {
+          "line": "+ aws_sqs_queue.dns_upstream",
+          "action": "create",
+          "count": 1
+        },
+        {
+          "line": "<= data.terraform_estate_outputs.app",
+          "action": "read",
+          "count": 1
+        },
+        {
+          "line": "~ aws_sqs_queue.upstream: tags, tags_all",
+          "action": "update",
+          "count": 1
+        }
+      ],
+      "destroys": 0,
+      "varies": [],
+      "fold": "open",
+      "why": [
+        "outlier: read it on its own"
+      ]
+    },
+    {
+      "id": "e90af54f0792",
+      "units": [
+        "network"
+      ],
+      "outlier": true,
+      "noChanges": false,
+      "changes": [
+        {
+          "line": "+ aws_subnet.subnet",
+          "action": "create",
+          "count": 1
+        }
+      ],
+      "destroys": 0,
+      "varies": [],
+      "fold": "open",
+      "why": [
+        "outlier: read it on its own"
+      ]
+    }
+  ],
+  "roots": [
+    {
+      "path": "app",
+      "binary": {
+        "name": "choudoufu",
+        "version": "1.13.0-dev"
+      },
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:84836eb572ba1154d6ea939250bca37f42259d4292add6c50a2e8beee46e24de",
+      "counts": {
+        "create": 4,
+        "update": 1,
+        "read": 1
+      },
+      "group": "82b5c1e42a21",
+      "plan": {
+        "json": "roots/app/plan.json"
+      },
+      "job_url": "http://forgejo:3000/terragucci-admin/demo-choudoufu-compose/actions/runs/18336",
+      "changes": [
+        {
+          "address": "aws_instance.instance",
+          "type": "aws_instance",
+          "action": "create",
+          "attributes": [
+            {
+              "path": "ami",
+              "after": "ami-12345678"
+            },
+            {
+              "path": "arn",
+              "unknown": true
+            },
+            {
+              "path": "associate_public_ip_address",
+              "unknown": true
+            },
+            {
+              "path": "availability_zone",
+              "unknown": true
+            },
+            {
+              "path": "capacity_reservation_specification",
+              "unknown": true
+            },
+            {
+              "path": "cpu_options",
+              "unknown": true
+            },
+            {
+              "path": "credit_specification",
+              "after": []
+            },
+            {
+              "path": "disable_api_stop",
+              "unknown": true
+            },
+            {
+              "path": "disable_api_termination",
+              "unknown": true
+            },
+            {
+              "path": "ebs_block_device",
+              "unknown": true
+            },
+            {
+              "path": "ebs_optimized",
+              "unknown": true
+            },
+            {
+              "path": "enable_primary_ipv6",
+              "unknown": true
+            },
+            {
+              "path": "enclave_options",
+              "unknown": true
+            },
+            {
+              "path": "ephemeral_block_device",
+              "unknown": true
+            },
+            {
+              "path": "force_destroy",
+              "after": false
+            },
+            {
+              "path": "get_password_data",
+              "after": false
+            },
+            {
+              "path": "host_id",
+              "unknown": true
+            },
+            {
+              "path": "host_resource_group_arn",
+              "unknown": true
+            },
+            {
+              "path": "iam_instance_profile",
+              "unknown": true
+            },
+            {
+              "path": "id",
+              "unknown": true
+            },
+            {
+              "path": "instance_initiated_shutdown_behavior",
+              "unknown": true
+            },
+            {
+              "path": "instance_lifecycle",
+              "unknown": true
+            },
+            {
+              "path": "instance_market_options",
+              "unknown": true
+            },
+            {
+              "path": "instance_state",
+              "unknown": true
+            },
+            {
+              "path": "instance_type",
+              "after": "t3.micro"
+            },
+            {
+              "path": "ipv6_address_count",
+              "unknown": true
+            },
+            {
+              "path": "ipv6_addresses",
+              "unknown": true
+            },
+            {
+              "path": "key_name",
+              "unknown": true
+            },
+            {
+              "path": "launch_template",
+              "after": []
+            },
+            {
+              "path": "maintenance_options",
+              "unknown": true
+            },
+            {
+              "path": "metadata_options",
+              "unknown": true
+            },
+            {
+              "path": "monitoring",
+              "unknown": true
+            },
+            {
+              "path": "network_interface",
+              "unknown": true
+            },
+            {
+              "path": "outpost_arn",
+              "unknown": true
+            },
+            {
+              "path": "password_data",
+              "unknown": true
+            },
+            {
+              "path": "placement_group",
+              "unknown": true
+            },
+            {
+              "path": "placement_group_id",
+              "unknown": true
+            },
+            {
+              "path": "placement_partition_number",
+              "unknown": true
+            },
+            {
+              "path": "primary_network_interface",
+              "unknown": true
+            },
+            {
+              "path": "primary_network_interface_id",
+              "unknown": true
+            },
+            {
+              "path": "private_dns",
+              "unknown": true
+            },
+            {
+              "path": "private_dns_name_options",
+              "unknown": true
+            },
+            {
+              "path": "private_ip",
+              "unknown": true
+            },
+            {
+              "path": "public_dns",
+              "unknown": true
+            },
+            {
+              "path": "public_ip",
+              "unknown": true
+            },
+            {
+              "path": "region",
+              "after": "us-east-1"
+            },
+            {
+              "path": "root_block_device",
+              "unknown": true
+            },
+            {
+              "path": "secondary_network_interface",
+              "unknown": true
+            },
+            {
+              "path": "secondary_private_ips",
+              "unknown": true
+            },
+            {
+              "path": "security_groups",
+              "unknown": true
+            },
+            {
+              "path": "source_dest_check",
+              "after": true
+            },
+            {
+              "path": "spot_instance_request_id",
+              "unknown": true
+            },
+            {
+              "path": "subnet_id",
+              "unknown": true
+            },
+            {
+              "path": "tags",
+              "after": {
+                "tofu-address": "aws_instance.instance",
+                "tofu-estate": "cc-app"
+              }
+            },
+            {
+              "path": "tags_all",
+              "after": {
+                "tofu-address": "aws_instance.instance",
+                "tofu-estate": "cc-app"
+              }
+            },
+            {
+              "path": "tenancy",
+              "unknown": true
+            },
+            {
+              "path": "user_data_base64",
+              "unknown": true
+            },
+            {
+              "path": "user_data_replace_on_change",
+              "after": false
+            },
+            {
+              "path": "vpc_security_group_ids",
+              "unknown": true
+            }
+          ],
+          "fold": "open"
+        },
+        {
+          "address": "aws_network_interface.network_interface",
+          "type": "aws_network_interface",
+          "action": "create",
+          "attributes": [
+            {
+              "path": "arn",
+              "unknown": true
+            },
+            {
+              "path": "attachment",
+              "unknown": true
+            },
+            {
+              "path": "ena_srd_specification",
+              "after": []
+            },
+            {
+              "path": "enable_primary_ipv6",
+              "unknown": true
+            },
+            {
+              "path": "id",
+              "unknown": true
+            },
+            {
+              "path": "interface_type",
+              "unknown": true
+            },
+            {
+              "path": "ipv4_prefix_count",
+              "unknown": true
+            },
+            {
+              "path": "ipv4_prefixes",
+              "unknown": true
+            },
+            {
+              "path": "ipv6_address_count",
+              "unknown": true
+            },
+            {
+              "path": "ipv6_address_list",
+              "unknown": true
+            },
+            {
+              "path": "ipv6_address_list_enabled",
+              "after": false
+            },
+            {
+              "path": "ipv6_addresses",
+              "unknown": true
+            },
+            {
+              "path": "ipv6_prefix_count",
+              "unknown": true
+            },
+            {
+              "path": "ipv6_prefixes",
+              "unknown": true
+            },
+            {
+              "path": "mac_address",
+              "unknown": true
+            },
+            {
+              "path": "outpost_arn",
+              "unknown": true
+            },
+            {
+              "path": "owner_id",
+              "unknown": true
+            },
+            {
+              "path": "private_dns_name",
+              "unknown": true
+            },
+            {
+              "path": "private_ip",
+              "unknown": true
+            },
+            {
+              "path": "private_ip_list",
+              "unknown": true
+            },
+            {
+              "path": "private_ip_list_enabled",
+              "after": false
+            },
+            {
+              "path": "private_ips",
+              "unknown": true
+            },
+            {
+              "path": "private_ips_count",
+              "unknown": true
+            },
+            {
+              "path": "region",
+              "after": "us-east-1"
+            },
+            {
+              "path": "security_groups",
+              "unknown": true
+            },
+            {
+              "path": "source_dest_check",
+              "after": true
+            },
+            {
+              "path": "subnet_id",
+              "unknown": true
+            },
+            {
+              "path": "tags",
+              "after": {
+                "tofu-address": "aws_network_interface.network_interface",
+                "tofu-estate": "cc-app"
+              }
+            },
+            {
+              "path": "tags_all",
+              "after": {
+                "tofu-address": "aws_network_interface.network_interface",
+                "tofu-estate": "cc-app"
+              }
+            }
+          ],
+          "fold": "open"
+        },
+        {
+          "address": "aws_route_table.route_table",
+          "type": "aws_route_table",
+          "action": "create",
+          "attributes": [
+            {
+              "path": "arn",
+              "unknown": true
+            },
+            {
+              "path": "id",
+              "unknown": true
+            },
+            {
+              "path": "owner_id",
+              "unknown": true
+            },
+            {
+              "path": "propagating_vgws",
+              "unknown": true
+            },
+            {
+              "path": "region",
+              "after": "us-east-1"
+            },
+            {
+              "path": "route",
+              "unknown": true
+            },
+            {
+              "path": "tags",
+              "unknown": true
+            },
+            {
+              "path": "tags_all",
+              "unknown": true
+            },
+            {
+              "path": "vpc_id",
+              "unknown": true
+            }
+          ],
+          "fold": "open"
+        },
+        {
+          "address": "aws_security_group.security_group",
+          "type": "aws_security_group",
+          "action": "create",
+          "attributes": [
+            {
+              "path": "arn",
+              "unknown": true
+            },
+            {
+              "path": "description",
+              "after": "Managed by Terraform"
+            },
+            {
+              "path": "egress",
+              "unknown": true
+            },
+            {
+              "path": "id",
+              "unknown": true
+            },
+            {
+              "path": "ingress",
+              "unknown": true
+            },
+            {
+              "path": "name",
+              "after": "choudoufu-compose-security-group"
+            },
+            {
+              "path": "name_prefix",
+              "unknown": true
+            },
+            {
+              "path": "owner_id",
+              "unknown": true
+            },
+            {
+              "path": "region",
+              "after": "us-east-1"
+            },
+            {
+              "path": "revoke_rules_on_delete",
+              "after": false
+            },
+            {
+              "path": "tags",
+              "unknown": true
+            },
+            {
+              "path": "tags_all",
+              "unknown": true
+            },
+            {
+              "path": "vpc_id",
+              "unknown": true
+            }
+          ],
+          "fold": "open",
+          "why": "security group: changes what traffic gets in or out"
+        },
+        {
+          "address": "aws_sqs_queue.listener",
+          "type": "aws_sqs_queue",
+          "action": "update",
+          "disruption": "in-place",
+          "attributes": [
+            {
+              "path": "tags",
+              "before": {
+                "port": "8070",
+                "tofu-address": "aws_sqs_queue.listener",
+                "tofu-estate": "cc-app"
+              },
+              "unknown": true
+            },
+            {
+              "path": "tags_all",
+              "before": {
+                "port": "8070",
+                "tofu-address": "aws_sqs_queue.listener",
+                "tofu-estate": "cc-app"
+              },
+              "unknown": true
+            }
+          ],
+          "kind": "tags",
+          "fold": "folded"
+        },
+        {
+          "address": "data.terraform_estate_outputs.network",
+          "type": "terraform_estate_outputs",
+          "action": "read",
+          "attributes": [],
+          "fold": "open"
+        }
+      ],
+      "highlights": [
+        {
+          "address": "aws_security_group.security_group",
+          "type": "aws_security_group",
+          "action": "create",
+          "why": "security group: changes what traffic gets in or out"
+        }
+      ],
+      "fold": "open",
+      "why": [
+        "outlier: its change matches no other root's",
+        "security group: changes what traffic gets in or out"
+      ],
+      "resources": [
+        {
+          "address": "aws_instance.instance",
+          "type": "aws_instance",
+          "provider": "registry.opentofu.org/hashicorp/aws"
+        },
+        {
+          "address": "aws_network_interface.network_interface",
+          "type": "aws_network_interface",
+          "provider": "registry.opentofu.org/hashicorp/aws"
+        },
+        {
+          "address": "aws_route_table.route_table",
+          "type": "aws_route_table",
+          "provider": "registry.opentofu.org/hashicorp/aws"
+        },
+        {
+          "address": "aws_security_group.security_group",
+          "type": "aws_security_group",
+          "provider": "registry.opentofu.org/hashicorp/aws"
+        },
+        {
+          "address": "aws_sqs_queue.listener",
+          "type": "aws_sqs_queue",
+          "provider": "registry.opentofu.org/hashicorp/aws"
+        }
+      ],
+      "applied_changes": [
+        {
+          "address": "aws_instance.instance",
+          "type": "aws_instance",
+          "actions": [
+            "create"
+          ],
+          "attributes": []
+        },
+        {
+          "address": "aws_network_interface.network_interface",
+          "type": "aws_network_interface",
+          "actions": [
+            "create"
+          ],
+          "attributes": []
+        },
+        {
+          "address": "aws_route_table.route_table",
+          "type": "aws_route_table",
+          "actions": [
+            "create"
+          ],
+          "attributes": []
+        },
+        {
+          "address": "aws_security_group.security_group",
+          "type": "aws_security_group",
+          "actions": [
+            "create"
+          ],
+          "attributes": []
+        },
+        {
+          "address": "aws_sqs_queue.listener",
+          "type": "aws_sqs_queue",
+          "actions": [
+            "update"
+          ],
+          "attributes": [
+            "tags",
+            "tags_all"
+          ]
+        }
+      ],
+      "state": {
+        "backend": "local",
+        "location": "terraform.tfstate",
+        "versioning": "off",
+        "note": "a local backend keeps only the latest state"
+      },
+      "versions": {
+        "providers": [
+          {
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "version": "6.67.0"
+          }
+        ],
+        "modules": []
+      },
+      "reads": [
+        {
+          "upstream": "network",
+          "data": "network",
+          "outputs": "planned",
+          "unknown": [
+            "subnet_id"
+          ],
+          "composed": true
+        }
+      ],
+      "composed": {
+        "wave": 1,
+        "module": "module.app"
+      }
+    },
+    {
+      "path": "edge",
+      "binary": {
+        "name": "choudoufu",
+        "version": "1.13.0-dev"
+      },
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:08cc827510afa80747eaff0c7082ddb54405fbf04308e7321cc3436bada06eea",
+      "counts": {
+        "create": 1,
+        "update": 1,
+        "read": 1
+      },
+      "group": "6ab12a3ad804",
+      "plan": {
+        "json": "roots/edge/plan.json"
+      },
+      "job_url": "http://forgejo:3000/terragucci-admin/demo-choudoufu-compose/actions/runs/18336",
+      "changes": [
+        {
+          "address": "aws_sqs_queue.dns_upstream",
+          "type": "aws_sqs_queue",
+          "action": "create",
+          "attributes": [
+            {
+              "path": "arn",
+              "unknown": true
+            },
+            {
+              "path": "content_based_deduplication",
+              "after": false
+            },
+            {
+              "path": "deduplication_scope",
+              "unknown": true
+            },
+            {
+              "path": "delay_seconds",
+              "after": 0
+            },
+            {
+              "path": "fifo_queue",
+              "after": false
+            },
+            {
+              "path": "fifo_throughput_limit",
+              "unknown": true
+            },
+            {
+              "path": "id",
+              "unknown": true
+            },
+            {
+              "path": "kms_data_key_reuse_period_seconds",
+              "unknown": true
+            },
+            {
+              "path": "max_message_size",
+              "after": 262144
+            },
+            {
+              "path": "message_retention_seconds",
+              "after": 345600
+            },
+            {
+              "path": "name",
+              "after": "choudoufu-compose-dns-upstream"
+            },
+            {
+              "path": "name_prefix",
+              "unknown": true
+            },
+            {
+              "path": "policy",
+              "unknown": true
+            },
+            {
+              "path": "receive_wait_time_seconds",
+              "after": 0
+            },
+            {
+              "path": "redrive_allow_policy",
+              "unknown": true
+            },
+            {
+              "path": "redrive_policy",
+              "unknown": true
+            },
+            {
+              "path": "region",
+              "after": "us-east-1"
+            },
+            {
+              "path": "sqs_managed_sse_enabled",
+              "unknown": true
+            },
+            {
+              "path": "tags",
+              "unknown": true
+            },
+            {
+              "path": "tags_all",
+              "unknown": true
+            },
+            {
+              "path": "url",
+              "unknown": true
+            },
+            {
+              "path": "visibility_timeout_seconds",
+              "after": 30
+            }
+          ],
+          "fold": "open"
+        },
+        {
+          "address": "aws_sqs_queue.upstream",
+          "type": "aws_sqs_queue",
+          "action": "update",
+          "disruption": "in-place",
+          "attributes": [
+            {
+              "path": "tags",
+              "before": {
+                "tofu-address": "aws_sqs_queue.upstream",
+                "tofu-estate": "cc-edge",
+                "upstream": "http://app:8070"
+              },
+              "unknown": true
+            },
+            {
+              "path": "tags_all",
+              "before": {
+                "tofu-address": "aws_sqs_queue.upstream",
+                "tofu-estate": "cc-edge",
+                "upstream": "http://app:8070"
+              },
+              "unknown": true
+            }
+          ],
+          "kind": "tags",
+          "fold": "folded"
+        },
+        {
+          "address": "data.terraform_estate_outputs.app",
+          "type": "terraform_estate_outputs",
+          "action": "read",
+          "attributes": [],
+          "fold": "open"
+        }
+      ],
+      "highlights": [],
+      "fold": "open",
+      "why": [
+        "outlier: its change matches no other root's"
+      ],
+      "resources": [
+        {
+          "address": "aws_sqs_queue.dns_upstream",
+          "type": "aws_sqs_queue",
+          "provider": "registry.opentofu.org/hashicorp/aws"
+        },
+        {
+          "address": "aws_sqs_queue.upstream",
+          "type": "aws_sqs_queue",
+          "provider": "registry.opentofu.org/hashicorp/aws"
+        }
+      ],
+      "applied_changes": [
+        {
+          "address": "aws_sqs_queue.dns_upstream",
+          "type": "aws_sqs_queue",
+          "actions": [
+            "create"
+          ],
+          "attributes": []
+        },
+        {
+          "address": "aws_sqs_queue.upstream",
+          "type": "aws_sqs_queue",
+          "actions": [
+            "update"
+          ],
+          "attributes": [
+            "tags",
+            "tags_all"
+          ]
+        }
+      ],
+      "state": {
+        "backend": "local",
+        "location": "terraform.tfstate",
+        "versioning": "off",
+        "note": "a local backend keeps only the latest state"
+      },
+      "versions": {
+        "providers": [
+          {
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "version": "6.67.0"
+          }
+        ],
+        "modules": []
+      },
+      "reads": [
+        {
+          "upstream": "app",
+          "data": "app",
+          "outputs": "planned",
+          "unknown": [
+            "dns_name",
+            "listener_port"
+          ],
+          "composed": true
+        }
+      ],
+      "composed": {
+        "wave": 1,
+        "module": "module.edge"
+      }
+    },
+    {
+      "path": "network",
+      "binary": {
+        "name": "choudoufu",
+        "version": "1.13.0-dev"
+      },
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:9a9267c9cf0e0235bc5d4c3193f04faec2b73336fda0ec841b7a9ad1d16bc961",
+      "counts": {
+        "no-op": 3,
+        "create": 1
+      },
+      "group": "e90af54f0792",
+      "plan": {
+        "json": "roots/network/plan.json"
+      },
+      "job_url": "http://forgejo:3000/terragucci-admin/demo-choudoufu-compose/actions/runs/18336",
+      "changes": [
+        {
+          "address": "aws_subnet.subnet",
+          "type": "aws_subnet",
+          "action": "create",
+          "attributes": [
+            {
+              "path": "arn",
+              "unknown": true
+            },
+            {
+              "path": "assign_ipv6_address_on_creation",
+              "after": false
+            },
+            {
+              "path": "availability_zone",
+              "unknown": true
+            },
+            {
+              "path": "availability_zone_id",
+              "unknown": true
+            },
+            {
+              "path": "cidr_block",
+              "after": "10.0.1.0/24"
+            },
+            {
+              "path": "enable_dns64",
+              "after": false
+            },
+            {
+              "path": "enable_resource_name_dns_a_record_on_launch",
+              "after": false
+            },
+            {
+              "path": "enable_resource_name_dns_aaaa_record_on_launch",
+              "after": false
+            },
+            {
+              "path": "id",
+              "unknown": true
+            },
+            {
+              "path": "ipv6_cidr_block",
+              "unknown": true
+            },
+            {
+              "path": "ipv6_cidr_block_association_id",
+              "unknown": true
+            },
+            {
+              "path": "ipv6_native",
+              "after": false
+            },
+            {
+              "path": "map_public_ip_on_launch",
+              "after": false
+            },
+            {
+              "path": "owner_id",
+              "unknown": true
+            },
+            {
+              "path": "private_dns_hostname_type_on_launch",
+              "unknown": true
+            },
+            {
+              "path": "region",
+              "after": "us-east-1"
+            },
+            {
+              "path": "tags",
+              "after": {
+                "tofu-address": "aws_subnet.subnet",
+                "tofu-estate": "cc-network"
+              }
+            },
+            {
+              "path": "tags_all",
+              "after": {
+                "tofu-address": "aws_subnet.subnet",
+                "tofu-estate": "cc-network"
+              }
+            },
+            {
+              "path": "vpc_id",
+              "after": "vpc-39890108"
+            }
+          ],
+          "fold": "open"
+        }
+      ],
+      "highlights": [],
+      "fold": "open",
+      "why": [
+        "outlier: its change matches no other root's"
+      ],
+      "resources": [
+        {
+          "address": "aws_sqs_queue.http_proxy_port",
+          "type": "aws_sqs_queue",
+          "provider": "registry.opentofu.org/hashicorp/aws"
+        },
+        {
+          "address": "aws_sqs_queue.release",
+          "type": "aws_sqs_queue",
+          "provider": "registry.opentofu.org/hashicorp/aws"
+        },
+        {
+          "address": "aws_subnet.subnet",
+          "type": "aws_subnet",
+          "provider": "registry.opentofu.org/hashicorp/aws"
+        },
+        {
+          "address": "aws_vpc.main",
+          "type": "aws_vpc",
+          "provider": "registry.opentofu.org/hashicorp/aws"
+        }
+      ],
+      "applied_changes": [
+        {
+          "address": "aws_subnet.subnet",
+          "type": "aws_subnet",
+          "actions": [
+            "create"
+          ],
+          "attributes": []
+        }
+      ],
+      "state": {
+        "backend": "local",
+        "location": "terraform.tfstate",
+        "versioning": "off",
+        "note": "a local backend keeps only the latest state"
+      },
+      "versions": {
+        "providers": [
+          {
+            "provider": "registry.opentofu.org/hashicorp/aws",
+            "version": "6.67.0"
+          }
+        ],
+        "modules": []
+      },
+      "composed": {
+        "wave": 1,
+        "module": "module.network"
+      }
+    }
+  ],
+  "waves": [
+    {
+      "number": 1,
+      "roots": [
+        "network",
+        "app",
+        "edge"
+      ],
+      "set_digest": "jcs1-sha256:ca315f2da8e993d293985fcedb75bd9752d8af59414dac68b6aea7726e68c027",
+      "approval": "not-required",
+      "state": "applied",
+      "outcomes": [
+        {
+          "root": "app",
+          "outcome": "applied"
+        },
+        {
+          "root": "edge",
+          "outcome": "applied"
+        },
+        {
+          "root": "network",
+          "outcome": "applied"
+        }
+      ],
+      "composed": {
+        "plan_digest": "jcs1-sha256:b84b11dd5e86ddc5d059e2de605966fe01eed8efd61ba6192293f24b8941b37c",
+        "members": [
+          {
+            "root": "network",
+            "module": "module.network",
+            "apply": "applied",
+            "changes": {
+              "done": 1,
+              "planned": 1
+            },
+            "state": "written"
+          },
+          {
+            "root": "app",
+            "module": "module.app",
+            "apply": "applied",
+            "changes": {
+              "done": 5,
+              "planned": 5
+            },
+            "state": "written"
+          },
+          {
+            "root": "edge",
+            "module": "module.edge",
+            "apply": "applied",
+            "changes": {
+              "done": 2,
+              "planned": 2
+            },
+            "state": "written"
+          }
+        ],
+        "held_by_unknown": [
+          "app",
+          "edge"
+        ]
+      }
+    }
+  ],
+  "named": [],
+  "holes": [],
+  "redaction": {
+    "marker": "(sensitive, redacted by terragucci)",
+    "values": 0
+  },
+  "compose": {
+    "roots": [
+      "app",
+      "edge",
+      "network"
+    ],
+    "max": 10,
+    "wave": 1,
+    "estate": true
+  },
+  "timings": {
+    "roots": [],
+    "resources": [],
+    "note": "Terragrunt ran the binary for these units and its run report gave no times, so the report has no per-unit timings"
+  }
+}

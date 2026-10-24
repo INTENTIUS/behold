@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FOLLOW_WORDS, RESUME_WORDS, TAP_HOLD_MS, heldWords, touchScreen, stepTone, nextProgress, nextSeen,BEAT_CHANGES, INTRO_HEAD, READ_STORE, READ_TITLE, STEP_VIEW, STEP_WORDS, aboutRows, approvalPanel, approveGloss, chantProject, factsLine, focusRoots, holdHead, holdModel, introText, readStored, readingRows, renderReading, scenarioHead, frameSrc, factLines, kioskView, matchingPull, pendingApproval, renderKiosk, renderViewToggle, reportless, runPanel, runPin, stepView, viewZoom } from "./kiosk.js";
+import { askHeld, FOLLOW_WORDS, RESUME_WORDS, TAP_HOLD_MS, heldWords, touchScreen, stepTone, nextProgress, nextSeen,BEAT_CHANGES, INTRO_HEAD, READ_STORE, READ_TITLE, STEP_VIEW, STEP_WORDS, aboutRows, approvalPanel, approveGloss, chantProject, factsLine, focusRoots, holdHead, holdModel, introText, readStored, readingRows, renderReading, scenarioHead, frameSrc, factLines, kioskView, matchingPull, pendingApproval, renderKiosk, renderViewToggle, reportless, runPanel, runPin, stepView, viewZoom } from "./kiosk.js";
 import { VENDORS } from "./kiosk-vendor.js";
 import { PICK_HOLD_MS } from "./kiosk-runs.js";
 
@@ -290,6 +290,8 @@ describe("which view the frame shows (#571)", () => {
     expect(kioskView(demo("waiting"), { components: false, pick: { view: "components", at: 0 }, now: 1000 }).view).toBe("resources");
     expect(kioskView(null, { components: true }).view).toBe("components");
     expect(kioskView(null, { components: false }).view).toBe("resources");
+    // behold#942: a scenario held in ask mode draws the resources at its steps without a prompt too.
+    expect(kioskView(demo("applying"), { components: true, ask: true }).view).toBe("resources");
   });
 
   it("holds a clicked view for 90 s after the last click, then follows the step again", () => {
@@ -672,5 +674,22 @@ describe("a held shot on a touch screen", () => {
     } finally {
       globalThis.matchMedia = was;
     }
+  });
+});
+
+describe("ask mode holds for a scenario (behold#942)", () => {
+  const step = (name, extra = {}) => ({ ...demo(name), cycle: 3, scenario: "choudoufu-compose-create", ...extra });
+  it("a prompt turns it on, and the steps without one keep it", () => {
+    let held = askHeld(null, step("pull-request"));
+    expect(held).toBe(null);
+    held = askHeld(held, step("planned", { ask: { prompt: "Add a subnet" } }));
+    expect(held).toBe("3|choudoufu-compose-create");
+    for (const name of ["merged", "applying", "waiting", "resumed", "applied", "reset"]) expect(askHeld(held, step(name))).toBe(held);
+  });
+  it("another scenario or cycle without a prompt lets it go", () => {
+    const held = "3|choudoufu-compose-create";
+    expect(askHeld(held, step("pull-request", { scenario: "other" }))).toBe(null);
+    expect(askHeld(held, step("pull-request", { cycle: 4 }))).toBe(null);
+    expect(askHeld(held, null)).toBe(null);
   });
 });

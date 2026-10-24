@@ -269,7 +269,12 @@ export const estateCardId = (root: CheckoutRoot, address: string): string => `${
 function estateSceneOf(read: TerragucciRead, roots: readonly CheckoutRoot[], applied: Record<string, AppliedValues>): EstateScene {
   const listed = (c: { action: string }) => c.action !== "no-op" && c.action !== "read";
   const out: EstateRootScene[] = [];
-  for (const root of roots) {
+  // Every estate the run names is drawn: one the checkout does not list as a root joins under the checkout's first member.
+  const named = [...(read.pull_request?.compose?.roots ?? []), ...Object.keys(read.roots)];
+  const extra = [...new Set(named)].filter((p) => !roots.some((r) => r.path === p) && read.roots[p]);
+  const member = roots[0]?.member ?? "estate";
+  const all: CheckoutRoot[] = [...roots, ...extra.map((p) => ({ member, name: p.split("/").filter(Boolean).pop() ?? p, path: p }))];
+  for (const root of all) {
     const runs = read.roots[root.path];
     if (!runs) continue;
     const waiting = runs.apply?.approval === "waiting" ? runs.apply : undefined;
