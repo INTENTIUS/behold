@@ -133,6 +133,14 @@ describe("demo.json's ask, asks, opening and closing (behold#936)", () => {
     expect("tips" in a.demo!.asks![1]!).toBe(false);
   });
 
+  it("passes diff through: strings only, at most 120 characters each, at most 8 lines", async () => {
+    const diff = ["+ network  aws_subnet.subnet_b  10.0.2.0/24", 3, "", "x".repeat(121), "~ edge     terraform_data.allowlist  + 10.0.2.0/24", ...Array.from({ length: 9 }, (_, i) => `+ l${i}`)];
+    const a = await readDemo(source({ ...fixture("demo-failed.json"), ask: { reply: "Opened.", diff }, asks: [{ prompt: "p", diff: "nope" }, { prompt: "q", diff: [] }] }));
+    expect(a.demo!.ask!.diff).toEqual([diff[0], diff[4], "+ l0", "+ l1", "+ l2", "+ l3", "+ l4", "+ l5"]);
+    expect("diff" in a.demo!.asks![0]!).toBe(false);
+    expect("diff" in a.demo!.asks![1]!).toBe(false);
+  });
+
   it("passes status through, and an ask with only a status is valid", async () => {
     const a = await readDemo(source({ ...fixture("demo-failed.json"), ask: { status: " Applying across estates. " }, asks: [{ prompt: "p", status: "Waiting" }, { status: "Applying" }, { status: "" }] }));
     expect(a.demo!.ask).toEqual({ prompt: null, action: null, reply: null, status: "Applying across estates.", light: null, paths: null, ghost: null });

@@ -19,6 +19,10 @@
  * 4. replied: the busy line collapses into a dim "check label (m:ss)" line
  *    and the reply types below it.
  *
+ * A beat whose ask has `diff` (short lines starting `+`, `~` or `-`) shows
+ * them under the finished reply as a small code block, one line every
+ * {@link DIFF_MS}, all at once under reduced motion.
+ *
  * Only then does `behold:ask-done` fire, so the graph changes. Nothing
  * happens by magic: the graph holds still (`behold:ask-hold`, then
  * `behold:ask-start`) until the turn that asks for the change has replied. A
@@ -64,6 +68,8 @@ export const MAX_QUEUE = 8;
 export const SPINNER = ["✻", "✶", "✳", "✢", "·"];
 export const SPIN_MS = 140;
 export const ELLIPSIS_MS = 400;
+/** A reply's diff lines show one by one, this far apart, once the reply has finished typing. */
+export const DIFF_MS = 120;
 export const MARKS = { prompt: ">", action: "✓" };
 
 /** A demo's beats in order: `asks` when it has some, else `ask`, else none. A beat is a prompt, an action, a reply or a status (a status alone is valid). */
@@ -151,6 +157,15 @@ const lineOf = (beat) =>
         ? { mark: MARKS.action, text: beat.action, typed: false }
         : { mark: "", text: "", typed: false };
 
+/** The beat's diff lines (strings only); empty when the beat has no reply to hang them under. */
+export const diffLines = (beat) => (beat && beat.reply && Array.isArray(beat.diff) ? beat.diff.filter((x) => typeof x === "string" && x.trim() !== "") : []);
+
+/** A diff line split into its sign column (`+`, `~`, `-`, else blank) and the rest. */
+export function diffParts(line) {
+  const m = /^([+~-])\s?(.*)$/s.exec(line);
+  return m ? { sign: m[1], rest: m[2] } : { sign: "", rest: line };
+}
+
 /** The beat's reply, as the pane has it: the filled text once known, else the template (its length is a fair guess for timing). */
 const replyOf = (beat, filled) => (typeof filled === "string" ? filled : typeof beat.reply === "string" ? beat.reply : "");
 
@@ -171,7 +186,8 @@ export function beatTiming(beat, { reduced = false, msPerChar = TYPE_MS, replyMs
   const busy = beat.reply && hasLine(beat) && !reduced ? BUSY_MIN_MS : 0;
   const replyAt = busyAt + busy;
   const replyType = beat.reply && !reduced ? replyOf(beat, reply).length * replyMs : 0;
-  return { cursor, typing, busyAt, replyAt, replyType, end: replyAt + replyType };
+  const diffMs = reduced ? 0 : diffLines(beat).length * DIFF_MS;
+  return { cursor, typing, busyAt, replyAt, replyType, diffMs, end: replyAt + replyType + diffMs };
 }
 
 /** Whether a beat has a prompt or an action line of its own (a note and a lone reply do not). */
@@ -215,6 +231,9 @@ export function playback(beats, elapsedMs, opts = {}) {
     const replied = !!beat.reply && local >= t.replyAt;
     const full = replyOf(beat, opts.replies ? opts.replies[i] : undefined);
     const replyChars = replied ? typedChars(full.length, local - t.replyAt, { reduced: opts.reduced, msPerChar: opts.replyMs ?? REPLY_TYPE_MS }) : 0;
+    const diffAll = diffLines(beat).length;
+    const diffAt = t.replyAt + t.replyType;
+    const diffShown = !replied || !diffAll || local < diffAt ? 0 : opts.reduced ? diffAll : Math.min(diffAll, Math.floor((local - diffAt) / DIFF_MS) + 1);
     const nextStarted = i + 1 < beats.length && elapsedMs >= starts[i + 1];
     const over = local >= t.end;
     if (!over) done = false;
@@ -235,6 +254,7 @@ export function playback(beats, elapsedMs, opts = {}) {
       replied,
       replyChars,
       replyTyping: replied && replyChars < full.length,
+      diffShown,
       over,
     });
   }
@@ -293,6 +313,13 @@ export const PANE_CSS = `
 #k-ask .ask-waiting .ask-text::after, #k-ask .ask-ready-line .ask-text::after { animation: ask-blink 1s steps(1) infinite; }
 #k-ask .ask-ready-line .ask-text::after { content: "\\2588"; }
 #k-ask .ask-ready-line .ask-mark { color: var(--ask-accent); }
+#k-ask .ask-diff { margin: 0.25em 0 0.1em 1.6em; padding: 0.35em 0.7em; font: 500 0.8em/1.45 var(--font-mono, ui-monospace, monospace); background: var(--well, rgba(0,0,0,0.25)); border: 1px solid var(--rule); border-radius: 4px; min-width: 0; }
+#k-ask .ask-diff-line { display: grid; grid-template-columns: 1.4ch minmax(0, 1fr); column-gap: 0.6ch; white-space: pre; }
+#k-ask .ask-diff-sign { text-align: center; font-weight: 700; }
+#k-ask .ask-diff-rest { overflow: hidden; text-overflow: ellipsis; white-space: pre; min-width: 0; }
+#k-ask .ask-diff-add .ask-diff-sign, #k-ask .ask-diff-add .ask-diff-rest { color: var(--managed-ink, var(--managed)); }
+#k-ask .ask-diff-chg .ask-diff-sign, #k-ask .ask-diff-chg .ask-diff-rest { color: var(--foreign-ink, var(--foreign)); }
+#k-ask .ask-diff-del .ask-diff-sign, #k-ask .ask-diff-del .ask-diff-rest { color: var(--degraded-ink, var(--degraded)); }
 #k-ask .ask-sum, #k-ask .ask-busy { display: flex; align-items: baseline; gap: 0.5em; padding-left: 0; font-size: 0.72em; font-weight: 500; }
 #k-ask .ask-busy { font-size: 1em; padding-left: 1.6em; } /* the agent at work reads as large as its reply */
 #k-ask .ask-sum { color: var(--muted); opacity: 0.8; }
@@ -427,6 +454,18 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
       l.tm.textContent = `(${clock(Math.max(0, Math.floor((t - l.since) / 1000)))})`;
     }
   };
+  const diffNode = (lines) => {
+    const box = el("ask-diff");
+    for (const l of lines) {
+      const { sign, rest } = diffParts(l);
+      const row = el(`ask-diff-line ${sign === "+" ? "ask-diff-add" : sign === "~" ? "ask-diff-chg" : sign === "-" ? "ask-diff-del" : ""}`.trim());
+      const r = span("ask-diff-rest", rest);
+      r.title = rest;
+      row.append(span("ask-diff-sign", sign), r);
+      box.appendChild(row);
+    }
+    return box;
+  };
   const turnNode = (tn, cls, t) => {
     const e = el(`ask-entry ${cls}`);
     if (tn.text !== "" || tn.mark) e.appendChild(lineNode(tn.mark, tn.text));
@@ -435,6 +474,7 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
     for (const p of tn.parts) {
       if (p.k === "busy") e.appendChild(busyNode(p, t));
       else if (p.k === "sum") e.appendChild(el("ask-sum", `✓ ${p.label} (${clock(p.secs)})`));
+      else if (p.k === "diff") e.appendChild(diffNode(p.lines));
       else e.appendChild(el(p.typing ? "ask-reply ask-reply-typing" : "ask-reply", p.text));
     }
     return e;
@@ -453,6 +493,7 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
       if (f.busy) tn.parts.push({ k: "busy", label: label(beat), since: startedAt + f.busySince, tips: beat.tips, bid: `b${f.index}` });
       else if (f.sumSecs !== null) tn.parts.push({ k: "sum", label: label(beat), secs: f.sumSecs });
       if (f.replied) tn.parts.push({ k: "reply", text: (replies[f.index] || "").slice(0, f.replyChars), typing: f.replyTyping });
+      if (f.diffShown > 0) tn.parts.push({ k: "diff", lines: diffLines(beat).slice(0, f.diffShown) });
       turns.push(tn);
     }
     const last = pb.frames[pb.frames.length - 1];
@@ -525,7 +566,7 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
     setBusy(bp ? `${key}|${bp.bid}` : null, bp);
     const view = { turns: mergeTurns(transcript, b.turns), ready: b.ready, hostReady: b.hostReady };
     lastView = view;
-    const next = JSON.stringify([view.turns.slice(-(MAX_TURNS)).map((x) => [x.mark, x.text, x.typing, x.ready, x.parts.map((p) => [p.k, p.label, p.secs, p.text, p.typing])]), view.ready, view.hostReady]);
+    const next = JSON.stringify([view.turns.slice(-(MAX_TURNS)).map((x) => [x.mark, x.text, x.typing, x.ready, x.parts.map((p) => [p.k, p.label, p.secs, p.text, p.typing, p.lines ? p.lines.length : 0])]), view.ready, view.hostReady]);
     if (next !== sig) {
       // Rebuilt only when something changed, so the cursor keeps blinking.
       sig = next;

@@ -127,6 +127,8 @@ export interface DemoAsk {
   status: string | null;
   /** Tip cards the kiosk shows over the graph while this beat's busy line shows; absent when the ask carries none. */
   tips?: DemoTip[];
+  /** Short diff lines shown under the reply (`+ network  aws_subnet.x  10.0.2.0/24`); absent when the ask carries none. */
+  diff?: string[];
   light: string[] | null;
   paths: boolean | null;
   ghost: boolean | null;
@@ -151,6 +153,17 @@ export function tipsOf(v: unknown): DemoTip[] | undefined {
   return tips.length ? tips : undefined;
 }
 
+/** Most lines, and most characters per line, of an ask's `diff`. */
+export const DIFF_MAX_LINES = 8;
+export const DIFF_MAX_CHARS = 120;
+
+/** An ask's `diff`: its non-empty strings of at most {@link DIFF_MAX_CHARS} characters, the first {@link DIFF_MAX_LINES}; undefined when none are valid. */
+export function diffOf(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const lines = v.filter((x): x is string => typeof x === "string" && x.trim() !== "" && x.length <= DIFF_MAX_CHARS).map((x) => x.trimEnd());
+  return lines.length ? lines.slice(0, DIFF_MAX_LINES) : undefined;
+}
+
 /**
  * behold#936: a demo.json `ask`, or null when it is not an object with a prompt, an action, a reply or a status. A field of the
  * wrong type is null. A reply alone is a beat: an applied step prints the agent's reply with no line of the person's.
@@ -163,12 +176,14 @@ export function askOf(v: unknown): DemoAsk | null {
   const status = text(v.status);
   if (!prompt && !action && !reply && !status) return null;
   const tips = tipsOf(v.tips);
+  const diff = diffOf(v.diff);
   return {
     prompt,
     action,
     reply,
     status,
     ...(tips ? { tips } : {}),
+    ...(diff ? { diff } : {}),
     light: Array.isArray(v.light) && v.light.every((x) => str(x) && x.trim()) ? (v.light as string[]).map((x) => x.trim()) : null,
     paths: typeof v.paths === "boolean" ? v.paths : null,
     ghost: typeof v.ghost === "boolean" ? v.ghost : null,
