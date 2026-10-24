@@ -1018,7 +1018,9 @@ folder's scratch project. Each capability has its `name`, `meaning`,
 it leaves `notEvaluated`, its `rule`, and per lexicon whether it is
 supplied. A chant below 0.124.46 answers 422 `code: "chant-too-old"`
 (`CAPABILITIES_CHANT_FLOOR`). behold mcp's `capabilities` tool returns the
-same text.
+same text. behold keeps the document per checkout and commit, so a second
+read of an unmoved checkout runs no chant; a `--public` serve refuses the
+route with 403 (#978).
 
 ```
 GET /api/capabilities

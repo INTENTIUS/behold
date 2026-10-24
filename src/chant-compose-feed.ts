@@ -95,6 +95,15 @@ export async function stackOutputs(aws: AwsRun, stacks: readonly string[]): Prom
   return out;
 }
 
+/** behold#978: how long one read of the composed run is shared. */
+export const COMPOSED_READ_TTL_MS = 1_500;
+
+/** behold#978: the `commit` a read asks for: a lowercase sha of 7 to 40 hex digits, null for none, undefined when refused. */
+export function composedCommit(raw: string | null): string | null | undefined {
+  if (raw === null || raw === "") return null;
+  return /^[0-9a-f]{7,40}$/.test(raw) ? raw : undefined;
+}
+
 export function chantComposedFeedRoutes(app: Hono, dir: () => string, deps: ComposedFeedDeps): void {
   const aws = deps.aws ?? realAws;
   const now = deps.now ?? Date.now;
@@ -106,7 +115,9 @@ export function chantComposedFeedRoutes(app: Hono, dir: () => string, deps: Comp
     const key = `${d}|${commit ?? ""}`;
     const t = now();
     const hit = reads.get(key);
-    if (hit && t - hit.at < 1_500) return hit.read;
+    if (hit && t - hit.at < COMPOSED_READ_TTL_MS) return hit.read;
+    // behold#978: every expired read goes when a new one is made, as terragucci-runs.ts does.
+    for (const [k, v] of reads) if (t - v.at >= COMPOSED_READ_TTL_MS) reads.delete(k);
     const read = (async () => {
       const loop = prLoopOf(d);
       const url = deps.reportUrl ?? loop?.reportUrl;
@@ -138,13 +149,22 @@ export function chantComposedFeedRoutes(app: Hono, dir: () => string, deps: Comp
     return read;
   };
 
+  // behold#978: `commit` is a sha or nothing; anything else is refused before it keys a read.
+  const commitOf = (c: Context): { ok: true; commit: string | null } | { ok: false; refused: Response } => {
+    const commit = composedCommit(new URL(c.req.url).searchParams.get("commit"));
+    return commit === undefined ? { ok: false, refused: c.json({ error: "commit is a commit sha, 7 to 40 hex digits", code: "terragucci-progress" }, 400) } : { ok: true, commit };
+  };
   app.get("/api/terragucci", async (c: Context, next) => {
-    const v = await view(dir(), new URL(c.req.url).searchParams.get("commit"));
+    const asked = commitOf(c);
+    if (!asked.ok) return asked.refused;
+    const v = await view(dir(), asked.commit);
     if (!v) return next();
     return c.json(v.answer, 200, { "cache-control": "no-store" });
   });
   app.get("/api/terragucci/progress", async (c: Context, next) => {
-    const v = await view(dir(), new URL(c.req.url).searchParams.get("commit"));
+    const asked = commitOf(c);
+    if (!asked.ok) return asked.refused;
+    const v = await view(dir(), asked.commit);
     if (!v) return next();
     return c.json(v.progress ?? { run: null, states: [], reads: [], waves: [], cards: {}, unmatched: [], watching: false }, 200, { "cache-control": "no-store" });
   });

@@ -390,6 +390,23 @@ export function pinOf(pin: string | null): { pull: number | null; commit: string
   return /^[0-9a-f]{7,40}$/.test(pin) ? { pull: null, commit: pin, none: false } : { pull: null, commit: null, none: true };
 }
 
+/**
+ * behold#978: the one spelling of what a pin asks for, so the route's cache
+ * holds one entry per answer rather than one per string a client sends:
+ * `pull-<n>-<sha>`, `pull-<n>`, `pull`, `<sha>`, `none` (anything pinOf
+ * reads as nothing), or null for no pin. readChantPr reads it as it reads the raw pin.
+ */
+export function pinKey(pin: string | null): string | null {
+  if (!pin) return null;
+  const p = pinOf(pin);
+  if (p.none) return "none";
+  if (p.pull !== null) return `pull-${p.pull}${p.commit ? `-${p.commit}` : ""}`;
+  return p.commit ?? "pull";
+}
+
+/** behold#978: how long the route keeps one read of the loop. */
+export const CHANT_PR_READ_TTL_MS = 2_000;
+
 const isPlanRun = (r: RunDoc): boolean => r.event === "pull_request" || r.trigger === "plan";
 const isApplyRun = (r: RunDoc): boolean => r.event === "push" || r.trigger === "merge" || r.trigger === "push";
 
@@ -733,18 +750,25 @@ async function eventsKey(src: TerragucciSource, pull: number | null, commit: str
 /** `GET /api/chant/pr?pin=<run pin>`: the served chant project's pull-request loop at the pin. Read-only. */
 export function chantPrRoute(app: Hono, dir: () => string, deps: ChantPrDeps = {}): void {
   const cache = new Map<string, { at: number; read: Promise<ChantPrAnswer> }>();
-  app.get("/api/chant/pr", async (c) => {
-    const q = new URL(c.req.url).searchParams;
-    const pin = q.get("pin");
+  // behold#978: keyed by the checkout and the pin's one spelling (pinKey), and
+  // every expired entry goes when a read is made, as terragucci-runs.ts does.
+  const shared = (pinRaw: string | null, fresh = false): Promise<ChantPrAnswer> => {
+    const pin = pinKey(pinRaw);
     const d = dir();
     const key = `${d}|${pin ?? ""}`;
     const t = Date.now();
     const hit = cache.get(key);
-    const r = hit && t - hit.at < 2_000 && q.get("fresh") !== "1" ? hit.read : readChantPr(d, pin, deps);
-    if (r !== hit?.read) {
-      cache.set(key, { at: t, read: r });
-      r.catch(() => cache.delete(key));
-    }
+    if (hit && t - hit.at < CHANT_PR_READ_TTL_MS && !fresh) return hit.read;
+    for (const [k, v] of cache) if (t - v.at >= CHANT_PR_READ_TTL_MS) cache.delete(k);
+    const r = readChantPr(d, pin, deps);
+    const entry = { at: t, read: r };
+    cache.set(key, entry);
+    r.catch(() => { if (cache.get(key) === entry) cache.delete(key); });
+    return r;
+  };
+  app.get("/api/chant/pr", async (c) => {
+    const q = new URL(c.req.url).searchParams;
+    const r = shared(q.get("pin"), q.get("fresh") === "1");
     // The composed run's parts are for /api/terragucci below, not for this answer.
     const a = await r;
     const bare = (s: PrStageRead | null): PrStageRead | null => {
@@ -758,7 +782,7 @@ export function chantPrRoute(app: Hono, dir: () => string, deps: ChantPrDeps = {
   // chant demo (the fan-out) has no such read here, as before.
   if (deps.demoReports) {
     const composed = async (c: Context): Promise<ComposedView | null> => {
-      const a = await readChantPr(dir(), new URL(c.req.url).searchParams.get("pin"), deps);
+      const a = await shared(new URL(c.req.url).searchParams.get("pin"));
       return composedView(a.plan?.composed, a.apply?.composed);
     };
     app.get("/api/terragucci", async (c, next) => {

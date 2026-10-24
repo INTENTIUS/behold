@@ -19,6 +19,21 @@
 {$DEMO_HOSTNAME:demo.intentius.io} {
 	import /etc/caddy/auth/*.caddy
 
+	# behold#978: browser security headers on every answer. The kiosk frames
+	# behold's own view (/?embed=1&...), same origin, so framing is limited to
+	# this origin rather than refused outright: X-Frame-Options DENY would
+	# blank the kiosk in any browser that reads it over frame-ancestors.
+	# The CSP is added (+), never set: behold serves a report page with its
+	# own `sandbox` policy (src/terragucci-view.ts), and a browser enforces
+	# both. `defer` applies these after behold's answer is written, so the
+	# add lands next to behold's header rather than before it.
+	header {
+		defer
+		Strict-Transport-Security "max-age=31536000"
+		X-Frame-Options SAMEORIGIN
+		+Content-Security-Policy "frame-ancestors 'self'"
+	}
+
 	# The demo is served at the root by behold itself (/choudoufu-compose and its
 	# siblings are its own routes, /kiosk redirects to /), so nothing redirects here.
 

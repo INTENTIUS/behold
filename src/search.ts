@@ -400,3 +400,44 @@ export async function runCapabilities(target: SearchTarget, reader: (root: strin
     throw e;
   }
 }
+
+/** behold#978: how many searches a --public serve runs at once; the rest are answered 503 at once. */
+export const PUBLIC_SEARCHES_IN_FLIGHT = 4;
+
+/** behold#978: how long a capabilities document read from a checkout whose commit can't be read is kept. */
+export const CAPABILITIES_UNCOMMITTED_TTL_MS = 30_000;
+
+type CapabilitiesRead = Awaited<ReturnType<typeof runCapabilities>>;
+
+/**
+ * behold#978: {@link runCapabilities}, kept per checkout and commit. The
+ * catalog is what the checkout's chant and lexicons declare, so it changes
+ * only when the checkout moves: one entry per checkout, replaced when its
+ * commit (or its chant) changes. A checkout whose commit can't be read keeps
+ * its entry for {@link CAPABILITIES_UNCOMMITTED_TTL_MS}. Reads in flight are
+ * shared; a refusal or a document with an `error` is never kept.
+ */
+export function cachedCapabilities(seams: { commitOf: (dir: string) => string | undefined; now?: () => number }): (
+  target: SearchTarget,
+  reader: (root: string) => WorkspaceReader,
+) => Promise<CapabilitiesRead> {
+  const now = seams.now ?? Date.now;
+  const entries = new Map<string, { stamp: string; committed: boolean; at: number; read: Promise<CapabilitiesRead> }>();
+  return (target, reader) => {
+    if (target.kind === "refused") return runCapabilities(target, reader);
+    // The checkout is the folder served; a Terraform folder's scratch workspace is derived from it.
+    const checkout = target.kind === "workspace" ? target.root : target.dir;
+    const commit = seams.commitOf(checkout);
+    const stamp = `${target.kind}|${"root" in target ? target.root : ""}|${target.chant ?? ""}|${commit ?? ""}`;
+    const t = now();
+    for (const [k, e] of entries) if (!e.committed && t - e.at >= CAPABILITIES_UNCOMMITTED_TTL_MS) entries.delete(k);
+    const hit = entries.get(checkout);
+    if (hit && hit.stamp === stamp) return hit.read;
+    const read = runCapabilities(target, reader);
+    const entry = { stamp, committed: !!commit, at: t, read };
+    entries.set(checkout, entry);
+    const drop = (): void => { if (entries.get(checkout) === entry) entries.delete(checkout); };
+    read.then((r) => { if (!r.ok || "error" in r.document) drop(); }, drop);
+    return read;
+  };
+}
