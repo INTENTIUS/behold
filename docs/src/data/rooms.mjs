@@ -29,7 +29,7 @@ export const TILES = [
 	{ id: 'terraform', label: 'Terraform', blurb: 'Roots, modules and their references', room: 'terraform' },
 	{ id: 'terragucci', label: 'terragucci', blurb: 'The pipeline\'s reports, per root', room: 'terragucci' },
 	{ id: 'sql-yodeler', label: 'SQL Yodeler', blurb: 'Schema, gates and releases', room: 'sql-yodeler' },
-	{ id: 'choudoufu', label: 'choudoufu', blurb: 'Tag ownership on AWS and Kubernetes', room: 'choudoufu' },
+	{ id: 'choudoufu', label: 'choudoufu', blurb: 'Tag ownership on AWS, GCP, Azure and Kubernetes', room: 'choudoufu' },
 	{ id: 'carve', label: 'A carve-out', blurb: 'What moves off Terraform first', room: 'carve' },
 	{ id: 'demo', label: 'No project yet', blurb: 'The demo on a local emulator', room: 'demo' },
 ];
@@ -209,7 +209,7 @@ export const ROOMS = [
 	{
 		id: 'choudoufu',
 		title: 'behold on a choudoufu estate',
-		lede: 'choudoufu manages estates on AWS and Kubernetes and keeps ownership in marker tags on the live resources. behold reads those tags, so a green card means the resource is ours.',
+		lede: 'choudoufu manages estates on AWS, GCP, Azure and Kubernetes and keeps ownership in marker tags on the live resources. behold reads those tags, so a green card means the resource is ours.',
 		works: [
 			"Each instance in choudoufu's own words for ownership",
 			'Attribute drift on request, through Re-check live with plan in the command palette',

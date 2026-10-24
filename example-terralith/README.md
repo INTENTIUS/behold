@@ -2,7 +2,7 @@
 
 One Terraform root that holds everything, taken to four choudoufu estates in
 two reviewed steps. [choudoufu](https://github.com/INTENTIUS/choudoufu) is the
-OpenTofu fork for AWS and Kubernetes whose ownership lives on each resource as
+OpenTofu fork for AWS, GCP, Azure and Kubernetes whose ownership lives on each resource as
 two tags, `tofu-estate` and `tofu-address`.
 
 ```sh
