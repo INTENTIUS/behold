@@ -52,7 +52,7 @@ export function safeLink(l) {
  */
 export const DEFAULT_TIPS = [
   { title: "All at once", body: "Every estate plans together. The plan marks where the new subnet's id goes, and the same apply fills it in. With separate state runs, a downstream root sees that id only after its upstream applies.", link: { label: "How it plans across estates", url: "https://intentius.io/choudoufu/how-it-works/across-estates/" } },
-  { title: "terragucci", body: "terragucci runs in your own CI. It can put the roots a change reaches into one plan and one apply.", link: { label: "How a composed run works", url: "https://intentius.io/terragucci/concepts/waves-and-approvals/#composed-estates" } },
+  { title: "terragucci", body: "terragucci is CI pipelines for Terraform. Here it puts all three estates into one plan and one apply.", link: { label: "How a composed run works", url: "https://intentius.io/terragucci/concepts/waves-and-approvals/#composed-estates" } },
   { title: "choudoufu", body: "choudoufu is a fork of OpenTofu. A root that calls your estates as modules plans and applies them in one pass, and each estate keeps its own records. Resource-level locking at the cloud level.", link: { label: "How the locking works", url: "https://intentius.io/choudoufu/how-it-works/locking/" } },
   { title: "Free, nothing to host", body: "Both are free and open source. Everything runs in your own CI pipeline. There is no server or database to host; choudoufu keeps its records in a bucket you own.", link: { label: "choudoufu on GitHub", url: "https://github.com/INTENTIUS/choudoufu" } },
   { title: "Inspect", body: "Open Inspect to explore every resource and the plan behind it." },
