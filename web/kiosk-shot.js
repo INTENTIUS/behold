@@ -260,3 +260,32 @@ export function heldFrame(held, { key, pane, insets = {}, target }) {
   const box = same && target && reason !== "fill" ? unionBox([held.target, target]) : target;
   return { key, pane: { width: pane.width, height: pane.height }, insets: room, target: box, vb: shotViewBox(box, pane, room, { pad: HELD_PAD, maxScale: HELD_MAX_SCALE }), reason };
 }
+
+/** How long after the last size change a refit waits, in ms: a drag or a Firefox resize burst refits once, at its end. */
+export const REFIT_WAIT_MS = 120;
+
+/**
+ * `fn` run once, `wait` ms after the last call (trailing debounce). `.cancel()` drops a pending run. `timers` is for tests.
+ * The refit it guards sets the view directly: it never changes the box the observers watch, so it cannot loop.
+ */
+export function debounced(fn, wait = REFIT_WAIT_MS, timers = { set: setTimeout, clear: clearTimeout }) {
+  let t = null;
+  const run = (...args) => {
+    if (t !== null) timers.clear(t);
+    t = timers.set(() => {
+      t = null;
+      fn(...args);
+    }, wait);
+  };
+  run.cancel = () => {
+    if (t !== null) timers.clear(t);
+    t = null;
+  };
+  return run;
+}
+
+/** `fn` once, after `n` animation frames (two by default: layout and paint of what was just drawn have settled). */
+export function afterFrames(raf, fn, n = 2) {
+  const step = (left) => raf(() => (left > 1 ? step(left - 1) : fn()));
+  step(n);
+}
