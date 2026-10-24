@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { detectProject, detectProjectShape, loadBeholdConfig, readExecutor, executorDesignation, resetExecutorCache } from "./project.ts";
+import { detectProject, detectProjectShape, hasRetiredTiers, loadBeholdConfig, readExecutor, readTierParam, executorDesignation, resetExecutorCache } from "./project.ts";
 import { servesAsEstate } from "./member-kind.ts";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -12,10 +12,9 @@ function tmpProject(config: string | null): string {
   return dir;
 }
 
-/** A tmp project root with (or without) a `.behold.json` — #70's tier config,
- * kept separate from `chant.config.ts` (tmpProject, above). `raw`, when given,
- * is written as-is, so a test can also cover malformed JSON / a malformed
- * `tiers` shape, not just the happy path. */
+/** A tmp project root with (or without) a `.behold.json` (tmpProject, above,
+ * writes `chant.config.ts`). `raw`, when given, is written as-is, so a test can
+ * also cover malformed JSON, not just the happy path. */
 function tmpBeholdConfig(raw: string | null): string {
   const dir = mkdtempSync(join(tmpdir(), "behold-config-"));
   if (raw !== null) writeFileSync(join(dir, ".behold.json"), raw);
@@ -41,6 +40,19 @@ describe("detectProject", () => {
       lexicons: ["aws", "k8s"],
       sourceDir: "src",
     });
+  });
+
+  // #470: the tier axis is a build-time parameter with a string enum.
+  it("reads the tier axis from a buildParams entry with a string enum", async () => {
+    const dir = make(
+      `export default { lexicons: ["aws"], buildParams: { env: { type: "string", default: "dev" }, tier: { type: "string", enum: ["light", "production", "production-ha"], default: "light", env: "LOOM_TIER" } } };`,
+    );
+    expect((await detectProject(dir)).tiers).toEqual({ param: "tier", values: ["light", "production", "production-ha"], env: "LOOM_TIER" });
+  });
+
+  it("reads a tier axis from buildParams alone, with nothing else declared", async () => {
+    const dir = make(`export default { buildParams: { size: { enum: ["small", "big"] } } };`);
+    expect(await detectProject(dir)).toEqual({ environments: [], lexicons: [], tiers: { param: "size", values: ["small", "big"] } });
   });
 
   // An environments entry may be chant's `{ name, endpoint }` object form (the
@@ -159,9 +171,8 @@ describe("detectProject", () => {
   });
 });
 
-// #70: tiers are a separate, behold-owned `.behold.json` in the project root
-// — not `chant.config.ts` — so a chant project that never opts in gets no
-// tier axis at all (no picker, graph loads with no tier selected).
+// #470: what is left of `.behold.json` is `members` and `executor`; `tiers`,
+// `approver` and `behaviour` are read elsewhere now.
 describe("loadBeholdConfig", () => {
   let dirs: string[] = [];
   beforeAll(() => (dirs = []));
@@ -172,51 +183,21 @@ describe("loadBeholdConfig", () => {
     return d;
   };
 
-  it("reads behaviour.traffic, trimmed, and drops anything that is not a level (#402)", () => {
-    expect(loadBeholdConfig(make(JSON.stringify({ behaviour: { traffic: " 100 rps, p50 " } })))).toEqual({ behaviour: { traffic: "100 rps, p50" } });
-    for (const bad of [{ behaviour: { traffic: "  " } }, { behaviour: { traffic: 100 } }, { behaviour: "100 rps" }, { behaviour: [] }]) {
-      expect(loadBeholdConfig(make(JSON.stringify(bad)))).toEqual({});
-    }
+  it("no longer reads tiers or behaviour (#470)", () => {
+    const dir = make(JSON.stringify({ tiers: { envVar: "LOOM_TIER", values: ["light", "production"] }, behaviour: { traffic: "100 rps" } }));
+    expect(loadBeholdConfig(dir)).toEqual({});
+    expect(hasRetiredTiers(dir)).toBe(true);
+    expect(hasRetiredTiers(make(JSON.stringify({ members: ["a"] })))).toBe(false);
+    expect(hasRetiredTiers(make(null))).toBe(false);
   });
 
-  it("reads the pinned schema — envVar + values", () => {
-    const dir = make(
-      JSON.stringify({ tiers: { envVar: "LOOM_TIER", values: ["light", "production", "production-ha"] } }),
-    );
-    expect(loadBeholdConfig(dir)).toEqual({
-      tiers: { envVar: "LOOM_TIER", values: ["light", "production", "production-ha"] },
-    });
-  });
-
-  it("returns {} — no tier axis — when the file is absent", () => {
+  it("returns {} when the file is absent, empty or unparseable — never throws", () => {
     expect(loadBeholdConfig(make(null))).toEqual({});
-  });
-
-  it("returns {} when the file has no tiers key", () => {
     expect(loadBeholdConfig(make(JSON.stringify({})))).toEqual({});
-  });
-
-  it("returns {} for unparseable JSON — never throws", () => {
     expect(loadBeholdConfig(make("{ not valid json"))).toEqual({});
   });
 
-  it("returns {} when envVar is missing or not a string", () => {
-    expect(loadBeholdConfig(make(JSON.stringify({ tiers: { values: ["light"] } })))).toEqual({});
-    expect(loadBeholdConfig(make(JSON.stringify({ tiers: { envVar: 7, values: ["light"] } })))).toEqual({});
-  });
-
-  it("returns {} when values is missing, empty, or not an array", () => {
-    expect(loadBeholdConfig(make(JSON.stringify({ tiers: { envVar: "LOOM_TIER" } })))).toEqual({});
-    expect(loadBeholdConfig(make(JSON.stringify({ tiers: { envVar: "LOOM_TIER", values: [] } })))).toEqual({});
-    expect(loadBeholdConfig(make(JSON.stringify({ tiers: { envVar: "LOOM_TIER", values: "light" } })))).toEqual({});
-  });
-
-  it("drops non-string entries from values, keeping the rest", () => {
-    const dir = make(JSON.stringify({ tiers: { envVar: "LOOM_TIER", values: ["light", 7, "production"] } }));
-    expect(loadBeholdConfig(dir)).toEqual({ tiers: { envVar: "LOOM_TIER", values: ["light", "production"] } });
-  });
-
-  it("reads estate members (#236) alongside tiers, and keeps only member-shaped entries", () => {
+  it("reads estate members (#236), and keeps only member-shaped entries", () => {
     expect(loadBeholdConfig(make(JSON.stringify({ members: ["a", 7, "b"] })))).toEqual({
       members: [
         { dir: "a", kind: "chant" },
@@ -250,6 +231,26 @@ describe("loadBeholdConfig", () => {
 
 /** #236: the shape the doctor's first line and the CLI's startup warning both
  * read. Sync, so these build their own fixture dirs. */
+describe("readTierParam (#470)", () => {
+  it("prefers the entry named tier, else the first with a string enum", () => {
+    expect(readTierParam({ size: { type: "string", enum: ["s", "l"] }, tier: { type: "string", enum: ["a", "b"] } })).toEqual({ param: "tier", values: ["a", "b"] });
+    expect(readTierParam({ region: { type: "string" }, size: { type: "string", enum: ["s", "l"] } })).toEqual({ param: "size", values: ["s", "l"] });
+    // A `tier` that does not qualify falls through to the next that does.
+    expect(readTierParam({ tier: { type: "string" }, size: { enum: ["s"] } })).toEqual({ param: "size", values: ["s"] });
+  });
+
+  it("keeps only string enum members and a string env mapping", () => {
+    expect(readTierParam({ tier: { enum: ["a", 7, "b"], env: 3 } })).toEqual({ param: "tier", values: ["a", "b"] });
+    expect(readTierParam({ tier: { enum: ["a"], env: "T" } })).toEqual({ param: "tier", values: ["a"], env: "T" });
+  });
+
+  it("is undefined for no qualifying entry", () => {
+    for (const bad of [undefined, null, [], "tier", {}, { tier: { type: "number", enum: [1, 2] } }, { tier: { enum: [] } }, { tier: { enum: "a" } }, { tier: null }]) {
+      expect(readTierParam(bad)).toBeUndefined();
+    }
+  });
+});
+
 describe("detectProjectShape", () => {
   const dirs: string[] = [];
   afterAll(() => dirs.forEach((d) => rmSync(d, { recursive: true, force: true })));
@@ -453,7 +454,7 @@ describe("readExecutor", () => {
     expect(readExecutor(undefined)).toBeUndefined();
   });
 
-  it("rides on loadBeholdConfig beside tiers and members", () => {
+  it("rides on loadBeholdConfig beside members", () => {
     const d = tmpBeholdConfig(JSON.stringify({ executor: { prod: { forge: "github", workflow: "deploy-prod.yml" } } }));
     expect(loadBeholdConfig(d)).toEqual({ executor: { prod: { forge: "github", workflow: "deploy-prod.yml" } } });
     rmSync(d, { recursive: true, force: true });

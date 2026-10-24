@@ -13,7 +13,8 @@
  *    X-Forwarded-User`). Off unless configured. A bare login in the header is
  *    read as an account on `headerForge` (github unless set).
  * 2. `configured`: one person runs behold and names themselves (`--as
- *    github:alice`, BEHOLD_APPROVER, or `.behold.json`'s `approver.as`).
+ *    github:alice`, BEHOLD_APPROVER, or the per-user settings' `approver.as`,
+ *    src/user-settings.ts; #470 moved it out of `.behold.json`).
  * 3. `process`: neither, so chant's own fallback (GITHUB_ACTOR,
  *    GITLAB_USER_LOGIN, then USER), as before #690. behold passes no
  *    `--actor` then, and chant records what it always did.
@@ -25,26 +26,27 @@
  * A gate the workspace names in `identity.gates` counts only an approval
  * sealed with `chant approve --sign` by a key the signers file at base lists
  * for the approver. behold signs with the person's key when one is configured
- * (`--signing-key` for `--as`, or `.behold.json`'s `approver.keys` by
+ * (`--signing-key` for `--as`, or the per-user settings' `approver.keys` by
  * principal), and refuses the gate otherwise, as it did before. The key file
  * stays on this machine: chant reads it, and the page is told only whether
  * there is one.
  */
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { keyPath, readUserSettings } from "./user-settings.ts";
 import { localApprover } from "./workspace-gates.ts";
+
+export { keyPath };
 
 /** What `chant approve` gets as `--note` from behold, so the ledger line says where it came from. */
 export const BEHOLD_CHANNEL_NOTE = "approved in behold";
 
 /** How behold is told who is approving. */
 export interface ApproverOptions {
-  /** `--as`, BEHOLD_APPROVER, `.behold.json` `approver.as`: the person running behold. */
+  /** `--as`, BEHOLD_APPROVER, the per-user settings' `approver.as`: the person running behold. */
   as?: string;
   /** `--signing-key`, BEHOLD_SIGNING_KEY: the ssh key file `as` signs with. Absolute. */
   signingKey?: string;
-  /** `.behold.json` `approver.keys`: a key file per principal. Absolute. */
+  /** The per-user settings' `approver.keys`: a key file per principal. Absolute. */
   keys?: Record<string, string>;
   /** `--identity-header`, BEHOLD_IDENTITY_HEADER: the header an authenticating proxy sets. Lower-cased. */
   header?: string;
@@ -123,46 +125,24 @@ export function principalProblem(principal: string): string | null {
   return null;
 }
 
-function expandHome(path: string): string {
-  return path === "~" ? homedir() : path.startsWith("~/") ? join(homedir(), path.slice(2)) : path;
-}
-
-/** A key file path from a flag or `.behold.json`, absolute: `~` expanded, relative to `base`. */
-export function keyPath(path: string, base: string): string {
-  const p = expandHome(path);
-  return isAbsolute(p) ? p : resolve(base, p);
-}
-
 /**
- * `.behold.json`'s `approver` block, from `dir`: `{as?, signingKey?, keys?,
- * header?, headerForge?}`. Key paths resolve against `dir`. Absent or
+ * The per-user settings' `approver` block for the project at `dir`
+ * (src/user-settings.ts, #470): `{as?, signingKey?, keys?, header?,
+ * headerForge?}`. Key paths resolve against `dir`. A project served before
+ * #470 has its `.behold.json` block copied in on the first read. Absent or
  * unreadable is `{}`.
  */
-export function approverFromBeholdJson(dir: string): ApproverOptions {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(readFileSync(join(dir, ".behold.json"), "utf8"));
-  } catch {
-    return {};
-  }
-  const block = raw && typeof raw === "object" ? (raw as Record<string, unknown>).approver : undefined;
-  if (!block || typeof block !== "object" || Array.isArray(block)) return {};
-  const b = block as Record<string, unknown>;
-  const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+export function approverFromSettings(dir: string, cacheRoot?: string): ApproverOptions {
+  const b = readUserSettings(dir, cacheRoot).approver;
+  if (!b) return {};
   const keys: Record<string, string> = {};
-  if (b.keys && typeof b.keys === "object" && !Array.isArray(b.keys)) {
-    for (const [p, k] of Object.entries(b.keys as Record<string, unknown>)) if (str(k)) keys[p.trim()] = keyPath(str(k)!, dir);
-  }
-  const as = str(b.as);
-  const signingKey = str(b.signingKey);
-  const header = str(b.header);
-  const headerForge = str(b.headerForge);
+  for (const [p, k] of Object.entries(b.keys ?? {})) keys[p] = keyPath(k, dir);
   return {
-    ...(as ? { as } : {}),
-    ...(signingKey ? { signingKey: keyPath(signingKey, dir) } : {}),
+    ...(b.as ? { as: b.as } : {}),
+    ...(b.signingKey ? { signingKey: keyPath(b.signingKey, dir) } : {}),
     ...(Object.keys(keys).length ? { keys } : {}),
-    ...(header ? { header: header.toLowerCase() } : {}),
-    ...(headerForge ? { headerForge } : {}),
+    ...(b.header ? { header: b.header.toLowerCase() } : {}),
+    ...(b.headerForge ? { headerForge: b.headerForge } : {}),
   };
 }
 
@@ -250,16 +230,16 @@ export function approverFlags(a: Approver, opts: { sign?: boolean; flag?: "--act
 }
 
 /**
- * The approver options from the command line and the environment, over
- * `.behold.json`'s block in `dir`. A flag beats the environment, and both
- * beat the file. Key paths from a flag resolve against the working directory.
+ * The approver options from the command line and the environment, over the
+ * per-user settings for `dir`. A flag beats the environment, and both beat
+ * the settings. Key paths from a flag resolve against the working directory.
  */
 export function resolveApproverOptions(
   flags: { as?: string; signingKey?: string; header?: string; headerForge?: string },
   dir: string,
   env: NodeJS.ProcessEnv = process.env,
 ): ApproverOptions {
-  const file = approverFromBeholdJson(dir);
+  const file = approverFromSettings(dir);
   const as = flags.as ?? (env.BEHOLD_APPROVER || undefined) ?? file.as;
   const signingKeyArg = flags.signingKey ?? (env.BEHOLD_SIGNING_KEY || undefined);
   const signingKey = signingKeyArg ? keyPath(signingKeyArg, process.cwd()) : file.signingKey;

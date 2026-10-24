@@ -518,7 +518,7 @@ describe("live versus declared on the routes (#402)", () => {
     expect(new Set(asked.map((a) => a.traffic))).toEqual(new Set([TRAFFIC]));
   });
 
-  it("takes the level from .behold.json, and the request's over it", async () => {
+  it("takes the level from the per-user settings (a pre-#470 .behold.json read in once), and the request's over it", async () => {
     asked.length = 0;
     const { app } = served({}, predictor, { members: [{ dir: ".", kind: "choudoufu" }], behaviour: { traffic: TRAFFIC } });
     expect(((await get(app, "/api/overlay?alike=0&env=live")).meta.behaviour as { delta?: unknown }).delta).toEqual({ perHour: -0.01, currency: "USD" });

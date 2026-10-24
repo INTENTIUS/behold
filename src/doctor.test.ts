@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { diagnose, formatReport, type DoctorProbes, type DoctorReport, type DoctorCheck } from "./doctor.ts";
+import { diagnose, formatReport, tiersRetiredCheck, type DoctorProbes, type DoctorReport, type DoctorCheck } from "./doctor.ts";
 import type { Kubeconfig } from "./k8s-target.ts";
 import type { Substrate } from "./substrates.ts";
 import { discoverTerraformRoots as realRoots } from "./terraform-member.ts";
@@ -667,5 +667,22 @@ describe("diagnose — a declared workspace", () => {
     expect(report.ok).toBe(false);
     expect(report.checks).toHaveLength(1);
     expect(by(report, "project").detail).toContain("declaration-invalid");
+  });
+});
+
+describe("tiersRetiredCheck (#470)", () => {
+  it("warns where a .behold.json still carries tiers, and says what to declare instead", () => {
+    const root = mkdtempSync(join(tmpdir(), "behold-doctor-tiers-"));
+    try {
+      expect(tiersRetiredCheck(root, [root])).toBeUndefined();
+      mkdirSync(join(root, "app"));
+      writeFileSync(join(root, "app", ".behold.json"), JSON.stringify({ tiers: { envVar: "T", values: ["a"] } }));
+      const check = tiersRetiredCheck(root, [join(root, "app")]);
+      expect(check).toMatchObject({ name: "tiers", status: "warn" });
+      expect(check!.detail).toContain("app");
+      expect(check!.fix).toContain("buildParams");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
