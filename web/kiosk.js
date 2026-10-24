@@ -1381,7 +1381,8 @@ export function drawResult(host, model, s) {
   // behold#571: a row for every wave, in wave order: its trace as one bar of its phases (a click opens the whole trace),
   // else its numbers, else a quiet line until they land. Never fewer rows than the count says.
   const bars = new Map(miniWaterfall(s.waveTraces || {}).map((r) => [r.wave, r]));
-  const order = [...new Set([...model.waves.map((w) => w.wave), ...bars.keys()])].sort((x, y) => x - y);
+  // A composed run is one apply: no wave rows, no wave traces.
+  const order = model.composed ? [] : [...new Set([...model.waves.map((w) => w.wave), ...bars.keys()])].sort((x, y) => x - y);
   if (order.length) {
     const wf = el("div", "k-wf");
     for (const n of order) {
@@ -2119,6 +2120,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const measured = side && !side.hidden && side.offsetWidth ? side.offsetWidth + (shot.kind === "result" ? 18 : 44) : 0;
     // behold#631: a chant cycle keeps one framing from start to end: the side panel's room is kept whether or not one is up, so the graph never shifts.
     const right = s.chantLoop ? Math.max(measured, CHANT_SIDE_ROOM) : measured;
+    // Ask mode centres the scene in the graph area: the same margin at each side, none extra above or under it (the fit's own pad keeps the boxes off the edges).
+    if (shot.ask) return { top: 0, right: Math.max(right, 20), bottom: bottom - 16, left: 20 };
     return { top: 20, right, bottom, left: 20 };
   };
   /**
@@ -2164,7 +2167,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const insets = shotInsets(s.shot);
     // The caption's tallest, for a held small stage's one framing; a stage that isn't held never reads it.
     const room = captionRoomPx();
-    const key = `${s.shot.id}|${s.shot.ask ? "ask" : ""}|${insets.right || 0}|${Math.round((insets.bottom || 0) / 12)}|${s.shot.roots.join(",")}|${Math.round(room / 12)}`;
+    const key = `${s.shot.id}|${s.shot.ask ? "ask" : ""}|${insets.right || 0}|${Math.round((insets.top || 0) / 12)}|${Math.round((insets.left || 0) / 12)}|${Math.round((insets.bottom || 0) / 12)}|${s.shot.roots.join(",")}|${Math.round(room / 12)}`;
     if (!force && key === lastShot) return;
     lastShot = key;
     post(shotMessage({ roots: s.shot.roots, waves: s.shot.waves, whole: s.shot.whole, insets, id: s.shot.id, room, ask: s.shot.ask === true }));

@@ -15,6 +15,7 @@ import { STEP_WORDS, focusRoots, matchingPull, matchingRun, scenarioHead, introT
 import { defaultJob, defaultStep, logLineWords, setupLine } from "./kiosk-runs.js";
 import { backendLine, coneLine, coneOf } from "./cone.js";
 import { placeFloat } from "./float-place.js";
+import { COMPOSED_WORDS, composedRun } from "./kiosk-light.js";
 
 /** The two modes, Watch first: it is the default. */
 export const MODES = [
@@ -271,7 +272,8 @@ export function resultModel(demo, metrics, progress = null) {
   const m = metrics && metrics.run && metrics.run.current ? metrics.run.waves : [];
   const n = all.length || m.length;
   if (!n) return null;
-  const counts = [`${n} ${n === 1 ? "wave" : "waves"} applied`];
+  const composed = composedRun(progress);
+  const counts = [composed ? COMPOSED_WORDS : `${n} ${n === 1 ? "wave" : "waves"} applied`];
   const changed = states.length ? mergeChanges(states.map((w) => w.totals)) : mergeChanges(m.map((w) => w.changesRaw));
   counts.push(changed || "nothing to change");
   // The metrics cover the run when they have a number for each wave that applied.
@@ -284,8 +286,8 @@ export function resultModel(demo, metrics, progress = null) {
   // A row for every wave, its numbers when they have landed; never fewer rows than the count says.
   const numbers = new Map(m.map((w) => [w.wave, badgeWords(w)]));
   const numbered = [...new Set([...all.map((w) => w.number), ...m.map((w) => w.wave)])].sort((a, b) => a - b);
-  const waves = numbered.map((w) => ({ wave: w, words: numbers.get(w) || null }));
-  return { head: "Applied", line: typeof demo.label === "string" ? demo.label : "", counts, waves };
+  const waves = composed ? [] : numbered.map((w) => ({ wave: w, words: numbers.get(w) || null }));
+  return { head: "Applied", line: typeof demo.label === "string" ? demo.label : "", counts, waves, ...(composed ? { composed: true } : {}) };
 }
 
 /**

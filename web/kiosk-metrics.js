@@ -13,6 +13,7 @@
 // The delivery numbers on the demo are the loop's own (terragucci's
 // stack/demo.sh runs terragucci estate after each cycle's audit): demo.json's
 // `delivery` line says so over them, and the section shows no line without one.
+import { composedRun } from "./kiosk-light.js";
 
 /** The localStorage key of the viewer's fold. */
 export const METRICS_STORE = "behold.kiosk.metrics";
@@ -146,11 +147,12 @@ export function metricsModel(answer, delivery = null, asked = null) {
     if (rows.length) dora = rows;
   }
   if (!run && !dora) return null;
-  const n = run ? run.waves.length : 0;
+  const composed = composedRun(answer);
+  const n = run && !composed ? run.waves.length : 0;
   const count = [n ? `${n} ${n === 1 ? "wave" : "waves"}` : null, dora ? `${dora.length} delivery` : null].filter(Boolean).join(" · ");
   const note = dora && typeof delivery === "string" && delivery.trim() ? delivery.trim() : null;
   const span = dora ? spanWords(answer.dora.span_seconds) : null;
-  return { count, run, dora, ...(note ? { note } : {}), ...(span ? { window: `last ${span}`, windowNote: windowNote(span) } : {}) };
+  return { count, run, dora, ...(composed ? { composed } : {}), ...(note ? { note } : {}), ...(span ? { window: `last ${span}`, windowNote: windowNote(span) } : {}) };
 }
 
 /**
@@ -169,9 +171,10 @@ export function steadyModel(prev, next, { same = false, failed = false } = {}) {
   const note = next.note || (next.dora ? null : prev.note) || null;
   // The window goes with the numbers it is about.
   const span = next.dora ? next : prev;
-  const n = run ? run.waves.length : 0;
+  const composed = next.composed || prev.composed || false;
+  const n = run && !composed ? run.waves.length : 0;
   const count = [n ? `${n} ${n === 1 ? "wave" : "waves"}` : null, dora ? `${dora.length} delivery` : null].filter(Boolean).join(" · ");
-  return { count, run, dora, ...(note ? { note } : {}), ...(span.window ? { window: span.window, windowNote: span.windowNote } : {}) };
+  return { count, run, dora, ...(composed ? { composed } : {}), ...(note ? { note } : {}), ...(span.window ? { window: span.window, windowNote: span.windowNote } : {}) };
 }
 
 /** The viewer's fold: true open, false folded, null when they never chose. */

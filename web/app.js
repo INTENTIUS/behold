@@ -42,6 +42,7 @@ import { STATE_WORDS as tgStateWords, changeSection as tgChangeSection, readCard
 import { auditLines as yrAuditLines, cornerText as yrCorner, datedWords as yrDated, environmentLines as yrEnvLines, joinMarks as yrJoin, legend as yrLegend, markLine as yrMarkLine } from "./yodel-report.js";
 import { drawLight as klDraw } from "./kiosk-light-frame.js"; // behold#937
 import { badgeWords as klBadge, planOf as klPlanOf } from "./kiosk-light.js"; // behold#940
+import { composedRun } from "./kiosk-light.js";
 import { askDeltas, clearScene, drawScene, sceneModel, slotCounts as klSlotCounts } from "./kiosk-estate-scene.js"; // behold#940
 import { cardProgress as tgCardProgress, progressLines as tgProgressLines, progressSection as tgProgressSection, stampProgress as tgStampProgress } from "./terragucci-progress.js";
 import { seconds, whyQuery, whyView } from "./why.js";
@@ -5919,7 +5920,7 @@ function chantKioskWaves(svg, boxOf, size) {
     else path.setAttribute("marker-end", "url(#k-then-arrow)");
   }
   // The bottom box says which way the waves go, once.
-  if (!svg.querySelector("text[data-kiosk-upward]")) {
+  if (!svg.querySelector("text[data-kiosk-upward]") && !composedRun(tgAnswer, tgProgress)) {
     const boxes = [...svg.querySelectorAll("rect[data-group-id]")].filter((r) => tgWaveOfKey(r.getAttribute("data-group-id")) !== null);
     const low = boxes.map((r) => ({ r, b: boxOf(r) })).filter((x) => x.b).sort((a, b) => b.b.y2 - a.b.y2)[0];
     if (low) {
@@ -6498,6 +6499,8 @@ function userBoxOf(svg, el) {
 }
 
 /** What a shot frames, in svg units: its roots' cards and the reads between them, its waves' boxes, else the whole graph. */
+/** What hangs under the lowest box in ask mode: its state label. */
+const ASK_LABEL_ROOM = 32;
 function kioskShotTarget(svg, shot) {
   if (!vbInit) return null;
   const boxes = [];
@@ -6505,7 +6508,14 @@ function kioskShotTarget(svg, shot) {
     // The whole graph is what is drawn: the boxes, the cards and the reads, not pinhole's margins round them.
     // behold#744: not the reads' pills, which show and go while the shot stays.
     for (const n of svg.querySelectorAll("rect[data-group-id], [data-node-id], [data-tg-reads] > g:not([data-tg-read-pill]), line[data-tg-read-from], text[data-tg-reads='caption'], g[data-kl-state]")) boxes.push(userBoxOf(svg, n));
-    return unionBox(boxes) || { x: vbInit[0], y: vbInit[1], x2: vbInit[0] + vbInit[2], y2: vbInit[1] + vbInit[3] };
+    const u = unionBox(boxes);
+    // Ask mode: each box's state label hangs under it, and may not have drawn yet; the fit always leaves room for it, so the
+    // stack sits the same before and after the labels (and centred, not low).
+    if (u && shot.ask) {
+      const low = Math.max(...[...svg.querySelectorAll("rect[data-group-id]")].map((r) => (userBoxOf(svg, r) || { y2: -Infinity }).y2));
+      if (Number.isFinite(low)) u.y2 = Math.max(u.y2, low + ASK_LABEL_ROOM);
+    }
+    return u || { x: vbInit[0], y: vbInit[1], x2: vbInit[0] + vbInit[2], y2: vbInit[1] + vbInit[3] };
   }
   const named = (tgComponentFacets && tgComponentFacets.roots) || {};
   const roots = new Set(shot.roots);
@@ -6571,7 +6581,8 @@ function kioskShotBox() {
   // Only an estate on choudoufu's live backend (the cone scenario's) is held; every other keeps a shot per step, as on main.
   // behold#736: a story's stage (fan-out-choudoufu, a chapter-carrying scenario, behold#741) is never held: it keeps
   // the story's own look, its result card, #745's pills and #748's outside mark.
-  if (whole && !tgStoryOn() && holdsStage(tgAnswer && !tgAnswer.error ? tgAnswer.binaries : null) && smallStage(whole, pane, held ? held.insets : docked, cardW)) {
+  // Ask mode is never held: the held framing is the union of every target it has seen (the graph before the scene drew included), which leaves the scene off-centre. It is fitted to the scene as drawn, every time.
+  if (whole && !kioskShot.ask && !tgStoryOn() && holdsStage(tgAnswer && !tgAnswer.error ? tgAnswer.binaries : null) && smallStage(whole, pane, held ? held.insets : docked, cardW)) {
     kioskHeld = heldFrame(kioskHeld, { key: graph, pane, insets: docked, target: whole });
     writeHeld(kioskHeld);
     document.documentElement.classList.add("kiosk-held");
