@@ -5,12 +5,13 @@
 //     never clears them), and a one-time pulse on what lit;
 //   - each root's state file and its "written" mark, in one of three looks
 //     (applied, partly applied, not applied);
-//   - an unknown value as a marked empty slot on its card, filled once its producer applied;
+//   - at most two attribute lines on a card: a value read from another estate ("known after apply", dashed amber,
+//     until its producer applied, then the real value in green), or a known value that changed; no other attribute;
 //   - the ghosted "plan again, approve again" approval, struck through;
 //   - the resource's name first on its card, its type second.
 // All of it is removed and drawn again on each call, so a redraw of the marks is harmless.
 
-import { cardTitle, planOf, slotState, stateMarks, stateWords, unknownSlots } from "./kiosk-light.js";
+import { cardLines, cardTitle, lineState, planOf, rootsOf, stateMarks, stateWords } from "./kiosk-light.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const make = (tag, attrs, text) => {
@@ -69,7 +70,7 @@ export function drawLight(svg, msg, answer, progress, h) {
 
   if (msg.labels) {
     drawStates(layer, answer, progress, h);
-    if (!h.compMode) drawSlots(layer, svg, plan, answer, progress, h);
+    if (!h.compMode) drawSlots(layer, svg, plan, answer, progress, h, msg);
   }
   if (msg.ghost) drawGhost(layer, h);
 }
@@ -102,7 +103,7 @@ function nameFirst(svg, plan) {
 /** Each root's state file label, with its written mark and its look. */
 function drawStates(layer, answer, progress, h) {
   const marks = stateMarks(answer, progress);
-  for (const r of answer.roots) {
+  for (const r of rootsOf(answer)) {
     const m = marks[r.path];
     // behold#940: a label rides inside its box's own group when the graph has one, so it moves, grows and reflows with the box.
     const host = h.boxHost ? h.boxHost(r.path) : null;
@@ -140,11 +141,10 @@ function drawStates(layer, answer, progress, h) {
   }
 }
 
-/** An unknown value as a marked empty slot on its card, filled once its producer applied. */
-function drawSlots(layer, svg, plan, answer, progress, h) {
+/** A card's attribute lines (web/kiosk-light.js cardLines): unknown dashed amber, applied or changed solid. */
+function drawSlots(layer, svg, plan, answer, progress, h, msg) {
   const byCard = new Map();
-  for (const s of unknownSlots(plan)) {
-    if (!s.cardId) continue;
+  for (const s of cardLines(plan, msg && msg.light)) {
     if (!byCard.has(s.cardId)) byCard.set(s.cardId, []);
     byCard.get(s.cardId).push(s);
   }
@@ -154,22 +154,23 @@ function drawSlots(layer, svg, plan, answer, progress, h) {
     if (!rect) continue;
     const b = rect.getBBox();
     slots.forEach((s, i) => {
-      const st = slotState(s, answer, progress);
-      const words = st.filled ? (st.value !== undefined ? `${st.path || s.path}: ${typeof st.value === "string" ? st.value : JSON.stringify(st.value)}` : `${s.path}: filled from ${s.text.replace(/^not known until /, "").replace(/ exists$/, "")}`) : `${s.path}: ${s.text}`;
-      // behold#940: a card the scene drew (data-kl-synth) has room under it for its slots, in bigger type; a graph card's hang over its foot.
+      const st = lineState(s, answer, progress);
+      const words = st.text;
+      // behold#940: a card the scene drew (data-kl-synth) has room under it for its lines, in bigger type; a graph card's hang over its foot.
       const synth = card.hasAttribute("data-kl-synth");
       const size = synth ? 14 : 11.5;
       // One line, inside the card: a long value ends in an ellipsis.
       const fit = Math.max(8, Math.floor((b.width - 28) / (size * 0.6)));
-      // A filled slot's payoff is its end (the id the producer made): cut from the middle, and drop the attribute's name before the end.
+      // A filled line's payoff is its end (the id the producer made): cut from the middle, and drop the attribute's name before the end.
       const shown = words.length <= fit ? words : fit - 9 >= 14 ? `${words.slice(0, 6)}...${words.slice(words.length - (fit - 9))}` : `...${words.slice(words.length - (fit - 3))}`;
       const w = synth ? b.width - 12 : Math.min(b.width - 12, Math.max(90, shown.length * 6.8 + 16));
       const rowH = synth ? 22 : 18;
       const y = synth ? b.y + b.height + 6 + rowH + i * 26 : b.y + b.height - 3 + i * 22;
-      const g = make("g", { "data-kl-slot": id, "data-kl-filled": st.filled ? "1" : "0" });
+      const ink = st.state === "applied" ? "var(--frame-managed, var(--managed))" : "var(--frame-pending, var(--pending))";
+      const g = make("g", { "data-kl-slot": id, "data-kl-filled": st.state === "applied" ? "1" : "0", "data-kl-line": st.state });
       g.setAttribute("transform", card.getAttribute("transform") || "");
-      // Empty: a dashed outline with a hollow inside. Filled: solid, tinted.
-      g.appendChild(make("rect", { x: b.x + 6, y: y - rowH, width: w, height: rowH, rx: 3, fill: st.filled ? "var(--frame-managed, var(--managed))" : "var(--bg)", "fill-opacity": st.filled ? 0.25 : 1, stroke: st.filled ? "var(--frame-managed, var(--managed))" : "var(--frame-foreign, var(--foreign))", "stroke-width": 1.5, "stroke-dasharray": st.filled ? "none" : "4 3" }));
+      // Unknown: a dashed amber outline with a hollow inside. Applied: solid green, tinted. A changed value: solid amber.
+      g.appendChild(make("rect", { x: b.x + 6, y: y - rowH, width: w, height: rowH, rx: 3, fill: st.state === "unknown" ? "var(--bg)" : ink, "fill-opacity": st.state === "unknown" ? 1 : 0.25, stroke: ink, "stroke-width": 1.5, "stroke-dasharray": st.state === "unknown" ? "4 3" : "none" }));
       g.appendChild(make("text", { x: b.x + 12, y: y - (synth ? 6 : 5), "font-size": size, "font-weight": 600, fill: "var(--fg)" }, shown));
       layer.appendChild(g);
     });

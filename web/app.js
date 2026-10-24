@@ -4615,7 +4615,23 @@ function tgPushFits(answer) {
 function tgAnswerDrawn() {
   return tgPinnedAnswer(tgAnswer, view.run, view.pull || null);
 }
+// A prompt-driven step holds the graph from the moment its prompt starts until its reply is done or its status shows
+// (the kiosk posts behold:hold, then a behold:light): progress that lands in between is queued, the latest one drawn then.
+let klHold = null;
+let klHeldPaint = false;
+function klReleaseHold() {
+  if (klHold) clearTimeout(klHold);
+  klHold = null;
+  if (klHeldPaint) {
+    klHeldPaint = false;
+    paintTgProgress();
+  }
+}
 function paintTgProgress() {
+  if (klHold) {
+    klHeldPaint = true;
+    return;
+  }
   tgStampProgress(document.querySelector("#graph svg"), tgProgress, new Date());
   drawTgReads(); // #568: the run view's reads, once the change merged
   renderTerragucciPanel();
@@ -6903,9 +6919,23 @@ function wireKioskFrame() {
     if (!embedOpts.host || e.origin !== embedOpts.host) return;
     if (e.data && e.data.type === "behold:unpin") return kioskPopEvent({ type: "outside" });
     // behold#937: the demo step's lighting from the kiosk (web/kiosk-light.js lightMessage).
+    if (e.data && e.data.type === "behold:hold") {
+      if (klHold) clearTimeout(klHold);
+      klHold = setTimeout(klReleaseHold, 30000); // a step that never finishes does not freeze the graph for good
+      return;
+    }
     if (e.data && e.data.type === "behold:light") {
+      const wasHeld = !!klHold;
+      if (klHold) {
+        clearTimeout(klHold);
+        klHold = null;
+      }
       klMsg = { labels: e.data.labels === true, lit: e.data.lit === true, ids: Array.isArray(e.data.ids) ? e.data.ids.filter((x) => typeof x === "string") : [], roots: Array.isArray(e.data.roots) ? e.data.roots.filter((x) => typeof x === "string") : [], ghost: e.data.ghost === true, token: e.data.token ?? null };
       klRedraw();
+      if (wasHeld && klHeldPaint) {
+        klHeldPaint = false;
+        paintTgProgress();
+      }
       // behold#940: drawn at once from what the frame holds, and again as soon as its reads are fresh: never at a poll's turn.
       if (!staticMode && tgAnswer) {
         void refreshTgAnswer();

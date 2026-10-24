@@ -833,7 +833,8 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
       const doc = await report(row);
       if (!doc) continue; // a row whose run directory is gone: the next one may still hold the root
       for (const r of doc.roots) {
-        if (wanted && !wanted.has(r.path)) continue;
+        // behold#940: a composed choudoufu run draws every estate it names, whether or not the checkout lists it as a root.
+        if (wanted && !wanted.has(r.path) && !(doc.compose?.estate === true && doc.compose.roots?.includes(r.path))) continue;
         const entry = (roots[r.path] ??= {});
         // The push back to the base after a run is a no-op apply that becomes a root's newest; the run before it still says what the change wrote.
         if (entry[key] && !(stage === "tf-apply" && !entry.wrote && entry.apply && !entry.apply.changes.length && r.changes.length && row.applied)) continue;
