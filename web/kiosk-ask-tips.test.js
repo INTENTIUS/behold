@@ -214,3 +214,18 @@ describe("tip cards: links", () => {
     expect(log).toHaveLength(2);
   });
 });
+
+describe("tip cards: the viewer closes one", () => {
+  it("shows no more cards for the rest of that scenario cycle, and starts again in the next", () => {
+    const { seq, log, advance } = rig();
+    const shown = () => log.filter((x) => x[0] === "show").length;
+    seq.busy(busy("a", { tips }));
+    seq.dismiss();
+    seq.busy(busy("b", { tips }));
+    seq.busy(busy("c"));
+    advance(60_000);
+    expect(shown()).toBe(1);
+    seq.busy(busy("d", { cycle: 2 }));
+    expect(shown()).toBe(2);
+  });
+});
