@@ -22,9 +22,10 @@ export const TIP_FADE_MS = 300;
 
 /** What a busy step with no tips of its own shows, in order. */
 export const DEFAULT_TIPS = [
-  { title: "Across estates", body: "Most tools plan each root on its own, in order. A root can't see a value its upstream hasn't created yet until that upstream has applied." },
+  { title: "One root at a time", body: "Most tools plan each root on its own, in order. A root can't see a value its upstream hasn't created yet until that upstream has applied." },
   { title: "terragucci", body: "terragucci runs stock Terraform and OpenTofu roots in waves, each root planned and applied in order, from your own pipeline." },
   { title: "choudoufu", body: "choudoufu, a fork of OpenTofu, plans every estate in one plan, a new subnet's id included, and applies them in one apply. Resource-level locking at the cloud level." },
+  { title: "Free, nothing to host", body: "Both are free and open source. There is no server and no database to run: it all runs in your CI pipeline, and the records sit in a storage bucket." },
 ];
 
 const validTips = (v) => (Array.isArray(v) ? v.filter((t) => t && typeof t.title === "string" && t.title && typeof t.body === "string" && t.body) : []);
