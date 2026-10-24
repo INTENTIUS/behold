@@ -40,6 +40,7 @@ import { FORGES, MARK, componentsForge, forgeOfName, iconSvg, markLink, markTitl
 import { TOOLS, orderTools } from "./tool-mark.js";
 import { STATE_WORDS as tgStateWords, changeSection as tgChangeSection, readCardIds as tgReadCardIds, readEdges as tgReadEdges, readLabel as tgReadLabel, readLine as tgReadLine, readTag as tgReadTag, rootStates as tgRootStates, viewCaption as tgViewCaption, pinnedAnswer as tgPinnedAnswer, pinnedCaption as tgPinnedCaption, pinsCommit as tgPinsCommit, pinWaits as tgPinWaits } from "./terragucci-change.js";
 import { auditLines as yrAuditLines, cornerText as yrCorner, datedWords as yrDated, environmentLines as yrEnvLines, joinMarks as yrJoin, legend as yrLegend, markLine as yrMarkLine } from "./yodel-report.js";
+import { drawLight as klDraw } from "./kiosk-light-frame.js"; // behold#937
 import { cardProgress as tgCardProgress, progressLines as tgProgressLines, progressSection as tgProgressSection, stampProgress as tgStampProgress } from "./terragucci-progress.js";
 import { seconds, whyQuery, whyView } from "./why.js";
 import { edgeKey, edgeLabel, edgeLegend, edgeTitle, isCiKind, viaIndex } from "./edge-kind.js";
@@ -4613,6 +4614,14 @@ function paintTgProgress() {
   drawTgReads(); // #568: the run view's reads, once the change merged
   renderTerragucciPanel();
 }
+// behold#937: the kiosk's last `behold:light` message and what draws it (web/kiosk-light-frame.js).
+let klMsg = null;
+let klCtx = null;
+const klPulsed = { token: null };
+function klRedraw() {
+  if (!klCtx || !klMsg || !klCtx.svg.isConnected) return;
+  klDraw(klCtx.svg, klMsg, klCtx.drawnAnswer, tgStoryOn() ? tgPacedProgress() : tgProgress, { cardsOf: klCtx.cardsOf, rootBox: klCtx.rootBox, compMode: klCtx.compMode, pulsed: klCtx.pulsed });
+}
 // #568: the reads edges between roots of one repo, drawn over the card view.
 // #569: drawn so the view shows the change without the panel: each read is a
 // line from the reader (its data card when the checkout draws one, else its
@@ -5069,6 +5078,11 @@ function drawTgReads() {
   }
   tgReadEdgesNow = edges;
   tgReadShow(svg);
+  // behold#937: a demo step's lighting, the states' files and looks, the unknown slots, over the marks just drawn.
+  if (embedOpts.bare) {
+    klCtx = { svg, drawnAnswer, rootBox, compMode, cardsOf, pulsed: klPulsed };
+    klRedraw();
+  }
 
   // Which run the marks come from, above the boxes.
   // #569: a pin that holds the view off every plan says why in its own words.
@@ -6808,6 +6822,11 @@ function wireKioskFrame() {
   window.addEventListener("message", (e) => {
     if (!embedOpts.host || e.origin !== embedOpts.host) return;
     if (e.data && e.data.type === "behold:unpin") return kioskPopEvent({ type: "outside" });
+    // behold#937: the demo step's lighting from the kiosk (web/kiosk-light.js lightMessage).
+    if (e.data && e.data.type === "behold:light") {
+      klMsg = { labels: e.data.labels === true, lit: e.data.lit === true, ids: Array.isArray(e.data.ids) ? e.data.ids.filter((x) => typeof x === "string") : [], roots: Array.isArray(e.data.roots) ? e.data.roots.filter((x) => typeof x === "string") : [], ghost: e.data.ghost === true, token: e.data.token ?? null };
+      return klRedraw();
+    }
     // behold#571: the kiosk's theme picker moved; follow it here without a reload.
     if (e.data && e.data.type === "behold:theme" && typeof e.data.name === "string") return void setTheme(e.data.name, { persist: false });
     // behold#741: the scenario carries chapters (or stopped carrying them): the kiosk's look, and the wave blocks, follow.

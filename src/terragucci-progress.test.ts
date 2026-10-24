@@ -353,3 +353,14 @@ describe("GET /api/terragucci/progress (#511)", () => {
     expect(app.routes.some((r) => r.method === "GET" && r.path === "/api/terragucci/progress")).toBe(true);
   });
 });
+
+describe("joinProgress, a root's state file key (behold#937)", () => {
+  it("carries each root's backend key from run.json to the kiosk's state label, and leaves it off a root that has none", () => {
+    const run = JSON.parse(readFileSync(join(HERE, "__fixtures__", "terragucci-demo-ask", "run-applied.json"), "utf8")) as RunView;
+    run.roots = [...(run.roots ?? []), { root: "extra", wave: 1, reads: [] }];
+    const join_ = joinProgress(run, [], []);
+    expect(join_.reads.find((r) => r.root === "network")?.stateKey).toBe("network/terraform.tfstate");
+    expect(join_.reads.find((r) => r.root === "app")?.stateKey).toBe("app/terraform.tfstate");
+    expect(join_.reads.find((r) => r.root === "extra")).not.toHaveProperty("stateKey");
+  });
+});
