@@ -40,8 +40,9 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Hono } from "hono";
+import type { Context, Hono } from "hono";
 import { stripAnsi } from "./ansi.ts";
+import { composedReportOf, composedView, type ComposedReport, type ComposedView } from "./chant-compose.ts";
 import { chantReportKey, eventsFileOf, readPrLive, type PrLive } from "./chant-pr-events.ts";
 import { readHistory, historyFromLogs, type HistoryEntry, type HistoryRead } from "./lifecycle-history.ts";
 import { realGit, type GitRun } from "./terragucci-lifecycle.ts";
@@ -257,6 +258,8 @@ export interface PrStageRead {
   waves?: string[][];
   members: PrMemberRead[];
   approveCommand?: string;
+  /** behold#969: a composed run's parts (src/chant-compose.ts); only a report of a composed run carries it. */
+  composed?: ComposedReport;
 }
 
 const MEMBER_ROW = /^\s+(\S+)\s+(planned|plan-failed|applied|failed|blocked)\s+create (\d+) update (\d+) replace (\d+) delete (\d+)(?:\s{2}(.*))?$/;
@@ -346,6 +349,7 @@ export function prStageOfReport(doc: unknown, source: string): PrStageRead | und
     gate: typeof r.gate === "string" ? r.gate : null,
     ...(r.approval && typeof r.approval === "object" ? { approval: r.approval as PrStageRead["approval"] } : {}),
     ...(waves ? { waves } : {}),
+    ...(composedReportOf(r) ? { composed: composedReportOf(r)! } : {}),
     members: (r.members as Record<string, unknown>[]).map((m) => ({
       member: String(m.member),
       ...(typeof m.component === "string" ? { component: m.component } : {}),
@@ -741,8 +745,33 @@ export function chantPrRoute(app: Hono, dir: () => string, deps: ChantPrDeps = {
       cache.set(key, { at: t, read: r });
       r.catch(() => cache.delete(key));
     }
-    return c.json(await r, 200, { "cache-control": "no-store" });
+    // The composed run's parts are for /api/terragucci below, not for this answer.
+    const a = await r;
+    const bare = (s: PrStageRead | null): PrStageRead | null => {
+      if (!s?.composed) return s;
+      const { composed: _, ...rest } = s;
+      return rest;
+    };
+    return c.json({ ...a, plan: bare(a.plan), apply: bare(a.apply) }, 200, { "cache-control": "no-store" });
   });
+  // behold#969: a chant demo whose run is composed is read by the kiosk's ask mode like a composed estate run. Any other
+  // chant demo (the fan-out) has no such read here, as before.
+  if (deps.demoReports) {
+    const composed = async (c: Context): Promise<ComposedView | null> => {
+      const a = await readChantPr(dir(), new URL(c.req.url).searchParams.get("pin"), deps);
+      return composedView(a.plan?.composed, a.apply?.composed);
+    };
+    app.get("/api/terragucci", async (c, next) => {
+      const v = await composed(c);
+      if (!v) return next();
+      return c.json(v.answer, 200, { "cache-control": "no-store" });
+    });
+    app.get("/api/terragucci/progress", async (c, next) => {
+      const v = await composed(c);
+      if (!v) return next();
+      return c.json(v.progress ?? { run: null, states: [], reads: [], waves: [], cards: {}, unmatched: [], watching: false }, 200, { "cache-control": "no-store" });
+    });
+  }
 }
 
 /** What the components view draws a loop's wave boxes and marks from: the loop, the tools, each component's wave, each member's component. */

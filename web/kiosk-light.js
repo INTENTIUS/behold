@@ -33,6 +33,8 @@ export function composedRun(...docs) {
 }
 
 export const COMPOSED_WORDS = "applied together in one apply";
+/** behold#969: a chant composed run's re-plan that the first approval covered (chant#4419): said on the stack it re-planned. */
+export const COVERED_WORDS = "one approval covered the re-plan";
 
 /** An address with its instance keys dropped: `aws_x.y["a"]` is `aws_x.y`. */
 export const bare = (address) => String(address || "").replace(/\[(?:"(?:[^"\\]|\\.)*"|[^\]])*\]/g, "");
@@ -223,7 +225,7 @@ export function applyOf(root, progress) {
   const states = progress && Array.isArray(progress.states) ? progress.states : [];
   for (const w of states) {
     const m = w.composed && Array.isArray(w.composed.members) ? w.composed.members.find((x) => x.root === root) : null;
-    if (m) return { apply: m.apply || null, state: m.state || null, wave: w.number, waveState: w.state };
+    if (m) return { apply: m.apply || null, state: m.state || null, wave: w.number, waveState: w.state, ...(m.covered ? { covered: m.covered } : {}) };
   }
   for (const w of states) {
     if (!Array.isArray(w.roots) || !w.roots.includes(root)) continue;
@@ -266,14 +268,14 @@ export function stateMarks(answer, progress) {
   for (const root of roots) {
     const a = applyOf(root, progress);
     const file = estate ? { file: lastSegment(root), from: "estate", estate: true } : stateFile(root, progress);
-    out[root] = { ...file, written: !!a && a.state === "written", look: a && a.apply ? LOOK_OF[a.apply] || null : null };
+    out[root] = { ...file, written: !!a && a.state === "written", look: a && a.apply ? LOOK_OF[a.apply] || null : null, covered: !!(a && a.covered) };
   }
   return out;
 }
 
 /** The words of a state's label: its file (or an estate's name), its look, and that it was written. */
 export function stateWords(m) {
-  return [m.estate ? m.file : `state ${m.file}`, m.look ? LOOK_WORDS[m.look] : null, m.written ? (m.estate ? "records written" : "written") : null].filter(Boolean).join(" \u00b7 ");
+  return [m.estate ? m.file : `state ${m.file}`, m.look ? LOOK_WORDS[m.look] : null, m.written ? (m.estate ? "records written" : "written") : null, m.covered ? COVERED_WORDS : null].filter(Boolean).join(" \u00b7 ");
 }
 
 // ---------------------------------------------------------------------------
