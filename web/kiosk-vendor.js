@@ -161,7 +161,7 @@ export const VENDORS = {
     kind: "demo",
     terms: [],
     runsWith: ["terragrunt"],
-    hides: ["atmos", "cloud posse"],
+    hides: ["terragucci", "atmos", "cloud posse"],
   },
   "atmos-choudoufu": {
     name: "choudoufu with Atmos",
@@ -175,7 +175,7 @@ export const VENDORS = {
     kind: "demo",
     terms: [],
     runsWith: ["atmos"],
-    hides: ["terragrunt", "gruntwork"],
+    hides: ["terragucci", "terragrunt", "gruntwork"],
   },
   // chant's own pull-request pipeline across three CloudFormation stacks. The logo is chant's mark (web/vendors/chant.svg,
   // from the chant repo's docs/public/brand/mark.svg). `heading` is the banner's title where it differs from the others'.
@@ -192,7 +192,7 @@ export const VENDORS = {
     kind: "demo",
     terms: [],
     runsWith: [],
-    hides: ["choudoufu", "terragrunt", "gruntwork", "atmos", "cloud posse"],
+    hides: ["terragucci", "choudoufu", "terragrunt", "gruntwork", "atmos", "cloud posse"],
   },
 };
 
