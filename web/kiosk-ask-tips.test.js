@@ -182,7 +182,7 @@ describe("tip cards: links", () => {
   it("keeps the audited wording of the built-in bodies", () => {
     const by = Object.fromEntries(DEFAULT_TIPS.map((t) => [t.title, t.body]));
     expect(by["All at once"]).toBe("Every estate plans together. The plan marks where the new subnet's id goes, and the same apply fills it in. With separate state runs, a downstream root sees that id only after its upstream applies.");
-    expect(by.terragucci).toBe("terragucci runs in your own CI. It can put the roots a change reaches into one plan and one apply.");
+    expect(by.terragucci).toBe("terragucci runs in your own CI. Here it puts all three estates into one plan and one apply.");
     expect(by.choudoufu).toBe("choudoufu is a fork of OpenTofu. A root that calls your estates as modules plans and applies them in one pass, and each estate keeps its own records. Resource-level locking at the cloud level.");
     expect(by["Free, nothing to host"]).toBe("Both are free and open source. Everything runs in your own CI pipeline. There is no server or database to host; choudoufu keeps its records in a bucket you own.");
     for (const t of PHONE_TIPS.slice(0, -1)) expect(t.body).toBe(by[t.title]);
