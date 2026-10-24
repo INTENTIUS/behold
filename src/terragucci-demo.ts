@@ -78,6 +78,10 @@ export interface Demo {
   scenarios: number | null;
   /** This scenario's place in the loop, 1-based (behold#571); null without it. */
   index: number | null;
+  /** This scenario's act within its own demo, 1-based (terragucci demo.json `act`); null from a driver before it. */
+  act: number | null;
+  /** How many acts its demo has in this loop (`acts`); null without it. */
+  acts: number | null;
   /** The tool the scenario shows, "terragrunt" (behold#571); null from a driver before it. */
   tool: string | null;
   /** The forge repo the cycle runs on, "<admin>/demo-terragrunt" (behold#571); null from a driver before it. */
@@ -363,6 +367,8 @@ export function demoOf(d: Demo): Demo {
     name: text(d.name),
     scenarios: positive(d.scenarios),
     index: positive(d.index),
+    act: positive(d.act),
+    acts: positive(d.acts),
     tool: text(d.tool),
     repo: text(d.repo),
     delivery: text(d.delivery),
