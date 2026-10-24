@@ -31,6 +31,7 @@ describe("the demo banner model", () => {
     expect(liveTool({ tool: "terragrunt-choudoufu" })).toBe("terragrunt-choudoufu");
     expect(liveTool({ demo: { tool: "terraform" } })).toBeNull();
     expect(liveTool(null)).toBeNull();
+    expect(liveTool({ demo: { tool: "atmos-choudoufu", scenario: "base" } })).toBeNull();
   });
   it("is none for a page that is no listed demo", () => {
     expect(bannerModel("terraform")).toBeNull();

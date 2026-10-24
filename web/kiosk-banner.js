@@ -40,7 +40,8 @@ export const BANNER_TITLE = "One plan, one apply, across estates";
 /** The demo whose tool demo.json names now, when it is a listed demo; else null. */
 export function liveTool(demo) {
   const d = demo && demo.demo ? demo.demo : demo;
-  const t = d && typeof d.tool === "string" ? d.tool : null;
+  // The base (a reset between scenarios) names the tool that just ran, not the one that is next: it is no demo going live.
+  const t = d && typeof d.tool === "string" && d.scenario !== "base" ? d.tool : null;
   const v = t ? vendorOf(t) : null;
   return v && v.tree && v.title ? t : null;
 }

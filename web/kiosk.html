@@ -889,9 +889,18 @@
       {
         const host = document.getElementById("k-banner");
         let tool = pageTool(document);
+        const served = tool;
         let act = null;
         const draw = () => drawBanner(host, bannerModel(tool, act));
         draw();
+        const shouldReload = () => {
+          try {
+            const last = Number(sessionStorage.getItem("k-demo-reload") || 0);
+            if (Date.now() - last < 30000) return false;
+            sessionStorage.setItem("k-demo-reload", String(Date.now()));
+          } catch { /* no storage: reload anyway */ }
+          return true;
+        };
         const read = () =>
           fetch("/api/terragucci/demo", { cache: "no-store" })
             .then((r) => (r.ok ? r.json() : null))
@@ -899,6 +908,9 @@
               const t = liveTool(d) || tool;
               const a = actOf(t, d);
               if (t !== tool || a !== act) { tool = t; act = a; draw(); }
+              // The loop moved to another demo: the graph, pane and runs belong to the demo the page was served for, so
+              // load `/`, which serves the live one (once per 30 s at most, so a flapping read can't loop).
+              if (served && t !== served && shouldReload()) location.reload();
             })
             .catch(() => {});
         read();
