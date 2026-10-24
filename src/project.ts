@@ -74,20 +74,6 @@ export interface TierConfig {
 }
 
 /**
- * Which forge deploys an environment (#165, #61): `.behold.json`'s
- * `executor` block designates the committed WORKFLOW, not just the forge —
- * `{"executor": {"prod": {"forge": "github", "workflow": "deploy-prod.yml"}}}`.
- * Designating the file is what retires the job-overlap picker for that env:
- * two envs' generated pipelines carry identical job ids, so a picker cannot
- * tell them apart, and a contract that names prod must not sit on a guess.
- *
- * Fail-closed: an entry behold cannot honour is kept, with the reason, rather
- * than dropped — a dropped entry would fall Deploy back to the laptop, which
- * is the one thing a designation exists to prevent.
- */
-export type ExecutorDesignation = { forge: string; workflow: string } | { invalid: string };
-
-/**
  * One declared estate member (#368): a directory relative to the root that
  * declares it, and what kind of member it is. `.behold.json` accepts a bare
  * string (`"app"`, which is `{ "dir": "app", "kind": "chant" }` — every file
@@ -99,14 +85,12 @@ export type ExecutorDesignation = { forge: string; workflow: string } | { invali
  */
 export type MemberDecl = { dir: string; kind: MemberKind } | { dir: string; invalid: string };
 
-/** What behold still reads from a project's `.behold.json`. `tiers` moved to
- * `chant.config.ts` `buildParams` and `approver`/`behaviour` to the per-user
- * settings (src/user-settings.ts), both in #470; `executor` waits on
- * chant#4402 and `members` on `chant.workspace.json`. */
+/** What behold still reads from a project's `.behold.json`: the deprecated
+ * `members` list, which `chant.workspace.json` replaces. `tiers` moved to
+ * `chant.config.ts` `buildParams`, `approver`/`behaviour` to the per-user
+ * settings (src/user-settings.ts) and `executor` to the member's environment
+ * entries read through chant (src/executor.ts), all in #470. */
 export interface BeholdConfig {
-  /** Per-environment executor designations (#165). Absent means every env
-   * deploys the way it always has (`chant run` on this machine). */
-  executor?: Record<string, ExecutorDesignation>;
   /** Estate members (#236, #368): the member directories, relative to the
    * root that declares them, each with its kind. An estate root is not itself
    * a chant project — it's the directory you'd run `behold serve a b c` from —
@@ -321,40 +305,8 @@ export async function detectProject(projectDir: string): Promise<ProjectInfo> {
   };
 }
 
-/** The forges a designation may name. Only `github` has a trigger in behold
- * today (the operator's `gh`); the other two are recognised so a designation
- * disables local Deploy for the env, and say why nothing dispatches. */
-export const EXECUTOR_FORGES = ["github", "gitlab", "forgejo"] as const;
-
-/** Validate a parsed `.behold.json`'s `executor` block. Every key is kept —
- * a malformed value becomes `{invalid}` with the reason (fail-closed, see
- * {@link ExecutorDesignation}); a block that isn't an object is no block. Pure. */
-export function readExecutor(cfg: Record<string, unknown> | undefined): Record<string, ExecutorDesignation> | undefined {
-  const raw = cfg?.executor;
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
-  const out: Record<string, ExecutorDesignation> = {};
-  for (const [env, value] of Object.entries(raw as Record<string, unknown>)) {
-    if (!env) continue;
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      out[env] = { invalid: `executor.${env} must be {forge, workflow}, got ${JSON.stringify(value)}` };
-      continue;
-    }
-    const v = value as Record<string, unknown>;
-    if (typeof v.forge !== "string" || !(EXECUTOR_FORGES as readonly string[]).includes(v.forge)) {
-      out[env] = { invalid: `executor.${env}.forge must be one of ${EXECUTOR_FORGES.join(", ")}, got ${JSON.stringify(v.forge)}` };
-      continue;
-    }
-    if (typeof v.workflow !== "string" || !/^[^/\\]+\.ya?ml$/.test(v.workflow)) {
-      out[env] = { invalid: `executor.${env}.workflow must name a file in .github/workflows (e.g. deploy-${env}.yml), got ${JSON.stringify(v.workflow)}` };
-      continue;
-    }
-    out[env] = { forge: v.forge, workflow: v.workflow };
-  }
-  return Object.keys(out).length ? out : undefined;
-}
-
 /** Read `.behold.json` from the project root: what is left of behold's own
- * project config (#70), its `members` and `executor` blocks. No file,
+ * project config (#70), its `members` list. No file,
  * unparseable JSON, or malformed blocks all degrade to `{}` rather than
  * throwing. Sync: a plain JSON read, no code to run. `tiers`, `approver` and
  * `behaviour` are not read here any more (#470, see {@link BeholdConfig}). */
@@ -364,10 +316,8 @@ export function loadBeholdConfig(projectDir: string): BeholdConfig {
   try {
     const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
     const members = Array.isArray(raw.members) ? raw.members.map(readMember).filter((m): m is MemberDecl => !!m) : [];
-    const executor = readExecutor(raw);
     return {
       ...(members.length ? { members } : {}),
-      ...(executor ? { executor } : {}),
     };
   } catch {
     return {};
@@ -383,6 +333,20 @@ export function hasRetiredTiers(projectDir: string): boolean {
     return !!raw && typeof raw === "object" && raw.tiers !== undefined;
   } catch {
     return false;
+  }
+}
+
+/** The `executor` block a `.behold.json` still carries, which behold no
+ * longer reads (#470): the executor is declared on the member's
+ * `chant.config.ts` environment entry and read through chant. Raw, so
+ * `behold doctor` can print the declaration to move. Undefined when none. */
+export function retiredExecutorBlock(projectDir: string): Record<string, unknown> | undefined {
+  try {
+    const raw = JSON.parse(readFileSync(join(projectDir, BEHOLD_CONFIG_NAME), "utf8")) as Record<string, unknown>;
+    const x = raw?.executor;
+    return x && typeof x === "object" && !Array.isArray(x) && Object.keys(x).length ? (x as Record<string, unknown>) : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -485,26 +449,4 @@ export function detectProjectShape(projectDir: string): ProjectShape {
     if (own && own !== "chant") return { kind: "estate", members: [{ dir: ".", kind: own }], membersFrom: "itself" };
   }
   return { kind: "none", ...invalidMembers };
-}
-
-
-/**
- * A member's executor designation for one env (#165), read from THAT member's
- * `.behold.json` — not the primary's. An Op belongs to the project directory
- * that declares it (`OpInfo.dir`, src/ops.ts), so the guard that keeps a
- * designated env off this machine has to ask the same directory. Cached per
- * directory for the process: the file is config a boot reads, like the
- * primary's, not state that moves under a running server.
- */
-const executorByDir = new Map<string, Record<string, ExecutorDesignation> | undefined>();
-export function executorDesignation(projectDir: string, env: string | undefined): ExecutorDesignation | undefined {
-  if (!env) return undefined;
-  if (!executorByDir.has(projectDir)) executorByDir.set(projectDir, loadBeholdConfig(projectDir).executor);
-  return executorByDir.get(projectDir)?.[env];
-}
-
-/** Drop the per-directory executor cache — a test that rewrites `.behold.json`, or a served-project switch. */
-export function resetExecutorCache(dir?: string): void {
-  if (dir === undefined) executorByDir.clear();
-  else executorByDir.delete(dir);
 }

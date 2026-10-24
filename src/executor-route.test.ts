@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { resetExecutorCache } from "./project.ts";
+import { setExecutorSource } from "./executor.ts";
+import type { WorkspaceDocument } from "./workspace-reader.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "./server.ts";
@@ -12,10 +13,27 @@ import { OpRunner } from "./op-runner.ts";
 // from this machine — the guard sits before every other guard on /api/apply,
 // an ApplyOp for that env is refused the same way, and /api/project says what
 // Deploy can do so the SPA disables the gesture with the reason.
-function project(executor: unknown, workflows: Record<string, string> = {}): string {
+type Exec = { forge: string; workflow: string } | "unreadable" | undefined;
+
+/** A `workspace graph --composites` document (chant 0.124.47, src/__fixtures__/executor) with `member`'s component rows carrying `executors`. */
+function composites(member: string, executors: Record<string, Exec>): WorkspaceDocument {
+  const row = (name: string, x: Exec) => ({
+    name,
+    executor:
+      x === undefined
+        ? { forge: null, workflow: null, reason: { code: "executor-none-declared", message: `chant.config.ts declares no executor for ${name}` } }
+        : x === "unreadable"
+          ? { forge: null, workflow: null, reason: { code: "executor-config-unreadable", message: "chant.config.ts did not load" } }
+          : { ...x, reason: null },
+  });
+  return { contract: 1, components: [{ id: `${member}/app`, member, environments: Object.entries(executors).map(([n, x]) => row(n, x)) }] };
+}
+const docs = new Map<string, WorkspaceDocument>();
+
+function project(executor: Record<string, Exec>, workflows: Record<string, string> = {}): string {
   const dir = mkdtempSync(join(tmpdir(), "behold-executor-"));
   writeFileSync(join(dir, "chant.config.ts"), "export default { lexicons: [\"aws\", \"github\"], environments: [\"prod\", \"staging\"] };\n");
-  writeFileSync(join(dir, ".behold.json"), JSON.stringify({ executor }));
+  docs.set(dir, composites("app", executor));
   mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
   for (const [f, text] of Object.entries(workflows)) writeFileSync(join(dir, ".github", "workflows", f), text);
   return dir;
@@ -28,10 +46,10 @@ function appFor(dir: string, env?: string, members?: string[]) {
 }
 
 /** A member with its own designation and its own committed ApplyOp for prod. */
-function memberWithOp(executor: unknown): string {
+function memberWithOp(executor: Record<string, Exec>): string {
   const dir = mkdtempSync(join(tmpdir(), "behold-executor-member-"));
   writeFileSync(join(dir, "chant.config.ts"), "export default { lexicons: [\"aws\"], environments: [\"prod\"] };\n");
-  writeFileSync(join(dir, ".behold.json"), JSON.stringify({ executor }));
+  docs.set(dir, composites("member", executor));
   mkdirSync(join(dir, "ops"), { recursive: true });
   writeFileSync(join(dir, "ops", "prod-apply.op.ts"), 'export default ApplyOp({ name: "member-prod-apply", env: "prod", target: "cloudformation" });\n');
   return dir;
@@ -46,14 +64,15 @@ let noWorkflow: string;
 let plainPrimary: string;
 let member: string;
 beforeAll(() => {
-  resetExecutorCache();
+  setExecutorSource(async (root) => docs.get(root) ?? composites("app", {}));
   plainPrimary = project({});
   member = memberWithOp({ prod: { forge: "github", workflow: "deploy-prod.yml" } });
   designated = project({ prod: { forge: "github", workflow: "deploy-prod.yml" } }, { "deploy-prod.yml": DISPATCHABLE });
   broken = project({ prod: { forge: "github", workflow: "deploy-prod.yml" } }, { "deploy-prod.yml": PUSH_ONLY });
-  noWorkflow = project({ prod: { forge: "gitub", workflow: "deploy-prod.yml" } });
+  noWorkflow = project({ prod: "unreadable" });
 });
 afterAll(() => {
+  setExecutorSource(undefined);
   for (const d of [designated, broken, noWorkflow, plainPrimary, member]) rmSync(d, { recursive: true, force: true });
 });
 
@@ -74,11 +93,11 @@ describe("the executor contract (#165)", () => {
     expect(body.code).not.toBe("executor-forge");
   });
 
-  it("an invalid designation still refuses — fail-closed — and the remedy is the fix", async () => {
+  it("an unreadable config still refuses — fail-closed — and the remedy is the fix", async () => {
     const res = await appFor(noWorkflow).request("/api/apply?env=prod", { method: "POST" });
     expect(res.status).toBe(409);
     const body = (await res.json()) as { remedy: string };
-    expect(body.remedy).toMatch(/Fix \.behold\.json: executor\.prod\.forge/);
+    expect(body.remedy).toMatch(/Fix chant\.config\.ts: chant could not read app's chant\.config\.ts/);
   });
 
   it("/api/project reports each designation's status: dispatchable, or disabled with the reason", async () => {
@@ -89,7 +108,7 @@ describe("the executor contract (#165)", () => {
     expect(bad.executor.prod.reason).toMatch(/declares no workflow_dispatch/);
     const invalid = (await (await appFor(noWorkflow).request("/api/project")).json()) as { executor: Record<string, { ok: boolean; reason?: string }> };
     expect(invalid.executor.prod.ok).toBe(false);
-    expect(invalid.executor.prod.reason).toMatch(/executor\.prod\.forge must be one of/);
+    expect(invalid.executor.prod.reason).toMatch(/chant could not read app's chant\.config\.ts/);
   });
 
   it("a member's own designation guards the member's ApplyOp, though the primary designates nothing", async () => {

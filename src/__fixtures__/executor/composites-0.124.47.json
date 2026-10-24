@@ -1,0 +1,159 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/composites/v1/composites.schema.json",
+  "contract": 1,
+  "chant": "0.124.47",
+  "at": null,
+  "workspace": {
+    "name": "reference",
+    "root": ".",
+    "repo": null
+  },
+  "members": [
+    {
+      "name": "app",
+      "dir": "app",
+      "kind": "app",
+      "status": "skipped",
+      "reason": {
+        "code": "kind-not-run",
+        "message": "chant workspace graph runs members of kind chant, and this one is kind app"
+      },
+      "chant": null,
+      "runtimeReasons": [],
+      "environmentReasons": []
+    },
+    {
+      "name": "delivery",
+      "dir": "delivery",
+      "kind": "chant",
+      "status": "read",
+      "reason": null,
+      "chant": "0.124.47",
+      "runtimeReasons": [],
+      "environmentReasons": []
+    },
+    {
+      "name": "design-client",
+      "dir": "design-client",
+      "kind": "other",
+      "status": "skipped",
+      "reason": {
+        "code": "kind-not-run",
+        "message": "chant workspace graph runs members of kind chant, and this one is kind other"
+      },
+      "chant": null,
+      "runtimeReasons": [],
+      "environmentReasons": []
+    },
+    {
+      "name": "design",
+      "dir": "design",
+      "kind": "design",
+      "status": "skipped",
+      "reason": {
+        "code": "kind-not-run",
+        "message": "a design member is data: chant reads its files for record pins and builds nothing"
+      },
+      "chant": null,
+      "runtimeReasons": [],
+      "environmentReasons": []
+    }
+  ],
+  "composites": [
+    {
+      "id": "delivery/app",
+      "member": "delivery",
+      "instance": "app",
+      "kinds": [
+        "DockerWebService"
+      ],
+      "lexicons": [
+        "docker"
+      ],
+      "nodes": [
+        "delivery/appService"
+      ],
+      "components": [
+        {
+          "component": "delivery/app",
+          "by": "composites",
+          "against": "kind",
+          "value": "DockerWebService",
+          "label": "exact",
+          "via": "member"
+        }
+      ]
+    }
+  ],
+  "components": [
+    {
+      "id": "delivery/app",
+      "name": "app",
+      "member": "delivery",
+      "archetype": "service",
+      "composites": [
+        "DockerWebService"
+      ],
+      "file": "delivery/src/app.component.ts",
+      "runtimes": [
+        {
+          "name": "local",
+          "lexicon": null,
+          "default": true,
+          "command": "chant run --components app"
+        }
+      ],
+      "environments": [
+        {
+          "name": "local",
+          "default": true,
+          "source": "builtin",
+          "site": null,
+          "executor": {
+            "forge": null,
+            "workflow": null,
+            "reason": {
+              "code": "executor-none-declared",
+              "message": "chant.config.ts declares no executor for local"
+            }
+          },
+          "command": "chant run --components app"
+        },
+        {
+          "name": "staging",
+          "default": false,
+          "source": "config",
+          "site": null,
+          "executor": {
+            "forge": null,
+            "workflow": null,
+            "reason": {
+              "code": "executor-none-declared",
+              "message": "chant.config.ts declares no executor for staging"
+            }
+          },
+          "command": "chant run --components app --env staging"
+        },
+        {
+          "name": "prod",
+          "default": false,
+          "source": "config",
+          "site": null,
+          "executor": {
+            "forge": "github",
+            "workflow": "deploy-prod.yml",
+            "reason": null
+          },
+          "command": "chant run --components app --env prod"
+        }
+      ]
+    }
+  ],
+  "reasons": [],
+  "summary": {
+    "composites": 1,
+    "withComponent": 1,
+    "withoutComponent": 0,
+    "components": 1
+  }
+}

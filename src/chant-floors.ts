@@ -36,6 +36,9 @@ export const NAMESPACE_JOIN_FLOOR = "0.44.5";
  * repository's workspace by URL and pinned revision, read through that repository's own read contract,
  * and `workspace.repo` on ls, graph, check and status (INTENTIUS/chant#3168, behold#931). */
 export const ORG_SCOPE_CHANT_FLOOR = "0.124.47";
+/** The first chant that prints `executor` on each `components[].environments[]` row of `chant workspace graph --composites`: the forge and workflow the member's `chant.config.ts` declares for an environment
+ * (INTENTIUS/chant#4402, behold#470). A document from an older chant has no `executor` key, which behold reads as unknown. */
+export const EXECUTOR_CHANT_FLOOR = "0.124.47";
 /** The first chant that writes contract 1. An older one has no `workspace` command at all. */
 export const WORKSPACE_CHANT_FLOOR = "0.81.0";
 /** The first chant whose intent document carries `why` (INTENTIUS/chant#3312). */
@@ -237,6 +240,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "capability catalog", floor: CAPABILITIES_CHANT_FLOOR, adds: "the capabilities document, from chant search --capabilities --json and chant workspace search --capabilities --json (chant#4375)" },
   { read: "a Terraform folder with lint errors", floor: GRAPH_LINT_REPORT_CHANT_FLOOR, adds: "graph.lint: \"report\" draws it, the findings on meta.lint (behold#919)", degraded: "a bare Terraform estate that lint finds errors in is refused, and the refusal says which chant draws it" },
   { read: "org workspace", floor: ORG_SCOPE_CHANT_FLOOR, adds: "repo members that name another repository's workspace, and workspace.repo (chant#3168)", degraded: "an org workspace's repo members are listed with their URL and revision and no members of theirs" },
+  { read: "environment executor", floor: EXECUTOR_CHANT_FLOOR, adds: "executor on each workspace graph --composites environment row (chant#4402)", degraded: "no environment is read as deploying through a forge, so Deploy is not routed away from this machine" },
   { read: "decision points", floor: DECISION_POINTS_CHANT_FLOOR, adds: "a gate that asks a decision point, read with chant workspace points --open (chant#3170)", degraded: "the gate strip draws no open decision points, and says which chant adds them" },
 ];
 

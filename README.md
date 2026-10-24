@@ -560,8 +560,7 @@ nothing else. Your Terraform is never edited; see AGENTS.md, "Invariant".
 ## Configuration: `.behold.json`
 
 An optional `.behold.json` in the served project's root is **behold's own**
-config, which #470 is retiring. Two keys are still read: `executor`
-(which forge deploys an environment, until chant#4402 names it), and `members`, spelled `[{ "dir": "x", "kind":
+config, which #470 retired. One key is still read, `members`, spelled `[{ "dir": "x", "kind":
 "chant" | "choudoufu" | "terraform" }]`, how an estate root names what it
 composes, fail-closed on a kind behold has no reader for. `members` is
 deprecated: a chant workspace declaration (`chant.workspace.json`) lists an
@@ -605,15 +604,22 @@ never written or deleted.
 
 ### Deploy executors: `executor`
 
-The same file can designate which forge deploys an environment (#165):
+A member's `chant.config.ts` designates which forge deploys an environment
+(#165, #470), on the environment's entry:
 
-```json
-{
-  "executor": {
-    "prod": { "forge": "github", "workflow": "deploy-prod.yml" }
-  }
-}
+```ts
+environments: [
+  "staging",
+  { name: "prod", executor: { forge: "github", workflow: "deploy-prod.yml" } },
+],
 ```
+
+behold reads it from chant (`chant workspace graph --composites`, each
+`components[].environments[]` row's `executor`, chant 0.124.47 or newer), and
+never from the name of a generated `chant-components-<env>` workflow. A chant
+older than that, or an environment that declares none, reads as no designation.
+`.behold.json`'s old `executor` block is not read; `behold doctor` warns where
+one is left, with the entry to add.
 
 It names the committed **workflow**, not just the forge, because two
 environments' generated pipelines carry identical job ids and a picker cannot

@@ -1181,11 +1181,20 @@ best-effort, and only its exit code is certain (src/ci-run.ts).
 
 ### The executor contract (#165, #61)
 
-`.behold.json` may designate which forge deploys an environment:
+A member's `chant.config.ts` may designate which forge deploys an environment,
+on the environment's entry (#470):
 
-```json
-{ "executor": { "prod": { "forge": "github", "workflow": "deploy-prod.yml" } } }
+```ts
+environments: [{ name: "prod", executor: { forge: "github", workflow: "deploy-prod.yml" } }]
 ```
+
+behold reads it from `chant workspace graph --composites --json`
+(`components[].environments[].executor`, floor `EXECUTOR_CHANT_FLOOR` 0.124.47,
+src/executor.ts) through the workspace reader. It never reads `.behold.json`'s
+`executor` (retired; `behold doctor` warns), and never derives it from a
+`chant-components-<env>` workflow name (maintainer ruling, 2026-10-23). An older
+chant prints no `executor`, and no row means none declared. `reason.code`
+`executor-config-unreadable` stays designated and fails closed.
 
 It designates the committed WORKFLOW, not just the forge: two environments'
 generated pipelines carry identical job ids, so a picker cannot tell them

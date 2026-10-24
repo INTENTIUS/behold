@@ -131,7 +131,8 @@ import {
   type OperatorLogMalformed,
 } from "./operator.ts";
 import { LIVE_IMPORT_LEXICONS } from "./adopt.ts";
-import { chantConfigPath, detectProject, loadBeholdConfig, executorDesignation, type ExecutorDesignation, type TierConfig } from "./project.ts";
+import { chantConfigPath, detectProject, loadBeholdConfig, type TierConfig } from "./project.ts";
+import { executorDesignation, executorsOf, resetExecutorCache, type ExecutorDesignation } from "./executor.ts";
 import { readUserSettings } from "./user-settings.ts";
 
 /** What `/api/project` says about a designated env (#165): whether Deploy can
@@ -1185,8 +1186,8 @@ export function createApp(
   // tier read and the wrong-tier notes.
   const tiersFor = async (dir: string = cfg.projectDir): Promise<TierConfig | undefined> =>
     (await detectProject(dir).catch(() => undefined))?.tiers;
-  // What is left of `.behold.json` (#70): the executor block (until
-  // chant#4402) and members. `let` (#195): a project switch re-reads it.
+  // What is left of `.behold.json` (#70, #470): the deprecated members list.
+  // `let` (#195): a project switch re-reads it.
   const predictDeps: PredictMemberDeps = cfg.behaviour ?? { read: graphIr };
   let beholdConfig = loadBeholdConfig(cfg.projectDir);
   // The operator's settings for this project (#470, src/user-settings.ts):
@@ -1194,28 +1195,28 @@ export function createApp(
   // project served before #470 has its `.behold.json` block read in once.
   let userSettings = readUserSettings(cfg.projectDir);
   // The executor contract (#165, #61): which envs deploy through a forge, per
-  // `.behold.json`. A designated env never deploys from this machine — not via
+  // the member's `chant.config.ts` environments, read through chant's
+  // `workspace graph --composites` (#470, src/executor.ts). A designated env never deploys from this machine — not via
   // Deploy, not via a committed ApplyOp, not via auto-sync — and the only
   // approval affordance it gets is the run's own address on the forge, because
   // a GitHub environment protection rule is cleared by a GitHub identity behold
   // does not have and must not acquire. Fail-closed: an entry behold cannot
   // honour still disables local Deploy for its env, and says why.
-  const executorFor = (env: string | undefined): ExecutorDesignation | undefined =>
-    env ? beholdConfig.executor?.[env] : undefined;
+  const executorFor = (env: string | undefined): Promise<ExecutorDesignation | undefined> => executorDesignation(cfg.projectDir, env);
   /** What Deploy can do for a designated env right now, for the SPA and the
    * dispatch route: dispatchable through gh, or disabled with the reason. */
   const executorStatus = (env: string, d: ExecutorDesignation, pipeline?: CiPipeline): ExecutorStatus => {
     if ("invalid" in d) return { ok: false, reason: d.invalid };
     if (d.forge !== "github") {
-      return { forge: d.forge, workflow: d.workflow, ok: false, reason: `env ${env} deploys through ${d.forge} per .behold.json, and behold has no ${d.forge} trigger (only GitHub Actions, via your gh) — Deploy stays disabled here; run the pipeline on the forge` };
+      return { forge: d.forge, workflow: d.workflow, ok: false, reason: `env ${env} deploys through ${d.forge} per chant.config.ts, and behold has no ${d.forge} trigger (only GitHub Actions, via your gh) — Deploy stays disabled here; run the pipeline on the forge` };
     }
     const r = resolveWorkflow(cfg.projectDir, pipeline ?? { stages: [], jobs: [] }, d.workflow);
     return "workflow" in r ? { forge: d.forge, workflow: d.workflow, ok: true } : { forge: d.forge, workflow: d.workflow, ok: false, reason: r.reason };
   };
   const forgeRefusal = (env: string, d: ExecutorDesignation, what: string) => ({
-    error: `${what} is refused: env ${env} deploys through ${"invalid" in d ? "a forge" : `${d.forge} (${d.workflow})`} per .behold.json's executor block — behold never runs it from this machine`,
+    error: `${what} is refused: env ${env} deploys through ${"invalid" in d ? "a forge" : `${d.forge} (${d.workflow})`} per chant.config.ts's environment executor — behold never runs it from this machine`,
     code: "executor-forge",
-    remedy: "invalid" in d ? `Fix .behold.json: ${d.invalid}` : `Use Deploy (POST /api/ci/dispatch?env=${env}), which dispatches the designated workflow through your gh login.`,
+    remedy: "invalid" in d ? `Fix chant.config.ts: ${d.invalid}` : `Use Deploy (POST /api/ci/dispatch?env=${env}), which dispatches the designated workflow through your gh login.`,
   });
 
   // The kube context chant binds for an environment (`k8s.profiles.<env>.
@@ -1339,7 +1340,7 @@ export function createApp(
     }),
   );
 
-  app.post("/api/ops/:name/run", (c) => {
+  app.post("/api/ops/:name/run", async (c) => {
     // Preview: committed Ops (Sync/Adopt/generic) are git/PR or unscoped writes —
     // not part of the locked-down Loom-on-Floci demo. Local deploy goes via
     // /api/apply instead. (The SPA also hides these controls; this is the guard.)
@@ -1353,7 +1354,7 @@ export function createApp(
     // in a different coat (#165): refused the same way, for the same reason.
     // Asked of the Op's OWN member — a composed estate's member designates in
     // its own `.behold.json`, and the primary's says nothing about it.
-    const designatedEnv = info.kind === "apply" ? executorDesignation(info.dir, info.env) : undefined;
+    const designatedEnv = info.kind === "apply" ? await executorDesignation(info.dir, info.env) : undefined;
     if (designatedEnv && info.env) return c.json(forgeRefusal(info.env, designatedEnv, `running ${name}`), 409);
     if (!runner.trigger(name, info.env, info.dir)) {
       return c.json({ error: `an Op is already running (${runner.running})` }, 409);
@@ -1948,6 +1949,7 @@ export function createApp(
   // launch `--env`, the picker's initial selection.
   app.get("/api/project", async (c) => {
     const { environments: declaredEnvs, lexicons, stacks, k8sProfiles, tiers } = await detectProject(cfg.projectDir);
+    const executors = cfg.public ? {} : await executorsOf(cfg.projectDir);
     // #370: a choudoufu member declares no environments — it has one account,
     // reached by the ambient credentials — and the overlay needs a name to be
     // asked for. An estate whose chant members declare none but which holds a
@@ -2102,8 +2104,8 @@ export function createApp(
       // The executor contract (#165): per designated env, whether Deploy can
       // dispatch right now and, if not, why — so the SPA disables the gesture
       // with the reason rather than offering a control that 4xxs.
-      ...(beholdConfig.executor
-        ? { executor: Object.fromEntries(Object.entries(beholdConfig.executor).map(([env, d]) => [env, executorStatus(env, d)])) }
+      ...(Object.keys(executors).length
+        ? { executor: Object.fromEntries(Object.entries(executors).map(([env, d]) => [env, executorStatus(env, d)])) }
         : {}),
       // The stack picker's options (#76, follow-up to #71): gated exactly like
       // `tiers` above — only present when `chant.config.ts` declares `stacks[]`
@@ -2189,6 +2191,7 @@ export function createApp(
     // demo names its own serve env, which becomes the initial selection.
     cfg.env = env;
     beholdConfig = loadBeholdConfig(dirs[0]);
+    resetExecutorCache();
     userSettings = readUserSettings(dirs[0]);
     runner.retarget(dirs[0]);
     for (const d of dirs) addRecent(d);
@@ -3489,11 +3492,11 @@ export function createApp(
   app.post("/api/ci/dispatch", async (c) => {
     // The env decides everything below: which pipeline chant generates (its
     // job run-lines freeze the env in, chant#2046), which committed workflow
-    // runs it, and whether `.behold.json` designated one. Since chant 0.54.0
+    // runs it, and whether the member's chant.config.ts designated one. Since chant 0.54.0
     // the generated workflow is named for its env, so the picker can see it.
     const env = new URL(c.req.url).searchParams.get("env") ?? cfg.env;
-    const designated = executorFor(env);
-    if (designated && "invalid" in designated) return c.json({ error: designated.invalid, code: "executor-forge", remedy: "Fix .behold.json's executor block." }, 400);
+    const designated = await executorFor(env);
+    if (designated && "invalid" in designated) return c.json({ error: designated.invalid, code: "executor-forge", remedy: "Fix the environment's executor in chant.config.ts." }, 400);
     if (designated && designated.forge !== "github") {
       return c.json({ error: executorStatus(env!, designated).reason, code: "executor-forge" }, 400);
     }
@@ -4584,7 +4587,7 @@ export function createApp(
     // A designated env is never applied from here — before any other guard,
     // so a typo in the designation cannot route a prod deploy back to the
     // laptop by falling through (#165 §4).
-    const designated = executorFor(env);
+    const designated = await executorFor(env);
     if (designated) return c.json(forgeRefusal(env, designated, "apply"), 409);
     // Guard against re-applying an already-deployed stack. On a local emulator
     // that can't re-apply idempotently (Floci #16), a second apply re-creates
@@ -4782,9 +4785,12 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
     // An ApplyOp for a designated env is not a candidate (#165): auto-sync
     // declines it out loud rather than healing prod from the laptop. The
     // designation is the Op's own member's (`.behold.json` beside it).
-    const { routed, local } = splitForgeRouted(discoverEstateOps(cfg.projectDirs ?? [cfg.projectDir]), executorDesignation);
+    const estateOps = discoverEstateOps(cfg.projectDirs ?? [cfg.projectDir]);
+    const designations = new Map<string, ExecutorDesignation | undefined>();
+    for (const o of estateOps) if (o.kind === "apply" && o.env) designations.set(`${o.dir}\0${o.env}`, await executorDesignation(o.dir, o.env));
+    const { routed, local } = splitForgeRouted(estateOps, (d, e) => designations.get(`${d}\0${e}`));
     for (const { op: o, designation: d } of routed) {
-      broadcaster.emit("op", `⟳ auto-sync (${autoSync})${memberTag(dir)} declined ${o.name}: env ${o.env} deploys through ${"invalid" in d ? "a forge" : d.forge} per ${basename(o.dir)}/.behold.json — never applied from here`);
+      broadcaster.emit("op", `⟳ auto-sync (${autoSync})${memberTag(dir)} declined ${o.name}: env ${o.env} deploys through ${"invalid" in d ? "a forge" : d.forge} per ${basename(o.dir)}/chant.config.ts — never applied from here`);
     }
     const { picks, declined } = pickAutoSyncOps(
       autoSync,
