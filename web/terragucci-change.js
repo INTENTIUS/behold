@@ -22,6 +22,7 @@
 
 import { ago, clock, hrefOf } from "./terragucci.js";
 import { coneFact, coneOf, coneResourceLines, fallbackWhy } from "./cone.js";
+import { COVERED_WORDS } from "./kiosk-light.js";
 
 export const STATE_WORDS = {
   "not-started": "queued",
@@ -705,6 +706,7 @@ export function rootStates(answer, progress, { story = false } = {}) {
         const totals = totalsLine(w.totals);
         const together = new Set([...w.roots, ...(c ? c.roots : []), ...inRun]).size > 1;
         const composedHere = !!c && (c.roots.includes(root) || inRun.includes(root));
+        if (m && m.covered) facts.push(COVERED_WORDS); // behold#969: chant's first approval covered this stack's re-plan
         if (m && m.apply) facts.push(memberApplyLine(m).replace(`${root}: `, "")); // this root's own part, not the wave's
         else if (c && !composedHere) {
           // Beside a composed run in its wave: the wave's figures are the run's, not this root's.

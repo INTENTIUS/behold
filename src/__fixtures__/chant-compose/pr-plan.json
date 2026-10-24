@@ -1,0 +1,168 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/pr-report/v1/pr-report.schema.json",
+  "contract": 1,
+  "pr": 41,
+  "env": "local",
+  "base": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "head": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "op": "pr-41",
+  "gate": "pr-apply",
+  "selection": {
+    "changed": [
+      "network"
+    ],
+    "dependents": [
+      "app",
+      "edge"
+    ],
+    "unclaimed": [],
+    "indeterminate": [],
+    "waves": [
+      [
+        "network"
+      ],
+      [
+        "app"
+      ],
+      [
+        "edge"
+      ]
+    ]
+  },
+  "stage": "plan",
+  "digest": "jcs1-sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "status": "planned",
+  "approval": {
+    "status": "pending"
+  },
+  "members": [
+    {
+      "member": "app",
+      "component": "app",
+      "planDigest": "jcs1-sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "status": "planned",
+      "counts": {
+        "create": 2,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      },
+      "unknownInputs": [
+        "network.VpcId"
+      ]
+    },
+    {
+      "member": "edge",
+      "component": "edge",
+      "planDigest": "jcs1-sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "status": "planned",
+      "counts": {
+        "create": 1,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      },
+      "unknownInputs": [
+        "app.QueueArn"
+      ]
+    },
+    {
+      "member": "network",
+      "component": "network",
+      "planDigest": "jcs1-sha256:nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+      "status": "planned",
+      "counts": {
+        "create": 2,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    }
+  ],
+  "plannedOutputs": {
+    "network": [],
+    "app": []
+  },
+  "changeSet": {
+    "digest": "jcs1-sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "members": [
+      {
+        "member": "app",
+        "status": "planned",
+        "holes": []
+      },
+      {
+        "member": "edge",
+        "status": "planned",
+        "holes": []
+      },
+      {
+        "member": "network",
+        "status": "planned",
+        "holes": []
+      }
+    ],
+    "entries": [
+      {
+        "member": "network",
+        "lexicon": "aws",
+        "planner": "chant",
+        "address": "Vpc",
+        "type": "AWS::EC2::VPC",
+        "name": "Vpc",
+        "action": "create",
+        "attributes": []
+      },
+      {
+        "member": "network",
+        "lexicon": "aws",
+        "planner": "chant",
+        "address": "Subnet",
+        "type": "AWS::EC2::Subnet",
+        "name": "Subnet",
+        "action": "create",
+        "attributes": []
+      },
+      {
+        "member": "app",
+        "lexicon": "aws",
+        "planner": "chant",
+        "address": "AppSecurityGroup",
+        "type": "AWS::EC2::SecurityGroup",
+        "name": "AppSecurityGroup",
+        "action": "create",
+        "attributes": [
+          {
+            "path": "VpcId",
+            "unknown": true
+          }
+        ]
+      },
+      {
+        "member": "app",
+        "lexicon": "aws",
+        "planner": "chant",
+        "address": "Queue",
+        "type": "AWS::SQS::Queue",
+        "name": "Queue",
+        "action": "create",
+        "attributes": []
+      },
+      {
+        "member": "edge",
+        "lexicon": "aws",
+        "planner": "chant",
+        "address": "DnsUpstream",
+        "type": "AWS::Route53::RecordSet",
+        "name": "DnsUpstream",
+        "action": "create",
+        "attributes": [
+          {
+            "path": "ResourceRecords",
+            "unknown": true
+          }
+        ]
+      }
+    ]
+  }
+}
