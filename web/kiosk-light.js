@@ -15,6 +15,25 @@
 // reports joined onto the cards: `cards`, `roots`, `unmatched`, `pull_request`)
 // and the run view (`progress`: `states`, `reads`). Nothing here fetches.
 
+/**
+ * Whether a run is one composed apply across estates, not waves: any of the docs (the terragucci read, its pull request,
+ * a run's metrics, the run view) carries `compose.estate` or `compose.roots`, an estate scene, or a composed wave.
+ * Text for such a run never counts or names waves.
+ */
+export function composedRun(...docs) {
+  const one = (d) => {
+    if (!d || typeof d !== "object") return false;
+    const c = d.compose;
+    if (c && (c.estate === true || (Array.isArray(c.roots) && c.roots.length))) return true;
+    if (d.estateScene && Array.isArray(d.estateScene.roots) && d.estateScene.roots.length) return true;
+    if (Array.isArray(d.states) && d.states.some((w) => w && w.composed)) return true;
+    return !!(d.pull_request && one(d.pull_request)) || !!(d.run && d.run !== d && one(d.run));
+  };
+  return docs.some(one);
+}
+
+export const COMPOSED_WORDS = "applied together in one apply";
+
 /** An address with its instance keys dropped: `aws_x.y["a"]` is `aws_x.y`. */
 export const bare = (address) => String(address || "").replace(/\[(?:"(?:[^"\\]|\\.)*"|[^\]])*\]/g, "");
 
@@ -298,7 +317,7 @@ export function unknownSlots(plan) {
 /** The most attribute lines a card shows in ask mode. */
 export const MAX_CARD_LINES = 2;
 
-const isEmptyValue = (v) => v === undefined || v === null || (Array.isArray(v) && !v.length);
+const isEmptyValue = (v) => v === undefined || v === null || v === "" || (Array.isArray(v) && !v.length);
 const show = (v) => (typeof v === "string" ? v : JSON.stringify(v));
 
 /**
@@ -324,14 +343,18 @@ export function cardLines(plan, light = []) {
     if (!res.cardId) continue;
     const readNames = new Set(plan.reads.filter((r) => r.root === res.root).flatMap((r) => r.unknown || []));
     const asked = named.get(res.key) || new Set();
-    const reads = res.values.filter((v) => v.unknown && !("before" in v) && (readNames.has(v.path) || asked.has(v.path) || v.path === "subnet_id" || v.path === "vpc_id"));
+    const reads = res.values.filter((v) => v.unknown && v.path !== "id" && (!("before" in v) || isEmptyValue(v.before)) && (readNames.has(v.path) || asked.has(v.path) || v.path === "subnet_id" || v.path === "vpc_id"));
     const rank = (v) => (asked.has(v.path) ? 0 : readNames.has(v.path) ? 1 : v.path === "subnet_id" ? 2 : 3);
     reads.sort((a, b) => rank(a) - rank(b));
-    const changed = res.values.filter((v) => !v.unknown && "before" in v && "after" in v && !isEmptyValue(v.before) && JSON.stringify(v.before) !== JSON.stringify(v.after));
+    // Rule 5: never a false or empty default (a created resource's `assign_ipv6_address_on_creation: false`): the before is a real value.
+    const changed = res.values.filter((v) => !v.unknown && v.path !== "id" && "before" in v && "after" in v && !isEmptyValue(v.before) && JSON.stringify(v.before) !== JSON.stringify(v.after));
     const producer = reads.length ? producerOf(plan, res) : res;
     // A lit resource, or a created one with nothing else to show, is never a blank card: it shows its id.
     const isLit = lit.has(res.key) || lit.has(bare(res.key));
-    const idLine = !res.values.some((v) => v.path === "id" && !v.unknown) && (isLit || (res.action === "create" && !reads.length && !changed.length)) ? [[{ path: "id", unknown: true }, "unknown", res]] : [];
+    // Rule 1: a lit resource, or any created one whose id is unknown at plan, leads with its id.
+    const idKnown = res.values.some((v) => v.path === "id" && !v.unknown && "after" in v && !isEmptyValue(v.after));
+    const idUnknownAtPlan = res.action === "create" && !idKnown;
+    const idLine = !idKnown && (isLit || idUnknownAtPlan) ? [[{ path: "id", unknown: true }, "unknown", res]] : [];
     const row = (v, kind, prod) => ({ key: res.key, cardId: res.cardId, root: res.root, address: res.address, path: v.path, kind, producer: prod.key, producerRoot: prod.root, producerName: prod.name, before: v.before, after: v.after });
     for (const v of [...idLine, ...reads.map((x) => [x, "unknown"]), ...changed.map((x) => [x, "changed"])].slice(0, MAX_CARD_LINES)) lines.push(row(v[0], v[1], v[2] || producer));
   }
@@ -348,7 +371,9 @@ export function lineState(line, answer, progress) {
     const st = slotState({ key: line.key, cardId: line.cardId, path: line.path, producer: line.producer, producerRoot: line.producerRoot }, answer, progress);
     if (!st.filled) return { state: "unknown", text: `${line.path}: known after apply` };
     const path = st.path || line.path;
-    return { state: "applied", text: st.value !== undefined ? `${path}: ${show(st.value)}` : `${line.path}: filled from ${line.producerName}` };
+    // "filled from" only when the apply report states no value. A resource that is its own producer was simply created.
+    if (st.value !== undefined) return { state: "applied", text: `${path}: ${show(st.value)}` };
+    return { state: "applied", text: line.producer === line.key ? `${line.path}: created` : `${line.path}: filled from ${line.producerName}` };
   }
   const a = applyOf(line.root, progress);
   const done = !!a && (a.apply === "applied" || a.apply === "no-changes");
@@ -369,7 +394,7 @@ export function slotState(slot, answer, progress) {
   let v = known.find((x) => x.path === slot.path);
   // behold#940: a resource that is its own producer (the subnet) shows what it exported when the exact attribute is not stated: its id, else its first value.
   let path = slot.path;
-  if (!v && slot.producer === slot.key) {
+  if (!v && slot.producer === slot.key && slot.path !== "id") {
     v = known.find((x) => x.path === "id") || known[0];
     if (v) path = v.path;
   }

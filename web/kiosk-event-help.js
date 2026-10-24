@@ -15,6 +15,7 @@
 import { STRIP, matchingPull, matchingRun } from "./kiosk.js";
 import { defaultStep } from "./kiosk-runs.js";
 import { traceReadyWords } from "./kiosk-wave-traces.js";
+import { COMPOSED_WORDS, composedRun } from "./kiosk-light.js";
 import { resultBlocked, resultFailed, resultWords, waveResultOf } from "./terragucci-change.js";
 
 export { EH_STORE, ehStore, ehStored } from "./event-help-store.js";
@@ -90,6 +91,8 @@ export function ehSnapshot({ demo = null, answer = null, progress = null, runDoc
     label: demo.label || "",
     plan: pr ? { totals: pr.totals || null, roots: pr.roots || [], reads: pr.reads || [] } : null,
     // behold#751: each wave with its report's result, of the run view's commit.
+    // One composed apply across estates: its text never counts or names waves.
+    composed: composedRun(answer, run ? progress : null),
     states: run ? (progress.states || []).map((s) => ({ ...s, result: waveResultOf(answer, run.commit, s.number) })) : [],
     run: runDoc ? { id: runDoc.id, jobs: jobs.map((j) => ({ name: j.name, status: j.status, wave: waveOfJob(j.name, waves), refusal: j.status === "failure" ? yodelRefusal(jobLines(j)) : null, step: j.steps ? defaultStep(j.steps) : -1, result: resultOf(runDoc.commit, j.name, j.started_at) })) } : null,
     approval: approval && Array.isArray(approval.rows) ? { wave: approval.wave, rows: approval.rows.filter((r) => r.state === "lit").map((r) => ({ id: r.id, at: r.at || null, actor: r.id === "approved" ? actorOf(r.text) : null, signed: !!(r.seal && /^signed/.test(r.seal.text || "")) })), ...(Array.isArray(approval.chantWaves) ? { chantWaves: approval.chantWaves } : {}) } : null,
@@ -258,7 +261,7 @@ export function cycleFacts(snap) {
   // A repo with declared waves names its held wave once the run view has it; this is for a repo without them.
   if (snap.step === "waiting" && !(snap.waves || []).length && !out.some((f) => f.kind === "held")) add({ id: `${c}|held`, kind: "held", text: "the plan waits for an approval", order: 9, critical: true });
   // The step says the run applied: every wave the run view names, even one a read has not caught up on.
-  if (snap.step === "applied") add({ id: `${c}|applied`, kind: "applied", text: !states.length ? "the change applied" : states.length === 1 ? "the wave applied" : `all ${states.length} waves applied`, order: 990, critical: true });
+  if (snap.step === "applied") add({ id: `${c}|applied`, kind: "applied", text: !states.length ? "the change applied" : snap.composed ? COMPOSED_WORDS : states.length === 1 ? "the wave applied" : `all ${states.length} waves applied`, order: 990, critical: true });
   if (snap.step === "reset") add({ id: `${c}|reset`, kind: "reset", text: "states back on the base", order: 995 });
   // One fact per id (a wave's hold is said by the run view and the approval rows alike).
   const byId = new Map();

@@ -71,11 +71,13 @@ export function askLayout(roots, open) {
     const rows = Math.ceil(r.cards.length / best.cols);
     const w = used * cw + (used - 1) * GAP + 2 * PAD;
     const h = TITLE + rows * rowH[i] + (rows - 1) * GAP + PAD;
-    boxes[r.id] = { x: 0, y, w, h };
+    // Each box is centred on the widest one, so a stack of unequal boxes does not hug the left edge.
+    const x0 = Math.round((best.width - w) / 2);
+    boxes[r.id] = { x: x0, y, w, h };
     r.cards.forEach((c, k) => {
       const col = k % best.cols;
       const row = Math.floor(k / best.cols);
-      cards[c.id] = { x: PAD + col * (cw + GAP), y: y + TITLE + row * (rowH[i] + GAP), w: c.w, h: c.h };
+      cards[c.id] = { x: x0 + PAD + col * (cw + GAP), y: y + TITLE + row * (rowH[i] + GAP), w: c.w, h: c.h };
     });
     y += h + BOX_GAP;
   });

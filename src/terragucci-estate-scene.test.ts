@@ -190,21 +190,22 @@ describe("a real composed create report (behold#940)", () => {
     const a = await realAnswer(["network", "app", "edge"]);
     const lines = cardLines(planOf(a));
     const by = (addr: string) => lines.filter((l: { address: string }) => l.address === addr).map((l: { path: string; kind: string }) => `${l.kind}:${l.path}`);
-    expect(by("aws_network_interface.network_interface")).toEqual(["unknown:subnet_id"]);
-    expect(by("aws_route_table.route_table")).toEqual(["unknown:vpc_id"]);
-    expect(by("aws_security_group.security_group")).toEqual(["unknown:vpc_id"]);
-    expect(by("aws_instance.instance")).toEqual(["unknown:subnet_id"]);
+    expect(by("aws_network_interface.network_interface")).toEqual(["unknown:id", "unknown:subnet_id"]);
+    expect(by("aws_route_table.route_table")).toEqual(["unknown:id", "unknown:vpc_id"]);
+    expect(by("aws_security_group.security_group")).toEqual(["unknown:id", "unknown:vpc_id"]);
+    expect(by("aws_instance.instance")).toEqual(["unknown:id", "unknown:subnet_id"]);
     expect(by("aws_subnet.subnet")).toEqual(["unknown:id"]);
     expect(by("aws_sqs_queue.dns_upstream")).toEqual(["unknown:id"]);
     for (const id of new Set(lines.map((l: { cardId: string }) => l.cardId))) expect(lines.filter((l: { cardId: string }) => l.cardId === id).length).toBeLessThanOrEqual(2);
-    expect(lines).toHaveLength(6);
+    expect(lines).toHaveLength(10);
   });
 
   it("reads 'known after apply' while unknown and goes green once the network applied", async () => {
     const a = await realAnswer(["network", "app", "edge"]);
     const nic = cardLines(planOf(a)).find((l: { address: string }) => l.address === "aws_network_interface.network_interface");
-    expect(lineState(nic, a, null)).toEqual({ state: "unknown", text: "subnet_id: known after apply" });
-    const done = lineState(nic, a, progressApplied);
+    const sub = cardLines(planOf(a)).find((l: { address: string; path: string }) => l.address === "aws_network_interface.network_interface" && l.path === "subnet_id");
+    expect(lineState(sub, a, null)).toEqual({ state: "unknown", text: "subnet_id: known after apply" });
+    const done = lineState(sub, a, progressApplied);
     expect(done.state).toBe("applied");
     expect(done.text).toContain("subnet_id");
   });
