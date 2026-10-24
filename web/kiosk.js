@@ -37,6 +37,7 @@ import { drawWaveList, waveListKey } from "./kiosk-wave-list.js";
 import { readsFor, runsReadsFor } from "./kiosk-source.js";
 import { mountAskTips } from "./kiosk-ask-tips.js";
 import { mountResetModal, resetShown } from "./kiosk-reset.js";
+import { graphFolds, graphPending } from "./kiosk-graph-pane.js";
 import { askEventHelp, askMode, askShot, createAskPane, hasAsk, replyValues } from "./kiosk-ask.js";
 import { STATE_WORDS, outcomesOf, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
 import { startKioskLight } from "./kiosk-light.js"; // behold#937
@@ -1623,6 +1624,10 @@ export const TRACE_SETTLE_MS = 90_000;
 
 /** behold#571: the longest a reloaded frame loads out of sight before it swaps in anyway. */
 export const FRAME_SWAP_MS = 30_000;
+/** How long the pane's "drawing the graph" line waits for a frame that never says it drew. */
+export const FRAME_WAIT_MS = 10_000;
+/** How long the line outlasts a frame's first `behold:drawn`: the scene's layout and fit follow it. */
+export const FRAME_SETTLE_MS = 1_200;
 /** behold#571: how long the first frame load waits for demo.json, so it opens on the step's checkout. */
 export const FRAME_BOOT_WAIT_MS = 4_000;
 
@@ -2010,7 +2015,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     drawReading(shown.view, ok);
     // behold#571: with no graph to show, the graph pane folds away and the runs and the log take its width.
     if (typeof document !== "undefined" && document.body && document.body.classList) {
-      document.body.classList.toggle("k-nograph", !!vendor && !ok);
+      if (ok) s.graphSeen = true;
+      document.body.classList.toggle("k-nograph", graphFolds({ vendor, ok, askOn: !!s.askOn, seen: !!s.graphSeen, pending: graphPending({ own: reads.own, single: s.single, answer: s.answer }) }));
       // Before the tool's first cycle there are no runs and no log: those panes fold away, and the graph (when there is one) takes the width.
       document.body.classList.toggle("k-notyet", !!vendor && s.mode === "none");
     }
@@ -2938,6 +2944,22 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   // merge, not at applied, not at a new cycle, in Watch and in Inspect.
   let frameDrawn = false;
   let bufferTimer = null;
+  // While no frame has drawn on this page (a reload, a load in place) the pane says what it waits for (body.k-framewait),
+  // dark and never empty; a frame that never says it drew gives the line up after FRAME_WAIT_MS.
+  let waitTimer = null;
+  // A frame says it drew when its cards are in the svg, a moment before the scene is laid out and fitted: the line goes
+  // FRAME_SETTLE_MS after that, so the pane is never between the two with nothing in it.
+  const frameWait = (on, settle = 0) => {
+    if (typeof document === "undefined" || !document.body || !document.body.classList) return;
+    clearTimeout(waitTimer);
+    if (!on && settle > 0) {
+      waitTimer = setTimeout(() => document.body.classList.remove("k-framewait"), settle);
+      return;
+    }
+    document.body.classList.toggle("k-framewait", !!on);
+    if (on) waitTimer = setTimeout(() => document.body.classList.remove("k-framewait"), FRAME_WAIT_MS);
+  };
+  frameWait(true);
   const bootAt = now().getTime();
   let bootRetry = null;
   // The graph's room changes after the first shot (the banner, the pane's height, web fonts, the frame's own box): tell the
@@ -2977,6 +2999,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     frame = buffer;
     buffer = null;
     frameDrawn = true;
+    frameWait(false);
     s.boxes = null;
     s.framePop = null; // behold#764: the old frame's details popover went with it
     lastFocus = undefined;
@@ -2999,6 +3022,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     // Nothing drawn yet to keep up (the first load, or a load before the last one drew): load in place.
     if (first || !frameDrawn || typeof document === "undefined" || !frame.parentNode) {
       frameDrawn = false;
+      frameWait(true);
       frame.src = src;
       return;
     }
@@ -3026,7 +3050,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     window.addEventListener("message", (e) => {
       if (e.origin !== origin || !e.data || e.data.type !== "behold:drawn") return;
       if (buffer && e.source === buffer.contentWindow) swapFrame();
-      else if (frame && e.source === frame.contentWindow) frameDrawn = true;
+      else if (frame && e.source === frame.contentWindow) (frameDrawn = true), frameWait(false, FRAME_SETTLE_MS);
     });
   }
   /** behold#571: the commit each served checkout holds, read again when a step names a new one. */

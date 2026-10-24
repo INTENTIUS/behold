@@ -322,6 +322,9 @@
       .k-view-note { color: var(--muted); font-size: 0.8em; }
       /* behold#571: "How to read this", the graph pane's static frame: the legend of the view shown, folded to its header on request. */
       #view-pane { position: relative; }
+      /* No frame has drawn yet on this page (a reload, a load in place): the pane is dark and says so, never an empty box. */
+      #view-pane::after { content: "Drawing the graph..."; position: absolute; inset: 0; display: none; align-items: center; justify-content: center; color: var(--muted); font: 600 1.1em var(--font-ui); pointer-events: none; }
+      body.k-framewait #view-pane::after { display: flex; }
       #views { padding-right: 11em; }
       /* Folded, its header sits in the toggle's row; open, its rows lie over the top of the graph, two to a line. */
       #k-read { font-size: 0.82em; }

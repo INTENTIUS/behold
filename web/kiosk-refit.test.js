@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { REFIT_WAIT_MS, afterFrames, debounced } from "./kiosk-shot.js";
+import { describe, expect, it, vi } from "vitest";
+import { PAGE_TIMERS, REFIT_WAIT_MS, afterFrames, debounced } from "./kiosk-shot.js";
 
 const fakeTimers = () => {
   let now = 0;
@@ -53,5 +53,29 @@ describe("refit trigger", () => {
     expect(done).toBe(0);
     queue.shift()();
     expect(done).toBe(1);
+  });
+
+  it("runs on the page's own timers by default (a bare setTimeout in the timers object threw Illegal invocation)", () => {
+    vi.useFakeTimers();
+    try {
+      const runs = [];
+      const refit = debounced(() => runs.push(1));
+      expect(() => refit()).not.toThrow();
+      vi.advanceTimersByTime(REFIT_WAIT_MS);
+      expect(runs).toHaveLength(1);
+      refit();
+      refit.cancel();
+      vi.advanceTimersByTime(1000);
+      expect(runs).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("the default timers are methods that work detached from a window", () => {
+    // What throws in a browser: timers.set(...) with `this` the timers object. Calling through a plain object proves it.
+    const holder = { set: PAGE_TIMERS.set, clear: PAGE_TIMERS.clear };
+    const id = holder.set(() => {}, 5);
+    expect(() => holder.clear(id)).not.toThrow();
   });
 });

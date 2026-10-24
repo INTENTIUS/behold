@@ -43,7 +43,7 @@ import { auditLines as yrAuditLines, cornerText as yrCorner, datedWords as yrDat
 import { drawLight as klDraw } from "./kiosk-light-frame.js"; // behold#937
 import { badgeWords as klBadge, planOf as klPlanOf } from "./kiosk-light.js"; // behold#940
 import { composedRun } from "./kiosk-light.js";
-import { askDeltas, clearScene, drawScene, sceneModel, slotCounts as klSlotCounts } from "./kiosk-estate-scene.js"; // behold#940
+import { askDeltas, clearScene, drawScene, sceneHoldsOn, sceneModel, slotCounts as klSlotCounts } from "./kiosk-estate-scene.js"; // behold#940
 import { cardProgress as tgCardProgress, progressLines as tgProgressLines, progressSection as tgProgressSection, stampProgress as tgStampProgress } from "./terragucci-progress.js";
 import { seconds, whyQuery, whyView } from "./why.js";
 import { edgeKey, edgeLabel, edgeLegend, edgeTitle, isCiKind, viaIndex } from "./edge-kind.js";
@@ -4664,6 +4664,10 @@ function klRoom() {
   const height = pane.height - i.top - i.bottom;
   return width > 0 && height > 0 ? { width, height } : { width: pane.width, height: pane.height };
 }
+/** Whether the scene on `svg` stands: it is drawn, and the graph's own drawing set aside under it has no cards to go back to. */
+function keepsScene(svg) {
+  return sceneHoldsOn(svg);
+}
 /**
  * Ask mode lays the roots out for the room (web/kiosk-ask-layout.js): stacked, upstream on top, so the cards fill a
  * wide screen. A composed choudoufu run has none of its resources in the graph, so its scene is drawn from the run's
@@ -4674,6 +4678,9 @@ function klArrange(svg) {
   const on = document.documentElement.classList.contains("kiosk-ask") && !view.components;
   const answer = on ? tgAnswerDrawn() : null;
   if (!on || !answer || answer.error || !Array.isArray(answer.roots) || !answer.roots.length) {
+    // Ask mode still on and a scene up: a read that is stale or failed for a moment (the reports as they are written)
+    // keeps the last drawn scene. A composed run's graph has no cards of its own, so going back to it would be blank.
+    if (on && klArranged && keepsScene(svg)) return;
     if (klArranged) {
       clearScene(svg);
       reloadLayoutDeltas();
@@ -4696,7 +4703,7 @@ function klArrange(svg) {
     }
     return;
   }
-  if (svg.__klStash) clearScene(svg); // a scene, and the run's reports no longer have one
+  if (svg.__klStash && !keepsScene(svg)) clearScene(svg); // a scene, and the run's reports no longer have one (and the graph has cards to show instead)
   if (!layoutIndex) return;
   const extras = Object.fromEntries(Object.entries(klSlotCounts(plan)).map(([id, n]) => [id, n * 22 + 6]));
   const got = askDeltas({ roots: answer.roots, nodes: layoutIndex.nodes, boxes: layoutIndex.boxes, extras, edges: plan.edges, open });

@@ -10,6 +10,9 @@
          applies that record when it belongs to the stored theme. A blocked or
          empty store leaves the default as it is. -->
     <script>
+      // The kiosk's frame (?bare=1) paints nothing until its theme is applied, so the kiosk's own ground shows through:
+      // the stylesheet's default --bg is white, and a first load with no stored paint flashed it over a dark pane.
+      try { if (/[?&]bare=1(&|$)/.test(location.search)) document.documentElement.style.setProperty("--bg", "transparent"); } catch (e) { /* the default paints */ }
       try {
         var beholdTheme = localStorage.getItem("behold.theme");
         var beholdPaint = beholdTheme && JSON.parse(localStorage.getItem("behold.theme.paint") || "null");
