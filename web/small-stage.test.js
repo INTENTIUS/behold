@@ -78,6 +78,10 @@ describe("nothing overlays the graph in Watch, on a held small stage only", () =
     }
     // A drawer the viewer opened on a wave shows until they fold it.
     expect(watchOverlays({ kind: "result", opened: true, held: true }).drawer).toBe(true);
+    // behold#939: ask mode shows no card, badge or drawer of the run, over any stage.
+    for (const kind of ["held", "active", "result", "change", "whole"]) expect(watchOverlays({ kind, opened: false, held: false, ask: true })).toEqual({ result: false, callout: false, badges: false, drawer: false });
+    expect(watchOverlays({ kind: "result", opened: true, ask: true }).drawer).toBe(true);
+    expect(watchOverlays({ kind: "result", opened: false, held: false })).toEqual({ result: true, callout: true, badges: true, drawer: false });
   });
 
   it("not held (b-waves, failure, tg-planned-outputs): the callout, the badges, the result card and the step's drawer, as on main", () => {

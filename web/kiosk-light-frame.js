@@ -107,7 +107,8 @@ function drawStates(layer, answer, progress, h) {
     const box = h.rootBox(r.path);
     if (!m || !box) continue;
     const x = box.x + 14;
-    const y = box.y2 - 12;
+    // behold#939: a prompt-driven step draws the roots' resources, which fill their boxes: the label goes under the box, off the cards.
+    const y = h.below ? box.y2 + 26 : box.y2 - 12;
     const g = make("g", { "data-kl-state": r.path, "data-kl-look": m.look || "none" });
     const words = [`state ${m.file}`, m.look ? LOOK_WORDS[m.look] : null, m.written ? "written" : null].filter(Boolean).join(" · ");
     const w = Math.max(120, words.length * 7.4 + 20);

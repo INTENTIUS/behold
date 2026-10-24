@@ -282,6 +282,11 @@ describe("which view the frame shows (#571)", () => {
     expect(kioskView(demo("planned"), { components: true, pick: { view: "resources", at: 0 }, now: 1000 }).view).toBe("resources");
     expect(kioskView(demo("waiting"), { components: true })).toEqual({ view: "components", pinned: false, secs: null });
     expect(kioskView(demo("waiting"), { components: false })).toEqual({ view: "resources", pinned: false, secs: null });
+    // behold#939: a step with an ask draws the resources, whatever the toggle held; one without is as before.
+    const asked = { ...demo("planned"), ask: { prompt: "What does that touch?" } };
+    expect(kioskView(asked, { components: true })).toEqual({ view: "resources", pinned: false, secs: null });
+    expect(kioskView(asked, { components: true, pick: { view: "components", at: 0 }, now: 1000 }).view).toBe("resources");
+    expect(kioskView({ ...demo("planned"), ask: null }, { components: true }).view).toBe("components");
     expect(kioskView(demo("waiting"), { components: false, pick: { view: "components", at: 0 }, now: 1000 }).view).toBe("resources");
     expect(kioskView(null, { components: true }).view).toBe("components");
     expect(kioskView(null, { components: false }).view).toBe("resources");

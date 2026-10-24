@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BEAT_GAP_MS, KEEP, REPLY_PAUSE_MS, TYPE_MS, askBeats, beatTiming, createAskPane, fillReply, playback, replyValues, statusLine, typedChars } from "./kiosk-ask.js";
+import { BEAT_GAP_MS, KEEP, REPLY_PAUSE_MS, TYPE_MS, askBeats, askEventHelp, askMode, askShot, beatTiming, createAskPane, fillReply, hasAsk, paneHeight, playback, replyValues, statusLine, typedChars } from "./kiosk-ask.js";
 
 describe("fillReply (behold#936)", () => {
   it("fills the report's tokens", () => {
@@ -161,5 +161,39 @@ describe("createAskPane (behold#936)", () => {
     pane.setStep(demo("applied", { closing: "3 states. 1 plan." }));
     expect(flat(host)).toContain("3 states. 1 plan.");
     expect(KEEP).toBe(3);
+  });
+});
+
+describe("ask mode (behold#939)", () => {
+  it("is on only while the pane shows in Watch", () => {
+    expect(askMode({ askOn: true, watchMode: true })).toBe(true);
+    expect(askMode({ askOn: true, watchMode: false })).toBe(false);
+    expect(askMode({ askOn: false, watchMode: true })).toBe(false);
+    expect(askMode(null)).toBe(false);
+  });
+
+  it("knows a step with a beat from one without", () => {
+    expect(hasAsk({ ask: { prompt: "p" } })).toBe(true);
+    expect(hasAsk({ asks: [{ reply: "r" }] })).toBe(true);
+    expect(hasAsk({ ask: null, asks: null, opening: "o" })).toBe(false);
+    expect(hasAsk(null)).toBe(false);
+  });
+
+  it("quiets event-help in ask mode: no bubble, modal, strip, waiting line or result", () => {
+    const h = { watch: true, held: false, hideTrail: false, waiting: { key: "k" }, result: { counts: ["3 created"] }, label: "x" };
+    expect(askEventHelp(h, true)).toEqual({ ...h, held: true, hideTrail: true, waiting: null, result: null });
+    expect(askEventHelp(h, false)).toBe(h);
+  });
+
+  it("turns any step's shot into the whole graph, asked to fill, in ask mode only", () => {
+    const shot = { id: "3|planned|change|app", kind: "change", roots: ["app"], waves: [2], whole: false };
+    expect(askShot(shot, true)).toEqual({ id: shot.id, kind: "whole", roots: [], waves: [], whole: true, ask: true });
+    expect(askShot(shot, false)).toBe(shot);
+  });
+
+  it("keeps the pane from shrinking within a scenario", () => {
+    expect(paneHeight(0, 120)).toBe(120);
+    expect(paneHeight(200, 120)).toBe(200);
+    expect(paneHeight(200, NaN)).toBe(200);
   });
 });

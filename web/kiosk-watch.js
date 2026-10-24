@@ -164,7 +164,9 @@ export function coneCaption(demo, answer) {
  * the drawer while the run is on a wave (`kind` "active"). Inspect keeps its
  * cards either way.
  */
-export function watchOverlays({ kind = null, opened = false, held = false } = {}) {
+export function watchOverlays({ kind = null, opened = false, held = false, ask = false } = {}) {
+  // behold#939: a prompt-driven step shows the graph and the pane alone (web/kiosk-ask.js askMode).
+  if (ask) return { result: false, callout: false, badges: false, drawer: !!opened };
   if (held) return { result: false, callout: false, badges: false, drawer: !!opened };
   return { result: true, callout: true, badges: true, drawer: kind === "active" || !!opened };
 }

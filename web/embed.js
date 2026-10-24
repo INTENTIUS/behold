@@ -60,8 +60,8 @@ export function viewFromMessage(event, host) {
   for (const k of VIEW_KEYS) {
     if (!(k in d)) continue;
     const v = d[k];
-    if (k === "radial" || k === "plan") {
-      // plan (behold#922): true is the plan read, false the declared source again.
+    if (k === "radial" || k === "plan" || k === "alike") {
+      // plan (behold#922): true is the plan read, false the declared source again. alike (behold#939): false draws every card, true stacks them.
       if (typeof v === "boolean") want[k] = v;
       continue;
     }

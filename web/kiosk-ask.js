@@ -37,6 +37,38 @@ export function askBeats(demo) {
   return demo.ask && (demo.ask.prompt || demo.ask.action || demo.ask.reply) ? [demo.ask] : [];
 }
 
+/** Whether a demo step carries a prompt-driven beat (`ask` or `asks`): the one thing that turns ask mode on for a view. */
+export const hasAsk = (demo) => askBeats(demo).length > 0;
+
+/**
+ * behold#939: ask mode, while the pane shows in Watch. The story is the
+ * prompts and the graph, so what contradicts or covers it is off: the approval
+ * card and modal, the result card ("3 waves applied" against "one apply"), the
+ * wave badges, the log drawer, Tips' bubbles and the "This cycle" strip. A step
+ * without an ask is not in it, and looks as it always did.
+ */
+export const askMode = (s) => !!(s && s.askOn && s.watchMode);
+
+/** event-help's read of the page, quieted for ask mode: no bubble, no modal, no strip, no waiting line, no result to defer to. */
+export function askEventHelp(h, on) {
+  return on && h ? { ...h, held: true, hideTrail: true, waiting: null, result: null } : h;
+}
+
+/** A step's shot in ask mode: the whole graph (the resources of every root), asked to fill the room. */
+export function askShot(shot, on) {
+  return on && shot ? { ...shot, kind: "whole", roots: [], waves: [], whole: true, ask: true } : shot;
+}
+
+/**
+ * The pane's height only grows within a scenario: sized to its content (the
+ * last entries and the current one), capped by the stylesheet, and never
+ * shorter than the tallest it has been, so the graph's room does not breathe
+ * as lines come and go.
+ */
+export function paneHeight(peak, now) {
+  return Number.isFinite(now) && now > peak ? now : peak;
+}
+
 /** Fill `{token}`s from `values`. A token that is unknown, or has no value, is the empty string. */
 export function fillReply(template, values = {}) {
   if (typeof template !== "string") return "";
@@ -163,6 +195,7 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
   let history = [];
   let timer = null;
   let shown = false;
+  let peak = 0;
 
   const emit = (type, detail) => {
     if (win && typeof win.dispatchEvent === "function" && typeof CustomEvent === "function") win.dispatchEvent(new CustomEvent(type, { detail }));
@@ -228,6 +261,12 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
     const out = rows.slice(-(KEEP + 1));
     if (status) out.push(el("ask-status", status));
     host.replaceChildren(...out);
+    // Sized to its content, never shorter than the tallest this scenario has needed.
+    if (host.style) {
+      host.style.minHeight = "";
+      peak = paneHeight(peak, host.offsetHeight || 0);
+      if (peak > 0) host.style.minHeight = `${peak}px`;
+    }
     if (pb.done && !status && timer !== null) {
       clearTimer(timer);
       timer = null;
@@ -244,6 +283,7 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
     if (sc !== cycleKey) {
       cycleKey = sc;
       history = [];
+      peak = 0;
     }
     demo = d;
     const asked = askBeats(d);
