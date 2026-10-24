@@ -105,7 +105,8 @@ describe("the pane's events (behold#936 and behold#937)", () => {
     const ask = { prompt: "Show me", light: ["network/terraform_data.subnet"], paths: true, ghost: false };
     win.dispatchEvent(ev("behold:ask-start", ask));
     expect(win.beholdAskTokens).toEqual({ dependents: 5 });
-    expect(sent).toEqual([]);
+    expect(sent).toEqual([{ type: "behold:hold" }]); // the graph holds still until the reply is done
+    sent.length = 0;
     win.dispatchEvent(ev("behold:ask-done", ask));
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ type: "behold:light", labels: true, lit: true, ghost: false });

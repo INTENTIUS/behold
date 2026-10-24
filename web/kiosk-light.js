@@ -308,6 +308,7 @@ const show = (v) => (typeof v === "string" ? v : JSON.stringify(v));
  * producerRoot, producerName, before, after }` with kind `unknown` or `changed`.
  */
 export function cardLines(plan, light = []) {
+  const lit = new Set((Array.isArray(light) ? light : []).filter((w) => typeof w === "string"));
   const named = new Map();
   for (const w of Array.isArray(light) ? light : []) {
     if (typeof w !== "string") continue;
@@ -327,8 +328,11 @@ export function cardLines(plan, light = []) {
     reads.sort((a, b) => rank(a) - rank(b));
     const changed = res.values.filter((v) => !v.unknown && "before" in v && "after" in v && !isEmptyValue(v.before) && JSON.stringify(v.before) !== JSON.stringify(v.after));
     const producer = reads.length ? producerOf(plan, res) : res;
-    const row = (v, kind) => ({ key: res.key, cardId: res.cardId, root: res.root, address: res.address, path: v.path, kind, producer: producer.key, producerRoot: producer.root, producerName: producer.name, before: v.before, after: v.after });
-    for (const v of [...reads.map((x) => [x, "unknown"]), ...changed.map((x) => [x, "changed"])].slice(0, MAX_CARD_LINES)) lines.push(row(v[0], v[1]));
+    // A lit resource, or a created one with nothing else to show, is never a blank card: it shows its id.
+    const isLit = lit.has(res.key) || lit.has(bare(res.key));
+    const idLine = !res.values.some((v) => v.path === "id" && !v.unknown) && (isLit || (res.action === "create" && !reads.length && !changed.length)) ? [[{ path: "id", unknown: true }, "unknown", res]] : [];
+    const row = (v, kind, prod) => ({ key: res.key, cardId: res.cardId, root: res.root, address: res.address, path: v.path, kind, producer: prod.key, producerRoot: prod.root, producerName: prod.name, before: v.before, after: v.after });
+    for (const v of [...idLine, ...reads.map((x) => [x, "unknown"]), ...changed.map((x) => [x, "changed"])].slice(0, MAX_CARD_LINES)) lines.push(row(v[0], v[1], v[2] || producer));
   }
   return lines;
 }
@@ -410,6 +414,8 @@ export function startKioskLight({ post, getAnswer, getProgress, win = typeof win
     const ask = askOf(e);
     const d = ask ? dependentsOf(getAnswer(), getProgress(), ask) : null;
     win.beholdAskTokens = d === null ? {} : { dependents: d };
+    // The graph holds still until this step's reply is done (or its status shows): progress is queued meanwhile.
+    post({ type: "behold:hold" });
   };
   // behold#940: the lit state is drawn the moment the reply is done. When the reads the step lights are not in yet
   // (the kiosk's own poll is behind the frame's), it asks again soon, never waiting for a poll's turn.

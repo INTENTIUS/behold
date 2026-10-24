@@ -194,9 +194,10 @@ describe("a real composed create report (behold#940)", () => {
     expect(by("aws_route_table.route_table")).toEqual(["unknown:vpc_id"]);
     expect(by("aws_security_group.security_group")).toEqual(["unknown:vpc_id"]);
     expect(by("aws_instance.instance")).toEqual(["unknown:subnet_id"]);
-    expect(by("aws_subnet.subnet")).toEqual([]);
+    expect(by("aws_subnet.subnet")).toEqual(["unknown:id"]);
+    expect(by("aws_sqs_queue.dns_upstream")).toEqual(["unknown:id"]);
     for (const id of new Set(lines.map((l: { cardId: string }) => l.cardId))) expect(lines.filter((l: { cardId: string }) => l.cardId === id).length).toBeLessThanOrEqual(2);
-    expect(lines).toHaveLength(4);
+    expect(lines).toHaveLength(6);
   });
 
   it("reads 'known after apply' while unknown and goes green once the network applied", async () => {
@@ -206,6 +207,31 @@ describe("a real composed create report (behold#940)", () => {
     const done = lineState(nic, a, progressApplied);
     expect(done.state).toBe("applied");
     expect(done.text).toContain("subnet_id");
+  });
+
+  it("never leaves the lit resource blank: its id, known after apply, then the real id", async () => {
+    const a = await realAnswer(["network", "app", "edge"]);
+    const plan = planOf(a);
+    const id = cardLines(plan, ASK.light).find((l: { address: string }) => l.address === "aws_subnet.subnet");
+    expect(id).toMatchObject({ path: "id", kind: "unknown" });
+    expect(lineState(id, a, null)).toEqual({ state: "unknown", text: "id: known after apply" });
+    const wrote = { ...a, applied: { "demo/network/aws_subnet.subnet": { values: [{ address: "aws_subnet.subnet", path: "id", after: "subnet-a3111726" }] } } };
+    expect(lineState(id, wrote, progressApplied)).toEqual({ state: "applied", text: "id: subnet-a3111726" });
+    // A lit resource that is not created is not blank either.
+    const lit = cardLines(plan, ["app/aws_sqs_queue.listener"]).filter((l: { address: string }) => l.address === "aws_sqs_queue.listener");
+    expect(lit.map((l: { path: string }) => l.path)).toEqual(["id"]);
+  });
+
+  it("holds the graph at ask-start for the frame to release on its next light message", async () => {
+    const a = await realAnswer(["network", "app", "edge"]);
+    const sent: { type: string }[] = [];
+    const handlers = new Map<string, (e: unknown) => void>();
+    const win = { addEventListener: (t: string, f: (e: unknown) => void) => handlers.set(t, f), removeEventListener: () => {}, setTimeout: () => 0 };
+    startKioskLight({ post: (m: { type: string }) => sent.push(m), getAnswer: () => a, getProgress: () => null, win });
+    handlers.get("behold:ask-start")!({ detail: { ask: ASK } });
+    expect(sent.map((m) => m.type)).toEqual(["behold:hold"]);
+    handlers.get("behold:ask-done")!({ detail: { ask: ASK } });
+    expect(sent.map((m) => m.type)).toEqual(["behold:hold", "behold:light"]);
   });
 
   it("shows a changed known value as before -> after", () => {
@@ -226,7 +252,8 @@ describe("a real composed create report (behold#940)", () => {
     const win = { addEventListener: (t: string, f: (e: unknown) => void) => handlers.set(t, f), removeEventListener: () => {}, setTimeout: () => 0 };
     startKioskLight({ post: (m: { lit: boolean }) => sent.push(m), getAnswer: () => a, getProgress: () => null, win });
     handlers.get("behold:ask-start")!({ detail: { ask: ASK } });
-    expect(sent).toHaveLength(0);
+    expect(sent.map((m) => (m as { type?: string }).type)).toEqual(["behold:hold"]);
+    sent.length = 0;
     expect((win as { beholdAskTokens?: unknown }).beholdAskTokens).toEqual({ dependents: 5 });
     handlers.get("behold:ask-done")!({ detail: { ask: ASK } });
     expect(sent.map((m) => m.lit)).toEqual([true]);
