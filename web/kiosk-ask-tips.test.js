@@ -98,32 +98,32 @@ describe("tip cards: timing", () => {
   });
 });
 
-describe("tip cards: the built-in three", () => {
+describe("tip cards: the built-in four", () => {
   it("shows them in order for a step without tips, and never repeats a card within the scenario cycle", () => {
     const { seq, log, advance } = rig();
     seq.busy(busy("a"));
     advance(TIP_MIN_MS);
     seq.busy(idle);
-    expect(log.filter((x) => x[0] === "show").map((x) => x[1])).toEqual(["Across estates", "terragucci"]);
+    expect(log.filter((x) => x[0] === "show").map((x) => x[1])).toEqual(["One root at a time", "terragucci"]);
     seq.busy(busy("b"));
     advance(TIP_MIN_MS * 5);
-    expect(log.filter((x) => x[0] === "show").map((x) => x[1])).toEqual(["Across estates", "terragucci", "choudoufu"]);
+    expect(log.filter((x) => x[0] === "show").map((x) => x[1])).toEqual(["One root at a time", "terragucci", "choudoufu", "Free, nothing to host"]);
     seq.busy(idle);
     seq.busy(busy("c"));
-    expect(log.filter((x) => x[0] === "show")).toHaveLength(3);
+    expect(log.filter((x) => x[0] === "show")).toHaveLength(4);
     // The next cycle starts over.
     seq.busy(busy("d", { cycle: 2 }));
-    expect(log.filter((x) => x[0] === "show").pop()[1]).toBe("Across estates");
+    expect(log.filter((x) => x[0] === "show").pop()[1]).toBe("One root at a time");
   });
   it("leaves a step's own tips to that step, and uses no other product's name", () => {
     const { seq, log } = rig();
     seq.busy(busy("a", { tips }));
     seq.busy(idle);
     seq.busy(busy("b"));
-    expect(log.filter((x) => x[0] === "show").pop()[1]).toBe("Across estates");
+    expect(log.filter((x) => x[0] === "show").pop()[1]).toBe("One root at a time");
     const words = DEFAULT_TIPS.map((t) => `${t.title} ${t.body}`).join(" ");
     expect(words).not.toMatch(/atomic|transaction/i);
-    expect(DEFAULT_TIPS).toHaveLength(3);
+    expect(DEFAULT_TIPS).toHaveLength(4);
   });
   it("fades well inside 400 ms", () => {
     expect(TIP_FADE_MS).toBeLessThan(400);
