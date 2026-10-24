@@ -35,6 +35,7 @@ import { repoParam, repoUrl, stepCheckout } from "./kiosk-repo.js";
 import { startKioskCarve } from "./kiosk-carve.js";
 import { drawWaveList, waveListKey } from "./kiosk-wave-list.js";
 import { readsFor, runsReadsFor } from "./kiosk-source.js";
+import { mountAskTips } from "./kiosk-ask-tips.js";
 import { askEventHelp, askMode, askShot, createAskPane, hasAsk, replyValues } from "./kiosk-ask.js";
 import { STATE_WORDS, outcomesOf, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
 import { startKioskLight } from "./kiosk-light.js"; // behold#937
@@ -1860,6 +1861,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
           },
         })
       : null;
+  // The tip cards a busy step shows over the graph (web/kiosk-ask-tips.js); they only listen, the turn order is the pane's.
+  if (askPane && typeof window !== "undefined" && typeof document !== "undefined") mountAskTips({ win: window, doc: document, askHost: watch.ask });
   /** Take one narration (demo.json, or a replayed step), and ask for the run it is about when the step moved. */
   const setDemo = (answer) => {
     s.demo = answer;
