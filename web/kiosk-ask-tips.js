@@ -8,15 +8,17 @@
  *
  * The timing is a pure sequencer ({@link createTipSequencer}), tested with fake timers:
  * - one card at a time, the first at once;
- * - a card stays at least {@link TIP_MIN_MS}; when the busy step lasts longer, the next card replaces it;
- * - the last card stays until the busy line ends, then it hides (the host fades it out within {@link TIP_FADE_MS});
+ * - a card stays its whole reading time ({@link holdMs}, never under {@link TIP_MIN_MS}), whatever the steps do:
+ *   a step that ends or changes never cuts a card short, it only changes which card comes next;
+ * - while a step is busy, the next card replaces a read one; the last stays until the busy line ends, then it hides
+ *   (the host fades it out within {@link TIP_FADE_MS});
  * - a step with no tips of its own gets the built-in three, in order, one cycle's worth: a card shown is not shown
  *   again in that scenario cycle.
  */
 import { modalStyle, openEventModal } from "./event-help-modal.js";
 
-/** A card stays this long at least before the next one replaces it. */
-export const TIP_MIN_MS = 7_000;
+/** A card stays at least this long; a longer one stays its reading time ({@link holdMs}). */
+export const TIP_MIN_MS = 8_000;
 /** A card whose step ended fades out in this long (under 400 ms). */
 export const TIP_FADE_MS = 300;
 
@@ -38,6 +40,10 @@ export function createTipSequencer({ show, hide, enabled = () => true, defaults 
   let id = null;
   let timer = null;
   let up = false;
+  // The current card has been up its whole reading time.
+  let read = false;
+  // Cards waiting for the current one to be read: { tip, builtin, cycle }.
+  let queue = [];
   // Built-in cards shown so far, by scenario cycle.
   const given = new Map();
   const stop = () => {
@@ -48,40 +54,62 @@ export function createTipSequencer({ show, hide, enabled = () => true, defaults 
     stop();
     if (up) hide();
     up = false;
+    read = false;
   };
-  const play = (list, i, builtin, cycle) => {
-    show(list[i]);
-    up = true;
-    if (builtin) given.set(cycle, (given.get(cycle) || 0) + 1);
-    if (i + 1 < list.length) {
+  // The next waiting card, or, once the current card is read and nothing waits, down when no step is busy.
+  const next = () => {
+    if (queue.length) {
+      const { tip, builtin, cycle } = queue.shift();
+      show(tip);
+      up = true;
+      read = false;
+      if (builtin) given.set(cycle, (given.get(cycle) || 0) + 1);
       timer = setTimer(() => {
         timer = null;
-        if (id !== null) play(list, i + 1, builtin, cycle);
-      }, minMs);
+        read = true;
+        next();
+      }, holdMs(tip, minMs));
+      return;
     }
+    if (id === null) down();
   };
   return {
     busy(d) {
-      const next = d && d.busy && d.id ? d.id : null;
-      if (next === id) return;
-      down();
-      id = next;
-      if (id === null || !enabled()) return;
-      const own = validTips(d.tips);
-      const cycle = `${d.cycle}|${d.scenario}`;
-      const list = own.length ? own : defaults.slice(given.get(cycle) || 0);
-      if (list.length) play(list, 0, !own.length, cycle);
+      const step = d && d.busy && d.id ? d.id : null;
+      if (step === id) return;
+      id = step;
+      // A card on screen is never cut short: a step that ends or changes only changes what comes after it.
+      queue = [];
+      if (id !== null && enabled()) {
+        const own = validTips(d.tips);
+        const cycle = `${d.cycle}|${d.scenario}`;
+        const list = own.length ? own : defaults.slice(given.get(cycle) || 0);
+        queue = list.map((tip) => ({ tip, builtin: !own.length, cycle }));
+      }
+      if (!up || read) {
+        stop();
+        next();
+      }
     },
     dismiss() {
       stop();
       up = false;
+      read = false;
+      queue = [];
     },
     /** The Tips switch turned off: the card goes. */
     off() {
+      queue = [];
       down();
     },
     current: () => id,
   };
+}
+
+/** How long a card stays: long enough to read its title and body (about 4 words a second), and never under minMs. */
+export function holdMs(tip, minMs = TIP_MIN_MS) {
+  const words = `${tip.title} ${tip.body}`.split(/\s+/).filter(Boolean).length;
+  return Math.max(minMs, 2_000 + words * 250);
 }
 
 const STYLE_ID = "k-ask-tips-style";

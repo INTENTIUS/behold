@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_TIPS, TIP_FADE_MS, TIP_MIN_MS, createTipSequencer } from "./kiosk-ask-tips.js";
+import { DEFAULT_TIPS, TIP_FADE_MS, TIP_MIN_MS, createTipSequencer, holdMs } from "./kiosk-ask-tips.js";
 
 function rig(opts = {}) {
   const log = [];
@@ -37,7 +37,7 @@ const busy = (id, extra = {}) => ({ busy: true, id, cycle: 1, scenario: "s", ste
 const idle = { busy: false, id: null, tips: null };
 
 describe("tip cards: timing", () => {
-  it("shows one card at once and keeps it at least 7 s before the next replaces it", () => {
+  it("shows one card at once and keeps it at least its minimum before the next replaces it", () => {
     const { seq, log, advance } = rig();
     seq.busy(busy("a", { tips }));
     expect(log).toEqual([["show", "T1", 0]]);
@@ -52,21 +52,32 @@ describe("tip cards: timing", () => {
     expect(log.filter((x) => x[0] === "hide")).toHaveLength(0);
     expect(log).toHaveLength(3);
   });
-  it("hides the card when the busy line ends, and stops the sequence", () => {
+  it("keeps a card its whole reading time after the busy line ends, then hides it, and shows no more", () => {
     const { seq, log, advance } = rig();
     seq.busy(busy("a", { tips }));
     advance(3_000);
     seq.busy(idle);
-    expect(log.slice(1)).toEqual([["hide", 3_000]]);
+    expect(log).toHaveLength(1);
+    advance(TIP_MIN_MS - 3_000 - 1);
+    expect(log).toHaveLength(1);
+    advance(1);
+    expect(log.slice(1)).toEqual([["hide", TIP_MIN_MS]]);
     advance(60_000);
     expect(log).toHaveLength(2);
   });
-  it("hides at once when the next turn's busy line replaces the step's", () => {
+  it("lets the next turn's tips wait until the card on screen has been read", () => {
     const { seq, log, advance } = rig();
     seq.busy(busy("a", { tips }));
     advance(1_000);
     seq.busy(busy("b", { tips: [{ title: "N", body: "n" }] }));
-    expect(log.slice(1)).toEqual([["hide", 1_000], ["show", "N", 1_000]]);
+    expect(log).toHaveLength(1);
+    advance(TIP_MIN_MS - 1_000);
+    expect(log.slice(1)).toEqual([["show", "N", TIP_MIN_MS]]);
+  });
+  it("holds a long card longer than the minimum: about 4 words a second", () => {
+    const long = { title: "Long", body: Array.from({ length: 60 }, () => "word").join(" ") };
+    expect(holdMs(long)).toBe(2_000 + 61 * 250);
+    expect(holdMs({ title: "T", body: "b" })).toBe(TIP_MIN_MS);
   });
   it("ignores a repeat of the same busy line, and tips with no title or body", () => {
     const { seq, log, advance } = rig();
@@ -101,25 +112,30 @@ describe("tip cards: timing", () => {
 describe("tip cards: the built-in four", () => {
   it("shows them in order for a step without tips, and never repeats a card within the scenario cycle", () => {
     const { seq, log, advance } = rig();
+    const shown = () => log.filter((x) => x[0] === "show").map((x) => x[1]);
     seq.busy(busy("a"));
-    advance(TIP_MIN_MS);
+    advance(holdMs(DEFAULT_TIPS[0]));
     seq.busy(idle);
-    expect(log.filter((x) => x[0] === "show").map((x) => x[1])).toEqual(["One root at a time", "terragucci"]);
+    expect(shown()).toEqual(["One root at a time", "terragucci"]);
+    // The busy line ended, but the card on screen stays until it has been read.
+    advance(holdMs(DEFAULT_TIPS[1]));
+    expect(log.at(-1)[0]).toBe("hide");
     seq.busy(busy("b"));
-    advance(TIP_MIN_MS * 5);
-    expect(log.filter((x) => x[0] === "show").map((x) => x[1])).toEqual(["One root at a time", "terragucci", "choudoufu", "Free, nothing to host"]);
+    advance(60_000);
+    expect(shown()).toEqual(["One root at a time", "terragucci", "choudoufu", "Free, nothing to host"]);
     seq.busy(idle);
     seq.busy(busy("c"));
-    expect(log.filter((x) => x[0] === "show")).toHaveLength(4);
+    expect(shown()).toHaveLength(4);
     // The next cycle starts over.
     seq.busy(busy("d", { cycle: 2 }));
-    expect(log.filter((x) => x[0] === "show").pop()[1]).toBe("One root at a time");
+    expect(shown().pop()).toBe("One root at a time");
   });
   it("leaves a step's own tips to that step, and uses no other product's name", () => {
-    const { seq, log } = rig();
+    const { seq, log, advance } = rig();
     seq.busy(busy("a", { tips }));
     seq.busy(idle);
     seq.busy(busy("b"));
+    advance(TIP_MIN_MS);
     expect(log.filter((x) => x[0] === "show").pop()[1]).toBe("One root at a time");
     const words = DEFAULT_TIPS.map((t) => `${t.title} ${t.body}`).join(" ");
     expect(words).not.toMatch(/atomic|transaction/i);
