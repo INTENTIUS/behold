@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_TIPS, LINK_RESUME_MS, PHONE_TIPS, TIP_FADE_MS, TIP_MIN_MS, createTipSequencer, holdMs, safeLink } from "./kiosk-ask-tips.js";
+import { DEFAULT_TIPS, LINK_RESUME_MS, PHONE_TIPS, TIP_FADE_MS, TIP_MIN_MS, createTipSequencer, holdMs, safeLink, shouldDismiss } from "./kiosk-ask-tips.js";
 
 function rig(opts = {}) {
   const log = [];
@@ -227,5 +227,16 @@ describe("tip cards: the viewer closes one", () => {
     expect(shown()).toBe(1);
     seq.busy(busy("d", { cycle: 2 }));
     expect(shown()).toBe(2);
+  });
+});
+
+describe("tip cards: a press outside closes", () => {
+  const host = {};
+  const inside = { closest: (sel) => (sel.includes(".eh-modal") ? {} : null) };
+  const outside = { closest: () => null };
+  it("closes on a press outside the card, not on one inside (its link)", () => {
+    expect(shouldDismiss(outside, host)).toBe(true);
+    expect(shouldDismiss(inside, host)).toBe(false);
+    expect(shouldDismiss(null, host)).toBe(false);
   });
 });

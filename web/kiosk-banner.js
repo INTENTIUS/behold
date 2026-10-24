@@ -1,4 +1,4 @@
-// The demo banner: the example's name, the products in it, a link to the code, and a switcher between the listed demos.
+// The demo banner: the example's name and act, the live demo's products, and a link to its code. Everything shown is live.
 // Pure: the model from a tool id and the list; web/kiosk.html draws it.
 //
 // Logo policy (web/kiosk-vendor.js): a logo appears only where its owner's published rules allow one. choudoufu's and
@@ -19,13 +19,6 @@ export const PRODUCTS = {
   atmos: { name: "Atmos", url: "https://atmos.tools/", logo: { src: "/vendors/atmos.svg" } },
 };
 
-/** The demo's path: the first one is also served at `/`. */
-export const demoPath = (tool) => `/${tool}`;
-
-/**
- * The banner for `tool`, or null for a page that is no listed demo. `listed` is the tools the server lists
- * (/api/terragucci/demos); the switcher shows when it names more than one.
- */
 /** "I", "II", "III"...: an act's number as the banner writes it. */
 export function actNumeral(n) {
   const r = [["X", 10], ["IX", 9], ["V", 5], ["IV", 4], ["I", 1]];
@@ -41,25 +34,28 @@ export function actOf(tool, demo) {
   return `Act ${actNumeral(d.index)}`;
 }
 
-export function bannerModel(tool, listed = [], act = null) {
+/** The title every demo shares; the logos beside it say which demo is on. */
+export const BANNER_TITLE = "One plan, one apply, across estates";
+
+/** The demo whose tool demo.json names now, when it is a listed demo; else null. */
+export function liveTool(demo) {
+  const d = demo && demo.demo ? demo.demo : demo;
+  const t = d && typeof d.tool === "string" ? d.tool : null;
+  const v = t ? vendorOf(t) : null;
+  return v && v.tree && v.title ? t : null;
+}
+
+/** The banner for the live demo `tool`, or null for a tool that is no listed demo. */
+export function bannerModel(tool, act = null) {
   const v = vendorOf(tool);
   if (!v || !v.tree || !v.title) return null;
-  const tools = Array.isArray(listed) ? listed.filter((t) => { const x = vendorOf(t); return x && x.tree; }) : [];
   return {
     tool,
-    name: v.title,
+    name: BANNER_TITLE,
     act,
     products: (v.products || []).map((id) => PRODUCTS[id]).filter(Boolean),
     code: { label: "See the code", short: "Code", url: `${CODE_BASE}${v.tree}` },
-    switcher: tools.length > 1 ? tools.map((t) => ({ tool: t, path: demoPath(t), label: switchLabel(t), current: t === tool })) : [],
   };
-}
-
-/** The switcher's label: "Compose", "Terragrunt" or "Atmos". */
-export function switchLabel(tool) {
-  if (tool === "terragrunt-choudoufu") return "Terragrunt";
-  if (tool === "atmos-choudoufu") return "Atmos";
-  return "Compose";
 }
 
 /** Draws the model into `host` (a header element); hides it with no model. Returns whether it shows. */
@@ -99,17 +95,6 @@ export function drawBanner(host, model, doc = document) {
   const name = el("span", "kb-name", model.name);
   if (model.act) name.append(el("span", "kb-act", ` - ${model.act}`));
   host.append(name, prods);
-  if (model.switcher.length) {
-    const nav = el("nav", "kb-switch");
-    nav.setAttribute("aria-label", "Demos");
-    for (const s of model.switcher) {
-      const a = el("a", s.current ? "kb-sw kb-sw-on" : "kb-sw", s.label);
-      a.href = s.path;
-      if (s.current) a.setAttribute("aria-current", "page");
-      nav.appendChild(a);
-    }
-    host.appendChild(nav);
-  }
   host.appendChild(code);
   return true;
 }

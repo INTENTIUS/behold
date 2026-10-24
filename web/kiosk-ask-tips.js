@@ -187,6 +187,12 @@ export function holdMs(tip, minMs = TIP_MIN_MS) {
   return Math.max(minMs, 3_000 + words * 330);
 }
 
+/** A press on `target` closes the card unless it is inside the card (or the target is unknown). */
+export function shouldDismiss(target, host) {
+  if (!target || !host) return false;
+  return !(target.closest && target.closest("#k-ask-tips .eh-modal"));
+}
+
 const STYLE_ID = "k-ask-tips-style";
 const STYLE = `
 #k-ask-tips { position: fixed; left: 0; right: 0; top: 0; height: 0; z-index: 50; pointer-events: none; overflow: hidden; }
@@ -299,6 +305,11 @@ export function mountAskTips({ win = window, doc = document, askHost, reduced = 
   host.addEventListener("focusin", (e) => onCard(e) && seq.pause());
   host.addEventListener("mouseout", (e) => onCard(e) && !(e.relatedTarget && onCard({ target: e.relatedTarget })) && !host.querySelector(".eh-modal:focus-within") && seq.resume());
   host.addEventListener("focusout", (e) => onCard(e) && !(e.relatedTarget && onCard({ target: e.relatedTarget })) && !host.querySelector(".eh-modal:hover") && seq.resume());
+  // A click or tap anywhere outside the card closes it, as the X does; one inside (its link) does not.
+  doc.addEventListener("pointerdown", (e) => {
+    if (!card || !shouldDismiss(e.target, host)) return;
+    card.api.dismiss();
+  }, true);
   win.addEventListener("behold:ask-busy", (e) => seq.busy(e.detail));
   doc.addEventListener("change", (e) => {
     if (e.target && e.target.matches && e.target.matches(".eh-switch input") && !e.target.checked) seq.off();

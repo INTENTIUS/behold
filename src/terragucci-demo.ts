@@ -713,15 +713,11 @@ function demoPage(c: { req: { header(name: string): string | undefined } }, webR
 }
 
 /**
- * `GET /<tool>` for each of {@link VENDOR_TOOLS}: that demo's page, live or its latest cycle. A {@link LEGACY_TOOLS}
- * URL redirects (302) to `/`. Without `--terragucci` a demo's page says what /kiosk says.
+ * `GET /<tool>` for each of {@link VENDOR_TOOLS}, and a {@link LEGACY_TOOLS} URL: a 302 to `/`, which shows the live demo. Without `--terragucci` a demo's page says what /kiosk says.
  */
 export function vendorRoutes(app: Hono, webRoot: string, enabled: boolean, allowedHosts: string[] = [], opts: KioskPageOptions = {}): void {
   for (const tool of VENDOR_TOOLS) {
-    app.get(`/${tool}`, (c) => {
-      if (!enabled) return c.html(disabledPage, 404);
-      return demoPage(c, webRoot, allowedHosts, tool, `/${tool}`, opts.ciRuns);
-    });
+    app.get(`/${tool}`, (c) => (enabled ? c.redirect("/", 302) : c.html(disabledPage, 404)));
   }
   for (const tool of LEGACY_TOOLS) {
     app.get(`/${tool}`, (c) => {

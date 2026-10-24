@@ -262,15 +262,16 @@ export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc 
     if (st.closeAt !== null) st.closeAt = Math.max(st.closeAt, now() + 2_000);
   });
 
+  // One close button for the modal's whole life: render() runs every 250 ms and rebuilding the button between a press and
+  // its release (a person's click lasts 80-150 ms) made the click land on the box, not the button, so it never closed.
+  const x = el("button", "eh-modal-close", "×");
+  x.type = "button";
+  x.setAttribute("aria-label", "Close");
+  x.addEventListener("click", () => close("viewer"));
   const render = () => {
     if (st.closed) return;
     const t = now();
-    box.replaceChildren();
-    const x = el("button", "eh-modal-close", "×");
-    x.type = "button";
-    x.setAttribute("aria-label", "Close");
-    x.addEventListener("click", () => close("viewer"));
-    box.appendChild(x);
+    box.replaceChildren(x);
     const line = modeLine(mode, kind, { at: data.at, now: t, resolved: st.resolved, outcome: st.outcome, replayAt: data.replayAt, action: data.action, fix: !!data.fix });
     if (line) box.appendChild(el("p", `eh-modal-mode eh-modal-${mode}`, line));
     box.appendChild(el("h2", "eh-modal-title", data.title || ""));
@@ -419,6 +420,8 @@ export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc 
       render();
     },
     close: () => close(),
+    /** The viewer closed it (a click outside, say): onClose sees `closedBy` "viewer". */
+    dismiss: () => close("viewer"),
   };
   return api;
 }

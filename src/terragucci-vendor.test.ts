@@ -93,14 +93,14 @@ describe("GET /<demo>", () => {
   it("lists only the multi-state demos", () => {
     expect([...VENDOR_TOOLS]).toEqual(["choudoufu-compose", "terragrunt-choudoufu", "atmos-choudoufu"]);
   });
-  it("serves each demo's page at its own path, told its tool, with the banner", async () => {
+  it("redirects each demo's own path to / (302): one live view, no per-demo page", async () => {
     for (const tool of VENDOR_TOOLS) {
-      const r = await app().request(`/${tool}`);
-      expect(r.status).toBe(200);
-      const html = await r.text();
-      expect(html).toContain(`<meta name="kiosk-tool" content="${tool}" />`);
-      expect(html).toContain('id="k-banner"');
+      const r = await app().request(`/${tool}`, { redirect: "manual" });
+      expect(r.status).toBe(302);
+      expect(r.headers.get("location")).toBe("/");
     }
+    const html = await (await app().request("/")).text();
+    expect(html).toContain('id="k-banner"');
   });
   it("redirects /kiosk and every old tool's URL to / (302)", async () => {
     for (const path of ["/kiosk", ...LEGACY_TOOLS.map((t) => `/${t}`)]) {
