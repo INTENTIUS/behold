@@ -4873,7 +4873,9 @@ function drawTgReads() {
     layer.parentNode.insertBefore(mark, layer);
     // The badge: on the box's top border, right-aligned, like a tab; the "N
     // resources" count in the header row under it gives way.
-    const local = rect.getBBox();
+    // In the svg's own units, where the box is now: a box moved by a layout delta sits in a group that carries its offset.
+    const placed = boxOf(rect);
+    const local = placed ? { x: placed.x, y: placed.y, width: placed.x2 - placed.x, height: placed.y2 - placed.y } : rect.getBBox();
     const headY = local.y + 23;
     const tabY = local.y;
     for (const t of svg.querySelectorAll("text")) {

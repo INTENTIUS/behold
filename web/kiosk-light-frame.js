@@ -161,7 +161,8 @@ function drawSlots(layer, svg, plan, answer, progress, h) {
       const size = synth ? 14 : 11.5;
       // One line, inside the card: a long value ends in an ellipsis.
       const fit = Math.max(8, Math.floor((b.width - 28) / (size * 0.6)));
-      const shown = words.length > fit ? `${words.slice(0, fit - 3)}...` : words;
+      // A filled slot's payoff is its end (the id the producer made): cut from the middle, and drop the attribute's name before the end.
+      const shown = words.length <= fit ? words : fit - 9 >= 14 ? `${words.slice(0, 6)}...${words.slice(words.length - (fit - 9))}` : `...${words.slice(words.length - (fit - 3))}`;
       const w = synth ? b.width - 12 : Math.min(b.width - 12, Math.max(90, shown.length * 6.8 + 16));
       const rowH = synth ? 22 : 18;
       const y = synth ? b.y + b.height + 6 + rowH + i * 26 : b.y + b.height - 3 + i * 22;
