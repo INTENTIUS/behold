@@ -193,10 +193,10 @@ import {
   normalizeLens,
   readLayoutFile,
   readLens,
+  layoutUnwritableReason,
   writeLens,
   LayoutTooLarge,
   MAX_BODY_BYTES,
-  unwritableReason,
 } from "./layout.ts";
 import { emulatorDirs, emulatorsDown, emulatorsUp, mergedEnv, type EmulatorInfo } from "./emulator.ts";
 import { productRefusal, refusedWrite, servedProductRepo, terragucciRefusal } from "./terragucci-repo.ts";
@@ -251,7 +251,7 @@ export interface ServerOptions {
   projectDir: string;
   /** #464: the declared chant workspace being served, when `serve` was pointed
    * at a root with a `chant.workspace.json`. `projectDirs` are then its drawn
-   * members, and the hand layout lives in the workspace root rather than in the
+   * members, and the hand layout is keyed by the workspace root rather than by the
    * first member. */
   workspace?: Workspace;
   /** #490: `--terragucci`: paint the estate from terragucci's reports (src/terragucci-view.ts). */
@@ -321,12 +321,12 @@ export interface ServerOptions {
    * scripts write and nothing else; like carve mode, there is no chant
    * project behind it, so nothing is watched, polled or captured. */
   terralithDemo?: TerralithDemo;
-  /** #228: may this server write the hand-layout sidecar (`.behold/layout.json`
-   * in the served project)? Default true for a live `serve`. `runExport` sets
-   * it false: a static capture reads the sidecar (to bake it into the snapshot
-   * SVGs) and must never write one — the bundle it produces has no backend at
-   * all. The other two "no" answers are computed, not configured: preview mode,
-   * and a project directory that isn't writable. */
+  /** #228: may this server save the hand layout (a per-user cache file
+   * outside the served project, src/layout.ts, #469)? Default true for a live
+   * `serve`. `runExport` sets it false: a static capture reads the layout (to
+   * bake it into the snapshot SVGs) and must never write one; the bundle it
+   * produces has no backend at all. The other "no" answers are computed, not
+   * configured: preview mode, and a cache directory that isn't writable. */
   layoutWrites?: boolean;
   /** #195: called by POST /api/project/open after the cfg has been re-pointed
    * at a switched project — startServer uses it to re-aim the source watcher,
@@ -2302,38 +2302,34 @@ export function createApp(
     }
   });
 
-  // --- The hand-layout sidecar (#228) -------------------------------------
+  // --- The hand layout (#228, #469) ----------------------------------------
   // #464: a declared workspace keeps its layout in the workspace root, the one
   // directory that is the whole estate; a loose estate keeps it in its first member.
   const layoutDir = (): string => cfg.workspace?.root ?? cfg.projectDir;
-  // behold's FIRST write into a served project, and the boundary is drawn
-  // tightly on purpose (src/layout.ts carries the full statement of it):
+  // The layout is a per-user cache outside the project (#469): behold writes
+  // nothing in a served project. src/layout.ts carries the full statement.
   //
-  //   * ONE file, `<projectDir>/.behold/layout.json`, path built from
-  //     `cfg.projectDir` + two constants. No path, prefix or segment from the
-  //     request reaches the filesystem — a lens key off the wire is slugged and
-  //     used only as a JSON object key.
-  //   * The invariant is untouched. behold still never mutates the cloud and
-  //     never mutates your chant source; authority stays in the committed
-  //     source and the executor (AGENTS.md). A layout sidecar is workspace
-  //     metadata about how you want the picture arranged — per-user state, the
-  //     category `.behold.json` (config, tracked) is deliberately NOT in.
+  //   * ONE file per project, `<user cache>/behold/layouts/<sha256 of the
+  //     project's realpath>.json`. No path, prefix or segment from the request
+  //     reaches the filesystem: a lens key off the wire is slugged and used
+  //     only as a JSON object key.
+  //   * A pre-#469 `.behold/layout.json` in the project is read once, into the
+  //     cache, and never written or removed.
   //   * Four ways to be told no, all polite: preview mode, an export capture,
-  //     a project directory that isn't writable, and the size caps.
+  //     a cache directory that isn't writable, and the size caps.
   //
   // The client keeps its own localStorage tier and merges local OVER server
-  // (web/layout-store.js `mergeLayouts`), so this is share-and-export, never a
-  // remote authority over the browser you're looking at.
+  // (web/layout-store.js `mergeLayouts`), so this is persistence and export,
+  // never a remote authority over the browser you're looking at.
   const layoutWriteBlock = (): string | null => {
-    if (cfg.previewMode) return "the layout sidecar is read-only in preview mode";
-    if (cfg.public) return "a public view doesn't write to the project";
+    if (cfg.previewMode) return "the hand layout is read-only in preview mode";
+    if (cfg.public) return "a public view doesn't save a layout";
     // #252: carve mode's `projectDir` is wherever the report file happens to
-    // sit — a Downloads folder, someone's Terraform repo. There is no project
-    // there to keep a hand layout in, and dropping `.behold/` into a stranger's
-    // directory is not a thing to do quietly.
+    // sit (a Downloads folder, someone's Terraform repo). There is no project
+    // there to keep a hand layout for.
     if (cfg.carveReport) return "a carve report isn't a project — there's nowhere to keep a hand layout";
-    if (cfg.layoutWrites === false) return "a static export captures a snapshot — it doesn't write to the project";
-    return unwritableReason(layoutDir());
+    if (cfg.layoutWrites === false) return "a static export captures a snapshot — it doesn't save a layout";
+    return layoutUnwritableReason(layoutDir());
   };
 
   app.get("/api/layout", (c) => {
@@ -2382,7 +2378,7 @@ export function createApp(
     }
   });
 
-  // `?layout=1` on a graph/overlay read bakes the sidecar's translate deltas
+  // `?layout=1` on a graph/overlay read bakes the hand layout's translate deltas
   // into the SVG before it goes out (src/layout.ts `applyLayoutToSvg`) — that
   // is what makes `behold export` and a static snapshot honour a hand layout.
   //
@@ -2583,7 +2579,7 @@ export function createApp(
           path: "/api/overlay",
           desc: "live drift overlay for ?env= — same shape/params as /api/graph, plus runtime=1; each priced entity carries attrs._behaviour (cost/headroom/errorRate/resilience/rightSize/provenance, #398) and meta.behaviour holds the engine, its sums, a refusal or an absent line; with ?traffic= (or .behold.json behaviour.traffic) each member is predicted live and declared, and meta.behaviour adds live, declared and delta with attrs._behaviourDeclared per entity (#402)",
         },
-        { method: "GET", path: "/api/layout", desc: "hand-layout sidecar (.behold/layout.json): ?lens=<key> → {lens, deltas, writable}; no lens → every lens" },
+        { method: "GET", path: "/api/layout", desc: "hand layout (a per-user cache outside the project): ?lens=<key> → {lens, deltas, writable}; no lens → every lens" },
         { method: "POST", path: "/api/layout", desc: "store one lens's deltas: JSON body {lens, deltas: {<node id>: {dx,dy,dw,dh}}} (the only file behold writes in your project)" },
         { method: "GET", path: "/api/health", desc: "runtime health for ?env= from chant lifecycle health (chant 0.124.33+): {env, nodes: {<id>: {state: healthy|unhealthy|unknown|unobserved|absent, detail, observedAt, checkedAt?, reason?}}, rotation: {<record id>: {check, inRotation: true|false|null, line}}, members, counts}; cached 30 s, ?fresh=1 reads again (#825)" },
         { method: "GET", path: "/api/diff", desc: "per-node live diff for ?env= — {env, nodes: {<id>: {observed, diff, health, fieldDrift}}}" },

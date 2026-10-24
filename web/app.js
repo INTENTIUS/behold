@@ -10047,11 +10047,11 @@ function ensureZoomControls(host) {
 // the end of every render(), so the graph underneath stays chant's and a
 // delta for a node that left the estate is simply not applied.
 //
-// Two tiers now (#228's second half): localStorage, and the project's own
-// `.behold/layout.json` behind GET/POST /api/layout. On load the server's map
+// Two tiers now (#228's second half): localStorage, and the server's per-user
+// layout cache (outside the project, #469) behind GET/POST /api/layout. On load the server's map
 // merges UNDER the local one (`mergeLayouts` — the drag you can see always
 // wins); on a finished gesture the current lens is POSTed, debounced. A server
-// that refuses — a static export, preview mode, a read-only project, an older
+// that refuses — a static export, preview mode, an unwritable cache, an older
 // behold with no such route — leaves the localStorage tier working exactly as
 // it did before, and says nothing.
 //

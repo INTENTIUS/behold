@@ -1,8 +1,9 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { applyConversion, declarationName, moveLayoutIds, planConversion } from "./workspace-convert.ts";
+import { layoutPath } from "./layout.ts";
 
 // #464, ws-015: `behold doctor --fix` writes the declaration for an estate
 // behold served from `.behold.json`, and moves the saved layout so its ids
@@ -76,7 +77,7 @@ describe("planConversion", () => {
 });
 
 describe("applyConversion", () => {
-  it("writes the declaration and moves the first member's layout to the root", () => {
+  it("writes the declaration and moves the first member's pre-#469 layout to the root's cache", () => {
     const root = estate();
     mkdirSync(join(root, "apps/api/.behold"), { recursive: true });
     writeFileSync(
@@ -88,8 +89,10 @@ describe("applyConversion", () => {
     const wrote = applyConversion(planned.plan);
     const decl = JSON.parse(readFileSync(join(root, "chant.workspace.json"), "utf8"));
     expect(decl.members).toHaveLength(4);
-    expect(wrote.layout).toEqual({ wrote: join(root, ".behold/layout.json"), ids: 3 });
-    const layout = JSON.parse(readFileSync(join(root, ".behold/layout.json"), "utf8"));
+    expect(wrote.layout).toEqual({ wrote: layoutPath(root), ids: 3 });
+    // #469: into the per-user cache, nothing in the estate.
+    expect(existsSync(join(root, ".behold"))).toBe(false);
+    const layout = JSON.parse(readFileSync(layoutPath(root), "utf8"));
     expect(Object.keys(layout.lenses.resources).sort()).toEqual(["api/Bucket", "network/network/aws_s3_bucket.b", "prod-east/aws_s3_bucket.x"]);
     // The old file stays.
     expect(readFileSync(join(root, "apps/api/.behold/layout.json"), "utf8")).toContain("infra/network");

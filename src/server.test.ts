@@ -67,6 +67,7 @@ import { Broadcaster } from "./events.ts";
 import { FrameBuffer } from "./frames.ts";
 import { shortStackNames } from "@intentius/pinhole";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, readdirSync, existsSync } from "node:fs";
+import { layoutPath } from "./layout.ts";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -601,11 +602,13 @@ describe("GET/POST /api/layout — the hand-layout sidecar (#228)", () => {
     expect(wrote.status).toBe(200);
     expect(await wrote.json()).toMatchObject({ ok: true, lens: "components", count: 1, deltas: { api: { dx: 12, dy: -4 } } });
 
-    // On disk, at the one path behold is allowed to write.
-    expect(JSON.parse(readFileSync(join(dir, ".behold", "layout.json"), "utf8"))).toEqual({
+    // On disk, in the per-user cache outside the project (#469), and nothing in the project.
+    expect(JSON.parse(readFileSync(layoutPath(dir), "utf8"))).toMatchObject({
       version: 1,
       lenses: { components: { api: { dx: 12, dy: -4 } } },
     });
+    expect(layoutPath(dir).startsWith(dir)).toBe(false);
+    expect(existsSync(join(dir, ".behold"))).toBe(false);
 
     // A FRESH app (nothing cached) reads the same thing back.
     const read = await appFor({ projectDir: dir, port: 0 }).request("/api/layout?lens=components");
@@ -621,13 +624,28 @@ describe("GET/POST /api/layout — the hand-layout sidecar (#228)", () => {
     expect(((await (await app.request("/api/layout?lens=components")).json()) as { deltas: unknown }).deltas).toEqual({ api: { dx: 1 } });
   });
 
-  it("an empty map is the reset — the lens goes, and with the last lens the file", async () => {
+  it("an empty map is the reset — the lens goes, and the cache keeps an empty layout", async () => {
     const dir = tmpProject();
     const app = appFor({ projectDir: dir, port: 0 });
     await post(app, { lens: "components", deltas: { api: { dx: 1 } } });
     const res = await post(app, { lens: "components", deltas: {} });
     expect(res.status).toBe(200);
-    expect(existsSync(join(dir, ".behold", "layout.json"))).toBe(false);
+    expect(JSON.parse(readFileSync(layoutPath(dir), "utf8")).lenses).toEqual({});
+  });
+
+  it("reads a pre-#469 .behold/layout.json once into the cache, and never touches it", async () => {
+    const dir = tmpProject();
+    const legacy = join(dir, ".behold", "layout.json");
+    mkdirSync(join(dir, ".behold"));
+    const text = JSON.stringify({ version: 1, lenses: { components: { api: { dx: 7 } } } });
+    writeFileSync(legacy, text);
+    const app = appFor({ projectDir: dir, port: 0 });
+    expect(((await (await app.request("/api/layout?lens=components")).json()) as { deltas: unknown }).deltas).toEqual({ api: { dx: 7 } });
+    expect(existsSync(layoutPath(dir))).toBe(true);
+    await post(app, { lens: "components", deltas: {} });
+    // Cleared in the cache; the old file is not migrated back in, and is unchanged.
+    expect(((await (await app.request("/api/layout?lens=components")).json()) as { deltas: unknown }).deltas).toEqual({});
+    expect(readFileSync(legacy, "utf8")).toBe(text);
   });
 
   it("touches nothing else in the project", async () => {
@@ -635,9 +653,8 @@ describe("GET/POST /api/layout — the hand-layout sidecar (#228)", () => {
     writeFileSync(join(dir, ".behold.json"), JSON.stringify({ tiers: { envVar: "T", values: ["a"] } }));
     const before = readdirSync(dir).sort();
     await post(appFor({ projectDir: dir, port: 0 }), { lens: "components", deltas: { api: { dx: 1 } } });
-    expect(readdirSync(dir).sort()).toEqual([...before, ".behold"].sort());
-    // …and the config it sits beside is untouched (`.behold.json` is tracked
-    // config; `.behold/` is per-user state — two different things, #228).
+    // #469: behold writes nothing in a served project.
+    expect(readdirSync(dir).sort()).toEqual(before);
     expect(JSON.parse(readFileSync(join(dir, ".behold.json"), "utf8"))).toEqual({ tiers: { envVar: "T", values: ["a"] } });
   });
 

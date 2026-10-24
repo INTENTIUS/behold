@@ -1003,7 +1003,7 @@ GET /api/capabilities
 
 `POST /api/view` changes what every open tab of this serve draws. It is a
 view change and writes nothing: no infrastructure, no project file, not
-`.behold/layout.json`, and nothing kept on the server.
+the layout cache, and nothing kept on the server.
 
 ```
 POST /api/view
@@ -1219,8 +1219,8 @@ A dispatched run is followed honestly (#165 §6, PR #350): only GitHub's own
 follow deadline promotes the run to `lost` (chips frozen at last-observed,
 the run possibly still live at its own page), never to a verdict. The adopted
 run id is persisted as one JSON per project under `~/.behold/ci-runs/`, the
-operator's machine-state, outside the project tree, so the Invariant below
-still names the whole in-project write surface. `GET /api/ci/run` reads the
+operator's machine-state, outside the project tree, so behold still writes
+nothing in a served project (the Invariant below). `GET /api/ci/run` reads the
 record; `POST /api/ci/readopt` (also attempted once at boot) re-follows an
 unconcluded run by its saved id, so a restart mid-deploy leaves the run a
 reader instead of nothing.
@@ -1576,6 +1576,14 @@ If a request would have behold write to a cloud or to source directly, it's wron
 behold shows truth and triggers Ops. Authority stays in the committed source and the
 executor.
 
+behold writes nothing in a served project (#469, ruled 2026-10-23). What it
+keeps for itself (the hand layout, dispatched CI run ids, recents, the serve
+registry) lives in the user's own home, cache or temp directory, keyed by the
+project, never in the tree. The only files behold puts in a project are the
+ones a person asks for by name: `behold doctor --fix` writing
+`chant.workspace.json`, and the carve walkthrough writing into the demo copy
+behold made itself (both below).
+
 The commands behold starts run with behold's own environment, so Deploy (`POST
 /api/apply`, chant's local executor) applies with the credentials of whoever
 started it. On a terragucci repo (a `terragucci.yml` in the served directory or
@@ -1586,7 +1594,7 @@ so the page offers no write, and auto-sync declines. The boundary is an
 allowlist (#500): every request whose method is not GET, HEAD or OPTIONS, on
 any path, answers that `409` unless `TERRAGUCCI_ALLOWED_WRITES` names its
 method and route, and that list holds only the exceptions below (the layout
-sidecar, project open and reveal, demo open, refresh, and the four carve
+cache, project open and reveal, demo open, refresh, and the four carve
 steps), plus `POST /api/view`, which moves the open tabs and writes nothing
 (#914). A new write route is refused on a terragucci repo until it is added
 there. `src/terragucci-repo.test.ts` walks every non-GET route of the real
@@ -1632,35 +1640,40 @@ These are also the only writes a guarded product repo answers: terragucci
 (`terragucci.yml` and its siblings) and SQL Yodeler (`yodel.config.ts`), both
 listed in `TERRAGUCCI_ALLOWED_WRITES`.
 
-`POST /api/layout` (#228) writes **one** file in the served project:
-`.behold/layout.json`, the hand-layout sidecar, `{version, lenses: {<lens>:
-{<node id>: {dx,dy,dw,dh}}}}`. That is the whole of behold's write surface
-inside a project, and it does not weaken the invariant above:
+`POST /api/layout` (#228) writes **one** file, and not in the served project:
+the hand layout is a per-user cache (#469), `<user cache>/behold/layouts/<key>.json`
+with `<user cache>` the OS's (`~/Library/Caches`, `%LOCALAPPDATA%`,
+`$XDG_CACHE_HOME` or `~/.cache`), `<key>` the first 32 hex characters of the
+sha256 of the project directory's realpath, and `BEHOLD_CACHE_DIR` replacing
+`<user cache>/behold`. The file is `{version, projectDir, lenses: {<lens>:
+{<node id>: {dx,dy,dw,dh}}}}`, mode 0600 in a 0700 directory (src/layout.ts):
 
-- It is **workspace metadata**, not estate truth. Deltas describe how *you* want
-  the picture arranged on top of dagre's layout; the graph underneath stays
-  chant's, and a delta for a node that left the estate is dropped on read.
-- It **never touches the cloud and never touches your source**. No `.ts`, no
-  `chant.config.ts`, no `.behold.json`. The path is `cfg.projectDir` + two
-  constants; nothing from the request reaches the filesystem.
+- It is **one operator's view**, not estate truth. Deltas describe how *you*
+  want the picture arranged on top of dagre's layout; the graph underneath
+  stays chant's, and a delta for a node that left the estate is dropped on read.
+- It **never touches the cloud, your source or the project**. The path is a
+  hash of `cfg.projectDir` + constants; nothing from the request reaches the
+  filesystem.
 - It refuses politely when it shouldn't write: preview mode, a static-export
-  capture, a read-only project directory, an oversized or malformed body.
-- It is **per-user state**, unlike `.behold.json` (config, meant to be tracked).
-  Projects should gitignore `.behold/`.
+  capture, a cache directory that isn't writable, an oversized or malformed body.
+- A project served before #469 may carry `.behold/layout.json`. When the cache
+  has no file for the project, that file is read once and copied into the
+  cache; it is never written, moved or deleted. Clearing the last lens keeps
+  an empty cache file, so the old one is not read back in.
 
 `GET /api/layout` reads it back; `GET /api/graph?layout=1` (and `/api/overlay`)
 render with the deltas baked into the SVG, which is how `behold export` and
 static snapshots honour a hand layout.
 
-A declared workspace (#464) keeps that file in the workspace root, the
-directory holding `chant.workspace.json`, rather than in its first member.
+A declared workspace (#464) keys the layout by the workspace root, the
+directory holding `chant.workspace.json`, rather than by its first member.
 
 `behold doctor --fix` (#464, ws-015) is the third exception, and it runs only
 when you type the flag: for an estate root whose members are listed in
 `.behold.json`, it writes `chant.workspace.json` in that root (never over an
-existing one) and moves the saved `.behold/layout.json` from the first member to
-the root with its node ids rewritten. It then runs `chant workspace check`. The
-old layout file and `.behold.json` are left as they were.
+existing one) and copies the first member's saved layout to the root's cache
+entry with its node ids rewritten. It then runs `chant workspace check`. The
+first member's layout and `.behold.json` are left as they were.
 
 The fourth exception is the carve walkthrough's two steps above (#254), and it
 is narrower still: they exist only when behold booted a `behold demo carve`
@@ -2019,8 +2032,8 @@ exists to draw is a directory of `.tf` files and nothing else, and #378 chose
 not to ask one for a `chant.config.ts` of its own — INTENTIUS/waterpark#88 was
 withdrawn because the estate is more useful untouched. So `behold serve
 <terraform-dir>` generates the reader config itself, outside the estate, and
-points chant at it. The Invariant's one in-project write stays
-`.behold/layout.json`; nothing is written under the served directory, and
+points chant at it. behold writes nothing in a served project (the
+Invariant), nothing is written under the served directory, and
 `src/terraform-member.test.ts` asserts the estate's source stamp is unchanged
 across a read. Three decisions, each a trade #384 left open and each measured on
 water park's `access/` before it was taken:

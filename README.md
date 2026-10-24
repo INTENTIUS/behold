@@ -624,33 +624,33 @@ state outside the project, so a behold restarted mid-deploy re-adopts the run
 and keeps following it. A follow whose stream dies is reported as `lost`, never
 as a verdict; `just e2e-ci-github` proves the whole contract against GitHub.
 
-### The hand-layout sidecar: `.behold/layout.json`
+### The hand layout: a per-user cache
 
 dagre places your nodes; you can move them. Drag a card, resize a containment
 box, and the offsets are remembered per project and lens: in `localStorage`
-first, and (when the served project is writable) in a `.behold/layout.json`
-sidecar beside it, so a layout is shareable, reviewable in a diff, and honoured
-by `behold export`:
+first, and in a per-user cache file outside the project, which is what
+`behold export` bakes into its SVGs:
 
 ```json
-{ "version": 1, "lenses": { "components": { "src/api#Component": { "dx": 40, "dy": -25 } } } }
+{ "version": 1, "projectDir": "/path/to/project", "lenses": { "components": { "src/api#Component": { "dx": 40, "dy": -25 } } } }
 ```
 
-This is the **only** file behold writes inside a served project. It stores
-deltas rather than absolute positions, so the graph stays chant's and your
-layout sits on top of it. A delta whose node has left the estate is dropped.
-`POST /api/layout` refuses politely in preview mode, during a static-export
-capture, on a read-only directory, and above its size caps. `↺ layout` in the
-graph clears the current lens on both tiers.
+The file is `<user cache>/behold/layouts/<key>.json`, where `<user cache>` is
+`~/Library/Caches` on macOS, `%LOCALAPPDATA%` on Windows and `$XDG_CACHE_HOME`
+(or `~/.cache`) elsewhere, and `<key>` is a hash of the project directory's
+realpath. `BEHOLD_CACHE_DIR` moves `<user cache>/behold`. behold writes nothing
+inside a served project (#469), so there is nothing to gitignore.
 
-**Gitignore it.** `.behold.json` (above) is config and belongs in the repo;
-`.behold/` is per-user state, one person's arrangement of the picture, so add
-it to the served project's `.gitignore` unless you actually want to share and
-review a layout:
+It stores deltas rather than absolute positions, so the graph stays chant's and
+your layout sits on top of it. A delta whose node has left the estate is
+dropped. `POST /api/layout` refuses politely in preview mode, during a
+static-export capture, when the cache isn't writable, and above its size caps.
+`↺ layout` in the graph clears the current lens on both tiers.
 
-```gitignore
-.behold/
-```
+A project served by an older behold may have a `.behold/layout.json`. The first
+time the cache has nothing for that project, behold reads the old file once
+and copies it into the cache. It never changes or deletes it; remove it
+yourself when you like.
 
 ## Layout
 

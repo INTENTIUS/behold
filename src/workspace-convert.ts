@@ -8,11 +8,13 @@
  * unasked. This is that conversion. It writes two files and nothing else:
  *
  *   - `chant.workspace.json` in the estate root, only when none exists.
- *   - `.behold/layout.json` in the estate root, carrying the hand layout that
- *     was saved while the estate was served as `behold serve a b c`. That file
- *     lived in the FIRST member (a loose estate's `projectDir` is `dirs[0]`),
- *     and its node ids are rewritten to the ids the declared workspace reads
- *     as. The old file is left where it is.
+ *   - the estate root's hand layout, in the per-user layout cache outside the
+ *     project (src/layout.ts, #469), carrying the layout that was saved while
+ *     the estate was served as `behold serve a b c`. That layout was keyed by
+ *     the FIRST member (a loose estate's `projectDir` is `dirs[0]`), and its
+ *     node ids are rewritten to the ids the declared workspace reads as. The
+ *     first member's layout, cached or a pre-#469 `.behold/layout.json`, is
+ *     left where it is.
  *
  * NAMES. A member is named what `composeStacks` already called it
  * (`shortStackNames` over the member dirs), so a chant member's ids do not move
@@ -34,11 +36,11 @@
  * from the root as Node does. A root with its own chant pins that too
  * (ws-021: the root's chant reads the declaration).
  */
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { shortStackNames } from "@intentius/pinhole";
 import { resolveChant } from "./chant.ts";
-import { LAYOUT_DIR, layoutPath, readLayoutFile, type LayoutFile } from "./layout.ts";
+import { hasCachedLayout, layoutPath, legacyLayoutPath, readLayoutFile, writeLayoutFile, type LayoutFile } from "./layout.ts";
 import { detectProjectShape } from "./project.ts";
 import { declarationName, discoverTerraformRoots } from "./terraform-member.ts";
 import { DECLARATION_FILES } from "./workspace.ts";
@@ -71,7 +73,7 @@ export interface ConversionPlan {
   declaration: Declaration;
   /** Id prefixes to rewrite in the saved layout, longest first. */
   moves: IdMove[];
-  /** The layout file a loose serve wrote, when there is one. */
+  /** The directory a loose serve keyed its layout by (the first member), when it saved one. */
   layoutFrom?: string;
   /** Things the user should know, one line each. */
   notes: string[];
@@ -165,9 +167,9 @@ export function planConversion(rootArg: string): ConversionResult {
     ...(pins.length ? { pins } : {}),
     members,
   };
-  const firstLayout = layoutPath(abs[0]);
+  const firstLayout = hasCachedLayout(abs[0]) ? abs[0] : existsSync(legacyLayoutPath(abs[0])) ? abs[0] : undefined;
   moves.sort((a, b) => b.from.length - a.from.length);
-  return { ok: true, plan: { root, from: shape.membersFrom === "behold-config" ? "behold-config" : "workspaces", declaration, moves, ...(existsSync(firstLayout) ? { layoutFrom: firstLayout } : {}), notes } };
+  return { ok: true, plan: { root, from: shape.membersFrom === "behold-config" ? "behold-config" : "workspaces", declaration, moves, ...(firstLayout ? { layoutFrom: firstLayout } : {}), notes } };
 }
 
 /** Rewrite every node id in a layout by the first move whose prefix it starts with. */
@@ -199,14 +201,11 @@ export function applyConversion(plan: ConversionPlan): ConversionWrite {
   let layout: ConversionWrite["layout"];
   const target = layoutPath(plan.root);
   if (!plan.layoutFrom) layout = { skipped: "no saved layout to move" };
-  else if (resolve(plan.layoutFrom) === resolve(target)) layout = { skipped: "the saved layout is already in the root" };
-  else if (existsSync(target)) layout = { skipped: `${target} already exists; the layout in ${plan.layoutFrom} was left alone` };
+  else if (layoutPath(plan.layoutFrom) === target) layout = { skipped: "the saved layout is already the root's" };
+  else if (hasCachedLayout(plan.root)) layout = { skipped: `${target} already exists; the layout of ${plan.layoutFrom} was left alone` };
   else {
-    const moved = moveLayoutIds(readLayoutFile(dirname(dirname(plan.layoutFrom))), plan.moves);
-    mkdirSync(join(plan.root, LAYOUT_DIR), { recursive: true });
-    const tmp = `${target}.tmp`;
-    writeFileSync(tmp, `${JSON.stringify(moved, null, 2)}\n`);
-    renameSync(tmp, target);
+    const moved = moveLayoutIds(readLayoutFile(plan.layoutFrom), plan.moves);
+    writeLayoutFile(plan.root, moved);
     layout = { wrote: target, ids: Object.values(moved.lenses).reduce((n, l) => n + Object.keys(l).length, 0) };
   }
   return { declaration: declarationFile, layout };

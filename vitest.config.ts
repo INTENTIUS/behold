@@ -1,3 +1,6 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { defineConfig } from "vitest/config";
 // web/ is plain browser ESM (tsconfig excludes it), but web/layout-store.js is
 // pure logic with no DOM in it — #228's delta store — so it gets real unit
@@ -21,5 +24,7 @@ export default defineConfig({
     // budget. Twenty seconds still catches a hang; it stops a slow runner
     // counting as a flake.
     testTimeout: 20_000,
+    // #469: the hand layout is a per-user cache; tests never touch the real one.
+    env: { BEHOLD_CACHE_DIR: mkdtempSync(join(tmpdir(), "behold-test-cache-")) },
   },
 });
