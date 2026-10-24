@@ -117,6 +117,14 @@ describe("the pane's events (behold#936 and behold#937)", () => {
     expect(sent[1].token).not.toBe(sent[0].token);
   });
 
+  it("holds the graph when a step begins, so a status-only step lets nothing through (turns)", () => {
+    const win = fake();
+    const sent = [];
+    startKioskLight({ post: (m) => sent.push(m), getAnswer: () => answer, getProgress: () => null, win });
+    win.dispatchEvent(ev("behold:ask-hold", null));
+    expect(sent).toEqual([{ type: "behold:hold" }]);
+  });
+
   it("clears the lighting on a beat without light, and passes the ghost through", () => {
     const win = fake();
     const sent = [];
