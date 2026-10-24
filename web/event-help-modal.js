@@ -76,6 +76,8 @@ export function modeLine(mode, kind, { at = null, now = 0, resolved = false, out
   if (kind === "waiting") return null;
   // behold#757: a highlight's kicker says what it is, in a replay as live: the replay's banner says which run it is.
   if (kind === "highlight") return HIGHLIGHT_KICKER;
+  // The prompt demo's tip cards (web/kiosk-ask-tips.js): the highlight's card, with a kicker of their own.
+  if (kind === "tip") return "Tip";
   if (mode === "replay") return `Replay of the run at ${utc(Number.isFinite(replayAt) ? replayAt : now)} UTC`;
   if (mode !== "narrated") return null;
   if (resolved) return outcome ? `Live · ${outcome}` : "Live";
@@ -121,10 +123,10 @@ export const MODAL_STYLE = `
   border: 2px solid var(--bar, var(--focus)); box-shadow: 0 16px 48px color-mix(in srgb, var(--shadow) 80%, transparent); font-size: 1.05em; }
 .eh-modal-held { --bar: var(--bar-foreign, var(--foreign)); } .eh-modal-failed { --bar: var(--bar-degraded, var(--degraded)); } .eh-modal-applied { --bar: var(--bar-managed, var(--managed)); }
 /* behold#757: a step's highlight: the runtime bar's tone (no state's), a kicker in it, and its body set to be read. */
-.eh-modal-highlight { --bar: var(--bar-runtime, var(--runtime, var(--focus))); background: linear-gradient(color-mix(in srgb, var(--bar) 9%, transparent), transparent 5em), var(--surface-pane-b, var(--panel)); box-shadow: inset 5px 0 0 var(--bar), 0 16px 48px color-mix(in srgb, var(--shadow) 80%, transparent); }
-.eh-modal-highlight .eh-modal-mode { text-transform: uppercase; letter-spacing: 0.08em; }
-.eh-modal-highlight .eh-modal-mode::before { content: "\\2605"; margin-right: 0.45em; }
-.eh-modal-highlight .eh-modal-line { color: var(--fg); line-height: 1.45; }
+.eh-modal-highlight, .eh-modal-tip { --bar: var(--bar-runtime, var(--runtime, var(--focus))); background: linear-gradient(color-mix(in srgb, var(--bar) 9%, transparent), transparent 5em), var(--surface-pane-b, var(--panel)); box-shadow: inset 5px 0 0 var(--bar), 0 16px 48px color-mix(in srgb, var(--shadow) 80%, transparent); }
+.eh-modal-highlight .eh-modal-mode, .eh-modal-tip .eh-modal-mode { text-transform: uppercase; letter-spacing: 0.08em; }
+.eh-modal-highlight .eh-modal-mode::before, .eh-modal-tip .eh-modal-mode::before { content: "\\2605"; margin-right: 0.45em; }
+.eh-modal-highlight .eh-modal-line, .eh-modal-tip .eh-modal-line { color: var(--fg); line-height: 1.45; }
 .eh-modal-close { position: absolute; top: 0.4em; right: 0.5em; font-size: 1.3em; background: transparent; border: 0; color: var(--muted); cursor: pointer; }
 .eh-modal-mode { margin: 0 2em 0.3em 0; font: 600 0.8em var(--font-ui); font-variant-numeric: tabular-nums; color: var(--bar, var(--muted)); }
 .eh-modal-title { margin: 0 0 0.5em; font-size: 1.35em; }
@@ -288,7 +290,7 @@ export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc 
       if (data.progress.words) box.appendChild(el("p", "eh-modal-note", data.progress.words));
     }
     // behold#757: a highlight is words to read: no command, no button.
-    if (kind === "waiting" || kind === "highlight") return;
+    if (kind === "waiting" || kind === "highlight" || kind === "tip") return;
     const routed = mode === "live" && approveRoute(data.gate);
     // The panel, when there is one, already carries the command.
     if (data.command && !routed && !(data.panel && mode !== "live")) {

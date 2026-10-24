@@ -125,6 +125,14 @@ describe("demo.json's ask, asks, opening and closing (behold#936)", () => {
     expect(both.demo!.ask).toMatchObject({ prompt: "p", action: null });
   });
 
+  it("passes tips through, keeping the valid cards in order", async () => {
+    const tips = [{ title: " A ", body: " one " }, { title: "", body: "x" }, { title: "B" }, "no", { title: "C", body: "three" }];
+    const a = await readDemo(source({ ...fixture("demo-failed.json"), ask: { status: "Applying", tips }, asks: [{ prompt: "p", tips: [] }, { status: "s", tips: "nope" }] }));
+    expect(a.demo!.ask!.tips).toEqual([{ title: "A", body: "one" }, { title: "C", body: "three" }]);
+    expect("tips" in a.demo!.asks![0]!).toBe(false);
+    expect("tips" in a.demo!.asks![1]!).toBe(false);
+  });
+
   it("passes status through, and an ask with only a status is valid", async () => {
     const a = await readDemo(source({ ...fixture("demo-failed.json"), ask: { status: " Applying across estates. " }, asks: [{ prompt: "p", status: "Waiting" }, { status: "Applying" }, { status: "" }] }));
     expect(a.demo!.ask).toEqual({ prompt: null, action: null, reply: null, status: "Applying across estates.", light: null, paths: null, ghost: null });

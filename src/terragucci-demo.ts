@@ -125,9 +125,30 @@ export interface DemoAsk {
   reply: string | null;
   /** The status line a step shows (a spinner, the text and a timer) under the transcript; an ask with only this is valid. */
   status: string | null;
+  /** Tip cards the kiosk shows over the graph while this beat's busy line shows; absent when the ask carries none. */
+  tips?: DemoTip[];
   light: string[] | null;
   paths: boolean | null;
   ghost: boolean | null;
+}
+
+/** A tip card: a title and a body, both non-empty. */
+export interface DemoTip {
+  title: string;
+  body: string;
+}
+
+/** An ask's `tips`: the entries with a non-empty title and body, in order; undefined when none are valid. */
+export function tipsOf(v: unknown): DemoTip[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const tips: DemoTip[] = [];
+  for (const t of v) {
+    if (!isRecord(t)) continue;
+    const title = text(t.title);
+    const body = text(t.body);
+    if (title && body) tips.push({ title, body });
+  }
+  return tips.length ? tips : undefined;
 }
 
 /**
@@ -141,11 +162,13 @@ export function askOf(v: unknown): DemoAsk | null {
   const reply = text(v.reply);
   const status = text(v.status);
   if (!prompt && !action && !reply && !status) return null;
+  const tips = tipsOf(v.tips);
   return {
     prompt,
     action,
     reply,
     status,
+    ...(tips ? { tips } : {}),
     light: Array.isArray(v.light) && v.light.every((x) => str(x) && x.trim()) ? (v.light as string[]).map((x) => x.trim()) : null,
     paths: typeof v.paths === "boolean" ? v.paths : null,
     ghost: typeof v.ghost === "boolean" ? v.ghost : null,
