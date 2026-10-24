@@ -36,3 +36,52 @@ describe("whether a read is still to come", () => {
     expect(graphPending({ own: true, single: false, answer: null })).toBe(false);
   });
 });
+
+import { graphMayShow, keepsSceneInAsk, mayTellDrawn } from "./kiosk-graph-pane.js";
+
+describe("graphMayShow: ask mode never paints the plain resource graph", () => {
+  const ask = { askOn: true, components: false, sceneUp: false, answerSettled: false, answerHasScene: false };
+  it("Inspect (not ask mode) always shows the graph", () => {
+    expect(graphMayShow({ ...ask, askOn: false })).toBe(true);
+  });
+  it("the components view always shows", () => {
+    expect(graphMayShow({ ...ask, components: true })).toBe(true);
+  });
+  it("holds before the reports are in", () => {
+    expect(graphMayShow(ask)).toBe(false);
+  });
+  it("holds while the reports have a scene the pin hides for now", () => {
+    expect(graphMayShow({ ...ask, answerSettled: true, answerHasScene: true })).toBe(false);
+  });
+  it("holds on a failed read", () => {
+    expect(graphMayShow({ ...ask, answerSettled: false })).toBe(false);
+  });
+  it("shows once the scene is drawn, and keeps showing when the reads go missing", () => {
+    expect(graphMayShow({ ...ask, sceneUp: true })).toBe(true);
+  });
+  it("a repo whose reports hold no scene shows its own graph", () => {
+    expect(graphMayShow({ ...ask, answerSettled: true, answerHasScene: false })).toBe(true);
+  });
+});
+
+describe("keepsSceneInAsk", () => {
+  it("keeps a drawn scene in ask mode, never outside it", () => {
+    expect(keepsSceneInAsk({ askOn: true, sceneUp: true })).toBe(true);
+    expect(keepsSceneInAsk({ askOn: true, sceneUp: false })).toBe(false);
+    expect(keepsSceneInAsk({ askOn: false, sceneUp: true })).toBe(false);
+  });
+});
+
+describe("mayTellDrawn", () => {
+  it("waits for the kiosk's word on ask mode, for a while", () => {
+    expect(mayTellDrawn({ askHeard: false, waitedMs: 500, askOn: false, mayShow: true })).toBe(false);
+    expect(mayTellDrawn({ askHeard: false, waitedMs: 3500, askOn: false, mayShow: true })).toBe(true);
+  });
+  it("in ask mode, not until the graph may show", () => {
+    expect(mayTellDrawn({ askHeard: true, waitedMs: 9000, askOn: true, mayShow: false })).toBe(false);
+    expect(mayTellDrawn({ askHeard: true, waitedMs: 9000, askOn: true, mayShow: true })).toBe(true);
+  });
+  it("outside ask mode, as before", () => {
+    expect(mayTellDrawn({ askHeard: true, waitedMs: 0, askOn: false, mayShow: false })).toBe(true);
+  });
+});

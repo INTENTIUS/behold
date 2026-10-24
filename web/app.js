@@ -43,7 +43,8 @@ import { auditLines as yrAuditLines, cornerText as yrCorner, datedWords as yrDat
 import { drawLight as klDraw } from "./kiosk-light-frame.js"; // behold#937
 import { badgeWords as klBadge, planOf as klPlanOf } from "./kiosk-light.js"; // behold#940
 import { composedRun } from "./kiosk-light.js";
-import { askDeltas, clearScene, drawScene, sceneHoldsOn, sceneModel, slotCounts as klSlotCounts } from "./kiosk-estate-scene.js"; // behold#940
+import { graphMayShow, keepsSceneInAsk, mayTellDrawn } from "./kiosk-graph-pane.js";
+import { askDeltas, clearScene, drawScene, sceneModel, slotCounts as klSlotCounts } from "./kiosk-estate-scene.js"; // behold#940
 import { cardProgress as tgCardProgress, progressLines as tgProgressLines, progressSection as tgProgressSection, stampProgress as tgStampProgress } from "./terragucci-progress.js";
 import { seconds, whyQuery, whyView } from "./why.js";
 import { edgeKey, edgeLabel, edgeLegend, edgeTitle, isCiKind, viaIndex } from "./edge-kind.js";
@@ -4540,6 +4541,7 @@ async function loadTerragucci({ fresh = false } = {}) {
     .then((r) => r.json())
     .catch((e) => ({ error: String(e), code: "terragucci-report", remedy: "" }));
   tgAnswer = answer;
+  klGate();
   // #506: the timeline, whole; the inspect pane filters it by a card's root.
   tgTimeline = await apiFetch(`/api/terragucci/timeline${fresh ? "?fresh=1" : ""}`)
     .then((r) => r.json())
@@ -4647,11 +4649,13 @@ function klRedraw() {
 }
 // behold#940: the kiosk's word that ask mode is on, which holds between the shots (the frame's class follows it or a shot's `ask`).
 let klAskFlag = false;
+let klAskHeard = false;
 let klArranged = false;
 function klSetAsk(on) {
   const root = document.documentElement.classList;
   const was = root.contains("kiosk-ask");
   root.toggle("kiosk-ask", on);
+  klGate();
   if (was !== on && embedOpts.bare) drawTgReads();
 }
 /** The room the graph has in ask mode, in the pane's own pixels: the pane less what the prompt covers. */
@@ -4664,23 +4668,30 @@ function klRoom() {
   const height = pane.height - i.top - i.bottom;
   return width > 0 && height > 0 ? { width, height } : { width: pane.width, height: pane.height };
 }
-/** Whether the scene on `svg` stands: it is drawn, and the graph's own drawing set aside under it has no cards to go back to. */
-function keepsScene(svg) {
-  return sceneHoldsOn(svg);
-}
 /**
  * Ask mode lays the roots out for the room (web/kiosk-ask-layout.js): stacked, upstream on top, so the cards fill a
  * wide screen. A composed choudoufu run has none of its resources in the graph, so its scene is drawn from the run's
  * reports in place of the graph's cards (web/kiosk-estate-scene.js). Left, the graph goes back as it was drawn.
  * Idempotent: each call paints from what the graph drew.
  */
+function sceneUpOn(svg) {
+  return !!(svg && svg.querySelector(":scope > [data-kl-scene]"));
+}
+/** The frame may show its svg (web/kiosk-graph-pane.js graphMayShow), and the class that lets it (kiosk.html: hidden otherwise in ask mode). */
+function klGate() {
+  const svg = document.querySelector("#graph svg");
+  const settled = !!(tgAnswer && !tgAnswer.error && Array.isArray(tgAnswer.roots));
+  const mayShow = graphMayShow({ askOn: document.documentElement.classList.contains("kiosk-ask"), components: !!view.components, sceneUp: sceneUpOn(svg), answerSettled: settled, answerHasScene: settled && !!tgAnswer.estateScene });
+  document.documentElement.classList.toggle("kl-show", mayShow);
+  return { mayShow };
+}
 function klArrange(svg) {
   const on = document.documentElement.classList.contains("kiosk-ask") && !view.components;
   const answer = on ? tgAnswerDrawn() : null;
   if (!on || !answer || answer.error || !Array.isArray(answer.roots) || !answer.roots.length) {
     // Ask mode still on and a scene up: a read that is stale or failed for a moment (the reports as they are written)
     // keeps the last drawn scene. A composed run's graph has no cards of its own, so going back to it would be blank.
-    if (on && klArranged && keepsScene(svg)) return;
+    if (keepsSceneInAsk({ askOn: on, sceneUp: sceneUpOn(svg) })) return;
     if (klArranged) {
       clearScene(svg);
       reloadLayoutDeltas();
@@ -4696,6 +4707,7 @@ function klArrange(svg) {
     const first = !klArranged;
     drawScene(svg, model);
     klArranged = true;
+    klGate();
     // The first draw: fit to it at once (no swoop from the graph's own framing), and again once layout and paint settle.
     if (first) {
       refitNow();
@@ -4703,7 +4715,10 @@ function klArrange(svg) {
     }
     return;
   }
-  if (svg.__klStash && !keepsScene(svg)) clearScene(svg); // a scene, and the run's reports no longer have one (and the graph has cards to show instead)
+  // Ask mode: the plain graph never paints. A scene up stays when the pin hides the plan for a moment, and with none up
+  // yet the graph's own drawing is held back (klPlainGate) until the scene comes.
+  if (sceneUpOn(svg) || !klGate().mayShow) return;
+  if (svg.__klStash) clearScene(svg);
   if (!layoutIndex) return;
   const extras = Object.fromEntries(Object.entries(klSlotCounts(plan)).map(([id, n]) => [id, n * 22 + 6]));
   const got = askDeltas({ roots: answer.roots, nodes: layoutIndex.nodes, boxes: layoutIndex.boxes, extras, edges: plan.edges, open });
@@ -4726,6 +4741,7 @@ const TG_TONE = { plan: "var(--frame-pending, var(--pending))", wait: "var(--fra
 /** The same, for words on a card: read on the card's own ground. */
 const TG_CARD_TONE = Object.fromEntries(Object.entries(TG_TONE).map(([k, v]) => [k, v.replace("--frame-", "--frame-card-")]));
 function drawTgReads() {
+  klGate();
   if (embedOpts.bare) queueMicrotask(kioskDecorate); // behold#571: once this draw is done
   if (embedOpts.bare) queueMicrotask(() => (kioskShot ? applyKioskShot(false) : kioskTellBoxes())); // behold#571: the marks moved the boxes
   if (embedOpts.bare) queueMicrotask(kioskTellDrawn); // behold#571: the kiosk swaps a reloaded frame in once it has drawn
@@ -5599,6 +5615,8 @@ function ensureTgReadStyle() {
 #graph g[data-tg-read-pill].tg-flash { animation: tg-read-flash 6s linear both; }
 #graph line[data-tg-read].tg-hot { stroke-width: 5; filter: drop-shadow(0 0 3px var(--bg)); }
 #graph g[data-tg-read-covers] { display: none !important; }
+/* Ask mode never paints the checkout's plain resource graph: the svg is held (kl-show) until the estate scene is drawn. */
+html.kiosk-ask:not(.kl-show) #graph svg { visibility: hidden; }
 html.kiosk-ask #view-toggles, html.kiosk-ask #graph text[data-tg-reads="caption"], html.kiosk-ask #graph text[data-tg-root="wave-fact"], html.kiosk-ask #graph text[data-tg-box-facts] { display: none; }
 @keyframes tg-read-flash { 0% { opacity: 0; } 4%, 80% { opacity: 1; } 100% { opacity: 0; } }
 @keyframes tg-read-flash-step { 0%, 99.9% { opacity: 1; } 100% { opacity: 0; } }
@@ -6769,6 +6787,8 @@ function kioskTellDrawn() {
   if (drawnTold || !embedOpts.host || window.parent === window) return;
   const drawnState = graphDrawnState();
   if (!drawnState) return;
+  // Ask mode: not drawn until the estate scene is (or the kiosk's word that ask mode is on has not come in a while: a failed draw says so at once).
+  if (drawnState !== "failed" && !mayTellDrawn({ askHeard: klAskHeard, waitedMs: performance.now(), askOn: document.documentElement.classList.contains("kiosk-ask"), mayShow: klGate().mayShow })) return;
   const failed = drawnState === "failed";
   drawnTold = true;
   try {
@@ -6885,6 +6905,7 @@ window.addEventListener("message", (e) => {
     return;
   }
   kioskShot = shot;
+  klAskHeard = true;
   klSetAsk(!!shot.ask || klAskFlag);
   applyKioskShot(true);
 });
@@ -6980,6 +7001,7 @@ function wireKioskFrame() {
     // behold#940: ask mode is on or off for this step, whatever the shots say between prompts.
     if (e.data && e.data.type === "behold:ask") {
       klAskFlag = e.data.on === true;
+      klAskHeard = true;
       klSetAsk(klAskFlag || !!(kioskShot && kioskShot.ask));
       return;
     }
