@@ -80,6 +80,11 @@ describe("askBeats and statusLine (behold#936)", () => {
     expect(askBeats({ ask: { prompt: "a" } })).toHaveLength(1);
     expect(askBeats({ ask: { prompt: "a" }, asks: [{ prompt: "b" }, { action: "c" }] })).toHaveLength(2);
   });
+  it("keeps a reply with no prompt or action, and gives it no line of its own", () => {
+    expect(askBeats({ ask: { prompt: null, action: null, reply: "Applied." } })).toHaveLength(1);
+    expect(askBeats({ ask: { prompt: null, action: null, reply: null } })).toEqual([]);
+    expect(playback([{ reply: "Applied." }], 600).frames[0]).toMatchObject({ mark: "", text: "", replied: true, over: true });
+  });
   it("says what the job is doing, its elapsed time and what is next", () => {
     const d = { step: "approved", started_at: "2026-10-24T10:00:00Z", next: { action: "apply wave-2", at: "2026-10-24T10:01:10Z" } };
     expect(statusLine(d, new Date("2026-10-24T10:01:05Z"))).toBe("Applying the plan · 1:05 · next: apply wave-2 in 5 s");

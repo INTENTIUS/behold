@@ -30,11 +30,11 @@ export const BEAT_GAP_MS = 1500;
 export const KEEP = 3;
 export const MARKS = { prompt: ">", action: "✓" };
 
-/** A demo's beats in order: `asks` when it has some, else `ask`, else none. */
+/** A demo's beats in order: `asks` when it has some, else `ask`, else none. A beat is a prompt, an action or a reply. */
 export function askBeats(demo) {
   if (!demo) return [];
-  if (Array.isArray(demo.asks) && demo.asks.length) return demo.asks.filter((a) => a && (a.prompt || a.action));
-  return demo.ask && (demo.ask.prompt || demo.ask.action) ? [demo.ask] : [];
+  if (Array.isArray(demo.asks) && demo.asks.length) return demo.asks.filter((a) => a && (a.prompt || a.action || a.reply));
+  return demo.ask && (demo.ask.prompt || demo.ask.action || demo.ask.reply) ? [demo.ask] : [];
 }
 
 /** Fill `{token}`s from `values`. A token that is unknown, or has no value, is the empty string. */
@@ -72,7 +72,15 @@ export function typedChars(len, elapsedMs, { reduced = false, msPerChar = TYPE_M
 }
 
 // A note (the opening, the closing) is a line with no mark, shown at once and announced by no event.
-const lineOf = (beat) => (beat.note ? { mark: "", text: beat.note, typed: false } : beat.prompt ? { mark: MARKS.prompt, text: beat.prompt, typed: true } : { mark: MARKS.action, text: beat.action || "", typed: false });
+// A reply with neither a prompt nor an action has no line of its own: the reply prints alone.
+const lineOf = (beat) =>
+  beat.note
+    ? { mark: "", text: beat.note, typed: false }
+    : beat.prompt
+      ? { mark: MARKS.prompt, text: beat.prompt, typed: true }
+      : beat.action
+        ? { mark: MARKS.action, text: beat.action, typed: false }
+        : { mark: "", text: "", typed: false };
 
 /** One beat's timing: how long its line takes to appear, when its reply prints, and when it is over. */
 export function beatTiming(beat, { reduced = false, msPerChar = TYPE_MS } = {}) {

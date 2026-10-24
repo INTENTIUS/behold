@@ -128,16 +128,20 @@ export interface DemoAsk {
   ghost: boolean | null;
 }
 
-/** behold#936: a demo.json `ask`, or null when it is not an object with a prompt or an action. A field of the wrong type is null. */
+/**
+ * behold#936: a demo.json `ask`, or null when it is not an object with a prompt, an action or a reply. A field of the
+ * wrong type is null. A reply alone is a beat: an applied step prints the agent's reply with no line of the person's.
+ */
 export function askOf(v: unknown): DemoAsk | null {
   if (!isRecord(v)) return null;
   const prompt = text(v.prompt);
   const action = prompt ? null : text(v.action);
-  if (!prompt && !action) return null;
+  const reply = text(v.reply);
+  if (!prompt && !action && !reply) return null;
   return {
     prompt,
     action,
-    reply: text(v.reply),
+    reply,
     light: Array.isArray(v.light) && v.light.every((x) => str(x) && x.trim()) ? (v.light as string[]).map((x) => x.trim()) : null,
     paths: typeof v.paths === "boolean" ? v.paths : null,
     ghost: typeof v.ghost === "boolean" ? v.ghost : null,

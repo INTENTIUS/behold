@@ -116,8 +116,8 @@ describe("demo.json's ask, asks, opening and closing (behold#936)", () => {
     expect(a.demo!.closing).toBeNull();
   });
 
-  it("drops an ask that is not an object or has no prompt or action, and keeps a prompt over an action", async () => {
-    for (const bad of ["x", [], { reply: "r" }, { prompt: 4, action: 4 }]) {
+  it("drops an ask that is not an object or has no prompt, action or reply, and keeps a prompt over an action", async () => {
+    for (const bad of ["x", [], { light: ["a/b"] }, { prompt: 4, action: 4, reply: 4 }]) {
       const a = await readDemo(source({ ...fixture("demo-failed.json"), ask: bad, asks: bad }));
       expect(a.demo).toMatchObject({ ask: null, asks: null });
     }
@@ -126,7 +126,12 @@ describe("demo.json's ask, asks, opening and closing (behold#936)", () => {
   });
 
   it("keeps the valid beats of asks", async () => {
-    const a = await readDemo(source({ ...fixture("demo-failed.json"), asks: [ask, 7, { reply: "x" }, ask] }));
+    const a = await readDemo(source({ ...fixture("demo-failed.json"), asks: [ask, 7, { light: ["a/b"] }, ask] }));
     expect(a.demo!.asks).toHaveLength(2);
+  });
+
+  it("keeps a reply with no prompt or action, as an applied step has", async () => {
+    const a = await readDemo(source({ ...fixture("demo-failed.json"), ask: { prompt: null, action: null, reply: "Applied. {roots} states, 1 plan, 1 apply." } }));
+    expect(a.demo!.ask).toMatchObject({ prompt: null, action: null, reply: "Applied. {roots} states, 1 plan, 1 apply." });
   });
 });

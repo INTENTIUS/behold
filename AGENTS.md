@@ -375,7 +375,7 @@ checkout declares no Terraform root (`controlRepo` in
 A step of terragucci's `demo.json` may carry an `ask` (or `asks`, a list of
 them played in order), and the file may carry `opening` and `closing` strings
 (src/terragucci-demo.ts parses them; a field of the wrong type is null, and an
-ask with neither a prompt nor an action is dropped). While a step has an ask,
+ask with none of a prompt, an action and a reply is dropped; a reply alone prints with no line of the person's, as an applied step's does). While a step has an ask,
 the pane (`#k-ask`, web/kiosk-ask.js) takes the place of `#bar` and
 `#k-caption` in Watch: a big monospace block at the foot of the screen. A
 `prompt` is typed after `>` at 40 ms a character; an `action` shows at once
