@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CODE_BASE, PRODUCTS, bannerModel } from "./kiosk-banner.js";
+import { actNumeral, actOf, CODE_BASE, PRODUCTS, bannerModel } from "./kiosk-banner.js";
 import { VENDORS } from "./kiosk-vendor.js";
 
 const ALL = ["choudoufu-compose", "terragrunt-choudoufu", "atmos-choudoufu"];
@@ -40,5 +40,20 @@ describe("the demo banner model", () => {
       if (t !== "terragrunt-choudoufu") expect(text).not.toMatch(/gruntwork|terragrunt[^-]/i);
       if (t !== "atmos-choudoufu") expect(text).not.toMatch(/atmos|cloud posse/i);
     }
+  });
+});
+
+describe("the act after the title", () => {
+  it("names the act from demo.json's index for this page's tool, in roman numerals", () => {
+    expect(actOf("choudoufu-compose", { demo: { tool: "choudoufu-compose", index: 1, scenarios: 2 } })).toBe("Act I");
+    expect(actOf("choudoufu-compose", { tool: "choudoufu-compose", index: 2, scenarios: 2 })).toBe("Act II");
+    expect(actOf("choudoufu-compose", { demo: { tool: "other", index: 1, scenarios: 2 } })).toBeNull();
+    expect(actOf("choudoufu-compose", { demo: { tool: "choudoufu-compose", index: 1, scenarios: 1 } })).toBeNull();
+    expect(actOf("choudoufu-compose", null)).toBeNull();
+    expect(actNumeral(3)).toBe("III");
+    expect(actNumeral(4)).toBe("IV");
+  });
+  it("carries the act in the model", () => {
+    expect(bannerModel("choudoufu-compose", [], "Act II").act).toBe("Act II");
   });
 });
