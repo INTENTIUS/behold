@@ -41,6 +41,11 @@ interface Job<T> {
   expired: boolean;
 }
 
+/** behold#978: the scheduler refused the read (its queue was full) or gave up on it (its deadline passed). */
+export function isReadBudgetRefusal(e: unknown): boolean {
+  return e instanceof Error && /^Chant read (queue is full|exceeded \d+ms)/.test(e.message);
+}
+
 /** FIFO process-wide budget with in-flight sharing, never a completed-result cache.
  * Each subscriber can leave independently. A slot stays occupied until the task
  * has actually stopped, even when all subscribers have gone or its deadline hit. */

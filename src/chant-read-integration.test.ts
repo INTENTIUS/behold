@@ -110,6 +110,29 @@ describe("real Chant read scheduling", () => {
     }
   });
 
+  it("behold#978: searches take the shared budget and leave with their request", async () => {
+    // Four distinct searches and a capabilities read: never more than two processes at once.
+    const asks = ["a", "b", "c", "d"].map((q) => runChantRaw(["workspace", "search", "--json", "--", q], project));
+    asks.push(runChantRaw(["search", "--capabilities", "--json"], project));
+    await Promise.all(asks);
+    let active = 0, peak = 0;
+    for (const e of events()) { active += e.event === "start" ? 1 : e.event === "finish" ? -1 : 0; peak = Math.max(peak, active); }
+    expect(events().filter((e) => e.event === "start")).toHaveLength(5);
+    expect(peak).toBe(2);
+    // A search whose request goes away is killed, its descendants with it.
+    const caller = new AbortController();
+    const rejected = withReadSignal(caller.signal, () => runChantRaw(["search", "--json", "--tree", "--", "x"], project)).catch((error) => error);
+    let child = 0;
+    try {
+      await vi.waitFor(() => { child = events().find((e) => e.event === "child")?.pid ?? 0; expect(child).toBeGreaterThan(0); });
+      caller.abort(new Error("client left"));
+      expect((await rejected).message).toBe("client left");
+      await vi.waitFor(() => expect(() => process.kill(child, 0)).toThrow(), { timeout: 3000 });
+    } finally {
+      for (const e of events()) { try { process.kill(e.pid, "SIGKILL"); } catch {} }
+    }
+  });
+
   it("delegated mutations are never scheduled or deduplicated as reads", async () => {
     for (const args of [["approve", "op", "gate"], ["run", "apply"], ["emulator", "up"], ["carve", "emit"], ["build"]]) {
       expect(isScheduledRead(args)).toBe(false);

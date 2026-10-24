@@ -71,6 +71,9 @@ ln -sfn ../@intentius/terragucci/dist/terragucci.mjs node_modules/.bin/terragucc
 chmod +x packages/terragucci/dist/terragucci.mjs
 
 # ── 3. what behold reads with ──────────────────────────────────────────────
+# floci's root key is `test`, and it can't be changed: lex00/floci's
+# IamEnforcementFilter lets `test` through as root by a literal comparison and
+# reads no setting for another one (behold#978; README.md, "What this relies on from the other lanes").
 iam() { # Action, then Key=Value pairs: one signed IAM query call to floci as its root key
   local action="$1" kv args=()
   shift
@@ -201,6 +204,81 @@ missing_views() { # the demo repos with no view checkout yet, if any
     [ -d "$VIEW/${repo##*/}/.git" ] && [ -d "$VIEW/${repo##*/}.change/.git" ] || echo "$repo"
   done
 }
+
+# ── Forgejo's passwords (behold#978) ───────────────────────────────────────
+# terragucci's stack/bootstrap.sh (and every script that signs in with a
+# password, through stack/instance.sh) reads the admin's and the demo
+# people's passwords from TERRAGUCCI_FORGEJO_ADMIN_PASSWORD and
+# TERRAGUCCI_FORGEJO_PEOPLE_PASSWORD, and keeps its fixed local defaults when
+# they are unset. The host makes its own once, keeps them in
+# forgejo-passwords.env, and exports them on every start, so both `up` and
+# the loop get them. They are never printed.
+#
+# The bootstrap only creates users, so Forgejo keeps whatever password a user
+# was made with. A host whose Forgejo was made with the defaults is moved to
+# the generated ones once, here, before anything signs in: forgejo admin user
+# change-password for the admin and both people, in the Forgejo container,
+# then the marker forgejo-passwords.rotated. A host with no Forgejo yet needs
+# nothing: the bootstrap makes the users with the generated passwords.
+FORGEJO_PASSWORDS="$STATE/forgejo-passwords.env"
+FORGEJO_ROTATED="$STATE/forgejo-passwords.rotated"
+FORGEJO_CONTAINER="${TG_PROJECT:-terragucci}-forgejo"
+FORGEJO_USERS="terragucci-admin demo-author demo-reviewer"
+
+secret() { # 24 random bytes as hex; the driver image has no openssl
+  od -An -N24 -tx1 /dev/urandom | tr -d ' \n'
+}
+
+forgejo_passwords() {
+  if [ ! -s "$FORGEJO_PASSWORDS" ]; then
+    mkdir -p "$STATE"
+    ( umask 077
+      printf 'TERRAGUCCI_FORGEJO_ADMIN_PASSWORD=%s\nTERRAGUCCI_FORGEJO_PEOPLE_PASSWORD=%s\n' "$(secret)" "$(secret)" > "$FORGEJO_PASSWORDS.new" )
+    mv "$FORGEJO_PASSWORDS.new" "$FORGEJO_PASSWORDS"
+    log "generated Forgejo's admin and people passwords in $FORGEJO_PASSWORDS"
+  fi
+  set -a
+  # shellcheck disable=SC1090
+  . "$FORGEJO_PASSWORDS"
+  set +a
+}
+
+forgejo_rotate() { # once: the users an earlier bootstrap made take the generated passwords
+  [ ! -f "$FORGEJO_ROTATED" ] || return 0
+  if ! grep -q TERRAGUCCI_FORGEJO_ADMIN_PASSWORD "$TG/stack/instance.sh" 2>/dev/null; then
+    # An older terragucci signs in with its defaults; moving the users off them would lock it out.
+    log "terragucci at ${HEAD_SHA:0:8} doesn't read TERRAGUCCI_FORGEJO_ADMIN_PASSWORD yet; Forgejo keeps the passwords it has"
+    return 0
+  fi
+  if ! docker inspect "$FORGEJO_CONTAINER" >/dev/null 2>&1; then
+    : > "$FORGEJO_ROTATED"
+    log "no Forgejo yet; the bootstrap makes its users with the generated passwords"
+    return 0
+  fi
+  docker start "$FORGEJO_CONTAINER" >/dev/null
+  local users="" _ user pw
+  for _ in $(seq 1 60); do
+    users="$(docker exec -u git "$FORGEJO_CONTAINER" forgejo admin user list 2>/dev/null)" && break
+    sleep 2
+  done
+  [ -n "$users" ] || die "Forgejo ($FORGEJO_CONTAINER) did not answer forgejo admin user list"
+  for user in $FORGEJO_USERS; do
+    if ! awk 'NR > 1 { print $2 }' <<<"$users" | grep -qxF "$user"; then
+      log "Forgejo has no $user yet; the bootstrap makes it with the generated password"
+      continue
+    fi
+    pw="$TERRAGUCCI_FORGEJO_PEOPLE_PASSWORD"
+    [ "$user" != terragucci-admin ] || pw="$TERRAGUCCI_FORGEJO_ADMIN_PASSWORD"
+    docker exec -u git "$FORGEJO_CONTAINER" forgejo admin user change-password \
+      --username "$user" --password "$pw" --must-change-password=false >/dev/null \
+      || die "could not move $user to the generated password"
+    log "$user has the generated password"
+  done
+  : > "$FORGEJO_ROTATED"
+}
+
+forgejo_passwords
+forgejo_rotate
 
 # ── 2. the driver's bootstrap, when floci has no base for this commit ──────
 have="$(curl -fsS "$FLOCI/demo-host/bootstrapped" 2>/dev/null || true)"

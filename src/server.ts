@@ -12,7 +12,7 @@
  * delegated gated writes".
  */
 import { Hono, type Context, type Next } from "hono";
-import { withReadSignal } from "./read-scheduler.ts";
+import { isReadBudgetRefusal, withReadSignal } from "./read-scheduler.ts";
 import { resolveSubstrateTargets } from "./targets.ts";
 import { loadKubeconfig, resolveK8sTarget, type K8sTarget } from "./k8s-target.ts";
 import { streamSSE } from "hono/streaming";
@@ -209,7 +209,7 @@ import { terragucciSource } from "./terragucci-source.ts";
 import { metricsRoute } from "./prometheus-metrics.ts";
 import { tracesRoute } from "./tempo-traces.ts";
 import { kioskRoute, shareImageRoute, terragucciDemosRoute, vendorFallback, vendorRoutes } from "./terragucci-demo.ts";
-import { readsOtherRepo, scopeServedDirs, viewRepoFacts, viewReposMiddleware, type ViewRepos } from "./view-repos.ts";
+import { checkoutCommit, readsOtherRepo, scopeServedDirs, viewRepoFacts, viewReposMiddleware, type ViewRepos } from "./view-repos.ts";
 import { lifecycleHistoryRoute } from "./lifecycle-history.ts";
 import { hasReleaseLedgerHint, releasesRoutes } from "./lifecycle-releases.ts";
 import { laneFloorRefusal, readTrunkLane } from "./trunk-lane.ts";
@@ -219,7 +219,7 @@ import { COLLISION_READ, collisionsFloorRefusal, readCollisions } from "./collis
 import { sqlYodelerLaneRoute } from "./sql-yodeler-lane.ts";
 import { cachedHealth, invalidateHealth, readHealthOverlay, rememberHealth, type HealthMember } from "./health-overlay.ts";
 import { rootReader } from "./workspace-reader.ts";
-import { SearchAskError, checkAsk, drawnOf, runCapabilities, runSearch, searchTarget, type SearchTarget } from "./search.ts";
+import { PUBLIC_SEARCHES_IN_FLIGHT, SearchAskError, cachedCapabilities, checkAsk, drawnOf, runSearch, searchTarget, type SearchTarget } from "./search.ts";
 import { resolvedVersion } from "./terraform-member.ts";
 import { writeViewQuery } from "../web/view-url.js";
 import { controlRepoInfo, terragucciEstateRoutes } from "./terragucci-estate.ts";
@@ -2516,7 +2516,27 @@ export function createApp(
       memberOf: (dir) => estateMembers([dir])[0]!.name,
       terraformWorkspace: (dir, member) => ({ root: terraformMemberWorkspace(dir, member).root, chant: resolvedVersion("@intentius/chant") }),
     });
+  // behold#978: a --public serve answers at most PUBLIC_SEARCHES_IN_FLIGHT
+  // searches at once and refuses the rest with 503 at once, so a flood of
+  // distinct queries can't fill the read queue the graph reads share. Every
+  // search is a scheduled read (src/chant.ts isSearchRead), cancelled with
+  // its request.
+  let publicSearches = 0;
+  const busy = (c: Context, why: string) =>
+    c.json({ error: `behold is busy: ${why}`, code: "busy", remedy: "Retry in a few seconds." }, 503, { "retry-after": "5" });
+  // behold#978: the catalog, kept per checkout and commit.
+  const capabilities = cachedCapabilities({ commitOf: checkoutCommit });
   app.get("/api/search", async (c) => {
+    if (!cfg.public) return searchRoute(c);
+    if (publicSearches >= PUBLIC_SEARCHES_IN_FLIGHT) return busy(c, `${PUBLIC_SEARCHES_IN_FLIGHT} searches are running already`);
+    publicSearches++;
+    try {
+      return await searchRoute(c);
+    } finally {
+      publicSearches--;
+    }
+  });
+  const searchRoute = async (c: Context) => {
     const url = new URL(c.req.url);
     const p = url.searchParams;
     let ask;
@@ -2539,7 +2559,13 @@ export function createApp(
       if (e instanceof TerraformReadError) return c.json({ ...e.refusal, ...view, link }, 422);
       throw e;
     }
-    const read = await runSearch(target, ask, (root, env) => rootReader(root, env));
+    let read;
+    try {
+      read = await runSearch(target, ask, (root, env) => rootReader(root, env));
+    } catch (e) {
+      if (!isReadBudgetRefusal(e) || c.req.raw.signal.aborted) throw e;
+      return busy(c, (e as Error).message);
+    }
     if (!read.ok) return c.json({ ...read.refusal, ...view, link }, 422);
     const drawn = drawnOf(read.document);
     // A query chant's grammar refuses is the asker's to fix: 400, chant's message and hint verbatim.
@@ -2548,7 +2574,7 @@ export function createApp(
       return c.json({ error: drawn.failure.message, code, remedy: drawn.failure.hint ?? "See https://intentius.io/chant/cli/search/ for the grammar.", ...view, document: read.document, draw: drawn, link }, 400);
     }
     return c.json({ ...view, document: read.document, draw: drawn, link });
-  });
+  };
 
   // behold#926: the capability catalog, for an agent to read before it asks a
   // cap: question. chant's capabilities document (chant search
@@ -2562,7 +2588,13 @@ export function createApp(
       if (e instanceof TerraformReadError) return c.json(e.refusal, 422);
       throw e;
     }
-    const read = await runCapabilities(target, (root) => rootReader(root));
+    let read;
+    try {
+      read = await capabilities(target, (root) => rootReader(root));
+    } catch (e) {
+      if (!isReadBudgetRefusal(e) || c.req.raw.signal.aborted) throw e;
+      return busy(c, (e as Error).message);
+    }
     if (!read.ok) return c.json(read.refusal, 422);
     return c.body(JSON.stringify(read.document), "error" in read.document ? 422 : 200, { "content-type": "application/json; charset=UTF-8" });
   });
@@ -2595,12 +2627,12 @@ export function createApp(
         {
           method: "GET",
           path: "/api/search",
-          desc: "a chant search query over the served estate (behold#913): ?q=<query>&env=&snapshot=&show=&countBy=&plan= -> {q, env, snapshot, countBy?, plan?, document: chant's read-contract search document unchanged (chant workspace search on a declared workspace, chant search --json on one project or a Terraform folder), draw: what the page draws from it {lit, onPath, edges, unobserved, nearMisses, provenance, failure, notSearched}, link}; no env is the declared source, env is a live read, env+snapshot replays a recorded snapshot; --explain always on; countBy=kind|module|attr:<name> (behold#922) is chant's --count-by, the document its counts branch with each group's ids and draw.counts the groups the page lights, and q may then be empty to count the whole graph; plan=1 (behold#922) answers at the plan depth (CHANT_TERRAFORM_OBSERVE=plan, --live --env <env, or a placeholder on a bare Terraform folder>), refused with snapshot (400) and without env on a chant project (422 plan-env); 400 code query with chant's hint for a query chant refuses; 422 chant-too-old below chant 0.124.46; --public answers declared queries only",
+          desc: "a chant search query over the served estate (behold#913): ?q=<query>&env=&snapshot=&show=&countBy=&plan= -> {q, env, snapshot, countBy?, plan?, document: chant's read-contract search document unchanged (chant workspace search on a declared workspace, chant search --json on one project or a Terraform folder), draw: what the page draws from it {lit, onPath, edges, unobserved, nearMisses, provenance, failure, notSearched}, link}; no env is the declared source, env is a live read, env+snapshot replays a recorded snapshot; --explain always on; countBy=kind|module|attr:<name> (behold#922) is chant's --count-by, the document its counts branch with each group's ids and draw.counts the groups the page lights, and q may then be empty to count the whole graph; plan=1 (behold#922) answers at the plan depth (CHANT_TERRAFORM_OBSERVE=plan, --live --env <env, or a placeholder on a bare Terraform folder>), refused with snapshot (400) and without env on a chant project (422 plan-env); 400 code query with chant's hint for a query chant refuses; 422 chant-too-old below chant 0.124.46; --public answers declared queries only, at most 4 at once (behold#978); 503 busy when the read budget is full or a read passes its deadline",
         },
         {
           method: "GET",
           path: "/api/capabilities",
-          desc: "the capability catalog to read before asking a cap: question (behold#926): chant's read-contract capabilities document, byte for byte (chant workspace search --capabilities --json on a declared workspace, chant search --capabilities --json on one project or a Terraform folder): each capability's name, meaning, params, the search term that asks it, the questions it answers, its rule and which lexicons supply it; 422 chant-too-old below chant 0.124.46",
+          desc: "the capability catalog to read before asking a cap: question (behold#926): chant's read-contract capabilities document, byte for byte (chant workspace search --capabilities --json on a declared workspace, chant search --capabilities --json on one project or a Terraform folder): each capability's name, meaning, params, the search term that asks it, the questions it answers, its rule and which lexicons supply it; 422 chant-too-old below chant 0.124.46; kept per checkout and commit, 403 on --public (behold#978)",
         },
         { method: "GET", path: "/api/graph", desc: "the graph {ir, svg, meta} — params: detail=0..3, components=1, logical=1, ops=1 (+entities=1 to link steps to the estate), env, stack, tier, target, lens, up=1, down=1, radial=1, layout=1" },
         ...(cfg.carveReport

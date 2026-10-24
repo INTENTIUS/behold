@@ -101,6 +101,8 @@ const REFUSED_READS: Array<[RegExp, string]> = [
   [/^\/api\/sql-yodeler\/lifecycle$/, "a public view shows a terragucci repo"],
   [/^\/api\/shot$/, "a shot starts a browser on this machine"],
   [/^\/api\/chant\/ci\/local(\/|$)/, "a local run is a job started on this machine, and a public view starts nothing"],
+  // behold#978: the catalog is for an agent asking a cap: question; the kiosk never reads it.
+  [/^\/api\/capabilities$/, "it runs chant, and the public view doesn't read the capability catalog"],
 ];
 
 /** Query parameters that turn a source-graph read into a live one, or re-point it. */
@@ -117,6 +119,17 @@ export function publicReadRefusal(path: string, query: URLSearchParams): string 
     return "a public view answers a query over the declared source only; a live read uses behold's own credentials";
   }
   return undefined;
+}
+
+/**
+ * behold#978: the request with `fresh` taken off its query, or undefined when
+ * it has none. Method, headers and the abort signal are kept.
+ */
+export function withoutFresh(req: Request): Request | undefined {
+  const url = new URL(req.url);
+  if (!url.searchParams.has("fresh")) return undefined;
+  url.searchParams.delete("fresh");
+  return new Request(url, { method: req.method, headers: req.headers, signal: req.signal });
 }
 
 /** The flag the page reads to hide every control that writes. */
@@ -137,6 +150,11 @@ export function publicRoutes(app: Hono, webRoot: string, demoAtRoot = false): vo
   app.use("*", async (c, next) => {
     const why = publicReadRefusal(c.req.path, new URL(c.req.url).searchParams);
     if (why) return c.json({ error: `behold is serving a public, read-only view: ${c.req.path} is refused, because ${why}`, code: "public" }, 403);
+    // behold#978: `fresh` skips a cache, at the cost of a git fetch or an S3
+    // read. A public view answers from the caches, so it is taken off the
+    // request before any route reads it.
+    const bare = withoutFresh(c.req.raw);
+    if (bare) c.req.raw = bare;
     await next();
   });
   const page = (): Response =>

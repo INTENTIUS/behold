@@ -346,7 +346,16 @@ export function isScheduledRead(args: string[]): boolean {
     (args[0] === "helm" && ["renders", "diff"].includes(args[1])) ||
     (args[0] === "run" && args[1] === "status") ||
     (args[0] === "operator" && ["status", "log"].includes(args[1])) ||
-    isIntentRead(args);
+    isIntentRead(args) ||
+    isSearchRead(args);
+}
+
+/** behold#978: `chant search` and `chant workspace search`, with or without
+ * `--capabilities`. Each one is a ~200 MB process, so it takes a slot in the
+ * read budget, has the deadline, and is cancelled when the request that asked
+ * goes away, like every other read. */
+export function isSearchRead(args: readonly string[]): boolean {
+  return args[0] === "search" || (args[0] === "workspace" && args[1] === "search");
 }
 
 /** #471: `chant workspace graph --intent`, the why read. Scheduled like any
@@ -378,7 +387,9 @@ export function runChantRaw(
   // event loop (2.2 s on chant's own repo). Its key is the argv, so only reads
   // in flight at the same moment share a spawn, which is all the scheduler
   // shares anyway: it never caches a finished read.
-  const stamp = isIntentRead(args) ? "intent" : memberSourceStamp(dir);
+  // A search at a workspace root would walk the whole workspace the same way,
+  // so it is keyed the same way (behold#978).
+  const stamp = isIntentRead(args) ? "intent" : isSearchRead(args) ? "search" : memberSourceStamp(dir);
   const effectiveEnv = { ...process.env, ...envOverride };
   const environment = Object.entries(effectiveEnv).sort(([a], [b]) => a.localeCompare(b));
   // Include the resolved compiler, exact argv (namespace/lens/env included),
