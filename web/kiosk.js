@@ -35,7 +35,8 @@ import { repoParam, repoUrl, stepCheckout } from "./kiosk-repo.js";
 import { startKioskCarve } from "./kiosk-carve.js";
 import { drawWaveList, waveListKey } from "./kiosk-wave-list.js";
 import { readsFor, runsReadsFor } from "./kiosk-source.js";
-import { STATE_WORDS, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
+import { createAskPane, replyValues } from "./kiosk-ask.js";
+import { STATE_WORDS, outcomesOf, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
 
 /** The scenarios terragucci#1014 numbers. An id not here is shown by the title demo.json carries. */
 export const SCENARIOS = {
@@ -1809,10 +1810,33 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   // behold#571: the titles and names demo.json has carried, by scenario, for the runs' subtitles.
   const titles = {};
   const names = {};
+  // behold#936: the prompt pane (web/kiosk-ask.js), in the header's and the caption's place while a step has a prompt, in Watch.
+  const askValues = () => {
+    const d = s.demo && s.demo.demo;
+    const failed = [...outcomesOf(s.answer, s.progress).values()].find((o) => o.outcome === "failed" && o.error);
+    return replyValues(d ? matchingPull(s.answer, d) : null, failed ? failed.error : null, typeof window !== "undefined" && window.beholdAskTokens ? window.beholdAskTokens : {});
+  };
+  const applyAsk = () => {
+    if (typeof document !== "undefined" && document.body && document.body.classList) document.body.classList.toggle("k-ask", !!s.askOn && !!s.watchMode);
+  };
+  const askPane =
+    watch && watch.ask
+      ? createAskPane({
+          host: watch.ask,
+          fill: askValues,
+          now,
+          reduced: () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches,
+          onActive: (on) => {
+            s.askOn = on;
+            applyAsk();
+          },
+        })
+      : null;
   /** Take one narration (demo.json, or a replayed step), and ask for the run it is about when the step moved. */
   const setDemo = (answer) => {
     s.demo = answer;
     const d = answer && answer.demo;
+    if (askPane) askPane.setStep(d || null);
     // behold#571: when this page first saw the driver's deadline, for the next bar when demo.json has no next.from.
     s.nextSeen = nextSeen(s.nextSeen, d ? d.next || null : undefined, s.mode, shownNow().getTime());
     if (d && d.scenario && typeof d.title === "string" && d.title) titles[d.scenario] = d.title;
@@ -1976,6 +2000,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       if (s.watchMode && body && main.parentNode !== body) body.appendChild(main);
       if (!s.watchMode && runsParent && main.parentNode !== runsParent) runsParent.insertBefore(main, runsNext);
     }
+    applyAsk();
     if (watch) renderModeToggle(tools && tools.mode, s.watchMode ? "watch" : "inspect", setMode);
     if (carveCtl) carveCtl.tellMode();
   };
@@ -2056,6 +2081,11 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   function captionRoomPx() {
     if (!watch || !frame || isPhone() || !frame.getBoundingClientRect || typeof getComputedStyle !== "function") return 0;
     const f = frame.getBoundingClientRect();
+    // behold#936: the prompt pane, when it shows, is the caption's place; its height is fixed, so the room is too.
+    if (s.askOn && watch.ask && !watch.ask.hidden) {
+      const a = watch.ask.getBoundingClientRect();
+      return Math.round(Math.max(0, f.bottom - a.bottom) + a.height + 16);
+    }
     const cap = watch.caption;
     const c = cap.getBoundingClientRect();
     const fs = parseFloat(getComputedStyle(cap).fontSize) || 16;
