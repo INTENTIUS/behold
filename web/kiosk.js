@@ -1704,6 +1704,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   let lastFocus;
   const shownView = () => kioskView(s.demo && s.demo.demo, { components: s.components, pick: s.pick, now: now().getTime() });
   let unstacked = false;
+  let askTold = null;
   const tellFrame = (force) => {
     // behold#571: before the tool's first cycle the frame draws its repo on the base, with nothing in flight.
     const notRun = !!vendor && s.mode === "none";
@@ -1723,6 +1724,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     // Leaving it gives the default (stacked) back.
     post({ type: "behold:view", member: null, focus, run, pull, zoom, ...(ask ? { alike: false } : unstacked ? { alike: true } : {}) });
     unstacked = ask;
+    post({ type: "behold:ask", on: askMode(s) });
+    askTold = askMode(s);
     tellHover(s.hover);
   };
   // behold#937: the pane's events (behold#936) light the graph and give the reply its {dependents} (web/kiosk-light.js).
@@ -2115,6 +2118,11 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   }
   function tellShot(force) {
     if (!frame || !frame.contentWindow || !watch) return;
+    // behold#940: ask mode holds in the frame between prompts and between shots, so it is told on its own, when it changes.
+    if (askMode(s) !== askTold) {
+      askTold = askMode(s);
+      post({ type: "behold:ask", on: askTold });
+    }
     if (!s.watchMode) {
       if (lastShot !== "release") {
         lastShot = "release";

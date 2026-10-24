@@ -1,0 +1,337 @@
+{
+ "schema": "terragucci.report/v1",
+ "minor": 48,
+ "run": {
+  "project": "forge.example/demo/choudoufu-states",
+  "commit": "c0ffee0000000000000000000000000000000001",
+  "stage": "tf-apply",
+  "binary": "choudoufu",
+  "runtime": "node 22",
+  "started": "2026-10-24T10:05:00.000Z",
+  "finished": "2026-10-24T10:05:00.000Z",
+  "terragucci": "0.5.2",
+  "wave": 1
+ },
+ "totals": {
+  "create": 6,
+  "update": 0,
+  "replace": 1,
+  "delete": 0,
+  "read": 0,
+  "no-op": 2,
+  "forget": 0
+ },
+ "totals_roots": 3,
+ "groups": [],
+ "roots": [
+  {
+   "path": "network",
+   "binary": {
+    "name": "choudoufu",
+    "version": "0.9.0"
+   },
+   "status": "planned",
+   "counts": {
+    "create": 1,
+    "no-op": 1
+   },
+   "changes": [
+    {
+     "address": "aws_sqs_queue.subnet",
+     "type": "aws_sqs_queue",
+     "action": "create",
+     "attributes": [
+      {
+       "path": "arn",
+       "after": "arn:aws:sqs:us-east-1:000000000000:choudoufu-compose-subnet"
+      }
+     ],
+     "fold": "open"
+    },
+    {
+     "address": "aws_sqs_queue.release",
+     "type": "aws_sqs_queue",
+     "action": "replace",
+     "attributes": [
+      {
+       "path": "name",
+       "before": "choudoufu-compose-release-r0",
+       "after": "choudoufu-compose-release-r1"
+      }
+     ],
+     "fold": "open"
+    }
+   ],
+   "highlights": [],
+   "fold": "open",
+   "why": [],
+   "composed": {
+    "wave": 1,
+    "module": "module.network"
+   },
+   "applied": true
+  },
+  {
+   "path": "app",
+   "binary": {
+    "name": "choudoufu",
+    "version": "0.9.0"
+   },
+   "status": "planned",
+   "counts": {
+    "create": 4,
+    "no-op": 1
+   },
+   "changes": [
+    {
+     "address": "aws_sqs_queue.security_group",
+     "type": "aws_sqs_queue",
+     "action": "create",
+     "attributes": [
+      {
+       "path": "name",
+       "after": "choudoufu-compose-sg-subnet"
+      }
+     ],
+     "fold": "open"
+    },
+    {
+     "address": "aws_sqs_queue.route_table",
+     "type": "aws_sqs_queue",
+     "action": "create",
+     "attributes": [
+      {
+       "path": "name",
+       "after": "choudoufu-compose-rt"
+      }
+     ],
+     "fold": "open"
+    },
+    {
+     "address": "aws_sqs_queue.instance",
+     "type": "aws_sqs_queue",
+     "action": "create",
+     "attributes": [
+      {
+       "path": "name",
+       "after": "choudoufu-compose-i"
+      }
+     ],
+     "fold": "open"
+    },
+    {
+     "address": "aws_sqs_queue.dns_record",
+     "type": "aws_sqs_queue",
+     "action": "create",
+     "attributes": [
+      {
+       "path": "name",
+       "after": "app.subnet.internal"
+      }
+     ],
+     "fold": "open"
+    }
+   ],
+   "highlights": [],
+   "fold": "open",
+   "why": [],
+   "composed": {
+    "wave": 1,
+    "module": "module.app"
+   },
+   "reads": [
+    {
+     "upstream": "network",
+     "data": "network",
+     "outputs": "planned",
+     "unknown": [
+      "subnet_id"
+     ],
+     "composed": true
+    }
+   ],
+   "dependencies": [
+    "network"
+   ],
+   "applied": true
+  },
+  {
+   "path": "edge",
+   "binary": {
+    "name": "choudoufu",
+    "version": "0.9.0"
+   },
+   "status": "planned",
+   "counts": {
+    "create": 1,
+    "no-op": 1
+   },
+   "changes": [
+    {
+     "address": "aws_sqs_queue.dns_upstream",
+     "type": "aws_sqs_queue",
+     "action": "create",
+     "attributes": [
+      {
+       "path": "name",
+       "after": "edge.app.subnet.internal"
+      }
+     ],
+     "fold": "open"
+    }
+   ],
+   "highlights": [],
+   "fold": "open",
+   "why": [],
+   "composed": {
+    "wave": 1,
+    "module": "module.edge"
+   },
+   "reads": [
+    {
+     "upstream": "app",
+     "data": "app",
+     "outputs": "planned",
+     "unknown": [
+      "dns_name"
+     ],
+     "composed": true
+    }
+   ],
+   "dependencies": [
+    "app"
+   ],
+   "applied": true
+  }
+ ],
+ "waves": [
+  {
+   "number": 1,
+   "roots": [
+    "network",
+    "app",
+    "edge"
+   ],
+   "set_digest": "jcs1-sha256:6666666666666666666666666666666666666666666666666666666666666666",
+   "approval": "approved",
+   "state": "applied",
+   "composed": {
+    "plan_digest": "jcs1-sha256:7777777777777777777777777777777777777777777777777777777777777777",
+    "members": [
+     {
+      "root": "network",
+      "module": "module.network",
+      "apply": "applied",
+      "state": "written"
+     },
+     {
+      "root": "app",
+      "module": "module.app",
+      "apply": "applied",
+      "state": "written"
+     },
+     {
+      "root": "edge",
+      "module": "module.edge",
+      "apply": "applied",
+      "state": "written"
+     }
+    ]
+   }
+  }
+ ],
+ "named": [],
+ "blast": {
+  "roots": [
+   "network",
+   "app",
+   "edge"
+  ],
+  "downstream": [
+   {
+    "root": "app",
+    "reads": [
+     "network"
+    ],
+    "depth": 1,
+    "wave": 1,
+    "planned": true
+   },
+   {
+    "root": "edge",
+    "reads": [
+     "app"
+    ],
+    "depth": 2,
+    "wave": 1,
+    "planned": true
+   }
+  ],
+  "resources": [
+   {
+    "root": "network",
+    "address": "aws_sqs_queue.subnet",
+    "actions": [
+     "create"
+    ],
+    "reaches": [
+     {
+      "root": "app",
+      "address": "aws_sqs_queue.security_group",
+      "depth": 2,
+      "through": {
+       "root": "network",
+       "output": "subnet_id"
+      }
+     },
+     {
+      "root": "app",
+      "address": "aws_sqs_queue.route_table",
+      "depth": 2,
+      "through": {
+       "root": "network",
+       "output": "subnet_id"
+      }
+     },
+     {
+      "root": "app",
+      "address": "aws_sqs_queue.instance",
+      "depth": 2,
+      "through": {
+       "root": "network",
+       "output": "subnet_id"
+      }
+     },
+     {
+      "root": "app",
+      "address": "aws_sqs_queue.dns_record",
+      "depth": 2,
+      "through": {
+       "root": "network",
+       "output": "subnet_id"
+      }
+     },
+     {
+      "root": "edge",
+      "address": "aws_sqs_queue.dns_upstream",
+      "depth": 4,
+      "through": {
+       "root": "app",
+       "output": "dns_name"
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "compose": {
+  "roots": [
+   "app",
+   "edge",
+   "network"
+  ],
+  "max": 10,
+  "wave": 1,
+  "estate": true
+ }
+}

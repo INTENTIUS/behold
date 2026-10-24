@@ -41,6 +41,8 @@ import { TOOLS, orderTools } from "./tool-mark.js";
 import { STATE_WORDS as tgStateWords, changeSection as tgChangeSection, readCardIds as tgReadCardIds, readEdges as tgReadEdges, readLabel as tgReadLabel, readLine as tgReadLine, readTag as tgReadTag, rootStates as tgRootStates, viewCaption as tgViewCaption, pinnedAnswer as tgPinnedAnswer, pinnedCaption as tgPinnedCaption, pinsCommit as tgPinsCommit, pinWaits as tgPinWaits } from "./terragucci-change.js";
 import { auditLines as yrAuditLines, cornerText as yrCorner, datedWords as yrDated, environmentLines as yrEnvLines, joinMarks as yrJoin, legend as yrLegend, markLine as yrMarkLine } from "./yodel-report.js";
 import { drawLight as klDraw } from "./kiosk-light-frame.js"; // behold#937
+import { badgeWords as klBadge, planOf as klPlanOf } from "./kiosk-light.js"; // behold#940
+import { askDeltas, clearScene, drawScene, sceneModel, slotCounts as klSlotCounts } from "./kiosk-estate-scene.js"; // behold#940
 import { cardProgress as tgCardProgress, progressLines as tgProgressLines, progressSection as tgProgressSection, stampProgress as tgStampProgress } from "./terragucci-progress.js";
 import { seconds, whyQuery, whyView } from "./why.js";
 import { edgeKey, edgeLabel, edgeLegend, edgeTitle, isCiKind, viaIndex } from "./edge-kind.js";
@@ -2182,6 +2184,10 @@ function ensureViewToggles(host) {
     host.appendChild(bar);
   }
   bar.innerHTML = "";
+  if (document.documentElement.classList.contains("kiosk-ask")) {
+    bar.style.display = "none"; // behold#940: ask mode shows the graph and the prompt alone
+    return;
+  }
   if (isEstate()) {
     const b = button("▦ stack alike", "vt" + (view.alike && alikeZoom() ? " active" : ""), toggleAlike);
     b.title = ALIKE_TITLE;
@@ -4620,7 +4626,61 @@ let klCtx = null;
 const klPulsed = { token: null };
 function klRedraw() {
   if (!klCtx || !klMsg || !klCtx.svg.isConnected) return;
-  klDraw(klCtx.svg, klMsg, klCtx.drawnAnswer, tgStoryOn() ? tgPacedProgress() : tgProgress, { cardsOf: klCtx.cardsOf, rootBox: klCtx.rootBox, compMode: klCtx.compMode, pulsed: klCtx.pulsed, below: document.documentElement.classList.contains("kiosk-ask") });
+  klDraw(klCtx.svg, klMsg, klCtx.drawnAnswer, tgStoryOn() ? tgPacedProgress() : tgProgress, { cardsOf: klCtx.cardsOf, rootBox: klCtx.rootBox, boxHost: klCtx.boxHost, compMode: klCtx.compMode, pulsed: klCtx.pulsed, below: document.documentElement.classList.contains("kiosk-ask") });
+}
+// behold#940: the kiosk's word that ask mode is on, which holds between the shots (the frame's class follows it or a shot's `ask`).
+let klAskFlag = false;
+let klArranged = false;
+function klSetAsk(on) {
+  const root = document.documentElement.classList;
+  const was = root.contains("kiosk-ask");
+  root.toggle("kiosk-ask", on);
+  if (was !== on && embedOpts.bare) drawTgReads();
+}
+/** The room the graph has in ask mode, in the pane's own pixels: the pane less what the prompt covers. */
+function klRoom() {
+  const host = document.getElementById("graph");
+  if (!host) return null;
+  const pane = host.getBoundingClientRect();
+  const i = kioskShot ? kioskPaneInsets(kioskShot) : { top: 0, right: 0, bottom: 0, left: 0 };
+  const width = pane.width - i.left - i.right;
+  const height = pane.height - i.top - i.bottom;
+  return width > 0 && height > 0 ? { width, height } : { width: pane.width, height: pane.height };
+}
+/**
+ * Ask mode lays the roots out for the room (web/kiosk-ask-layout.js): stacked, upstream on top, so the cards fill a
+ * wide screen. A composed choudoufu run has none of its resources in the graph, so its scene is drawn from the run's
+ * reports in place of the graph's cards (web/kiosk-estate-scene.js). Left, the graph goes back as it was drawn.
+ * Idempotent: each call paints from what the graph drew.
+ */
+function klArrange(svg) {
+  const on = document.documentElement.classList.contains("kiosk-ask") && !view.components;
+  const answer = on ? tgAnswerDrawn() : null;
+  if (!on || !answer || answer.error || !Array.isArray(answer.roots) || !answer.roots.length) {
+    if (klArranged) {
+      clearScene(svg);
+      reloadLayoutDeltas();
+      klArranged = false;
+    }
+    return;
+  }
+  const progress = tgStoryOn() ? tgPacedProgress() : tgProgress;
+  const plan = klPlanOf(answer, progress);
+  const open = klRoom();
+  const model = sceneModel(answer, plan, progress, open);
+  if (model) {
+    drawScene(svg, model);
+    klArranged = true;
+    return;
+  }
+  if (svg.__klStash) clearScene(svg); // a scene, and the run's reports no longer have one
+  if (!layoutIndex) return;
+  const extras = Object.fromEntries(Object.entries(klSlotCounts(plan)).map(([id, n]) => [id, n * 22 + 6]));
+  const got = askDeltas({ roots: answer.roots, nodes: layoutIndex.nodes, boxes: layoutIndex.boxes, extras, edges: plan.edges, open });
+  if (!got) return;
+  layoutDeltas = got.deltas;
+  renderLayout();
+  klArranged = true;
 }
 // #568: the reads edges between roots of one repo, drawn over the card view.
 // #569: drawn so the view shows the change without the panel: each read is a
@@ -4677,6 +4737,7 @@ function drawTgReads() {
   // Report minor 34: last draw's cone lights go; drawConeLights sets this draw's.
   if (chantMode || !tgAnswer || tgAnswer.error || !tgAnswer.roots) drawConeLights(svg, { stage: null });
   if (!chantMode && (!tgAnswer || tgAnswer.error || !tgAnswer.roots)) return;
+  if (embedOpts.bare && !chantMode) klArrange(svg); // behold#940
   const toSvg = svg.getScreenCTM && svg.getScreenCTM();
   if (!toSvg) return;
   const inv = toSvg.inverse();
@@ -4720,6 +4781,16 @@ function drawTgReads() {
   const rootBox = (path) => {
     const rect = groupRect(path);
     return (rect && boxOf(rect)) || union(cardsOf(path).map(boxOf).filter(Boolean));
+  };
+  // behold#940: the box's own group and rect, in the group's own units, for a label that rides with the box.
+  const boxHost = (path) => {
+    const rect = groupRect(path);
+    const parent = rect && rect.parentNode;
+    if (!parent || !parent.hasAttribute || !parent.hasAttribute("data-layout-box")) return null;
+    const x = parseFloat(rect.getAttribute("x"));
+    const y = parseFloat(rect.getAttribute("y"));
+    const h = parseFloat(rect.getAttribute("height"));
+    return Number.isFinite(x) && Number.isFinite(y) && h > 0 ? { parent, x, y, y2: y + h } : null;
   };
   const NS = "http://www.w3.org/2000/svg";
   const make = (tag, attrs, text) => {
@@ -4802,7 +4873,9 @@ function drawTgReads() {
     layer.parentNode.insertBefore(mark, layer);
     // The badge: on the box's top border, right-aligned, like a tab; the "N
     // resources" count in the header row under it gives way.
-    const local = rect.getBBox();
+    // In the svg's own units, where the box is now: a box moved by a layout delta sits in a group that carries its offset.
+    const placed = boxOf(rect);
+    const local = placed ? { x: placed.x, y: placed.y, width: placed.x2 - placed.x, height: placed.y2 - placed.y } : rect.getBBox();
     const headY = local.y + 23;
     const tabY = local.y;
     for (const t of svg.querySelectorAll("text")) {
@@ -4815,8 +4888,11 @@ function drawTgReads() {
     }
     // Filled when something happened or waits on the root; an outline when nothing has yet.
     const solid = st.state !== "outside" && st.state !== "not-started" && st.state !== "unchanged";
-    const badge = pill(mark, local.x + local.width - 16, tabY, st.words, { stroke: tone, fill: solid ? tone : "var(--panel)", color: solid ? "var(--bg)" : "var(--fg)", size: 14, weight: 700, anchor: "end", cls: st.state === "applying" ? "pin-pulse" : "" });
-    badge.g.appendChild(make("title", {}, [st.words, ...st.facts].join("\n") + "\n(from terragucci's reports, not live)"));
+    // behold#940: in ask mode the badge says the step's own word, with no wave.
+    const askWords = embedOpts.bare && document.documentElement.classList.contains("kiosk-ask") ? klBadge(st, r.path, tgStoryOn() ? tgPacedProgress() : tgProgress) : null;
+    const badgeText = askWords || st.words;
+    const badge = pill(mark, local.x + local.width - 16, tabY, badgeText, { stroke: tone, fill: solid ? tone : "var(--panel)", color: solid ? "var(--bg)" : "var(--fg)", size: 14, weight: 700, anchor: "end", cls: st.state === "applying" ? "pin-pulse" : "" });
+    badge.g.appendChild(make("title", {}, [badgeText, ...st.facts].join("\n") + "\n(from terragucci's reports, not live)"));
     // The facts under it, at the box's bottom right: the plan a wave waits on, its changes.
     // Packed into one line that fits the box, most telling first; the rest is in the badge's tooltip.
     if (st.facts.length) {
@@ -5080,7 +5156,7 @@ function drawTgReads() {
   tgReadShow(svg);
   // behold#937: a demo step's lighting, the states' files and looks, the unknown slots, over the marks just drawn.
   if (embedOpts.bare) {
-    klCtx = { svg, drawnAnswer, rootBox, compMode, cardsOf, pulsed: klPulsed };
+    klCtx = { svg, drawnAnswer, rootBox, boxHost, compMode, cardsOf, pulsed: klPulsed };
     klRedraw();
   }
 
@@ -6412,7 +6488,7 @@ function kioskShotTarget(svg, shot) {
   if (shot.whole) {
     // The whole graph is what is drawn: the boxes, the cards and the reads, not pinhole's margins round them.
     // behold#744: not the reads' pills, which show and go while the shot stays.
-    for (const n of svg.querySelectorAll("rect[data-group-id], [data-node-id], [data-tg-reads] > g:not([data-tg-read-pill]), line[data-tg-read-from], text[data-tg-reads='caption']")) boxes.push(userBoxOf(svg, n));
+    for (const n of svg.querySelectorAll("rect[data-group-id], [data-node-id], [data-tg-reads] > g:not([data-tg-read-pill]), line[data-tg-read-from], text[data-tg-reads='caption'], g[data-kl-state]")) boxes.push(userBoxOf(svg, n));
     return unionBox(boxes) || { x: vbInit[0], y: vbInit[1], x2: vbInit[0] + vbInit[2], y2: vbInit[1] + vbInit[3] };
   }
   const named = (tgComponentFacets && tgComponentFacets.roots) || {};
@@ -6754,12 +6830,12 @@ window.addEventListener("message", (e) => {
     shotAnim = null;
     kioskShot = null;
     document.documentElement.classList.remove("kiosk-held"); // Inspect: the zoom rail is the viewer's again
-    document.documentElement.classList.remove("kiosk-ask");
+    klSetAsk(klAskFlag);
     fitGraph();
     return;
   }
   kioskShot = shot;
-  document.documentElement.classList.toggle("kiosk-ask", !!shot.ask);
+  klSetAsk(!!shot.ask || klAskFlag);
   applyKioskShot(true);
 });
 
@@ -6829,7 +6905,19 @@ function wireKioskFrame() {
     // behold#937: the demo step's lighting from the kiosk (web/kiosk-light.js lightMessage).
     if (e.data && e.data.type === "behold:light") {
       klMsg = { labels: e.data.labels === true, lit: e.data.lit === true, ids: Array.isArray(e.data.ids) ? e.data.ids.filter((x) => typeof x === "string") : [], roots: Array.isArray(e.data.roots) ? e.data.roots.filter((x) => typeof x === "string") : [], ghost: e.data.ghost === true, token: e.data.token ?? null };
-      return klRedraw();
+      klRedraw();
+      // behold#940: drawn at once from what the frame holds, and again as soon as its reads are fresh: never at a poll's turn.
+      if (!staticMode && tgAnswer) {
+        void refreshTgAnswer();
+        void loadTgProgress({ fresh: true });
+      }
+      return;
+    }
+    // behold#940: ask mode is on or off for this step, whatever the shots say between prompts.
+    if (e.data && e.data.type === "behold:ask") {
+      klAskFlag = e.data.on === true;
+      klSetAsk(klAskFlag || !!(kioskShot && kioskShot.ask));
+      return;
     }
     // behold#571: the kiosk's theme picker moved; follow it here without a reload.
     if (e.data && e.data.type === "behold:theme" && typeof e.data.name === "string") return void setTheme(e.data.name, { persist: false });

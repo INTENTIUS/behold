@@ -1,0 +1,334 @@
+{
+ "schema": "terragucci.report/v1",
+ "minor": 48,
+ "run": {
+  "project": "forge.example/demo/choudoufu-states",
+  "commit": "c0ffee0000000000000000000000000000000001",
+  "stage": "tf-plan",
+  "binary": "choudoufu",
+  "runtime": "node 22",
+  "started": "2026-10-24T10:01:00.000Z",
+  "finished": "2026-10-24T10:01:00.000Z",
+  "terragucci": "0.5.2",
+  "wave": 1,
+  "pull_request": "41",
+  "pull_request_url": "https://forge.example/demo/choudoufu-states/pulls/41"
+ },
+ "totals": {
+  "create": 6,
+  "update": 0,
+  "replace": 1,
+  "delete": 0,
+  "read": 0,
+  "no-op": 2,
+  "forget": 0
+ },
+ "totals_roots": 3,
+ "groups": [],
+ "roots": [
+  {
+   "path": "network",
+   "binary": {
+    "name": "choudoufu",
+    "version": "0.9.0"
+   },
+   "status": "planned",
+   "counts": {
+    "create": 1,
+    "no-op": 1
+   },
+   "changes": [
+    {
+     "address": "aws_sqs_queue.subnet",
+     "type": "aws_sqs_queue",
+     "action": "create",
+     "attributes": [
+      {
+       "path": "arn",
+       "unknown": true
+      }
+     ],
+     "fold": "open"
+    },
+    {
+     "address": "aws_sqs_queue.release",
+     "type": "aws_sqs_queue",
+     "action": "replace",
+     "attributes": [
+      {
+       "path": "name",
+       "before": "choudoufu-compose-release-r0",
+       "after": "choudoufu-compose-release-r1"
+      }
+     ],
+     "fold": "open"
+    }
+   ],
+   "highlights": [],
+   "fold": "open",
+   "why": [],
+   "composed": {
+    "wave": 1,
+    "module": "module.network"
+   }
+  },
+  {
+   "path": "app",
+   "binary": {
+    "name": "choudoufu",
+    "version": "0.9.0"
+   },
+   "status": "planned",
+   "counts": {
+    "create": 4,
+    "no-op": 1
+   },
+   "changes": [
+    {
+     "address": "aws_sqs_queue.security_group",
+     "type": "aws_sqs_queue",
+     "action": "create",
+     "attributes": [
+      {
+       "path": "name",
+       "unknown": true
+      }
+     ],
+     "fold": "open"
+    },
+    {
+     "address": "aws_sqs_queue.route_table",
+     "type": "aws_sqs_queue",
+     "action": "create",
+     "attributes": [
+      {
+       "path": "name",
+       "unknown": true
+      }
+     ],
+     "fold": "open"
+    },
+    {
+     "address": "aws_sqs_queue.instance",
+     "type": "aws_sqs_queue",
+     "action": "create",
+     "attributes": [
+      {
+       "path": "name",
+       "unknown": true
+      }
+     ],
+     "fold": "open"
+    },
+    {
+     "address": "aws_sqs_queue.dns_record",
+     "type": "aws_sqs_queue",
+     "action": "create",
+     "attributes": [
+      {
+       "path": "name",
+       "unknown": true
+      }
+     ],
+     "fold": "open"
+    }
+   ],
+   "highlights": [],
+   "fold": "open",
+   "why": [],
+   "composed": {
+    "wave": 1,
+    "module": "module.app"
+   },
+   "reads": [
+    {
+     "upstream": "network",
+     "data": "network",
+     "outputs": "planned",
+     "unknown": [
+      "subnet_id"
+     ],
+     "composed": true
+    }
+   ],
+   "dependencies": [
+    "network"
+   ]
+  },
+  {
+   "path": "edge",
+   "binary": {
+    "name": "choudoufu",
+    "version": "0.9.0"
+   },
+   "status": "planned",
+   "counts": {
+    "create": 1,
+    "no-op": 1
+   },
+   "changes": [
+    {
+     "address": "aws_sqs_queue.dns_upstream",
+     "type": "aws_sqs_queue",
+     "action": "create",
+     "attributes": [
+      {
+       "path": "name",
+       "unknown": true
+      }
+     ],
+     "fold": "open"
+    }
+   ],
+   "highlights": [],
+   "fold": "open",
+   "why": [],
+   "composed": {
+    "wave": 1,
+    "module": "module.edge"
+   },
+   "reads": [
+    {
+     "upstream": "app",
+     "data": "app",
+     "outputs": "planned",
+     "unknown": [
+      "dns_name"
+     ],
+     "composed": true
+    }
+   ],
+   "dependencies": [
+    "app"
+   ]
+  }
+ ],
+ "waves": [
+  {
+   "number": 1,
+   "roots": [
+    "network",
+    "app",
+    "edge"
+   ],
+   "set_digest": "jcs1-sha256:6666666666666666666666666666666666666666666666666666666666666666",
+   "approval": "not-requested",
+   "waits": true,
+   "state": "planned",
+   "composed": {
+    "plan_digest": "jcs1-sha256:7777777777777777777777777777777777777777777777777777777777777777",
+    "members": [
+     {
+      "root": "network",
+      "module": "module.network"
+     },
+     {
+      "root": "app",
+      "module": "module.app"
+     },
+     {
+      "root": "edge",
+      "module": "module.edge"
+     }
+    ],
+    "held_by_unknown": [
+     "app"
+    ]
+   }
+  }
+ ],
+ "named": [],
+ "blast": {
+  "roots": [
+   "network",
+   "app",
+   "edge"
+  ],
+  "downstream": [
+   {
+    "root": "app",
+    "reads": [
+     "network"
+    ],
+    "depth": 1,
+    "wave": 1,
+    "planned": true
+   },
+   {
+    "root": "edge",
+    "reads": [
+     "app"
+    ],
+    "depth": 2,
+    "wave": 1,
+    "planned": true
+   }
+  ],
+  "resources": [
+   {
+    "root": "network",
+    "address": "aws_sqs_queue.subnet",
+    "actions": [
+     "create"
+    ],
+    "reaches": [
+     {
+      "root": "app",
+      "address": "aws_sqs_queue.security_group",
+      "depth": 2,
+      "through": {
+       "root": "network",
+       "output": "subnet_id"
+      }
+     },
+     {
+      "root": "app",
+      "address": "aws_sqs_queue.route_table",
+      "depth": 2,
+      "through": {
+       "root": "network",
+       "output": "subnet_id"
+      }
+     },
+     {
+      "root": "app",
+      "address": "aws_sqs_queue.instance",
+      "depth": 2,
+      "through": {
+       "root": "network",
+       "output": "subnet_id"
+      }
+     },
+     {
+      "root": "app",
+      "address": "aws_sqs_queue.dns_record",
+      "depth": 2,
+      "through": {
+       "root": "network",
+       "output": "subnet_id"
+      }
+     },
+     {
+      "root": "edge",
+      "address": "aws_sqs_queue.dns_upstream",
+      "depth": 4,
+      "through": {
+       "root": "app",
+       "output": "dns_name"
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "compose": {
+  "roots": [
+   "app",
+   "edge",
+   "network"
+  ],
+  "max": 10,
+  "wave": 1,
+  "estate": true
+ }
+}

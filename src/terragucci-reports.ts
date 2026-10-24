@@ -148,6 +148,8 @@ export interface ReportCompose {
   max: number;
   /** The wave whose run composes them. Absent when the change applies in waves. */
   wave?: number;
+  /** Minor 48: every root is a choudoufu estate, composed as one run with no state pulled, split or written back; each estate's records are written as its resources apply. */
+  estate?: true;
   /** Why the change applies in waves: a kind, the root it is about when there is one, and a sentence. */
   fallback?: { kind: string; root?: string; reason: string };
 }
@@ -825,7 +827,8 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
     const key = slot[stage];
     let read = 0;
     for (const row of rows.filter((r) => r.stage === stage)) {
-      if (wanted && [...wanted].every((p) => roots[p]?.[key])) break;
+      // A root whose newest apply changed nothing (the push back to the base) is not settled: the run before it says what the change wrote.
+      if (wanted && [...wanted].every((p) => roots[p]?.[key] && !(stage === "tf-apply" && !roots[p]![key]!.changes.length && !roots[p]!.wrote))) break;
       if (read++ >= MAX_RUNS_PER_STAGE) break;
       const doc = await report(row);
       if (!doc) continue; // a row whose run directory is gone: the next one may still hold the root
