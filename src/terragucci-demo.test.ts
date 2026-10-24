@@ -176,3 +176,12 @@ describe("demo.json's ask, asks, opening and closing (behold#936)", () => {
     expect(a.demo!.ask).toMatchObject({ prompt: null, action: null, reply: "Applied. {roots} states, 1 plan, 1 apply." });
   });
 });
+
+describe("demo.json's act and acts", () => {
+  it("keeps the scenario's act within its own demo, and drops a missing or bad one", async () => {
+    const a = await readDemo(source({ ...fixture("demo-waiting.json"), scenarios: 6, index: 4, act: 2, acts: 2 }));
+    expect([a.demo!.act, a.demo!.acts]).toEqual([2, 2]);
+    const b = await readDemo(source({ ...fixture("demo-waiting.json"), act: "two" }));
+    expect([b.demo!.act, b.demo!.acts]).toEqual([null, null]);
+  });
+});
