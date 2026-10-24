@@ -1,14 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { actNumeral, actOf, CODE_BASE, PRODUCTS, bannerModel } from "./kiosk-banner.js";
+import { actNumeral, actOf, CODE_BASE, PRODUCTS, bannerModel, liveTool } from "./kiosk-banner.js";
 import { VENDORS } from "./kiosk-vendor.js";
 
 const ALL = ["choudoufu-compose", "terragrunt-choudoufu", "atmos-choudoufu"];
 
 describe("the demo banner model", () => {
-  it("names the example in plain words, with the tool's variant", () => {
-    expect(bannerModel("choudoufu-compose").name).toBe("One plan, one apply, across estates");
-    expect(bannerModel("terragrunt-choudoufu").name).toBe("One plan, one apply, across estates, with Terragrunt");
-    expect(bannerModel("atmos-choudoufu").name).toBe("One plan, one apply, across estates, with Atmos");
+  it("names the example the same for every demo; the logos say which one is live", () => {
+    for (const t of ALL) expect(bannerModel(t).name).toBe("One plan, one apply, across estates");
   });
   it("links the public example tree", () => {
     expect(bannerModel("choudoufu-compose").code.url).toBe("https://github.com/INTENTIUS/terragucci/tree/main/example-demo-choudoufu-compose");
@@ -25,10 +23,15 @@ describe("the demo banner model", () => {
     expect(bannerModel("terragrunt-choudoufu").products.map((p) => p.name)).toEqual(["Terragrunt", "choudoufu"]);
     expect(bannerModel("atmos-choudoufu").products.map((p) => p.name)).toEqual(["Atmos", "choudoufu"]);
   });
-  it("has the switcher only when more than one demo is listed", () => {
-    expect(bannerModel("choudoufu-compose", ["choudoufu-compose"]).switcher).toEqual([]);
-    const sw = bannerModel("atmos-choudoufu", ALL).switcher;
-    expect(sw.map((x) => [x.path, x.current])).toEqual([["/choudoufu-compose", false], ["/terragrunt-choudoufu", false], ["/atmos-choudoufu", true]]);
+  it("has no switcher and no replay: only the live demo's name, act, products and code", () => {
+    for (const t of ALL) expect(bannerModel(t)).not.toHaveProperty("switcher");
+  });
+  it("follows demo.json's tool: the live demo, else null", () => {
+    expect(liveTool({ demo: { tool: "atmos-choudoufu" } })).toBe("atmos-choudoufu");
+    expect(liveTool({ tool: "terragrunt-choudoufu" })).toBe("terragrunt-choudoufu");
+    expect(liveTool({ demo: { tool: "terraform" } })).toBeNull();
+    expect(liveTool(null)).toBeNull();
+    expect(liveTool({ demo: { tool: "atmos-choudoufu", scenario: "base" } })).toBeNull();
   });
   it("is none for a page that is no listed demo", () => {
     expect(bannerModel("terraform")).toBeNull();
@@ -52,10 +55,12 @@ describe("the act after the title", () => {
     expect(actOf("choudoufu-compose", { demo: { tool: "other", index: 1, scenarios: 2 } })).toBeNull();
     expect(actOf("choudoufu-compose", { demo: { tool: "choudoufu-compose", index: 1, scenarios: 1 } })).toBeNull();
     expect(actOf("choudoufu-compose", null)).toBeNull();
+    expect(actOf("choudoufu-compose", { demo: { tool: "choudoufu-compose", index: 4, scenarios: 6, act: 2, acts: 2 } })).toBe("Act II");
+    expect(actOf("choudoufu-compose", { demo: { tool: "choudoufu-compose", index: 4, scenarios: 6, act: 1, acts: 1 } })).toBeNull();
     expect(actNumeral(3)).toBe("III");
     expect(actNumeral(4)).toBe("IV");
   });
   it("carries the act in the model", () => {
-    expect(bannerModel("choudoufu-compose", [], "Act II").act).toBe("Act II");
+    expect(bannerModel("choudoufu-compose", "Act II").act).toBe("Act II");
   });
 });

@@ -22,8 +22,9 @@ function fakeDoc() {
         n.children.push(c);
         return c;
       },
-      replaceChildren() {
+      replaceChildren(...kids) {
         n.children = [];
+        for (const k of kids) n.appendChild(k);
       },
       setAttribute(k, v) {
         n.attrs[k] = String(v);
@@ -126,6 +127,32 @@ describe("event-help modal: narrated and replayed modals never write", () => {
     const m2 = openEventModal(doc.body, { mode: "narrated", kind: "held", data: { title: "t" }, doc, onClose: closed, ...c });
     doc.fire("keydown", { key: "Escape" });
     expect(m2.state.closed).toBe(true);
+  });
+});
+
+describe("event-help modal: the close button", () => {
+  it("is the same element on every redraw, so a press that spans a redraw still clicks it", () => {
+    const doc = fakeDoc();
+    const c = clock();
+    const m = openEventModal(doc.body, { mode: "narrated", kind: "tip", data: { title: "t", lines: [{ text: "b" }] }, doc, ...c });
+    const box = doc.body.children[0].children[0];
+    const first = box.children[0];
+    expect(first.className).toBe("eh-modal-close");
+    c.advance(1_000);
+    expect(box.children[0]).toBe(first);
+    expect(box.children.filter((n) => n.className === "eh-modal-close")).toHaveLength(1);
+    first.handlers.click[0]();
+    expect(m.state.closedBy).toBe("viewer");
+  });
+  it("dismiss() closes it as the viewer, close() as the page", () => {
+    const doc = fakeDoc();
+    const c = clock();
+    const a = openEventModal(doc.body, { mode: "narrated", kind: "tip", data: { title: "t" }, doc, ...c });
+    a.dismiss();
+    expect(a.state.closedBy).toBe("viewer");
+    const b = openEventModal(doc.body, { mode: "narrated", kind: "tip", data: { title: "t" }, doc, ...c });
+    b.close();
+    expect(b.state.closedBy).toBe("page");
   });
 });
 
