@@ -93,7 +93,7 @@ describe("demo.json's next.from (behold#571)", () => {
 });
 
 describe("demo.json's ask, asks, opening and closing (behold#936)", () => {
-  const ask = { prompt: "Show me everything.", action: null, reply: "{dependents} resources.", light: ["network/terraform_data.subnet"], paths: true, ghost: false };
+  const ask = { prompt: "Show me everything.", action: null, reply: "{dependents} resources.", status: null, light: ["network/terraform_data.subnet"], paths: true, ghost: false };
 
   it("reads a demo.json without them as none", async () => {
     const a = await readDemo(source(fixture("demo-failed.json")));
@@ -104,14 +104,14 @@ describe("demo.json's ask, asks, opening and closing (behold#936)", () => {
     const a = await readDemo(source({ ...fixture("demo-failed.json"), ask, asks: [ask, { action: "You approve.", prompt: null }], opening: " Three states. ", closing: "1 apply." }));
     expect(a.demo!.ask).toEqual(ask);
     expect(a.demo!.asks).toHaveLength(2);
-    expect(a.demo!.asks![1]).toEqual({ prompt: null, action: "You approve.", reply: null, light: null, paths: null, ghost: null });
+    expect(a.demo!.asks![1]).toEqual({ prompt: null, action: "You approve.", reply: null, status: null, light: null, paths: null, ghost: null });
     expect(a.demo!.opening).toBe("Three states.");
     expect(a.demo!.closing).toBe("1 apply.");
   });
 
   it("drops a field of the wrong type to null, never refusing the narration", async () => {
     const a = await readDemo(source({ ...fixture("demo-failed.json"), ask: { prompt: "p", reply: 3, light: "x", paths: "yes", ghost: 1 }, opening: 5, closing: ["x"] }));
-    expect(a.demo!.ask).toEqual({ prompt: "p", action: null, reply: null, light: null, paths: null, ghost: null });
+    expect(a.demo!.ask).toEqual({ prompt: "p", action: null, reply: null, status: null, light: null, paths: null, ghost: null });
     expect(a.demo!.opening).toBeNull();
     expect(a.demo!.closing).toBeNull();
   });
@@ -123,6 +123,12 @@ describe("demo.json's ask, asks, opening and closing (behold#936)", () => {
     }
     const both = await readDemo(source({ ...fixture("demo-failed.json"), ask: { prompt: "p", action: "a" } }));
     expect(both.demo!.ask).toMatchObject({ prompt: "p", action: null });
+  });
+
+  it("passes status through, and an ask with only a status is valid", async () => {
+    const a = await readDemo(source({ ...fixture("demo-failed.json"), ask: { status: " Applying across estates. " }, asks: [{ prompt: "p", status: "Waiting" }, { status: "Applying" }, { status: "" }] }));
+    expect(a.demo!.ask).toEqual({ prompt: null, action: null, reply: null, status: "Applying across estates.", light: null, paths: null, ghost: null });
+    expect(a.demo!.asks!.map((x) => x.status)).toEqual(["Waiting", "Applying"]);
   });
 
   it("keeps the valid beats of asks", async () => {

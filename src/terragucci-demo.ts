@@ -123,13 +123,15 @@ export interface DemoAsk {
   prompt: string | null;
   action: string | null;
   reply: string | null;
+  /** The status line a step shows (a spinner, the text and a timer) under the transcript; an ask with only this is valid. */
+  status: string | null;
   light: string[] | null;
   paths: boolean | null;
   ghost: boolean | null;
 }
 
 /**
- * behold#936: a demo.json `ask`, or null when it is not an object with a prompt, an action or a reply. A field of the
+ * behold#936: a demo.json `ask`, or null when it is not an object with a prompt, an action, a reply or a status. A field of the
  * wrong type is null. A reply alone is a beat: an applied step prints the agent's reply with no line of the person's.
  */
 export function askOf(v: unknown): DemoAsk | null {
@@ -137,11 +139,13 @@ export function askOf(v: unknown): DemoAsk | null {
   const prompt = text(v.prompt);
   const action = prompt ? null : text(v.action);
   const reply = text(v.reply);
-  if (!prompt && !action && !reply) return null;
+  const status = text(v.status);
+  if (!prompt && !action && !reply && !status) return null;
   return {
     prompt,
     action,
     reply,
+    status,
     light: Array.isArray(v.light) && v.light.every((x) => str(x) && x.trim()) ? (v.light as string[]).map((x) => x.trim()) : null,
     paths: typeof v.paths === "boolean" ? v.paths : null,
     ghost: typeof v.ghost === "boolean" ? v.ghost : null,
