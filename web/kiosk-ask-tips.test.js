@@ -172,7 +172,7 @@ describe("tip cards: links", () => {
   it("gives the built-in links their exact URLs, none on Inspect or the phone card", () => {
     const by = Object.fromEntries(DEFAULT_TIPS.map((t) => [t.title, t.link]));
     expect(by["All at once"]).toEqual({ label: "How it plans across estates", url: "https://intentius.io/choudoufu/how-it-works/across-estates/" });
-    expect(by.terragucci).toEqual({ label: "How waves work", url: "https://intentius.io/terragucci/concepts/waves-and-approvals/" });
+    expect(by.terragucci).toEqual({ label: "How a composed run works", url: "https://intentius.io/terragucci/concepts/waves-and-approvals/#composed-estates" });
     expect(by.choudoufu).toEqual({ label: "How the locking works", url: "https://intentius.io/choudoufu/how-it-works/locking/" });
     expect(by["Free, nothing to host"]).toEqual({ label: "choudoufu on GitHub", url: "https://github.com/INTENTIUS/choudoufu" });
     expect(by.Inspect).toBeUndefined();
