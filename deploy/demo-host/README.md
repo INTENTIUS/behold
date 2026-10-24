@@ -232,7 +232,7 @@ pipeline. It needs no flag and no change to `compose.yaml`. What the host has to
   `AWS_ENDPOINT_URL`) to show the new subnet's real id. With IAM enforcement on, the key needs
   `cloudformation:DescribeStacks` for that; without it the card reads "filled from subnetB" and nothing else changes.
 - The logo is `web/vendors/chant.svg`, chant's own mark from its repo. The demo's code link is
-  `https://github.com/INTENTIUS/terragucci/tree/main/example-demo-chant-compose`.
+  `https://github.com/INTENTIUS/chant/tree/main/examples/demo-composed-stacks`.
 
 ## Bring it up
 
