@@ -64,7 +64,7 @@ export interface RunView {
   commit: string;
   updated: string;
   /** Each root, its wave, and the roots whose state it reads (#568). Empty for a Terragrunt repo. */
-  roots?: { root: string; wave: number; reads: string[]; composed?: RunRootComposed }[];
+  roots?: { root: string; wave: number; reads: string[]; composed?: RunRootComposed; state?: { bucket?: string; key?: string } }[];
   waves: {
     number: number;
     state: WaveState;
@@ -305,7 +305,7 @@ export interface ProgressJoin {
   /** #568: every wave's state, in the run view's order. */
   states: RunWaveState[];
   /** #568: each root's wave and the roots whose state it reads, from the run view. */
-  reads: { root: string; wave: number; reads: string[]; composed?: RunRootComposed }[];
+  reads: { root: string; wave: number; reads: string[]; composed?: RunRootComposed; /** behold#937: the root's state file key in its backend, from run.json, for the kiosk's state label. */ stateKey?: string }[];
   waves: ProgressWave[];
   cards: Record<string, CardProgress[]>;
   /** Resources no card is: said, never dropped. */
@@ -396,7 +396,7 @@ export function joinProgress(run: Pick<RunView, "waves" | "roots">, nodes: reado
         }
       : {}),
   }));
-  const reads = (run.roots ?? []).map((r) => ({ root: r.root, wave: r.wave, reads: [...(r.reads ?? [])], ...(r.composed ? { composed: { ...r.composed } } : {}) }));
+  const reads = (run.roots ?? []).map((r) => ({ root: r.root, wave: r.wave, reads: [...(r.reads ?? [])], ...(r.composed ? { composed: { ...r.composed } } : {}), ...(r.state && typeof r.state.key === "string" && r.state.key ? { stateKey: r.state.key } : {}) }));
   return { states, reads, waves, cards, unmatched, watching: unsettled(run) };
 }
 

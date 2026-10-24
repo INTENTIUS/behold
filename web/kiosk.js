@@ -37,6 +37,7 @@ import { drawWaveList, waveListKey } from "./kiosk-wave-list.js";
 import { readsFor, runsReadsFor } from "./kiosk-source.js";
 import { createAskPane, replyValues } from "./kiosk-ask.js";
 import { STATE_WORDS, outcomesOf, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
+import { startKioskLight } from "./kiosk-light.js"; // behold#937
 
 /** The scenarios terragucci#1014 numbers. An id not here is shown by the title demo.json carries. */
 export const SCENARIOS = {
@@ -1717,6 +1718,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     post({ type: "behold:view", member: null, focus, run, pull, zoom });
     tellHover(s.hover);
   };
+  // behold#937: the pane's events (behold#936) light the graph and give the reply its {dependents} (web/kiosk-light.js).
+  if (typeof window !== "undefined") startKioskLight({ post, getAnswer: () => s.answer, getProgress: () => s.progress });
   const pickView = (view) => {
     s.pick = { view, at: now().getTime() };
     draw();

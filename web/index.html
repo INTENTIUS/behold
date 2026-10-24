@@ -1056,6 +1056,15 @@
       #graph [data-node-id][data-q="lit"] rect:first-of-type { stroke: var(--pending); stroke-width: 3; }
       #graph [data-node-id][data-q="path"] rect:first-of-type { stroke: var(--pending); stroke-width: 1.5; }
       #graph g[data-edge-from][data-q="path"] path:first-of-type { stroke: var(--pending); stroke-width: 2.5; }
+      /* behold#937: a demo step's lighting (web/kiosk-light-frame.js), the look of the query's lit and dimmed under its own marks. */
+      #graph [data-kl="dim"] { opacity: .22; transition: opacity .15s; }
+      #graph [data-node-id][data-kl="lit"] rect:first-of-type { stroke: var(--pending); stroke-width: 3; }
+      #graph g[data-edge-from][data-kl="path"] path:first-of-type { stroke: var(--pending); stroke-width: 3; }
+      #graph line[data-kl="path"] { stroke-width: 3.5; }
+      @keyframes kl-pulse { 0% { opacity: 1; } 35% { opacity: .35; } 70% { opacity: 1; } 100% { opacity: 1; } }
+      #graph [data-node-id][data-kl-pulse] { animation: kl-pulse .9s ease-in-out 1; }
+      @keyframes kl-strike { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+      #graph .kl-strike { stroke-dasharray: 1; stroke-dashoffset: 1; animation: kl-strike .7s ease-out 1.4s forwards; }
       #graph [data-node-id][data-q-near] { opacity: .6; }
       #graph [data-node-id][data-q-near] rect:first-of-type { stroke: var(--ink2); stroke-width: 1.5; stroke-dasharray: 3 2; }
       #graph [data-node-id][data-q-unobserved] rect:first-of-type { stroke: var(--degraded); stroke-dasharray: 5 3; }

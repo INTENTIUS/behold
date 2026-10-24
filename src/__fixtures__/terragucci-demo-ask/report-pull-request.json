@@ -1,0 +1,404 @@
+{
+  "schema": "terragucci.report/v1",
+  "minor": 38,
+  "run": {
+    "project": "forge.example/demo/three-states",
+    "commit": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+    "base": "0000000000000000000000000000000000000001",
+    "stage": "tf-plan",
+    "binary": "tofu",
+    "runtime": "node 22",
+    "started": "2026-10-20T10:00:10.000Z",
+    "finished": "2026-10-20T10:01:40.000Z",
+    "terragucci": "0.4.9",
+    "pull_request": "41",
+    "pull_request_url": "https://forge.example/demo/two-roots/pulls/41",
+    "commit_url": "https://forge.example/demo/two-roots/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+    "job_url": "https://forge.example/demo/two-roots/actions/runs/101"
+  },
+  "change_set": "jcs1-sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "unit": "member",
+  "units": 3,
+  "totals": {
+    "create": 5,
+    "update": 1,
+    "replace": 0,
+    "delete": 0,
+    "read": 0,
+    "no-op": 3,
+    "forget": 0
+  },
+  "totals_roots": 3,
+  "groups": [],
+  "roots": [
+    {
+      "path": "network",
+      "binary": {
+        "name": "tofu",
+        "version": "1.10.6"
+      },
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "counts": {
+        "create": 1,
+        "no-op": 1
+      },
+      "plan": {
+        "json": "roots/network/plan.json"
+      },
+      "changes": [
+        {
+          "address": "terraform_data.subnet",
+          "type": "terraform_data",
+          "action": "create",
+          "attributes": [
+            {
+              "path": "input",
+              "after": "10.0.2.0/24"
+            },
+            {
+              "path": "output",
+              "unknown": true
+            }
+          ],
+          "fold": "open"
+        }
+      ],
+      "highlights": [],
+      "fold": "open",
+      "why": [],
+      "composed": {
+        "wave": 1,
+        "module": "module.network"
+      }
+    },
+    {
+      "path": "app",
+      "binary": {
+        "name": "tofu",
+        "version": "1.10.6"
+      },
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "counts": {
+        "create": 4,
+        "no-op": 1
+      },
+      "plan": {
+        "json": "roots/app/plan.json"
+      },
+      "changes": [
+        {
+          "address": "terraform_data.service",
+          "type": "terraform_data",
+          "action": "create",
+          "attributes": [
+            {
+              "path": "input",
+              "unknown": true
+            }
+          ],
+          "fold": "open"
+        },
+        {
+          "address": "terraform_data.worker",
+          "type": "terraform_data",
+          "action": "create",
+          "attributes": [
+            {
+              "path": "input",
+              "unknown": true
+            }
+          ],
+          "fold": "open"
+        },
+        {
+          "address": "terraform_data.queue",
+          "type": "terraform_data",
+          "action": "create",
+          "attributes": [
+            {
+              "path": "input",
+              "unknown": true
+            }
+          ],
+          "fold": "open"
+        },
+        {
+          "address": "terraform_data.schedule",
+          "type": "terraform_data",
+          "action": "create",
+          "attributes": [
+            {
+              "path": "input",
+              "unknown": true
+            }
+          ],
+          "fold": "open"
+        }
+      ],
+      "highlights": [],
+      "fold": "open",
+      "why": [],
+      "reads": [
+        {
+          "upstream": "network",
+          "data": "network",
+          "outputs": "planned",
+          "unknown": [
+            "subnet_id"
+          ],
+          "composed": true
+        }
+      ],
+      "dependencies": [
+        "network"
+      ],
+      "composed": {
+        "wave": 1,
+        "module": "module.app"
+      }
+    },
+    {
+      "path": "edge",
+      "binary": {
+        "name": "tofu",
+        "version": "1.10.6"
+      },
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "counts": {
+        "update": 1,
+        "no-op": 1
+      },
+      "plan": {
+        "json": "roots/edge/plan.json"
+      },
+      "changes": [
+        {
+          "address": "terraform_data.route",
+          "type": "terraform_data",
+          "action": "update",
+          "attributes": [
+            {
+              "path": "input",
+              "before": "app:8070",
+              "after": "app:8080"
+            }
+          ],
+          "fold": "open"
+        }
+      ],
+      "highlights": [],
+      "fold": "open",
+      "why": [],
+      "reads": [
+        {
+          "upstream": "app",
+          "data": "app",
+          "outputs": "planned",
+          "composed": true
+        }
+      ],
+      "dependencies": [
+        "app"
+      ],
+      "composed": {
+        "wave": 1,
+        "module": "module.edge"
+      }
+    }
+  ],
+  "waves": [
+    {
+      "number": 1,
+      "roots": [
+        "network",
+        "app",
+        "edge"
+      ],
+      "set_digest": "jcs1-sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "approval": "not-requested",
+      "review_digest": "jcs1-sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "waits": true,
+      "state": "planned",
+      "cost": {
+        "currency": "USD",
+        "monthly_delta": 10.5,
+        "monthly_total": 36.5,
+        "past_monthly_total": 26
+      },
+      "composed": {
+        "plan_digest": "jcs1-sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "members": [
+          {
+            "root": "network",
+            "module": "module.network"
+          },
+          {
+            "root": "app",
+            "module": "module.app"
+          },
+          {
+            "root": "edge",
+            "module": "module.edge"
+          }
+        ],
+        "held_by_unknown": [
+          "app"
+        ]
+      }
+    }
+  ],
+  "named": [],
+  "holes": [],
+  "redaction": {
+    "marker": "(sensitive, redacted by terragucci)",
+    "values": 0
+  },
+  "cost": {
+    "estimator": "node",
+    "currency": "USD",
+    "monthly_delta": 10.5,
+    "monthly_total": 36.5,
+    "past_monthly_total": 26,
+    "roots": [
+      {
+        "root": "network",
+        "monthly_delta": 2.5,
+        "monthly_total": 12.5,
+        "past_monthly_total": 10,
+        "output": "roots/network/cost.json"
+      },
+      {
+        "root": "app",
+        "monthly_delta": 8,
+        "monthly_total": 20,
+        "past_monthly_total": 12,
+        "output": "roots/app/cost.json"
+      },
+      {
+        "root": "edge",
+        "monthly_delta": 0,
+        "monthly_total": 4,
+        "past_monthly_total": 4,
+        "output": "roots/edge/cost.json"
+      }
+    ]
+  },
+  "blast": {
+    "roots": [
+      "network",
+      "app",
+      "edge"
+    ],
+    "downstream": [
+      {
+        "root": "app",
+        "reads": [
+          "network"
+        ],
+        "depth": 1,
+        "wave": 1,
+        "planned": true
+      },
+      {
+        "root": "edge",
+        "reads": [
+          "app"
+        ],
+        "depth": 2,
+        "wave": 1,
+        "planned": true
+      }
+    ],
+    "resources": [
+      {
+        "root": "network",
+        "address": "terraform_data.subnet",
+        "actions": [
+          "create"
+        ],
+        "reaches": [
+          {
+            "root": "app",
+            "address": "terraform_data.service",
+            "depth": 2,
+            "through": {
+              "root": "network",
+              "output": "subnet_id"
+            }
+          },
+          {
+            "root": "app",
+            "address": "terraform_data.worker",
+            "depth": 2,
+            "through": {
+              "root": "network",
+              "output": "subnet_id"
+            }
+          },
+          {
+            "root": "app",
+            "address": "terraform_data.queue",
+            "depth": 2,
+            "through": {
+              "root": "network",
+              "output": "subnet_id"
+            }
+          },
+          {
+            "root": "app",
+            "address": "terraform_data.schedule",
+            "depth": 2,
+            "through": {
+              "root": "network",
+              "output": "subnet_id"
+            }
+          },
+          {
+            "root": "edge",
+            "address": "terraform_data.route",
+            "depth": 4,
+            "through": {
+              "root": "app",
+              "output": "service_port"
+            }
+          }
+        ]
+      },
+      {
+        "root": "app",
+        "address": "terraform_data.service",
+        "actions": [
+          "create"
+        ],
+        "reaches": [
+          {
+            "root": "app",
+            "address": "terraform_data.schedule",
+            "depth": 1
+          },
+          {
+            "root": "edge",
+            "address": "terraform_data.route",
+            "depth": 2,
+            "through": {
+              "root": "app",
+              "output": "service_port"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "compose": {
+    "roots": [
+      "app",
+      "edge",
+      "network"
+    ],
+    "max": 10,
+    "wave": 1
+  }
+}
