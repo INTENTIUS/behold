@@ -294,6 +294,7 @@ export const PANE_CSS = `
 #k-ask .ask-ready-line .ask-text::after { content: "\\2588"; }
 #k-ask .ask-ready-line .ask-mark { color: var(--ask-accent); }
 #k-ask .ask-sum, #k-ask .ask-busy { display: flex; align-items: baseline; gap: 0.5em; padding-left: 0; font-size: 0.72em; font-weight: 500; }
+#k-ask .ask-busy { font-size: 1em; padding-left: 1.6em; } /* the agent at work reads as large as its reply */
 #k-ask .ask-sum { color: var(--muted); opacity: 0.8; }
 #k-ask .ask-busy { color: var(--ask-agent); }
 #k-ask .ask-spinner { flex: none; width: 1.2ch; text-align: center; }
