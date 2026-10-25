@@ -190,7 +190,7 @@ describe("the read (#924)", () => {
     const r = await readChoudoufuThroughChant(member(), recorded("drift", [], { stderr, rootRead: { depth: "live+plan", fellBackTo: "live", reason: "no-credentials" } }));
     expect(r.answered).toBe("live");
     expect(r.drift.size).toBe(0);
-    expect(r.note).toMatch(/the live\+plan read failed \(no-credentials\)/);
+    expect(r.note).toMatch(/the live\+plan read failed \(no provider credentials\)/);
     expect(r.plan.bound).toHaveLength(6);
   });
 

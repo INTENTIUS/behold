@@ -53,7 +53,7 @@ describe("which read answered each root (#910, behold#995)", () => {
       ["db", "state"],
       ["net", "none"],
     ]);
-    expect(roots[1]!.note).toBe("terraform.roots.db: the plan read failed (no-credentials), so the state read answered");
+    expect(roots[1]!.note).toBe("terraform.roots.db: the plan read failed (no provider credentials), so the state read answered");
   });
 
   it("rootReads, when present, is the only source: a note beside it is not read", () => {
@@ -168,7 +168,7 @@ describe("the plan facts per card (#910)", () => {
       expect(JSON.stringify(rows)).not.toMatch(/no changes/);
     }
     expect(terraformPlanNote([{ member: "tf", roots: read.roots }])).toBe(
-      "plan: tf: app plan not read, the state read answered (the plan read failed (no-credentials), so the state read answered)",
+      "plan: tf: app plan not read, the state read answered (the plan read failed (no provider credentials), so the state read answered)",
     );
   });
 

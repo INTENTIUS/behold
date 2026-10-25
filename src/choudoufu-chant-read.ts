@@ -57,7 +57,7 @@ import { meetsFloor } from "./floor.ts";
 import { choudoufuSpawnOverride, ChoudoufuReadError } from "./choudoufu-member.ts";
 import { parseLivePlan, type LivePlanDocument } from "./choudoufu-live.ts";
 import { resolvedVersion, TERRAFORM_LEXICON_PKG, terraformReaderState, writeTerraformScratchProject } from "./terraform-member.ts";
-import { hasRootReads, PLAN_READ_ENV, rootReadsOf, TERRAFORM_OBSERVE_ENV } from "./terraform-plan.ts";
+import { hasRootReads, PLAN_READ_ENV, rootReadReasonWords, rootReadsOf, TERRAFORM_OBSERVE_ENV } from "./terraform-plan.ts";
 
 /** The member's source stamp, the key its cached change set is stored under (src/member-ir.ts). */
 export { memberSourceStamp } from "./member-ir.ts";
@@ -151,7 +151,7 @@ export function rootAnswerOf(ir: unknown, root: string, stderr = ""): { answered
   const rr = rootReadsOf(ir)[key];
   if (!rr) return { answered: "live" };
   if (rr.depth === "live+plan" && rr.fellBackTo === undefined) return { answered: "live+plan", note: `${key}: the plan read answered, beside live-plan, which answered presence and ownership` };
-  const why = rr.reason ? ` (${rr.reason})` : "";
+  const why = rr.reason ? ` (${rootReadReasonWords(rr.reason)})` : "";
   return {
     answered: "live",
     note: rr.fellBackTo === "declared" ? `${key}: no read answered${why}` : `${key}: the ${rr.depth} read failed${why}, so live-plan alone answered; plan attributes are absent`,
