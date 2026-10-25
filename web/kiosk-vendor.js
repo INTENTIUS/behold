@@ -165,7 +165,7 @@ export const VENDORS = {
   },
   "atmos-choudoufu": {
     name: "choudoufu with Atmos",
-    title: "One plan, one apply, across estates, with Atmos",
+    title: "One plan across estates, with Atmos",
     // Atmos applies each component in turn: the banner claims one plan, not one apply.
     heading: "One plan across estates",
     code: "https://github.com/INTENTIUS/choudoufu/tree/main/examples/demo-atmos",
