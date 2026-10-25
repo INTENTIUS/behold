@@ -1,0 +1,14 @@
+{
+  "name": "three-cloud-aws",
+  "private": true,
+  "main": "index.ts",
+  "description": "The three-cloud demo's aws member: a Pulumi program run by plunge against the floci emulator. pulumi-aws is pinned as the plunge corpus pins it (plunge tests/plunge-corpus/aws-ts).",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "@pulumi/aws": "7.51.1",
+    "@pulumi/pulumi": "3.272.0"
+  }
+}

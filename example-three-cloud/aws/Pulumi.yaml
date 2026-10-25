@@ -1,0 +1,15 @@
+# The aws member: a Pulumi program on plunge (INTENTIUS/behold#1000). The
+# backend is plunge's record backend over a local directory beside the
+# program, so the stack, its records and its markers stay in aws/.plunge
+# and nothing is stored anywhere else. chant reads the `plunge+` scheme as
+# "this member runs on plunge" (chant-lexicon-pulumi, pulumiMemberEngine) and
+# runs `plunge preview`, `plunge drift` and `plunge stack output` for it.
+name: three-cloud-aws
+description: The three-cloud demo's AWS site, ECS on Fargate behind a load balancer, on the floci emulator
+runtime:
+  name: nodejs
+  options:
+    typescript: true
+    packagemanager: npm
+backend:
+  url: plunge+file://./.plunge

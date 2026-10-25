@@ -80,14 +80,15 @@ describe("demos.json — the committed catalog (#209)", () => {
   // #824: the front door. Its setup boots the three emulators under chant's
   // own names, so `--local` finds and reuses them for every member.
   // choudoufu#2246: the azure site is a choudoufu estate, so it needs choudoufu.
+  // behold#1000: the aws site is a Pulumi program on plunge, so it needs plunge.
   it("the three-cloud entry boots three emulators and serves the workspace on them", () => {
     const t = registry.find((e) => e.name === "three-cloud");
     expect(t, "no three-cloud entry in demos.json").toBeTruthy();
-    expect(t!.requires).toEqual(["docker", "curl", "choudoufu"]);
+    expect(t!.requires).toEqual(["docker", "curl", "choudoufu", "plunge"]);
     expect(t!.setup).toBe("bash scripts/emulators-up.sh");
     expect(t!.serve).toEqual({ local: true, env: "local" });
     const dir = join(REPO, t!.dir!);
-    for (const f of ["chant.workspace.json", "scripts/emulators-up.sh", "scripts/front-door.ts", "dns/ops/front-door.op.ts", "dns/src/route53.ts", "aws/src/site.ts", "azure/main.tf", "azure/site.tf", "chant.config.json", "gcp/src/site.ts"]) {
+    for (const f of ["chant.workspace.json", "scripts/emulators-up.sh", "scripts/front-door.ts", "dns/ops/front-door.op.ts", "dns/src/route53.ts", "aws/index.ts", "aws/Pulumi.yaml", "azure/main.tf", "azure/site.tf", "chant.config.json", "gcp/src/site.ts"]) {
       expect(existsSync(join(dir, f)), f).toBe(true);
     }
     const up = readFileSync(join(dir, "scripts/emulators-up.sh"), "utf8");
@@ -472,6 +473,28 @@ describe("missingRequirements", () => {
     } finally {
       if (before === undefined) delete process.env.CHOUDOUFU_BIN;
       else process.env.CHOUDOUFU_BIN = before;
+    }
+  });
+
+  // behold#1000: the three-cloud demo's aws member runs on plunge, and a build
+  // named by PLUNGE_BIN counts, as CHOUDOUFU_BIN does for choudoufu.
+  it("PLUNGE_BIN satisfies the plunge requirement when it names an existing file", () => {
+    const entry = { name: "x", description: "", source: "bundled" as const, dir: "x", requires: ["plunge"], serve: {} };
+    const before = process.env.PLUNGE_BIN;
+    try {
+      process.env.PLUNGE_BIN = process.execPath;
+      expect(missingRequirements(entry)).toEqual([]);
+      process.env.PLUNGE_BIN = join(tmpdir(), "behold-no-such-plunge-xyz");
+      const path = process.env.PATH;
+      process.env.PATH = "";
+      try {
+        expect(missingRequirements(entry)).toEqual(["plunge"]);
+      } finally {
+        process.env.PATH = path;
+      }
+    } finally {
+      if (before === undefined) delete process.env.PLUNGE_BIN;
+      else process.env.PLUNGE_BIN = before;
     }
   });
 });

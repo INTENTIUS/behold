@@ -1821,17 +1821,30 @@ floci, floci-az and floci-gcp; docs/src/content/docs/using/three-cloud.mdx is
 its page. `azure` is a choudoufu estate (`azure/*.tf`, choudoufu#2246), so the
 demo requires choudoufu, `--local` boots no emulator for it (the setup starts
 floci-az, with TLS), and the root's `chant.config.json` names it as the
-terraform lexicon's `azure` root. `scripts/front-door.ts plan --out <file>`
-(`npm run change-set`) composes one change set: chant parts for dns, aws and
-gcp, and azure's choudoufu part from `choudoufuPlanSet`;
-e2e/three-cloud-change-set-e2e.sh asserts it. dns reads azure's
-`azureEndpoint` through chant (chant#4455): dns/src/records.component.ts
-has `memberOutputsComponent("azure")` and a records step whose cfn-deploy
-input is `stackOutput("azure", "azureEndpoint")`, and dns lists `terraform`
-with `terraform.roots.azure` at `../azure`, which is the change signal. No
-chant release has `member-outputs` yet (0.124.52 lacks it), so the demo
-needs a chant linked from chant's integration/choudoufu-engine; behold's own
-code does not import it, so there is no floor. The e2e's second half runs
+terraform lexicon's `azure` root. `aws` is a Pulumi program on plunge
+(behold#1000: `aws/index.ts`, kind `pulumi`, `Pulumi.yaml` naming the
+`plunge+file://./.plunge` backend), so the demo requires plunge too
+(PLUNGE_BIN counts, as CHOUDOUFU_BIN does). `scripts/front-door.ts plan --out <file>`
+(`npm run change-set`) composes one change set, a part per engine: chant
+parts for dns and gcp, azure's choudoufu part from `choudoufuPlanSet`, and
+aws's pulumi part from `plunge preview` (`previewPulumiMember`);
+e2e/three-cloud-change-set-e2e.sh asserts it. `apply --change-set <file>`
+plans again and refuses the whole set, exit 3, when any part moved
+(.front-door/apply-verdict.json names each), and `oob-edit <member>` makes
+one out-of-band edit per member for the live run;
+e2e/multi-engine-demo-e2e.sh asserts the composed graph, a colour change per
+engine and the refusal, with a fake plunge and recorded drift streams. dns
+reads azure's `azureEndpoint` and aws's `awsEndpoint` through chant
+(chant#4455): dns/src/records.component.ts has `memberOutputsComponent("azure")`,
+`memberOutputsComponent("aws")` and a records step whose cfn-deploy inputs
+are `stackOutput("azure", "azureEndpoint")` and `stackOutput("aws",
+"awsEndpoint")`, and dns lists `terraform` (with `terraform.roots.azure` at
+`../azure`, which is the change signal) and `pulumi`. No chant release has
+`member-outputs` or the pulumi lexicon yet (0.124.52 lacks both), so the
+demo needs chant main's core and lexicons linked (the local build is
+0.124.34), and the workspace pins both lexicons by path so a pin never asks
+for a version the local build lacks; behold's own code does not import them,
+so there is no floor. The e2e's second half runs
 `chant components pr-plan --member dns` over a change to azure/ and asserts
 dns's records step names azure under its unresolved inputs. `behold demo three-cloud` runs `scripts/emulators-up.sh` (the
 emulators under chant's own container names, with the Docker socket, floci-az
@@ -1839,7 +1852,7 @@ running Container Apps unmocked), then serves with `--local --env local`.
 `--local` on a workspace boots every chant member's emulators
 (`emulatorDirs`/`emulatorsUp` in src/emulator.ts), not the first member's, and
 tears down the same set. The `front-door` Op (`dns/ops/front-door.op.ts`)
-runs `scripts/front-door.ts`: apply all four, deactivate the Azure revision,
+runs `scripts/front-door.ts`: apply all four (aws with `plunge up`, then `plunge stack export` into aws/stack-export.json, the export chant draws the member from), deactivate the Azure revision,
 wait for `azureCheck` to read unhealthy, then `behold export --open-env local
 --open-zoom composites --note …`. `--note` (`settleNote` in src/export.ts) is
 one line under 200 characters, written to the manifest as `note` and drawn at

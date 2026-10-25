@@ -219,12 +219,15 @@ export function demoLocalPath(entry: DemoEntry): string | undefined {
  * entry (#388), a `path` nobody has checked out. `git` is an implicit
  * requirement of every git-sourced entry. `choudoufu` is satisfied by a
  * `CHOUDOUFU_BIN` that names an existing file, since the build that carries
- * behold's floor is one somebody built from main, not one on PATH. */
+ * behold's floor is one somebody built from main, not one on PATH. `plunge`
+ * is satisfied by a `PLUNGE_BIN` the same way (behold#1000): the three-cloud
+ * demo's front-door puts it on PATH as `plunge`. */
 export function missingRequirements(entry: DemoEntry): string[] {
   const bins = entry.source === "git" && !entry.requires.includes("git") ? [...entry.requires, "git"] : entry.requires;
   const finder = process.platform === "win32" ? "where" : "which";
   const missing = bins.filter((bin) => {
     if (bin === "choudoufu" && process.env.CHOUDOUFU_BIN && existsSync(process.env.CHOUDOUFU_BIN)) return false;
+    if (bin === "plunge" && process.env.PLUNGE_BIN && existsSync(process.env.PLUNGE_BIN)) return false;
     return spawnSync(finder, [bin], { stdio: "ignore" }).status !== 0;
   });
   // An unchecked-out sibling reads exactly like a missing binary: the entry

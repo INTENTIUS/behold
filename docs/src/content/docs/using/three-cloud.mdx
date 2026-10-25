@@ -11,51 +11,55 @@ The demo answers one question: turn Azure off, and where does traffic go?
 npx @intentius/behold demo three-cloud
 ```
 
-That copies `example-three-cloud` to `./behold-demos/three-cloud`, boots floci, floci-az and floci-gcp, runs `choudoufu init` in the Azure estate, and serves the workspace with the `local` environment picked. It needs Docker and [choudoufu](https://github.com/INTENTIUS/choudoufu) on `PATH` (or `CHOUDOUFU_BIN`), and pulls three emulator images and the azurerm provider the first time. On a Mac, floci-az serves the TLS certificate choudoufu's `scripts/floci-az-mac-cert.sh` makes, which you run once and trust in the keychain.
+That copies `example-three-cloud` to `./behold-demos/three-cloud`, boots floci, floci-az and floci-gcp, runs `choudoufu init` in the Azure estate, and serves the workspace with the `local` environment picked. It needs Docker, [choudoufu](https://github.com/INTENTIUS/choudoufu) on `PATH` (or `CHOUDOUFU_BIN`) and [plunge](https://github.com/INTENTIUS/plunge) on `PATH` (or `PLUNGE_BIN`), and pulls three emulator images, the azurerm provider and pulumi-aws the first time. On a Mac, floci-az serves the TLS certificate choudoufu's `scripts/floci-az-mac-cert.sh` makes, which you run once and trust in the keychain.
 
 ## What you are looking at
 
-The estate is a chant workspace of four members, drawn as four boxes. `dns`, `aws` and `gcp` are chant projects. `azure` is a [choudoufu](https://github.com/INTENTIUS/choudoufu) estate: Terraform with a `live` block, whose ownership is a tag on each resource.
+The estate is a chant workspace of four members on three engines, drawn as four boxes in one graph. `dns` and `gcp` are chant projects. `azure` is a [choudoufu](https://github.com/INTENTIUS/choudoufu) estate: Terraform with a `live` block, whose ownership is a tag on each resource. `aws` is a Pulumi program that [plunge](https://github.com/INTENTIUS/plunge) runs, declared in `chant.workspace.json` as kind `pulumi`.
 
-| member | what it declares |
-|---|---|
-| `dns` | the hosted zone, three health checks, three latency CNAMEs, and an A record naming the GCP load balancer |
-| `aws` | a VPC (`VpcDefault`: public and private subnets in two zones, internet and NAT gateways) and the `FargateAlb` composite: the service, its task, the load balancer |
-| `azure` | in `azure/*.tf`, through hashicorp/azurerm: the resource group, a Log Analytics workspace, a VNet with a subnet for the Container Apps environment, the environment, a user-assigned identity, and the app with external ingress |
-| `gcp` | a custom VPC and a subnet for Cloud Run's egress, and the Cloud Run service (public, running as its own service account) behind a global external Application Load Balancer: address, forwarding rule, HTTP proxy, URL map, backend service, serverless NEG |
+| member | engine | what it declares |
+|---|---|---|
+| `dns` | chant | the hosted zone, three health checks, three latency CNAMEs, and an A record naming the GCP load balancer |
+| `aws` | plunge | in `aws/index.ts`, through pulumi-aws: a VPC with public and private subnets in two zones, internet and NAT gateways and their routes, and the website: ECS cluster, roles, log group, task definition, security groups, the load balancer, its target group and listener, and the service. These are the resources the chant lexicon's `VpcDefault` and `FargateAlb` declared when `aws` was a chant member |
+| `azure` | choudoufu | in `azure/*.tf`, through hashicorp/azurerm: the resource group, a Log Analytics workspace, a VNet with a subnet for the Container Apps environment, the environment, a user-assigned identity, and the app with external ingress |
+| `gcp` | chant | a custom VPC and a subnet for Cloud Run's egress, and the Cloud Run service (public, running as its own service account) behind a global external Application Load Balancer: address, forwarding rule, HTTP proxy, URL map, backend service, serverless NEG |
 
-Each cloud publishes its endpoint as an output (`awsEndpoint` and `gcpEndpoint` with chant's `output()`, `azureEndpoint` as a Terraform output), and `dns` declares a parameter of the same name. That shared name is the edge behold draws from each record's endpoint to the cloud that answers it. Config Connector YAML has no outputs, so `chant build` warns that the gcp member's output is not written; the edge is still drawn, and the Op below reads the load balancer's IP from the emulator and hands it to `dns`.
+Each cloud publishes its endpoint as an output (`gcpEndpoint` with chant's `output()`, `azureEndpoint` as a Terraform output, `awsEndpoint` as a Pulumi stack output), and `dns` declares a parameter of the same name. That shared name is the edge behold draws from each record's endpoint to the cloud that answers it. Config Connector YAML has no outputs, so `chant build` warns that the gcp member's output is not written; the edge is still drawn, and the Op below reads the load balancer's IP from the emulator and hands it to `dns`.
 
-## How dns reads the Azure endpoint
+## How dns reads the Azure and AWS endpoints
 
-`dns` reads `azureEndpoint` through chant ([chant#4455](https://github.com/INTENTIUS/chant/issues/4455)). `dns/src/records.component.ts` has two components:
+`dns` reads `azureEndpoint` and `awsEndpoint` through chant ([chant#4455](https://github.com/INTENTIUS/chant/issues/4455)). `dns/src/records.component.ts` has three components:
 
 ```ts
 export const azure = memberOutputsComponent("azure");
+export const aws = memberOutputsComponent("aws");
 
 export const records: Component = {
   name: "records",
-  dependsOn: ["azure"],
+  dependsOn: ["azure", "aws"],
   deploy: [
     phase("Build", [{ kind: "shell", cmd: "npx tsx ../scripts/front-door.ts build-dns", reason: "..." }]),
-    phase("Apply", [{ kind: "cfn-deploy", stack: "local", template: "dist/dns.json", inputs: { azureEndpoint: stackOutput("azure", "azureEndpoint") } }]),
+    phase("Apply", [{ kind: "cfn-deploy", stack: "local", template: "dist/dns.json",
+      inputs: { azureEndpoint: stackOutput("azure", "azureEndpoint"), awsEndpoint: stackOutput("aws", "awsEndpoint") } }]),
   ],
 };
 ```
 
 `azure` stands for the workspace member of that name. Its one step, `member-outputs`, reads the estate's outputs through choudoufu and never applies it; the estate applies through its own pipeline. Because the member is kind `choudoufu`, the terraform lexicon is the one that reads it, so `dns/chant.config.ts` lists `terraform` beside `aws`. It also names the estate as its one `terraform.roots` entry, `azure`, so a change under `azure/` names the azure component as a changed unit and brings `dns` into the change with it.
 
-When that change creates or replaces the Container App, its address is known only after azure applies. The pull request's plan of `dns` lists `azure` under its unresolved inputs and `azure.azureEndpoint` under its unknown inputs, and the change set has a hole on `azure#outputs` naming the output. On merge, `dns` waits until azure applied, then is planned again against the address it applied as. A change that leaves `azure/` alone plans `dns` against the address azure has now.
+`aws` works the same way for the Pulumi member. The member is kind `pulumi`, so the pulumi lexicon reads it, and `dns/chant.config.ts` lists `pulumi` too. Its `Pulumi.yaml` names plunge's backend (`plunge+file://./.plunge`), which is how chant knows the member runs on plunge: the applied outputs come from `plunge stack output --json --show-secrets=false` and the planned ones from `plunge preview --json`. While aws's preview still has changes, the step refuses, so `dns` never applies against an `awsEndpoint` from before aws's own change.
 
-`awsEndpoint` and `gcpEndpoint` still reach `dns` the old way: `build-dns` reads them from what is applied and writes them into the template as parameter defaults, and points each health check at the emulator that answers for it (see below).
+When a change to `azure/` creates or replaces the Container App, its address is known only after azure applies. The pull request's plan of `dns` lists `azure` under its unresolved inputs and `azure.azureEndpoint` under its unknown inputs, and the change set has a hole on `azure#outputs` naming the output. On merge, `dns` waits until azure applied, then is planned again against the address it applied as. A change that leaves `azure/` alone plans `dns` against the address azure has now.
 
-`member-outputs` is in chant's `integration/choudoufu-engine` branch and in no chant release yet. The `@intentius/chant` 0.124.52 the demo installs lacks it, so until a release carries it, link chant and its terraform lexicon from a checkout of that branch, as the example's README says.
+`gcpEndpoint` still reaches `dns` the old way: `build-dns` reads it from what is applied and writes it into the template as a parameter default, and points each health check at the emulator that answers for it (see below).
+
+`member-outputs` and the pulumi lexicon (`@intentius/chant-lexicon-pulumi`) are on chant's main branch and in no chant release yet. The `@intentius/chant` 0.124.52 the demo installs lacks both, so until a release carries them, link chant's `packages/core`, `lexicons/terraform` and `lexicons/pulumi` from a checkout of chant main, built, as the example's README says. That local build is version 0.124.34. The workspace pins both lexicons by path (`node_modules/@intentius/chant-lexicon-terraform` and `-pulumi`), so the pin reads whichever build is installed there.
 
 ## Turning Azure off
 
 The `front-door` Op, in `dns/ops/front-door.op.ts`, rebuilds the whole picture:
 
-1. Apply gcp, azure, aws and dns to the emulators, then wait until the Azure health check reads healthy. The azure estate goes through chant's terraform lexicon: `choudoufuPlanSet` plans it as a one-root set, and `choudoufuWaveApply` applies exactly that set. dns runs its `azure` and `records` components, so the Azure address it deploys is the one `member-outputs` read.
+1. Apply gcp, azure, aws and dns to the emulators, then wait until the Azure health check reads healthy. The azure estate goes through chant's terraform lexicon: `choudoufuPlanSet` plans it as a one-root set, and `choudoufuWaveApply` applies exactly that set. The aws program goes through plunge: `plunge up` on the stack `local`, then `plunge stack export` into `aws/stack-export.json`, the export chant draws the member's graph from. dns runs its `azure`, `aws` and `records` components, so the Azure and AWS addresses it deploys are the ones `member-outputs` read.
 2. Deactivate the Azure app's active revision, so its endpoint answers 503.
 3. Wait until `chant lifecycle health` reads the Azure check unhealthy.
 4. Export the page.
@@ -74,13 +78,38 @@ The emulators' checkers run inside floci's container, where a floci-az or floci-
 
 floci runs each load balancer listener on the listener's own port in its container, so the AWS check is given port 80 rather than floci's API port.
 
+## Drift, per engine
+
+Each member's cards are coloured by its own engine's read: chant's live read for `dns` and `gcp`, choudoufu's plan for `azure`, and `plunge drift --resource <urn> --stream` for each resource of `aws`, through `chant workspace drift`. An edit made outside any of them turns that card from in sync to drifted. `scripts/front-door.ts oob-edit <member>` makes one such edit on the emulators:
+
+| member | the edit |
+|---|---|
+| `dns` | the hosted zone's comment, through Route 53 |
+| `gcp` | a label on the Cloud Run service |
+| `azure` | a tag on the Container App, beside its ownership markers |
+| `aws` | the log group's retention, 7 days to 14 |
+
+```sh
+npx tsx scripts/front-door.ts oob-edit aws
+```
+
+Then read the member's drift from its box (the streamed read colours each card as its record arrives).
+
 ## One change set over four members
 
 ```sh
 npm run change-set
 ```
 
-That plans every member without applying anything and writes one chant change-set document to `.front-door/change-set.json`: a `chant` part for each of `dns`, `aws` and `gcp`, from `chant lifecycle plan local --json`, and a `choudoufu` part for `azure`, from `choudoufuPlanSet`, with choudoufu's root digest as its `nativeDigest`. One document digest covers all four, so a gate over it binds every part. Its root `chant.config.json` names the estate as the terraform lexicon's `azure` root, which is how `choudoufuPlanSet` finds it.
+That plans every member without applying anything and writes one chant change-set document to `.front-door/change-set.json`, with a part per member in its own engine's terms: a `chant` part for each of `dns` and `gcp`, from `chant lifecycle plan local --json`, a `choudoufu` part for `azure`, from `choudoufuPlanSet`, with choudoufu's root digest as its `nativeDigest`, and a `pulumi` part for `aws`, from `plunge preview --json` read by the pulumi lexicon's `pulumiPreviewPart`. One document digest covers all four, so a gate over it binds every part. Its root `chant.config.json` names the estate as the terraform lexicon's `azure` root, which is how `choudoufuPlanSet` finds it.
+
+To apply exactly that set:
+
+```sh
+npx tsx scripts/front-door.ts apply --change-set .front-door/change-set.json
+```
+
+It plans the four members again first. When the fresh document's digest is the approved one, it applies. When any part's plan moved, whichever engine planned it, the whole set is refused before anything applies: `.front-door/apply-verdict.json` says `refused` and names each part that moved with chant's reason, and the command exits 3, chant's code for a moved plan.
 
 ## The exported page
 

@@ -1,0 +1,360 @@
+{
+  "version": 3,
+  "deployment": {
+    "manifest": {
+      "time": "2026-10-25T12:00:00Z",
+      "magic": "",
+      "version": "v3.272.0"
+    },
+    "resources": [
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "custom": false,
+        "type": "pulumi:pulumi:Stack",
+        "outputs": {
+          "awsEndpoint": "web-alb-4f1c2b3.elb.localhost.localstack.cloud"
+        }
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci",
+        "custom": true,
+        "id": "prov-floci",
+        "type": "pulumi:providers:aws",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "inputs": {
+          "region": "us-east-1"
+        }
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:ec2/vpc:Vpc::network-vpc",
+        "custom": true,
+        "id": "vpc-0a1b2c3d",
+        "type": "aws:ec2/vpc:Vpc",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci",
+        "inputs": {
+          "cidrBlock": "10.20.0.0/16"
+        }
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:ec2/internetGateway:InternetGateway::network-igw",
+        "custom": true,
+        "id": "igw-0a1b2c3d",
+        "type": "aws:ec2/internetGateway:InternetGateway",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci"
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:ec2/internetGatewayAttachment:InternetGatewayAttachment::network-igw-attachment",
+        "custom": true,
+        "id": "igw-0a1b2c3d:vpc-0a1b2c3d",
+        "type": "aws:ec2/internetGatewayAttachment:InternetGatewayAttachment",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci",
+        "dependencies": [
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/internetGateway:InternetGateway::network-igw",
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/vpc:Vpc::network-vpc"
+        ]
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:ec2/subnet:Subnet::network-public-subnet-1",
+        "custom": true,
+        "id": "subnet-01",
+        "type": "aws:ec2/subnet:Subnet",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci",
+        "dependencies": [
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/vpc:Vpc::network-vpc"
+        ],
+        "inputs": {
+          "cidrBlock": "10.20.0.0/24"
+        }
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:ec2/subnet:Subnet::network-public-subnet-2",
+        "custom": true,
+        "id": "subnet-02",
+        "type": "aws:ec2/subnet:Subnet",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci",
+        "dependencies": [
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/vpc:Vpc::network-vpc"
+        ],
+        "inputs": {
+          "cidrBlock": "10.20.1.0/24"
+        }
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:ec2/subnet:Subnet::network-private-subnet-1",
+        "custom": true,
+        "id": "subnet-11",
+        "type": "aws:ec2/subnet:Subnet",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci",
+        "dependencies": [
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/vpc:Vpc::network-vpc"
+        ],
+        "inputs": {
+          "cidrBlock": "10.20.10.0/24"
+        }
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:ec2/subnet:Subnet::network-private-subnet-2",
+        "custom": true,
+        "id": "subnet-12",
+        "type": "aws:ec2/subnet:Subnet",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci",
+        "dependencies": [
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/vpc:Vpc::network-vpc"
+        ],
+        "inputs": {
+          "cidrBlock": "10.20.11.0/24"
+        }
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:ec2/routeTable:RouteTable::network-public-route-table",
+        "custom": true,
+        "id": "rtb-01",
+        "type": "aws:ec2/routeTable:RouteTable",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci",
+        "dependencies": [
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/vpc:Vpc::network-vpc"
+        ]
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:ec2/route:Route::network-public-route",
+        "custom": true,
+        "id": "r-rtb-01-0.0.0.0/0",
+        "type": "aws:ec2/route:Route",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci",
+        "dependencies": [
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/routeTable:RouteTable::network-public-route-table",
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/internetGateway:InternetGateway::network-igw",
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/internetGatewayAttachment:InternetGatewayAttachment::network-igw-attachment"
+        ]
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:ec2/routeTableAssociation:RouteTableAssociation::network-public-rta-1",
+        "custom": true,
+        "id": "rtbassoc-01",
+        "type": "aws:ec2/routeTableAssociation:RouteTableAssociation",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci",
+        "dependencies": [
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/subnet:Subnet::network-public-subnet-1",
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/routeTable:RouteTable::network-public-route-table"
+        ]
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:ec2/routeTableAssociation:RouteTableAssociation::network-public-rta-2",
+        "custom": true,
+        "id": "rtbassoc-02",
+        "type": "aws:ec2/routeTableAssociation:RouteTableAssociation",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci",
+        "dependencies": [
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/subnet:Subnet::network-public-subnet-2",
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/routeTable:RouteTable::network-public-route-table"
+        ]
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:ec2/eip:Eip::network-nat-eip",
+        "custom": true,
+        "id": "eipalloc-01",
+        "type": "aws:ec2/eip:Eip",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci",
+        "inputs": {
+          "domain": "vpc"
+        }
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:ec2/natGateway:NatGateway::network-nat-gateway",
+        "custom": true,
+        "id": "nat-01",
+        "type": "aws:ec2/natGateway:NatGateway",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci",
+        "dependencies": [
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/eip:Eip::network-nat-eip",
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/subnet:Subnet::network-public-subnet-1"
+        ]
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:ec2/routeTable:RouteTable::network-private-route-table",
+        "custom": true,
+        "id": "rtb-11",
+        "type": "aws:ec2/routeTable:RouteTable",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci",
+        "dependencies": [
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/vpc:Vpc::network-vpc"
+        ]
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:ec2/route:Route::network-private-route",
+        "custom": true,
+        "id": "r-rtb-11-0.0.0.0/0",
+        "type": "aws:ec2/route:Route",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci",
+        "dependencies": [
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/routeTable:RouteTable::network-private-route-table",
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/natGateway:NatGateway::network-nat-gateway"
+        ]
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:ec2/routeTableAssociation:RouteTableAssociation::network-private-rta-1",
+        "custom": true,
+        "id": "rtbassoc-11",
+        "type": "aws:ec2/routeTableAssociation:RouteTableAssociation",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci",
+        "dependencies": [
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/subnet:Subnet::network-private-subnet-1",
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/routeTable:RouteTable::network-private-route-table"
+        ]
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:ec2/routeTableAssociation:RouteTableAssociation::network-private-rta-2",
+        "custom": true,
+        "id": "rtbassoc-12",
+        "type": "aws:ec2/routeTableAssociation:RouteTableAssociation",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci",
+        "dependencies": [
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/subnet:Subnet::network-private-subnet-2",
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/routeTable:RouteTable::network-private-route-table"
+        ]
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:ecs/cluster:Cluster::web-cluster",
+        "custom": true,
+        "id": "arn:aws:ecs:us-east-1:000000000000:cluster/web-cluster-1a2b3c4",
+        "type": "aws:ecs/cluster:Cluster",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci"
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:iam/role:Role::web-execution-role",
+        "custom": true,
+        "id": "web-execution-role-1a2b3c4",
+        "type": "aws:iam/role:Role",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci"
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:iam/role:Role::web-task-role",
+        "custom": true,
+        "id": "web-task-role-1a2b3c4",
+        "type": "aws:iam/role:Role",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci"
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:cloudwatch/logGroup:LogGroup::web-log-group",
+        "custom": true,
+        "id": "/ecs/three-cloud-aws-web",
+        "type": "aws:cloudwatch/logGroup:LogGroup",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci",
+        "inputs": {
+          "name": "/ecs/three-cloud-aws-web",
+          "retentionInDays": 7
+        }
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:ecs/taskDefinition:TaskDefinition::web-task-def",
+        "custom": true,
+        "id": "three-cloud-aws-web",
+        "type": "aws:ecs/taskDefinition:TaskDefinition",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci",
+        "dependencies": [
+          "urn:pulumi:local::three-cloud-aws::aws:iam/role:Role::web-execution-role",
+          "urn:pulumi:local::three-cloud-aws::aws:iam/role:Role::web-task-role",
+          "urn:pulumi:local::three-cloud-aws::aws:cloudwatch/logGroup:LogGroup::web-log-group"
+        ]
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:ec2/securityGroup:SecurityGroup::web-alb-sg",
+        "custom": true,
+        "id": "sg-01",
+        "type": "aws:ec2/securityGroup:SecurityGroup",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci",
+        "dependencies": [
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/vpc:Vpc::network-vpc"
+        ]
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:ec2/securityGroup:SecurityGroup::web-task-sg",
+        "custom": true,
+        "id": "sg-02",
+        "type": "aws:ec2/securityGroup:SecurityGroup",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci",
+        "dependencies": [
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/vpc:Vpc::network-vpc",
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/securityGroup:SecurityGroup::web-alb-sg"
+        ]
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:lb/loadBalancer:LoadBalancer::web-alb",
+        "custom": true,
+        "id": "arn:aws:elasticloadbalancing:us-east-1:000000000000:loadbalancer/app/web-alb-4f1c2b3/0123456789abcdef",
+        "type": "aws:lb/loadBalancer:LoadBalancer",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci",
+        "dependencies": [
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/subnet:Subnet::network-public-subnet-1",
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/subnet:Subnet::network-public-subnet-2",
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/securityGroup:SecurityGroup::web-alb-sg"
+        ]
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:lb/targetGroup:TargetGroup::web-target-group",
+        "custom": true,
+        "id": "arn:aws:elasticloadbalancing:us-east-1:000000000000:targetgroup/web-target-group-1a2b/0123456789abcdef",
+        "type": "aws:lb/targetGroup:TargetGroup",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci",
+        "dependencies": [
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/vpc:Vpc::network-vpc"
+        ]
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:lb/listener:Listener::web-listener",
+        "custom": true,
+        "id": "arn:aws:elasticloadbalancing:us-east-1:000000000000:listener/app/web-alb-4f1c2b3/0123456789abcdef/fedcba9876543210",
+        "type": "aws:lb/listener:Listener",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci",
+        "dependencies": [
+          "urn:pulumi:local::three-cloud-aws::aws:lb/loadBalancer:LoadBalancer::web-alb",
+          "urn:pulumi:local::three-cloud-aws::aws:lb/targetGroup:TargetGroup::web-target-group"
+        ]
+      },
+      {
+        "urn": "urn:pulumi:local::three-cloud-aws::aws:ecs/service:Service::web-service",
+        "custom": true,
+        "id": "arn:aws:ecs:us-east-1:000000000000:service/web-cluster-1a2b3c4/web-service-1a2b3c4",
+        "type": "aws:ecs/service:Service",
+        "parent": "urn:pulumi:local::three-cloud-aws::pulumi:pulumi:Stack::three-cloud-aws-local",
+        "provider": "urn:pulumi:local::three-cloud-aws::pulumi:providers:aws::floci::prov-floci",
+        "dependencies": [
+          "urn:pulumi:local::three-cloud-aws::aws:ecs/cluster:Cluster::web-cluster",
+          "urn:pulumi:local::three-cloud-aws::aws:ecs/taskDefinition:TaskDefinition::web-task-def",
+          "urn:pulumi:local::three-cloud-aws::aws:lb/targetGroup:TargetGroup::web-target-group",
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/subnet:Subnet::network-private-subnet-1",
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/subnet:Subnet::network-private-subnet-2",
+          "urn:pulumi:local::three-cloud-aws::aws:ec2/securityGroup:SecurityGroup::web-task-sg",
+          "urn:pulumi:local::three-cloud-aws::aws:lb/listener:Listener::web-listener"
+        ]
+      }
+    ]
+  }
+}

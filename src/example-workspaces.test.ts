@@ -52,36 +52,46 @@ describe("the bundled estates' workspace declarations", () => {
   // #824: dns and three clouds, and each cloud publishes the output dns reads
   // by the same name, which is the join the cross-member edge is drawn on.
   // choudoufu#2246: the azure site is a choudoufu estate, so its output is a
-  // Terraform output of that name, and the declaration pins the terraform
-  // lexicon (which supplies the choudoufu kind) at the version its lockfile
-  // installs.
-  it("example-three-cloud declares dns and three clouds, azure a choudoufu estate, each cloud's output named like a dns parameter", () => {
+  // Terraform output of that name. behold#1000: the aws site is a Pulumi
+  // program on plunge, its output a stack output of that name. The two
+  // lexicons that supply those kinds are pinned by path, at node_modules, so
+  // the pin reads whichever build is installed there (no release has the
+  // pulumi lexicon yet, and the demo runs on chant main's local build).
+  it("example-three-cloud declares dns and three clouds on three engines, each cloud's output named like a dns parameter", () => {
     const decl = declaration("example-three-cloud");
-    expect(decl.members).toEqual(["dns", "aws", "azure", "gcp"].map((n) => ({ name: n, dir: n, kind: n === "azure" ? "choudoufu" : "chant" })));
-    const lock = JSON.parse(readFileSync(join(REPO, "example-three-cloud", "package-lock.json"), "utf8")) as { packages: Record<string, { version?: string }> };
-    expect(decl.pins?.find((p) => p.package === TERRAFORM_LEXICON)?.version).toBe(lock.packages[`node_modules/${TERRAFORM_LEXICON}`]?.version);
+    const kind: Record<string, string> = { dns: "chant", aws: "pulumi", azure: "choudoufu", gcp: "chant" };
+    expect(decl.members).toEqual(["dns", "aws", "azure", "gcp"].map((n) => ({ name: n, dir: n, kind: kind[n] })));
+    expect(decl.pins).toEqual([{ path: `node_modules/${TERRAFORM_LEXICON}` }, { path: "node_modules/@intentius/chant-lexicon-pulumi" }]);
     const dns = readFileSync(join(REPO, "example-three-cloud", "dns", "src", "route53.ts"), "utf8");
-    for (const cloud of ["aws", "gcp"]) {
-      const site = readFileSync(join(REPO, "example-three-cloud", cloud, "src", "site.ts"), "utf8");
-      expect(site, cloud).toContain(`"${cloud}Endpoint")`);
-      expect(dns, cloud).toContain(`export const ${cloud}Endpoint = new Parameter(`);
-    }
+    const gcp = readFileSync(join(REPO, "example-three-cloud", "gcp", "src", "site.ts"), "utf8");
+    expect(gcp).toContain(`"gcpEndpoint")`);
+    expect(dns).toContain("export const gcpEndpoint = new Parameter(");
+    const program = readFileSync(join(REPO, "example-three-cloud", "aws", "index.ts"), "utf8");
+    expect(program).toContain("export const awsEndpoint = alb.dnsName;");
+    expect(dns).toContain("export const awsEndpoint = new Parameter(");
+    const project = readFileSync(join(REPO, "example-three-cloud", "aws", "Pulumi.yaml"), "utf8");
+    expect(project).toMatch(/\nbackend:\n  url: plunge\+file:\/\/\.\/\.plunge\n/);
+    const pkg = JSON.parse(readFileSync(join(REPO, "example-three-cloud", "aws", "package.json"), "utf8")) as { dependencies: Record<string, string> };
+    expect(pkg.dependencies).toEqual({ "@pulumi/aws": "7.51.1", "@pulumi/pulumi": "3.272.0" });
+    expect(existsSync(join(REPO, "example-three-cloud", "aws", "chant.config.ts"))).toBe(false);
     const estate = readFileSync(join(REPO, "example-three-cloud", "azure", "site.tf"), "utf8");
     expect(estate).toContain(`output "azureEndpoint" {`);
     expect(dns).toContain("export const azureEndpoint = new Parameter(");
     expect(readFileSync(join(REPO, "example-three-cloud", "azure", "main.tf"), "utf8")).toMatch(/\n  live \{\n    estate = "three-cloud-azure"/);
   });
 
-  // chant#4455: dns reads azure's azureEndpoint through chant, from a
-  // member-outputs component named after the member, and names the estate as
-  // its terraform root so a change under azure/ brings dns into the change.
-  it("example-three-cloud's dns reads azureEndpoint from the azure member's outputs", () => {
+  // chant#4455: dns reads azure's azureEndpoint and aws's awsEndpoint through
+  // chant, from a member-outputs component named after each member, and
+  // names the estate as its terraform root so a change under azure/ brings
+  // dns into the change. It lists pulumi for the aws member's outputs.
+  it("example-three-cloud's dns reads azureEndpoint and awsEndpoint from the members' outputs", () => {
     const records = readFileSync(join(REPO, "example-three-cloud", "dns", "src", "records.component.ts"), "utf8");
     expect(records).toContain(`export const azure = memberOutputsComponent("azure");`);
-    expect(records).toContain(`dependsOn: ["azure"]`);
-    expect(records).toContain(`inputs: { azureEndpoint: stackOutput("azure", "azureEndpoint") }`);
+    expect(records).toContain(`export const aws = memberOutputsComponent("aws");`);
+    expect(records).toContain(`dependsOn: ["azure", "aws"]`);
+    expect(records).toContain(`inputs: { azureEndpoint: stackOutput("azure", "azureEndpoint"), awsEndpoint: stackOutput("aws", "awsEndpoint") }`);
     const config = readFileSync(join(REPO, "example-three-cloud", "dns", "chant.config.ts"), "utf8");
-    expect(config).toContain(`lexicons: ["aws", "terraform"]`);
+    expect(config).toContain(`lexicons: ["aws", "terraform", "pulumi"]`);
     expect(config).toContain(`roots: { azure: { dir: "../azure" } }`);
   });
 
