@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ATMOS_TIP, CHANT_TIPS, DEFAULT_TIPS, EDGE, LINK_RESUME_MS, TERRAGRUNT_TIP, TIP_FADE_MS, TIP_MIN_MS, TIP_QUIET_MS, TIP_WAIT_MS, actTip, createTipSequencer, dockCorner, holdMs, safeLink, shouldDismiss } from "./kiosk-ask-tips.js";
+import { ATMOS_TIP, CHANT_TIPS, DEFAULT_TIPS, EDGE, LINK_RESUME_MS, PLAIN_FREE_TIP, TERRAGRUNT_TIP, TIP_FADE_MS, TIP_MIN_MS, TIP_QUIET_MS, TIP_WAIT_MS, actTip, actTips, createTipSequencer, dockCorner, holdMs, safeLink, shouldDismiss } from "./kiosk-ask-tips.js";
 
 function rig(opts = {}) {
   const log = [];
@@ -74,15 +74,20 @@ describe("tip cards: the terminal wins", () => {
     advance(1);
     expect(log).toEqual([["show", "D", TIP_WAIT_MS - 500 + TIP_QUIET_MS]]);
   });
-  it("keeps a tip its reading time while the wait lasts, then hides it and shows no other", () => {
+  it("keeps a tip its reading time while the wait lasts, then hides it; a long wait then shows the second after a 2 s gap", () => {
     const { seq, log, advance } = rig();
     seq.busy(busy("a", { tips }));
     advance(TIP_WAIT_MS + TIP_MIN_MS);
     expect(log).toEqual([["show", "T1", TIP_WAIT_MS], ["hide", TIP_WAIT_MS + TIP_MIN_MS]]);
-    advance(120_000);
+    advance(TIP_QUIET_MS - 1);
     expect(log).toHaveLength(2);
+    advance(1);
+    const at = TIP_WAIT_MS + TIP_MIN_MS + TIP_QUIET_MS;
+    expect(log).toEqual([["show", "T1", TIP_WAIT_MS], ["hide", TIP_WAIT_MS + TIP_MIN_MS], ["show", "T2", at]]);
+    advance(TIP_MIN_MS + 120_000);
+    expect(shows(log)).toHaveLength(2);
   });
-  it("shows one tip per act: later waits of the same scenario show none, the next scenario's do", () => {
+  it("shows two tips per act, never at once: later waits of the same scenario show no third, the next scenario's do", () => {
     const { seq, log, advance } = rig();
     seq.busy(busy("a", { tips }));
     advance(30_000);
@@ -90,13 +95,55 @@ describe("tip cards: the terminal wins", () => {
     advance(30_000);
     seq.busy(busy("c", { tips, step: "applied" }));
     advance(30_000);
-    expect(shows(log)).toHaveLength(1);
+    expect(shows(log).map((x) => x[1])).toEqual(["T1", "T2"]);
     seq.busy(busy("d", { tips, scenario: "s2" }));
-    advance(TIP_WAIT_MS);
-    expect(shows(log)).toHaveLength(2);
+    advance(30_000);
+    expect(shows(log)).toHaveLength(4);
     seq.busy(busy("e", { tips, cycle: 2 }));
     advance(TIP_WAIT_MS);
-    expect(shows(log)).toHaveLength(3);
+    expect(shows(log)).toHaveLength(5);
+    // Never two up together.
+    let up = 0;
+    for (const x of log) {
+      up += x[0] === "show" ? 1 : -1;
+      expect(up).toBeLessThanOrEqual(1);
+    }
+  });
+  it("gives the second tip its own qualifying wait after the first was cut short by a terminal event", () => {
+    const { seq, log, advance } = rig();
+    seq.busy(busy("a", { tips }));
+    advance(TIP_WAIT_MS + 1_000);
+    seq.busy(busy("b", { tips }));
+    advance(TIP_WAIT_MS - 1);
+    expect(shows(log)).toHaveLength(1);
+    advance(1);
+    expect(shows(log).map((x) => x[1])).toEqual(["T1", "T2"]);
+  });
+  it("shows no second tip when the rest of the wait is shorter than its reading time", () => {
+    const { seq, log, advance } = rig();
+    seq.busy(busy("a", { tips, until: TIP_WAIT_MS + TIP_MIN_MS + TIP_QUIET_MS + TIP_MIN_MS - 1 }));
+    advance(60_000);
+    expect(shows(log).map((x) => x[1])).toEqual(["T1"]);
+    seq.busy(busy("b", { tips }));
+    advance(TIP_WAIT_MS);
+    expect(shows(log).map((x) => x[1])).toEqual(["T1", "T2"]);
+  });
+  it("shows no second tip once the viewer closed the first", () => {
+    const { seq, log, advance } = rig();
+    seq.busy(busy("a", { tips }));
+    advance(TIP_WAIT_MS);
+    seq.dismiss();
+    advance(120_000);
+    seq.busy(busy("b", { tips }));
+    advance(120_000);
+    expect(shows(log)).toHaveLength(1);
+  });
+  it("takes the second tip down the moment the terminal does anything", () => {
+    const { seq, log, advance } = rig();
+    seq.busy(busy("a", { tips }));
+    advance(TIP_WAIT_MS + TIP_MIN_MS + TIP_QUIET_MS + 500);
+    seq.line();
+    expect(log.slice(-2)).toEqual([["show", "T2", TIP_WAIT_MS + TIP_MIN_MS + TIP_QUIET_MS], ["hide", TIP_WAIT_MS + TIP_MIN_MS + TIP_QUIET_MS + 500]]);
   });
   it("keeps the act's tip for a later wait when there was no room for it", () => {
     let room = false;
@@ -147,7 +194,26 @@ describe("tip cards: the terminal wins", () => {
   });
 });
 
-describe("tip cards: one built-in tip per act", () => {
+describe("tip cards: the built-in tips per act", () => {
+  it("follows an edit act's card with Free, nothing to host (choudoufu alone on Terragrunt and Atmos), a create act's with Inspect", () => {
+    expect(actTips("choudoufu-compose-edit")).toEqual([DEFAULT_TIPS[2], DEFAULT_TIPS[3]]);
+    for (const sc of ["terragrunt-choudoufu-edit", "atmos-choudoufu-edit"]) expect(actTips(sc)).toEqual([DEFAULT_TIPS[2], PLAIN_FREE_TIP]);
+    expect(actTips("choudoufu-compose-create")).toEqual([DEFAULT_TIPS[0], DEFAULT_TIPS[4]]);
+    expect(actTips("terragrunt-choudoufu-create")).toEqual([TERRAGRUNT_TIP, DEFAULT_TIPS[4]]);
+    expect(actTips("atmos-choudoufu-create")).toEqual([ATMOS_TIP, DEFAULT_TIPS[4]]);
+    expect(actTips("chant-compose-edit")).toEqual([CHANT_TIPS[0]]);
+    expect(actTips("chant-compose-create")).toEqual([CHANT_TIPS[1]]);
+    expect(DEFAULT_TIPS[4]).toEqual({ title: "Inspect", body: "Open Inspect to explore every resource and the plan behind it." });
+    expect(PLAIN_FREE_TIP.body).toBe("choudoufu is free and open source. There is no server or database to host. It runs in the CI pipeline you already have.");
+    expect(PLAIN_FREE_TIP.link.url).toBe("https://github.com/INTENTIUS/choudoufu");
+    expect(DEFAULT_TIPS[3].body).toBe("Both are free and open source. There is no server or database to host. Everything runs in CI pipelines.");
+  });
+  it("shows an edit act's two cards in turn", () => {
+    const { seq, log, advance } = rig();
+    seq.busy(busy("a", { scenario: "atmos-choudoufu-edit" }));
+    advance(120_000);
+    expect(shows(log).map((x) => x[1])).toEqual(["choudoufu", "Free, nothing to host"]);
+  });
   it("gives a create act the known-after-apply card and any other act the tool's card", () => {
     expect(actTip("choudoufu-compose-create")).toBe(DEFAULT_TIPS[0]);
     expect(actTip("choudoufu-compose-edit")).toBe(DEFAULT_TIPS[2]);
@@ -165,7 +231,7 @@ describe("tip cards: one built-in tip per act", () => {
     expect(log).toEqual([["show", "One plan, one note", TIP_WAIT_MS]]);
   });
   it("keeps other products' names off the Terragrunt, Atmos and chant demos' cards", () => {
-    for (const sc of ["terragrunt-choudoufu-create", "terragrunt-choudoufu-edit", "atmos-choudoufu-create", "atmos-choudoufu-edit"]) expect(`${actTip(sc).title} ${actTip(sc).body}`).not.toMatch(/terragucci/);
+    for (const sc of ["terragrunt-choudoufu-create", "terragrunt-choudoufu-edit", "atmos-choudoufu-create", "atmos-choudoufu-edit"]) for (const t of actTips(sc)) expect(`${t.title} ${t.body}`).not.toMatch(/terragucci/);
     expect(`${ATMOS_TIP.body}`).not.toMatch(/terragrunt|same apply|one apply/i);
     expect(`${TERRAGRUNT_TIP.body}`).not.toMatch(/atmos/i);
     for (const sc of ["chant-compose-edit", "chant-compose-create"]) expect(`${actTip(sc).title} ${actTip(sc).body} ${actTip(sc).link.url}`).not.toMatch(/choudoufu|terragucci|terragrunt|atmos|opentofu/i);
@@ -174,7 +240,7 @@ describe("tip cards: one built-in tip per act", () => {
     const shown = [];
     const seq = createTipSequencer({ show: (t) => shown.push(t), hide() {}, pick: () => null, waitMs: 0, quietMs: 0, setTimer: (f) => (f(), 1), clearTimer() {}, now: () => 0 });
     seq.busy({ busy: true, id: "b1", cycle: 1, scenario: "atmos-choudoufu-edit", tips: ["Plain words.", { title: "T", body: "B" }, { title: "No body" }, 4] });
-    expect(shown).toEqual([{ body: "Plain words." }]);
+    expect(shown).toEqual([{ body: "Plain words." }, { title: "T", body: "B" }]);
   });
 });
 
@@ -235,7 +301,7 @@ describe("tip cards: links", () => {
     advance(1);
     expect(log).toHaveLength(2);
     const r = rig({ waitMs: 0, quietMs: 0 });
-    r.seq.busy(busy("a", { tips }));
+    r.seq.busy(busy("a", { tips: tips.slice(0, 1) }));
     r.advance(0);
     r.seq.pause();
     r.advance(TIP_MIN_MS);

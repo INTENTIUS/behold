@@ -8,8 +8,9 @@
  *   `next.at`) before the tip could be read; the pane says when a busy line starts or ends (`behold:ask-busy`) and when any new line
  *   starts (`behold:ask-line`: a typed prompt, a reply, a busy line, the ready light);
  * - any such terminal event takes an open tip down at once, and no tip starts in the {@link TIP_QUIET_MS} after one;
- * - at most one tip per act (a scenario of a cycle): the step's own first tip, else the act's built-in one
- *   ({@link actTip});
+ * - at most two tips per act (a scenario of a cycle), never at once: the step's own tips, else the act's built-in
+ *   ones ({@link actTips}). The second needs its own qualifying wait, or what is left of the same wait once the first
+ *   has held and a quiet gap has passed;
  * - a tip stays its reading time ({@link holdMs}) while the wait lasts, then goes; a tip with a link holds still while
  *   it is hovered or focused ({@link LINK_RESUME_MS} left at least on leaving).
  *
@@ -61,6 +62,11 @@ export const DEFAULT_TIPS = [
   { title: "Inspect", body: "Open Inspect to explore every resource and the plan behind it." },
 ];
 /**
+ * The free card for the Terragrunt and Atmos demos, which have no terragucci in them: it names choudoufu alone.
+ * Linted alone at strictness 3.
+ */
+export const PLAIN_FREE_TIP = { title: "Free, nothing to host", body: "choudoufu is free and open source. There is no server or database to host. It runs in the CI pipeline you already have.", link: { label: "choudoufu on GitHub", url: "https://github.com/INTENTIUS/choudoufu" } };
+/**
  * The Terragrunt and Atmos demos run their own tool's plain workflow with choudoufu as the binary: no terragucci in
  * them. Each has its own known-after-apply card, since the two apply differently: Terragrunt in one apply, Atmos one
  * component at a time. Each body was linted alone at strictness 3.
@@ -93,9 +99,9 @@ export const plainScenario = (scenario) => typeof scenario === "string" && /^(te
 export const createScenario = (scenario) => typeof scenario === "string" && /create/.test(scenario);
 
 /**
- * The one built-in tip of an act. A create act gets the known-after-apply card (the Terragrunt and Atmos demos their
- * own); any other act gets the card that says what the tool is (choudoufu's, or chant's "One plan, one note"). The rest of the cards are not shown in the prompt demo: terragucci's, "Free, nothing to host",
- * "Inspect", and chant's "One approval" and "Parameters, not exports".
+ * The first built-in tip of an act. A create act gets the known-after-apply card (the Terragrunt and Atmos demos their
+ * own); any other act gets the card that says what the tool is (choudoufu's, or chant's "One plan, one note"). The rest of the cards are not shown in the prompt demo: terragucci's, and chant's "One approval",
+ * "Parameters, not exports" and "Free, nothing to host". See {@link actTips} for the second card.
  */
 export function actTip(scenario) {
   const create = createScenario(scenario);
@@ -103,6 +109,17 @@ export function actTip(scenario) {
   if (create && /^terragrunt-/.test(scenario)) return TERRAGRUNT_TIP;
   if (create && /^atmos-/.test(scenario)) return ATMOS_TIP;
   return create ? DEFAULT_TIPS[0] : DEFAULT_TIPS[2];
+}
+
+/**
+ * The built-in tips of an act, in order, at most two: {@link actTip}, then for an edit act "Free, nothing to host"
+ * (choudoufu alone on the Terragrunt and Atmos demos), for a create act "Inspect". The chant demo has just its one.
+ */
+export function actTips(scenario) {
+  const first = actTip(scenario);
+  if (chantScenario(scenario)) return [first];
+  if (createScenario(scenario)) return [first, DEFAULT_TIPS[4]];
+  return [first, plainScenario(scenario) ? PLAIN_FREE_TIP : DEFAULT_TIPS[3]];
 }
 
 /** The act a busy line belongs to: one scenario of one cycle. */
@@ -125,10 +142,10 @@ export const validTips = (v) =>
 
 /**
  * `show(tip)` puts a card up and returns false when there is no room for it (nothing shown; the act keeps its tip for
- * a later wait). `hide()` takes it down. `enabled()` is the Tips switch. `pick(detail)` is the act's built-in tip.
+ * a later wait). `hide()` takes it down. `enabled()` is the Tips switch. `pick(detail)` is the act's built-in tips (a tip or a list of them).
  * `busy(detail)` takes a `behold:ask-busy` detail, `line()` a `behold:ask-line`; `dismiss()`: the viewer closed it.
  */
-export function createTipSequencer({ show, hide, enabled = () => true, pick = (d) => actTip(d && d.scenario), waitMs = TIP_WAIT_MS, quietMs = TIP_QUIET_MS, minMs = TIP_MIN_MS, setTimer = setTimeout, clearTimer = clearTimeout, now = Date.now }) {
+export function createTipSequencer({ show, hide, enabled = () => true, pick = (d) => actTips(d && d.scenario), waitMs = TIP_WAIT_MS, quietMs = TIP_QUIET_MS, minMs = TIP_MIN_MS, setTimer = setTimeout, clearTimer = clearTimeout, now = Date.now }) {
   let id = null;
   let detail = null;
   let since = 0;
@@ -138,8 +155,9 @@ export function createTipSequencer({ show, hide, enabled = () => true, pick = (d
   let current = null;
   let due = 0;
   let paused = null;
-  // The acts that have had their tip.
-  const spent = new Set();
+  // How many tips each act has had.
+  const shown = new Map();
+  const MAX_PER_ACT = 2;
   const stop = () => {
     if (timer !== null) clearTimer(timer);
     timer = null;
@@ -158,17 +176,25 @@ export function createTipSequencer({ show, hide, enabled = () => true, pick = (d
       f();
     }, ms);
   };
-  const eligible = () => id !== null && !up && enabled() && !spent.has(actKey(detail));
+  const eligible = () => id !== null && !up && enabled() && (shown.get(actKey(detail)) || 0) < MAX_PER_ACT;
   const fire = () => {
     if (!eligible() || now() < since + waitMs || now() < quietUntil) return schedule();
-    const tip = validTips(detail.tips)[0] || pick(detail);
+    const own = validTips(detail.tips);
+    const list = own.length ? own : [].concat(pick(detail) || []);
+    const tip = list[shown.get(actKey(detail)) || 0];
     // A wait due to end before the tip could be read shows none (the act keeps its tip): no flash of a card.
     const left = Number.isFinite(detail.until) ? detail.until - now() : Infinity;
     if (!tip || (left > 0 && left < holdMs(tip, minMs)) || show(tip) === false) return;
     up = true;
     current = tip;
-    spent.add(actKey(detail));
-    arm(holdMs(tip, minMs), down);
+    shown.set(actKey(detail), (shown.get(actKey(detail)) || 0) + 1);
+    arm(holdMs(tip, minMs), expire);
+  };
+  // The card's hold is over while the wait goes on: it goes, and the act's next tip, if any, waits out a quiet gap.
+  const expire = () => {
+    quietUntil = now() + quietMs;
+    down();
+    schedule();
   };
   function schedule() {
     if (!eligible() || timer !== null) return;
@@ -204,10 +230,11 @@ export function createTipSequencer({ show, hide, enabled = () => true, pick = (d
       if (paused === null) return;
       const left = Math.max(paused, LINK_RESUME_MS);
       paused = null;
-      arm(left, down);
+      arm(left, expire);
     },
     /** The viewer closed the card. */
     dismiss() {
+      if (id !== null) shown.set(actKey(detail), MAX_PER_ACT);
       stop();
       paused = null;
       up = false;
