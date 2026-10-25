@@ -1,0 +1,17 @@
+{
+  "name": "pulumi-workspace",
+  "schema": 1,
+  "pins": [
+    {
+      "package": "@intentius/chant-lexicon-terraform",
+      "version": "0.124.52"
+    }
+  ],
+  "members": [
+    {
+      "name": "app",
+      "dir": "app",
+      "kind": "pulumi"
+    }
+  ]
+}

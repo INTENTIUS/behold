@@ -69,6 +69,12 @@ example name="terralith-4":
 e2e:
     bash e2e/run.sh
 
+# behold#994: a pulumi member in a chant workspace (e2e/fixtures/pulumi-workspace,
+# a checked-in stack export) renders as its resources, neutral, not as an
+# unreadable box. No cloud, no Pulumi; needs the terraform lexicon beside behold.
+e2e-pulumi-workspace:
+    bash e2e/pulumi-workspace-e2e.sh
+
 # End-to-end (#59, epic #54's definition of done): the unified component view
 # (waves + live status + CI + resources) against a real project — loomster on
 # Floci. Needs loomster checked out and its Floci already up (`just local-up`

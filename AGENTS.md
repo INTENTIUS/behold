@@ -21,7 +21,7 @@ apply creds.
 A directory with a `chant.workspace.json` is a chant workspace (chant ≥ 0.81.0,
 INTENTIUS/chant#2524). `behold serve <root>` serves it from chant's own member
 list (`chant workspace ls --json`, read contract 1; any other contract is
-refused), and reads each `chant`, `terraform` and `choudoufu` member through
+refused), and reads each `chant`, `terraform`, `choudoufu` and `pulumi` member through
 `chant workspace graph --member <name>`. A `choudoufu` member takes its block
 graph from it (the estate's own edges, each block's `file` and `line`) and
 joins it onto choudoufu's `live-check` roster, which still names the cards,
@@ -29,7 +29,15 @@ the rungs and the cross-estate references: chant's graph is one node per
 block, ownership is per instance, and chant carries no rung or reference
 (src/choudoufu-workspace.ts, #465). The ids are the roster's, as before, so a
 saved layout keeps matching. behold's own lexicon read of a choudoufu
-directory stays for a loose view only. Node ids are `<member>/<id>` with the declared member name, the same
+directory stays for a loose view only. A `pulumi` member (#994) is read through
+the same `workspace graph --member` and nothing else: chant reads the `pulumi
+stack export` checked in beside its Pulumi.yaml as stack-export.json, so its
+cards are the export's resources, edged by `parent` and `dependencies`. behold
+has no reader of its own for the kind, keys on the kind string and not on the
+lexicon that supplies it, and sends it no live read: chant has none, so the
+overlay draws it neutral with `_unobserved` saying so (`pulumiWorkspaceVia`,
+src/workspace.ts; the fixture is e2e/fixtures/pulumi-workspace, the e2e
+`just e2e-pulumi-workspace` and src/pulumi-member.test.ts). Node ids are `<member>/<id>` with the declared member name, the same
 form chant composes. A member chant cannot read is drawn as one
 `UnreadableMember` node carrying `attrs._unreadable: {code, message}` with
 chant's reason code. An `other` member is listed on startup and in doctor and
