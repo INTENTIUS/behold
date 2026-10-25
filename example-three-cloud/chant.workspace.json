@@ -2,8 +2,8 @@
   "name": "three-cloud",
   "schema": 1,
   "pins": [
-    { "package": "@intentius/chant-lexicon-terraform", "version": "0.124.52" },
-    { "package": "@intentius/chant-lexicon-pulumi", "version": "0.124.34" }
+    { "path": "node_modules/@intentius/chant-lexicon-terraform" },
+    { "path": "node_modules/@intentius/chant-lexicon-pulumi" }
   ],
   "members": [
     { "name": "dns", "dir": "dns", "kind": "chant" },

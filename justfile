@@ -171,6 +171,21 @@ e2e-flux-estate:
 e2e-streamed-drift:
     bash e2e/streamed-drift-e2e.sh
 
+# behold#1000: the multi-engine three-cloud demo. dns and gcp on chant, azure
+# on choudoufu, aws a Pulumi program on plunge (a fake plunge here,
+# e2e/fixtures/multi-engine-demo/bin). Asserts one composed graph with a card
+# from every engine, an out-of-band edit per engine turning that card from in
+# sync to drifted, and one change set with a part per engine under one digest
+# that a moved part in any engine refuses whole. Then the three-cloud change
+# set e2e, which reads the same document part by part. Needs Docker, choudoufu,
+# and chant main's core, terraform and pulumi lexicons linked:
+#   BEHOLD_E2E_CHANT_LINK="<chant>/packages/core <chant>/lexicons/terraform <chant>/lexicons/pulumi" just e2e-multi-engine
+# SKIPs with exit 0 without them. The live run (a real plunge, the emulators,
+# `front-door.ts oob-edit <member>`) is the maintainer's.
+e2e-multi-engine:
+    bash e2e/multi-engine-demo-e2e.sh
+    bash e2e/three-cloud-change-set-e2e.sh
+
 # behold#490: terragucci's example painted from example-terragucci-reports,
 # through the real server and the real Terraform read. Needs TERRAGUCCI (a
 # terragucci checkout) and the terraform lexicon beside behold; skips without.
