@@ -118,8 +118,8 @@ describe("the create apply the first approval covered", () => {
     expect(states.network.facts).not.toContain(COVERED_WORDS);
     expect(v.rounds).toEqual([{ round: 2, members: ["app", "edge"], covered: true, words: COVERED_WORDS, digest: expect.any(String), filledInputs: ["network.SubnetBId"] }]);
     const marks = stateMarks(v.answer, v.progress);
-    expect(stateWords(marks.app)).toBe(`app · applied · ${COVERED_WORDS}`);
-    expect(stateWords(marks.network)).toBe("network · applied");
+    expect(stateWords(marks.app)).toBe(`applied · ${COVERED_WORDS}`);
+    expect(stateWords(marks.network)).toBe("applied");
   });
   it("shows the real subnet id where the plan said known after apply", () => {
     expect(shown(v, SUBNET_CARD)).toEqual([["id", `id: ${SUBNET_ID}`]]);

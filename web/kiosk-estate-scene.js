@@ -112,6 +112,25 @@ export function sceneModel(answer, plan, progress, open) {
   return { roots, edges, width: layout.width, height: layout.height, cols: layout.cols };
 }
 
+/** The words in a box whose plan is not written yet. */
+export const WAITING_WORDS = "waiting for the plan";
+
+/**
+ * The scene while the plan is not there to draw (a pull request being planned, the reset between acts): each
+ * estate the reports name, upstream on top, with one empty slot where its cards will be. Without it the pane holds
+ * dark until the plan job writes the plan, or keeps the last act's cards under the next act's title. Null when the
+ * reports name no estate.
+ */
+export function waitingModel(answer, plan, open) {
+  const scene = answer && answer.estateScene && Array.isArray(answer.estateScene.roots) ? answer.estateScene.roots.filter((r) => r && r.path && r.name) : [];
+  if (!scene.length) return null;
+  const ordered = upstreamFirst(scene, (plan && plan.edges) || []);
+  const slotOf = (r) => `${r.member}/${r.name}/~waiting`;
+  const layout = askLayout(ordered.map((r) => ({ id: r.path, cards: [{ id: slotOf(r), w: CARD_W, h: CARD_H }] })), open);
+  const roots = ordered.map((r) => ({ path: r.path, name: r.name, member: r.member, ...layout.boxes[r.path], cards: [], waiting: { ...layout.cards[slotOf(r)], words: WAITING_WORDS } }));
+  return { roots, edges: [], width: layout.width, height: layout.height, cols: layout.cols, waiting: true };
+}
+
 /** A curve from one card's edge to the other's, on the sides that face. */
 export function edgePath(a, b) {
   if (b.y >= a.y + a.h) {
@@ -179,6 +198,14 @@ export function drawScene(svg, model) {
     g.appendChild(make("rect", { "data-group-id": r.name, x: r.x, y: r.y, width: r.w, height: r.h, rx: 16, fill: "var(--panel, var(--bg))", "fill-opacity": 0.6, stroke: "var(--frame-neutral, var(--neutral))", "stroke-width": 1.5 }));
     g.appendChild(make("text", { x: r.x + 18, y: r.y + 26, "font-size": 20, "font-weight": 700, "letter-spacing": ".5", fill: "var(--muted)" }, r.name));
     scene.appendChild(g);
+    if (r.waiting) {
+      // No data-node-id: the lighting and the reads look for cards, and this is where they will be, not one of them.
+      const w = r.waiting;
+      const slot = make("g", { "data-kl-waiting": r.name });
+      slot.appendChild(make("rect", { x: w.x, y: w.y, width: w.w, height: w.h, rx: 12, fill: "none", stroke: "var(--frame-neutral, var(--neutral))", "stroke-width": 1.5, "stroke-dasharray": "6 5" }));
+      slot.appendChild(make("text", { x: w.x + w.w / 2, y: w.y + w.h / 2 + 5, "text-anchor": "middle", "font-size": 15, fill: "var(--muted)" }, w.words));
+      scene.appendChild(slot);
+    }
     for (const c of r.cards) {
       const card = make("g", { "data-node-id": c.id, "data-kl-synth": "1" });
       const edge = c.applied ? "var(--frame-managed, var(--managed))" : "var(--frame-pending, var(--pending))";
