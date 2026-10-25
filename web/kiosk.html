@@ -514,7 +514,7 @@
         padding: var(--s3) 1.4em var(--s4); font: 600 clamp(1.1rem, 1.6vw, 1.6rem)/1.2 var(--font-mono); letter-spacing: -0.01em; color: var(--fg);
         background: var(--surface-pane-b); border-top: 1px solid var(--rule); border-radius: 0 0 8px 8px; box-shadow: 0 -10px 30px color-mix(in srgb, var(--bg) 70%, transparent); }
       #k-ask[hidden] { display: none; }
-      #k-ask:has(.ask-diff) { max-height: 40vh; } /* the diff block needs room, or the reply scrolls out above it; at most 40% of the screen */
+      #k-ask:has(.ask-diff) { max-height: 30vh; } /* the diff block keeps the same cap: older entries scroll out above it, so the graph keeps 70% of the screen */
       #k-ask .ask-entry { display: flex; flex-direction: column; gap: 0.15em; min-width: 0; }
       #k-ask .ask-line { display: flex; gap: 0.6em; }
       #k-ask .ask-mark { color: var(--pending, var(--fg)); flex: none; min-width: 1ch; }
@@ -533,10 +533,10 @@
       /* ==== layout: ask mode (behold#942) ==== Owned by the layout work; the prompt pane's own look is the block above. */
       /* Everywhere: ask mode shows the graph and the pane, so what talks over them is off. */
       body.k-ask #k-change, body.k-ask #k-waves, body.k-ask .k-w-dora-foot, body.k-ask #k-what-pop, body.k-ask #k-read, body.k-ask #k-traces { display: none !important; }
-      /* A phone: the graph on top (60% of the dynamic viewport), the pane under it (40%), and nothing else, with no page scroll. */
+      /* A phone: the graph on top (70% of the dynamic viewport), the pane under it (30%), and nothing else, with no page scroll. */
       @media (max-width: 700px) {
         html:has(body.k-ask), body.k-ask.k-watch { height: 100vh; height: 100dvh; overflow: hidden !important; overscroll-behavior: none; }
-        body.k-ask.k-watch { position: fixed; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 60dvh minmax(0, 1fr); font-size: 14px; }
+        body.k-ask.k-watch { position: fixed; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 70dvh minmax(0, 1fr); font-size: 14px; }
         body.k-ask.k-watch #k-head, body.k-ask.k-watch #bar, body.k-ask.k-watch #k-tools, body.k-ask.k-watch #eh-trail, body.k-ask.k-watch .k-link, body.k-ask.k-watch #k-caption, body.k-ask.k-watch #views, body.k-ask.k-watch #k-held-over,
         body.k-ask.k-watch #k-callout, body.k-ask.k-watch #k-result, body.k-ask.k-watch #k-badges, body.k-ask.k-watch #k-drawer, body.k-ask.k-watch #k-track, body.k-ask.k-watch #eh-strip,
         body.k-ask.k-watch #eh-tips, body.k-ask.k-watch #eh-modals, body.k-ask.k-watch #k-metrics, body.k-ask.k-watch #runs-side, body.k-ask.k-watch #runs-main, body.k-ask.k-watch #k-runs-toggle { display: none !important; }
