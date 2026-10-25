@@ -75,6 +75,14 @@ e2e:
 e2e-pulumi-workspace:
     bash e2e/pulumi-workspace-e2e.sh
 
+# behold#999: adopt a stock Pulumi stack into plunge over a real chant and
+# serve, plunge replaced by e2e/fixtures/adopt-pulumi/plunge. Asserts the
+# report lists every resource with its fate and that nothing is written before
+# a person runs the confirm line. Needs the pulumi lexicon
+# (BEHOLD_E2E_PULUMI_LEXICON to point at chant's lexicons/pulumi).
+e2e-adopt-pulumi:
+    bash e2e/adopt-pulumi-e2e.sh
+
 # End-to-end (#59, epic #54's definition of done): the unified component view
 # (waves + live status + CI + resources) against a real project — loomster on
 # Floci. Needs loomster checked out and its Floci already up (`just local-up`

@@ -135,6 +135,50 @@ makes, `declaredReportUrl` in src/workspace.ts, floor
 declaration included; the flag overrides it, and each answer's `urlFrom` says
 `flag` or `declaration`. With neither, nothing changes.
 
+## Adopting a Pulumi stack into plunge (behold#999)
+
+A `pulumi` member of a declared workspace is offered adoption into plunge,
+the engine tier, through plunge's own `plunge stack adopt` (INTENTIUS/plunge#7,
+P-L4). The Adopt tab and `GET /api/adopt` say what it gains (a record per
+resource, marker tags, no stack lock, the checkpoint's IDs kept, a recorded
+adoption that a re-run leaves alone, a back-out through `plunge stack export`
+and `pulumi stack import`) and what it does not (plunge's refusals, bridged
+types classed at the first run, record-only ownership for untaggable types).
+
+- `GET /api/adopt/report?member=<name>[&stack=<name>]` runs `plunge stack
+  adopt --stack <s> --non-interactive` in the member's directory, with
+  `PULUMI_BACKEND_URL=plunge+<backend.url from Pulumi.yaml>`, no stdin and no
+  `--yes`. That is plunge's read-only stage: it lists every resource with
+  its ownership (marker, record, pending) and refuses with "non-interactive
+  mode requires --yes flag", having written nothing. Each resource gets its
+  fate and why. When plunge refuses the adoption (pending operations, a
+  provider hiding the markers, an aws-native create-only-tag type), each
+  reason is listed, with the URN it names.
+- `POST /api/adopt/start` `{member, stack?}` runs the same classification
+  through the runner's `track` and answers the confirm command, `cd <dir> &&
+  PULUMI_BACKEND_URL=<url> plunge stack adopt --stack <s> --yes`. A person
+  runs it. behold never passes `--yes` or `-y`, drops
+  `PULUMI_SKIP_CONFIRMATIONS` from the environment it hands plunge, and
+  refuses any other plunge argv before spawning (`assertClassificationOnly`,
+  src/pulumi-adoption.ts). After the confirm, point Pulumi.yaml's
+  `backend.url` at `plunge+<url>` so chant runs the member through plunge.
+- The backend comes from the member's Pulumi.yaml only, never login state. A
+  `file://`, `s3://`, `gs://` or `azblob://` URL is a DIY backend; a
+  `plunge+` one is already plunge's. No URL, or a Pulumi Cloud URL, gets no
+  start, and the offer says why. The stack is read off the checked-in
+  `stack-export.json` URNs unless the request names one.
+- A plunge without `stack adopt` is detected from its answer (outcome
+  `no-adopt`), not from a version.
+- The table is keyed on member kind (`ADOPTERS`, src/adoption.ts), the same
+  names the Terraform half uses on integration/choudoufu-engine.
+  `/api/adopt*` is refused in a public view, and the start goes through the
+  terragucci and SQL Yodeler write allowlist.
+- Tests: src/pulumi-adoption.test.ts, web/adopt-pulumi.test.js, and the e2e
+  `just e2e-adopt-pulumi` (e2e/adopt-pulumi-e2e.sh with the stand-in
+  e2e/fixtures/adopt-pulumi/plunge), which asserts nothing is written before
+  a person runs the confirm line, even with `PULUMI_SKIP_CONFIRMATIONS=true`
+  in behold's environment.
+
 ## A plan job run locally (behold#685)
 
 `POST /api/chant/ci/local` `{job: "plan", commit, pr, env?, base?, member?,

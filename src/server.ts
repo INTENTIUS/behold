@@ -72,6 +72,7 @@ import { chantPrFacets, chantPrRoute, prLoopOf, reportSourceOf } from "./chant-p
 import { ChantDemo, chantDemoRoutes } from "./chant-demo.ts";
 import { ciReportUrlOf, ciRunsRoutes, readCiRunIndex, type CiRunEntry } from "./ci-run-index.ts";
 import { localRunRoutes } from "./ci-local-run.ts";
+import { adoptionRoutes } from "./adoption.ts";
 import type { GitRun } from "./terragucci-lifecycle.ts";
 import { TERRAGUCCI_COMPONENTS_FILE, componentJobs, componentsIrFromDeclaration, componentRootMap, readTerragucciComponents, waveTitles, type TerragucciComponents } from "./terragucci-components.ts";
 import { hasTerragruntUnits } from "./terragrunt-units.ts";
@@ -1162,6 +1163,13 @@ export function createApp(
     const ciRunFor = ciRuns ? ciRunsRoutes(app, { ...ciRuns, ...via }) : undefined;
     // behold#685: a plan job run on this machine (chant ci run --local), beside CI's run of it from the index.
     localRunRoutes(app, { workspace: servedWorkspace, runner, broadcaster, ...(cfg.env ? { env: cfg.env } : {}), preview: () => !!cfg.previewMode, ...(ciRunFor ? { ciRunFor } : {}) });
+    // behold#999: adopt a stock Pulumi stack into plunge: plunge stack adopt's read-only classification, and the same classification started as a delegated action; the confirm is a person's.
+    adoptionRoutes(app, {
+      workspace: servedWorkspace,
+      runner,
+      broadcaster,
+      preview: () => !!cfg.previewMode,
+    });
     chantPrRoute(app, () => cfg.projectDir, {
       ...(chantDemo ? { demoReports: (d: string, g?: GitRun) => chantDemo.prReports(d, g), ...(runs ? { source: runs } : {}) } : runs ? { source: runs } : {}),
       ...(cfg.chantReportUrl ? { reportUrl: cfg.chantReportUrl } : {}),
