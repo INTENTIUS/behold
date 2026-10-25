@@ -1,0 +1,72 @@
+{
+  "outcome": "dry-run",
+  "member": "platform",
+  "from": "terraform",
+  "to": "choudoufu",
+  "ran": [
+    {
+      "label": "choudoufu live-check",
+      "exitCode": 0
+    },
+    {
+      "label": "choudoufu live-import (report)",
+      "exitCode": 0
+    }
+  ],
+  "adoption": {
+    "estate": "platform",
+    "state": "terraform.tfstate",
+    "entries": [
+      {
+        "address": "aws_kms_key.estate",
+        "type": "aws_kms_key",
+        "status": "VERIFIED",
+        "liveId": "1234abcd-12ab-34cd-56ef-1234567890ab",
+        "detail": "The live object matches the state's recorded attributes.",
+        "claimed": true
+      },
+      {
+        "address": "aws_kms_alias.estate",
+        "type": "aws_kms_alias",
+        "status": "UNTAGGABLE",
+        "liveId": "alias/waterline-prod-estate",
+        "detail": "aws_kms_alias has no tags argument in the provider's schema, so there is nowhere on it to carry an ownership marker. It is migrated as an untaggable type is: its identity is recorded in the estate's record store when one is configured.",
+        "claimed": false
+      },
+      {
+        "address": "aws_cloudwatch_log_group.audit",
+        "type": "aws_cloudwatch_log_group",
+        "status": "VERIFIED",
+        "liveId": "/waterline-prod/audit",
+        "detail": "The live object matches the state's recorded attributes.",
+        "claimed": true
+      },
+      {
+        "address": "aws_iam_policy.boundary",
+        "type": "aws_iam_policy",
+        "status": "VERIFIED",
+        "liveId": "arn:aws:iam::111122223333:policy/waterline-prod-boundary",
+        "detail": "The live object matches the state's recorded attributes.",
+        "claimed": true
+      },
+      {
+        "address": "aws_iam_role.deploy",
+        "type": "aws_iam_role",
+        "status": "DRIFTED",
+        "liveId": "waterline-prod-deploy",
+        "detail": "The live object differs from the state's recorded attributes: max_session_duration. Verification does not fix drift; a live-plan after stamping will show it.",
+        "claimed": true
+      },
+      {
+        "address": "aws_iam_role_policy_attachment.deploy_boundary",
+        "type": "aws_iam_role_policy_attachment",
+        "status": "UNTAGGABLE",
+        "liveId": "waterline-prod-deploy-20261025120000000000000001",
+        "detail": "aws_iam_role_policy_attachment has no tags argument in the provider's schema, so there is nowhere on it to carry an ownership marker. It is migrated as an untaggable type is: its identity is recorded in the estate's record store when one is configured.",
+        "claimed": false
+      }
+    ],
+    "claimed": 4,
+    "total": 6
+  }
+}

@@ -1001,6 +1001,10 @@
        filled — the fill is the status channel and this card has no status yet,
        so colouring it would claim an observation behold has not made. */
     #graph [data-pending-read] { opacity: 0.55; }
+    /* behold#998: a card a started drift read has not reported yet. Not a
+       status, so the fill is left as it was; the stream's record paints it. */
+    #graph [data-drift-reading] { opacity: 0.6; }
+    #graph [data-drift-reading] rect { stroke-dasharray: 3 3; }
     #graph [data-pending-read] rect { stroke-dasharray: 4 3; }
     @media (prefers-reduced-motion: no-preference) {
       #graph [data-pending-read] { animation: pending-breathe calc(var(--beat) * 2) ease-in-out infinite; }

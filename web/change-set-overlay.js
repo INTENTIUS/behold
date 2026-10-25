@@ -64,12 +64,17 @@ export function actionWords(actions) {
   return order.filter((k) => actions && actions[k]).map((k) => (actions[k] === 1 ? k : `${actions[k]} ${k}`)).join(", ");
 }
 
-/** The marks to draw: per node id, its colour, its tag and its tooltip. */
+/** The entries on one card: its own, and on a counted block its instances' (#996). */
+const onCard = (a, id) => a.entries.filter((e) => e.node === id || e.block === id);
+
+/** The marks to draw: per node id, its colour, its tag and its tooltip. A
+ * counted block's mark is the rollup of its instances' (#996), and each
+ * instance card has its own. */
 export function nodeMarks(a) {
   const out = {};
   if (!a || a.error || a.refusal || !a.nodes) return out;
   for (const [id, n] of Object.entries(a.nodes)) {
-    const entries = a.entries.filter((e) => e.node === id);
+    const entries = onCard(a, id);
     out[id] = {
       bucket: n.bucket,
       color: bucketColor(n.bucket),
@@ -116,19 +121,21 @@ export function entryLines(e) {
 /** The entries on one card, for the inspect pane. */
 export function entriesFor(a, id) {
   if (!a || a.error || a.refusal || !a.entries) return [];
-  return a.entries.filter((e) => e.node === id).map(entryLines);
+  return onCard(a, id).map(entryLines);
 }
 
 /**
  * The entries a reader would not see on the graph: those chant mapped to no
  * node, and those whose node this view does not draw (another lens, or a
- * member not on screen). `drawn` is the set of node ids on the canvas.
+ * member not on screen). `drawn` is the set of node ids on the canvas. An
+ * instance whose card is not drawn is on the graph all the same when its
+ * block card is: the block's rollup outline carries it (#996).
  */
 export function offGraph(a, drawn) {
   if (!a || a.error || a.refusal || !a.entries) return { noNode: [], notDrawn: [] };
   return {
     noNode: a.entries.filter((e) => !e.node).map(entryLines),
-    notDrawn: a.entries.filter((e) => e.node && drawn && !drawn.has(e.node)).map((e) => ({ ...entryLines(e), node: e.node })),
+    notDrawn: a.entries.filter((e) => e.node && drawn && !drawn.has(e.node) && !(e.block && drawn.has(e.block))).map((e) => ({ ...entryLines(e), node: e.node })),
   };
 }
 

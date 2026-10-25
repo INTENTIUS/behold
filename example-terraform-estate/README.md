@@ -105,6 +105,26 @@ copy and sets the copy's pin to that version (#484). It says so as it loads:
 your own declared workspace is different: install the pinned lexicon in its
 root, the way `chant workspace check` asks.
 
+## Adopting a root into choudoufu (#999)
+
+The panel's **Adopt** tab offers each root adoption into choudoufu, the engine
+tier, through `chant workspace promote <root> --state <file>`: what the root
+gains there, what it does not, and the report of what adopting would claim.
+Each resource in the root's state is listed with its fate. VERIFIED and
+DRIFTED resources are claimed (choudoufu stamps its two marker tags on them
+after approval); MISSING, UNTAGGABLE and UNADMITTED_TYPE resources are left
+out, each with choudoufu's reason.
+
+This estate has no state file and no cloud behind it, so the reports are
+recorded: `recorded/adoption/prod.json` (25 resources, 17 claimed) and
+`recorded/adoption/platform.json` (6, 4 claimed), written by hand to the shape
+`chant workspace promote <root> --state <file> --dry-run --json` prints. The
+live ids and fates in them are an example, not a measurement. The tab labels
+them recorded and starts nothing. On a real root with a `terraform.tfstate`,
+the tab runs promote's dry run for the report, and its Start button runs the
+gated command, which records a pending gate and writes nothing until a person
+approves it.
+
 ## Not the carve demo
 
 `behold demo carve` also involves Terraform and answers a different question.

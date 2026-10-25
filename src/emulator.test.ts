@@ -88,14 +88,16 @@ describe("emulatorUp / emulatorDown", () => {
   });
 });
 
-// #824: `--local` on a workspace boots every chant member's emulators.
+// #824: `--local` on a workspace boots every chant member's emulators. The
+// three-cloud azure site is a choudoufu estate (choudoufu#2246), so it boots
+// none: the demo's setup starts floci-az itself.
 describe("emulators for a workspace", () => {
   const EXAMPLE = join(import.meta.dirname, "..", "example-three-cloud");
   const AZ = { lexicon: "azure", name: "chant-floci-az", endpoint: "http://localhost:4577", env: { AZURE_ENDPOINT_URL: "http://localhost:4577" } };
 
   it("reads a chant project as itself, and a workspace as its chant members", () => {
     expect(emulatorDirs("/proj")).toEqual(["/proj"]);
-    expect(emulatorDirs(EXAMPLE)).toEqual(["dns", "aws", "azure", "gcp"].map((m) => join(EXAMPLE, m)));
+    expect(emulatorDirs(EXAMPLE)).toEqual(["dns", "aws", "gcp"].map((m) => join(EXAMPLE, m)));
     const ws = { members: [{ kind: "chant", abs: "/w/a" }, { kind: "terraform", abs: "/w/t" }, { kind: "chant", abs: "/w/b" }] };
     expect(emulatorDirs("/w", ws)).toEqual(["/w/a", "/w/b"]);
     expect(emulatorDirs("/w", { members: [] })).toEqual(["/w"]);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { componentStatusColor, joinComponentStatus, joinTickVerdicts, releaseStatus, releaseChip, releaseOrigin, releaseCompareKey } from "./component-status.ts";
+import { componentStatusColor, reconciliationStatus, joinComponentStatus, joinTickVerdicts, releaseStatus, releaseChip, releaseOrigin, releaseCompareKey } from "./component-status.ts";
 import { TICK_VERDICT_TTL_MS, type TickComponentVerdicts } from "./operator.ts";
 import type { ReleaseRecord, GraphIR, ComponentStatusRow } from "@intentius/chant";
 
@@ -49,11 +49,16 @@ describe("componentStatusColor — pre-0.18.29 fallback (no live/stack at all)",
     expect(componentStatusColor(RECONCILED)).toBe("good");
   });
 
+  // behold#995: chant's drift record reads these as drifted and pending
+  // (reconciliationStatus), but the colour stays a presence answer, as tier
+  // 3's `live` is: an unrecorded infra component is deployed by design (#165).
   it("paints unrecorded-but-live good — deployed outside the release ledger", () => {
+    expect(reconciliationStatus(UNRECORDED_LIVE)).toBe("drifted");
     expect(componentStatusColor(UNRECORDED_LIVE)).toBe("good");
   });
 
   it("paints unrecorded-and-not-live neutral — genuinely not deployed", () => {
+    expect(reconciliationStatus(UNRECORDED_NO_LIVE)).toBe("pending");
     expect(componentStatusColor(UNRECORDED_NO_LIVE)).toBe("neutral");
   });
 

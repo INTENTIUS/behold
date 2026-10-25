@@ -65,9 +65,22 @@ function member(): string {
   return dir;
 }
 
+/**
+ * behold#995: which reads answered is the IR's `rootReads` (chant#4452). The
+ * recordings were printed before chant carried the field, so the root's
+ * report is put on the recorded IR here, as chant now writes it: `live+plan`
+ * when both reads answered, and the given report otherwise.
+ */
+const BOTH = { depth: "live+plan" };
+const withRootRead = (text: string, rootRead: Record<string, unknown> | null): string => {
+  const doc = JSON.parse(text) as Record<string, unknown>;
+  if (rootRead) doc.rootReads = { [`terraform.roots.${ROOT}`]: rootRead };
+  return JSON.stringify(doc);
+};
+
 /** chant, answered from a recording: the document handed to the directory the
- * variable names, the IR on stdout, the notes on stderr. */
-function recorded(c: Case, seen: Array<{ args: string[]; project: string; env: Record<string, string> }> = [], over: Partial<{ code: number; stderr: string; hand: boolean }> = {}): ChoudoufuChantDeps {
+ * variable names, the IR on stdout (with its root's report), the notes on stderr. */
+function recorded(c: Case, seen: Array<{ args: string[]; project: string; env: Record<string, string> }> = [], over: Partial<{ code: number; stderr: string; hand: boolean; rootRead: Record<string, unknown> | null }> = {}): ChoudoufuChantDeps {
   return {
     chantVersion: () => "0.124.46",
     lexiconVersion: () => "0.124.46",
@@ -75,7 +88,8 @@ function recorded(c: Case, seen: Array<{ args: string[]; project: string; env: R
     run: async (args, project, env) => {
       seen.push({ args, project, env });
       if (over.hand !== false) writeFileSync(join(env.CHANT_TERRAFORM_LIVE_PLAN_DIR!, livePlanDocumentFile(ROOT)), raw(`choudoufu-chant-iam-ecr-${c}.live-plan.json`));
-      return { code: over.code ?? 0, stdout: raw(`choudoufu-chant-iam-ecr-${c}.ir.json`), stderr: over.stderr ?? raw(`choudoufu-chant-iam-ecr-${c}.stderr.txt`) };
+      const rootRead = over.rootRead === undefined ? BOTH : over.rootRead;
+      return { code: over.code ?? 0, stdout: withRootRead(raw(`choudoufu-chant-iam-ecr-${c}.ir.json`), rootRead), stderr: over.stderr ?? raw(`choudoufu-chant-iam-ecr-${c}.stderr.txt`) };
     },
   };
 }
@@ -173,21 +187,26 @@ describe("the read (#924)", () => {
   it("a failed plan read is live-plan alone: ownership from the document, no drift, and why", async () => {
     const stderr =
       "warning: [terraform] terraform.roots.beh924: the plan read failed (no provider credentials: choudoufu plan failed), so `live-plan -json` alone answered; plan attributes are absent\n";
-    const r = await readChoudoufuThroughChant(member(), recorded("drift", [], { stderr }));
+    const r = await readChoudoufuThroughChant(member(), recorded("drift", [], { stderr, rootRead: { depth: "live+plan", fellBackTo: "live", reason: "no-credentials" } }));
     expect(r.answered).toBe("live");
     expect(r.drift.size).toBe(0);
-    expect(r.note).toMatch(/the plan read failed \(no provider credentials/);
+    expect(r.note).toMatch(/the live\+plan read failed \(no provider credentials\)/);
     expect(r.plan.bound).toHaveLength(6);
   });
 
   it("no live-plan document means no live-plan answered: the member is not observed, and chant's note says why", async () => {
     const stderr = "warning: [terraform] terraform.roots.beh924: no read answered (`live-plan -json` failed, so the plan read was not tried)\n";
-    await expect(readChoudoufuThroughChant(member(), recorded("drift", [], { stderr, hand: false }))).rejects.toThrow(/live-plan -json` failed/);
+    await expect(readChoudoufuThroughChant(member(), recorded("drift", [], { stderr, hand: false, rootRead: null }))).rejects.toThrow(/live-plan -json` failed/);
   });
 
-  it("reads which reads answered off chant's note for the root", () => {
-    expect(rootAnswerOf(raw("choudoufu-chant-iam-ecr-drift.stderr.txt"), ROOT).answered).toBe("live+plan");
-    expect(rootAnswerOf("", ROOT).answered).toBe("live");
+  it("reads which reads answered off the IR's rootReads, never chant's note (behold#995)", () => {
+    expect(rootAnswerOf({ rootReads: { [`terraform.roots.${ROOT}`]: BOTH } }, ROOT).answered).toBe("live+plan");
+    expect(rootAnswerOf({ rootReads: { [`terraform.roots.${ROOT}`]: { depth: "live+plan", fellBackTo: "live", reason: "plan-failed" } } }, ROOT).answered).toBe("live");
+    // rootReads wins over a note that says otherwise.
+    expect(rootAnswerOf({ rootReads: { [`terraform.roots.${ROOT}`]: { depth: "live+plan", fellBackTo: "live" } } }, ROOT, raw("choudoufu-chant-iam-ecr-drift.stderr.txt")).answered).toBe("live");
+    // A released chant (0.124.52) puts no rootReads on the IR: its note for the root is read instead.
+    expect(rootAnswerOf(JSON.parse(raw("choudoufu-chant-iam-ecr-drift.ir.json")), ROOT, raw("choudoufu-chant-iam-ecr-drift.stderr.txt")).answered).toBe("live+plan");
+    expect(rootAnswerOf(undefined, ROOT).answered).toBe("live");
   });
 
   it("a replace counts, a delete and a no-op do not, and each instance of a counted block reads alone", () => {

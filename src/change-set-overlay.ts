@@ -11,12 +11,22 @@
  * place on a node (`node: null`, such as a delete of a block the planning
  * commit no longer declares) are kept and listed beside the graph.
  *
+ * #996: an entry for one instance of a `count`/`for_each` block outlines that
+ * instance's card, `<blockNode>[0]`, by the id rule of src/instance-cards.ts,
+ * and its block card carries the rollup of all of them. chant maps such an
+ * entry to the block node until INTENTIUS/chant#4454 (C4) and to the
+ * instance node after; both give the same pair here.
+ *
  * Both reads go through the read contract (src/workspace-reader.ts), and the
  * route checks the floors in src/chant-floors.ts before spawning either. The
  * gate comes from a fresh status read, never from the page, so the overlay
  * names the commit, run and gate chant recorded for that change set.
  */
 import { floorFor, floorMet, floorRefusal } from "./chant-floors.ts";
+import type { GraphIR } from "@intentius/chant";
+import { instanceOfNode } from "./instance-cards.ts";
+import { cardIdFor, choudoufuCardAliases, type CardAliases } from "./drift-overlay.ts";
+import { memberBlockGraph } from "./choudoufu-workspace.ts";
 import type { Workspace } from "./workspace.ts";
 import { gatesFromStatus, type WorkspaceGate } from "./workspace-gates.ts";
 import { rootReader, WorkspaceReadError, type WorkspaceDocument, type WorkspaceReader, type WorkspaceRefusal } from "./workspace-reader.ts";
@@ -47,8 +57,11 @@ export interface OverlayEntry {
   type: string;
   action: string;
   bucket: ChangeBucket;
-  /** The graph node chant mapped the entry to, or null when the graph holds none for it. */
+  /** The graph node chant mapped the entry to, or null when the graph holds none for it.
+   * For one instance of a counted block, the instance's node (#996). */
   node: string | null;
+  /** Set on an instance's entry: the block node that rolls it up. */
+  block?: string;
   disruption: string | null;
   deposed: string | null;
   attributes: OverlayAttribute[];
@@ -56,8 +69,12 @@ export interface OverlayEntry {
 
 export interface OverlayNode {
   bucket: ChangeBucket;
-  /** Entries on this node, per action. */
+  /** Entries on this node, per action. On a block, its instances' entries summed. */
   actions: Record<string, number>;
+  /** On a block that rolls up instance entries: their instance node ids. */
+  instances?: string[];
+  /** On an instance: the block node that rolls it up. */
+  instanceOf?: string;
 }
 
 export interface ChangeSetOverlay {
@@ -125,7 +142,7 @@ export function showRefusal(doc: WorkspaceDocument, digest: string, member: stri
 }
 
 /** The overlay of one gate's change set: the document `change-set show` printed, keyed by graph node. Pure. */
-export function overlayFrom(gate: Omit<WorkspaceGate, "dir">, doc: WorkspaceDocument, at: Date): ChangeSetOverlay {
+export function overlayFrom(gate: Omit<WorkspaceGate, "dir">, doc: WorkspaceDocument, at: Date, aliases?: CardAliases): ChangeSetOverlay {
   const cs = isRecord(doc.changeSet) ? doc.changeSet : {};
   const entries: OverlayEntry[] = [];
   let unchanged = 0;
@@ -137,13 +154,23 @@ export function overlayFrom(gate: Omit<WorkspaceGate, "dir">, doc: WorkspaceDocu
       unchanged++;
       continue;
     }
+    // behold#995 (B3 follow-up): a choudoufu member's cards are its roster's
+    // `<member>/<address>`, and chant names the node `<member>/<root>/<path>`.
+    // The alias table maps one onto the other; a card is one instance already,
+    // so there is no block rollup to split off. A node the table can't place
+    // keeps chant's id, which outlines nothing and is still listed.
+    const chantNode = str(e.node);
+    const aliased = aliases && chantNode ? cardIdFor(aliases, chantNode, e.address) ?? (str(e.instanceOf) ? cardIdFor(aliases, str(e.instanceOf)!, e.address) : undefined) : undefined;
+    const node = aliased ?? chantNode;
+    const inst = node && !aliases ? instanceOfNode(node, e.address) : undefined;
     entries.push({
       member: String(e.member ?? ""),
       address: e.address,
       type: String(e.type ?? ""),
       action,
       bucket,
-      node: str(e.node),
+      node: inst ? inst.instance : node,
+      ...(inst ? { block: inst.block } : {}),
       disruption: str(e.disruption),
       deposed: str(e.deposed),
       attributes: arr(e.attributes).filter(isRecord).map(attributeOf),
@@ -154,10 +181,20 @@ export function overlayFrom(gate: Omit<WorkspaceGate, "dir">, doc: WorkspaceDocu
   for (const e of entries) {
     counts[e.bucket]++;
     if (!e.node) continue;
-    const n = (nodes[e.node] ??= { bucket: e.bucket, actions: {} });
-    if (STRENGTH[e.bucket] > STRENGTH[n.bucket]) n.bucket = e.bucket;
-    n.actions[e.action] = (n.actions[e.action] ?? 0) + 1;
+    const mark = (id: string): OverlayNode => {
+      const n = (nodes[id] ??= { bucket: e.bucket, actions: {} });
+      if (STRENGTH[e.bucket] > STRENGTH[n.bucket]) n.bucket = e.bucket;
+      n.actions[e.action] = (n.actions[e.action] ?? 0) + 1;
+      return n;
+    };
+    const n = mark(e.node);
+    if (e.block) {
+      n.instanceOf = e.block;
+      const rollup = mark(e.block);
+      if (!(rollup.instances ??= []).includes(e.node)) rollup.instances.push(e.node);
+    }
   }
+  for (const n of Object.values(nodes)) n.instances?.sort();
   const gaps = arr(cs.members)
     .filter(isRecord)
     .map((m) => ({
@@ -210,7 +247,10 @@ const isRefusal = (v: WorkspaceDocument | WorkspaceRefusal): v is WorkspaceRefus
  * and the digest it binds, then the change set. The caller has checked
  * {@link overlayFloorRefusal}.
  */
-export async function readChangeSetOverlay(ws: Workspace, opts: { key: string; env: string; reader?: WorkspaceReader; now?: () => Date }): Promise<OverlayRead> {
+export async function readChangeSetOverlay(
+  ws: Workspace,
+  opts: { key: string; env: string; reader?: WorkspaceReader; now?: () => Date; blockGraph?: (m: Workspace["members"][number]) => Promise<Pick<GraphIR, "nodes">> },
+): Promise<OverlayRead> {
   const reader = opts.reader ?? rootReader(ws.root);
   const status = await attempt(() => reader.read("status", [opts.env]));
   if (isRefusal(status)) return { ok: false, refusal: status };
@@ -229,5 +269,15 @@ export async function readChangeSetOverlay(ws: Workspace, opts: { key: string; e
   if (isRefusal(shown)) return { ok: false, refusal: shown };
   const refused = showRefusal(shown, gate.changeSet, gate.member);
   if (refused) return { ok: false, refusal: refused };
-  return { ok: true, overlay: overlayFrom(gate, shown, (opts.now ?? (() => new Date()))()) };
+  // behold#995: a choudoufu gate's entries land on behold's card ids through the member's alias table, built from chant's graph of it.
+  const m = ws.members.find((x) => x.name === gate.member);
+  let aliases: CardAliases | undefined;
+  if (m?.kind === "choudoufu") {
+    try {
+      aliases = choudoufuCardAliases(m.name, await (opts.blockGraph ?? ((mm) => memberBlockGraph(mm, ws.root, { reader: () => reader })))(m));
+    } catch {
+      aliases = { member: m.name, blocks: new Map() };
+    }
+  }
+  return { ok: true, overlay: overlayFrom(gate, shown, (opts.now ?? (() => new Date()))(), aliases) };
 }

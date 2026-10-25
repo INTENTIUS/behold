@@ -100,7 +100,7 @@ const REFUSED_READS: Array<[RegExp, string]> = [
   [/^\/choudoufu\/(morph|split)$/, "it runs choudoufu"],
   [/^\/api\/sql-yodeler\/lifecycle$/, "a public view shows a terragucci repo"],
   [/^\/api\/shot$/, "a shot starts a browser on this machine"],
-  [/^\/api\/adopt(\/|$)/, "it runs plunge stack adopt against the stack's backend with behold's own credentials"],
+  [/^\/api\/adopt(\/|$)/, "it runs chant workspace promote (which runs choudoufu against the live estate) or plunge stack adopt (against the stack's backend), with behold's own credentials"],
   [/^\/api\/chant\/ci\/local(\/|$)/, "a local run is a job started on this machine, and a public view starts nothing"],
   // behold#978: the catalog is for an agent asking a cap: question; the kiosk never reads it.
   [/^\/api\/capabilities$/, "it runs chant, and the public view doesn't read the capability catalog"],

@@ -79,7 +79,7 @@ import { hasTerragruntUnits } from "./terragrunt-units.ts";
 import { summarizePlan } from "./reconcile.ts";
 import { renderGraph, renderArchitecture, renderBanded, renderCarveEstate, renderCarveMorph, renderMoveMorph } from "./render.ts";
 import { boxBadges, collapseBoxes, collapseNote } from "./collapse-lens.ts";
-import { withReleases, withRunsSince } from "./component-releases.ts";
+import { memberRunsCard, withMemberApplies, withReleases, withRunsSince } from "./component-releases.ts";
 import { declaresComponents, estateComponents, estateComponentsNote, type MemberComponents } from "./estate-components.ts";
 import { stackAlike, stackNote } from "./stack-lens.ts";
 import { readCarveReport, carveReportToIr, carveNote } from "./carve-lens.ts";
@@ -173,10 +173,12 @@ import { pointsFloorRefusal, readOpenPoints } from "./decision-points.ts";
 import { orgFloorRefusal, readOrgRepos } from "./org-workspace.ts";
 import { approverFlags, approverFor, approverView, type ApproverOptions, type ApproverRead } from "./approver.ts";
 import { readWhy, whyRegion, withChain } from "./workspace-why.ts";
-import { floorFor, floorMet, floorRefusal } from "./chant-floors.ts";
+import { DRIFT_RECORD_CHANT_FLOOR, floorFor, floorMet, floorRefusal } from "./chant-floors.ts";
+import { memberBlockGraph } from "./choudoufu-workspace.ts";
 import { allowedHostsFrom, guardRequest } from "./request-guard.ts";
 import { applyMemberPasses, memberKindOf, memberKindSpec, memberPassNote, servesAsEstate, type MemberPassRun } from "./member-kind.ts";
 import { TerraformReadError, terraformMemberWorkspace, terraformReaderState, terraformVia } from "./terraform-member.ts";
+import { addInstanceCards } from "./instance-cards.ts";
 import { paintTerraformPlan, readTerraformPlan, terraformPlanNote, type MemberPlanAnswer, type PlanReadDeps, type TerraformPlanRead } from "./terraform-plan.ts";
 import { normalizeTerraformNodes } from "./terraform-lens.ts";
 import { invalidateMember, memberIr, memberIrCacheStats, memberSourceStamp } from "./member-ir.ts";
@@ -219,7 +221,9 @@ import { flagsFloorRefusal, readFeatureFlags } from "./feature-flags.ts";
 import { COLLISION_READ, collisionsFloorRefusal, readCollisions } from "./collision-marks.ts";
 import { sqlYodelerLaneRoute } from "./sql-yodeler-lane.ts";
 import { cachedHealth, invalidateHealth, readHealthOverlay, rememberHealth, type HealthMember } from "./health-overlay.ts";
-import { rootReader } from "./workspace-reader.ts";
+import { rootReader, rootStreamTransport } from "./workspace-reader.ts";
+import { runDriftStream } from "./drift-stream.ts";
+import { DRIFT_DEFAULT_KINDS, DRIFT_KINDS, paintWorkspaceDrift } from "./drift-overlay.ts";
 import { PUBLIC_SEARCHES_IN_FLIGHT, SearchAskError, cachedCapabilities, checkAsk, drawnOf, runSearch, searchTarget, type SearchTarget } from "./search.ts";
 import { resolvedVersion } from "./terraform-member.ts";
 import { writeViewQuery } from "../web/view-url.js";
@@ -278,6 +282,8 @@ export interface ServerOptions {
   ciReportUrl?: string;
   /** #818: the served workspace's declared `ci.reportUrl` (chant#4160), read when `ciReportUrl` isn't given. */
   ciReportUrlDeclared?: string;
+  /** behold#999: `serve --adopt-recorded <dir>`, a demo's recorded adoption reports (one `<member>.json`), served by the Adopt tab in place of running promote. */
+  adoptRecorded?: string;
   /** #471: hud's address (`--hud`, BEHOLD_HUD_URL). A proposed decision in a
    * "why" links to its review there; without it the decision is named by id. */
   hud?: string;
@@ -1163,12 +1169,14 @@ export function createApp(
     const ciRunFor = ciRuns ? ciRunsRoutes(app, { ...ciRuns, ...via }) : undefined;
     // behold#685: a plan job run on this machine (chant ci run --local), beside CI's run of it from the index.
     localRunRoutes(app, { workspace: servedWorkspace, runner, broadcaster, ...(cfg.env ? { env: cfg.env } : {}), preview: () => !!cfg.previewMode, ...(ciRunFor ? { ciRunFor } : {}) });
-    // behold#999: adopt a stock Pulumi stack into plunge: plunge stack adopt's read-only classification, and the same classification started as a delegated action; the confirm is a person's.
+    // behold#999: adopt a stock member into its engine tier. A Terraform root into choudoufu: promote's read-only report, and the gated promote started as a delegated write. A Pulumi stack into plunge: plunge stack adopt's read-only classification, and the same classification started as a delegated action; the confirm is a person's.
     adoptionRoutes(app, {
       workspace: servedWorkspace,
       runner,
       broadcaster,
+      readReport: (root, member, state) => rootReader(root).readPromoteReport(member, state),
       preview: () => !!cfg.previewMode,
+      recorded: () => cfg.adoptRecorded,
     });
     chantPrRoute(app, () => cfg.projectDir, {
       ...(chantDemo ? { demoReports: (d: string, g?: GitRun) => chantDemo.prReports(d, g), ...(runs ? { source: runs } : {}) } : runs ? { source: runs } : {}),
@@ -1831,6 +1839,53 @@ export function createApp(
     return c.json({ workspace: true, member: ask.member, ms, hud: !!cfg.hud, ...withChain(read.why, whyChant) });
   });
 
+  // behold#998: streamed drift. Starts one run of `chant workspace drift
+  // --member <name> --stream` (per resource on a choudoufu member) and narrates
+  // it as `drift` frames on /api/events (src/drift-stream.ts). It reads and
+  // writes nothing, but it reaches the account, so it is a POST with a JSON
+  // body like every other started command, refused under --public by the
+  // request guard. The page sends its member's card addresses; the server
+  // keeps only resource addresses from them, and they go to chant after
+  // `--resource`, never as an operand.
+  let driftRun: { id: number; member: string; stop: AbortController } | null = null;
+  let driftRuns = 0;
+  app.post("/api/workspace/drift/stream", async (c) => {
+    const ws = servedWorkspace();
+    if (!ws) return c.json({ error: "behold isn't serving a declared chant workspace, so there is no member to stream drift for.", code: "no-workspace" }, 404);
+    if (!(c.req.header("content-type") ?? "").includes("application/json")) return c.json({ error: "send application/json", code: "bad-drift" }, 415);
+    const text = await c.req.text().catch(() => "");
+    if (text.length > MAX_BODY_BYTES * 4) return c.json({ error: `a drift stream body is capped at ${MAX_BODY_BYTES * 4} bytes`, code: "too-large" }, 413);
+    let body: { member?: unknown; addresses?: unknown; stop?: unknown };
+    try {
+      body = JSON.parse(text || "null") ?? {};
+    } catch {
+      return c.json({ error: "body must be JSON", code: "bad-drift" }, 400);
+    }
+    if (body.stop === true) {
+      if (driftRun) driftRun.stop.abort();
+      return c.json({ stopped: driftRun ? driftRun.id : null });
+    }
+    const member = ws.members.find((m) => m.name === body.member);
+    if (!member || member.reason) return c.json({ error: member ? `${member.name} can't be read: ${member.because ?? member.reason}` : `${String(body.member)} isn't a member of ${ws.name}.`, code: "drift-member" }, 400);
+    if (driftRun) return c.json({ error: `drift is already streaming for ${driftRun.member} (run ${driftRun.id}).`, code: "drift-streaming", run: driftRun.id }, 409);
+    const addresses = Array.isArray(body.addresses) ? body.addresses.filter((a): a is string => typeof a === "string") : [];
+    const run = { id: ++driftRuns, member: member.name, stop: new AbortController() };
+    driftRun = run;
+    void runDriftStream({
+      run: run.id,
+      member,
+      addresses,
+      transport: rootStreamTransport(ws.root, process.env.BEHOLD_DRIFT_CHANT || undefined),
+      emit: (frame) => broadcaster.emit("drift", JSON.stringify(frame)),
+      signal: run.stop.signal,
+    })
+      .catch((e) => broadcaster.emit("drift", JSON.stringify({ run: run.id, kind: "failed", member: member.name, error: (e as Error).message })))
+      .finally(() => {
+        if (driftRun === run) driftRun = null;
+      });
+    return c.json({ run: run.id, member: member.name, kind: member.kind }, 202);
+  });
+
   // #477: approve one workspace gate, by key. The member's directory, env and
   // plan digest come from a fresh status read, never from the page. A framed
   // behold draws no button and leaves this to its host (#476).
@@ -2204,6 +2259,8 @@ export function createApp(
     // is only served from `behold serve <root>`.
     cfg.workspace = undefined;
     setServedWorkspace(undefined);
+    // behold#999: recorded adoption reports belong to the demo they came with.
+    cfg.adoptRecorded = undefined;
     // #389: one directory composes too when chant cannot read it — see servesAsEstate.
     cfg.projectDirs = servesAsEstate(dirs) ? dirs : undefined;
     // #372: a demo's scratch emulator reaches its choudoufu spawns through
@@ -2704,6 +2761,7 @@ export function createApp(
         { method: "GET", path: "/api/workspace/collisions", desc: "the graph nodes two or more in-flight work items touch (#684), from chant workspace status <env> --json overlap (chant#4025): nodes [{node, items, entries [{changeSet, member, address, source, items}]}], files [{items, files}] for files two items changed (no node), unplaced for shared entries chant mapped to no node, items [{item, path, state, commits, with}] (every in-flight item, with empty when it collides with none), changeSets, unattributed; overlap absent (an older chant) or null (no work kind declared, or the read failed) is a refusal with code no-overlap or overlap-unavailable; behold records and locks nothing; a chant below 0.124.29 is refused with refusal code chant-too-old and degraded" },
         { method: "GET", path: "/api/workspace/repos", desc: "an org-level workspace's repo members (behold#931, chant#3168), from one chant workspace graph at the root: repo (the org's own workspace.repo), repos [{name, url, rev, workspace, status, reason, read, workspaceName, label, members [{name, kind, status, reason}]}]; a failed fetch is status failed with chant's reason (command-failed); behold fetches and writes nothing; a chant below 0.124.47 is refused with refusal code chant-too-old and degraded" },
         { method: "GET", path: "/api/workspace/why", desc: "why a member (?member=) or a node (?node=<member>/<id>) is the way it is: the decisions covering it, the runs and commits behind it, and from chant 0.124.29 the chain from each commit's work item to its green tag, release, gate resolution and deploys (trace, #682), from chant workspace graph --intent <region> --json; read on demand, cancelled with the request (#471)" },
+        { method: "POST", path: "/api/workspace/drift/stream", desc: "JSON {member, addresses?} (or {stop: true}): stream one member's drift, chant workspace drift --member <name> --stream, per resource (--resource) on a choudoufu member; each line arrives as a `drift` event on /api/events (begin, start, record, settle, failed, end) and colours its card as it lands; one run at a time (#998)" },
         { method: "GET", path: "/api/workspace/points", desc: "the workspace's open decision points (#472), from chant workspace points --open --json: points [{id, point, title, question, questionType, candidates, subject, gate {op, gate, env} when a gate asked it, state, quorum {count, roles}, model, askedOn, askedBy, stale, path, command}], unread answer kinds with chant's reason; a gate in /api/workspace/gates whose answer.id is a point's id waits on it; behold answers none and has no write route; a chant below 0.107.0 is refused with refusal code chant-too-old and degraded" },
         { method: "POST", path: "/api/workspace/gates/approve", desc: "approve one workspace gate: JSON body {key, env}; env and plan come from a fresh status read; recorded as the request's approver with --actor and --note, a signed gate signed with that person's key or refused 422 code signed (#690); preview-locked (#477); a policy-override gate answers 422 code override with its command (#519); a gate that waits on a decision point answers 422 code decision-point with the points answer line (#472)" },
         { method: "POST", path: "/api/operator/approve/:op/:gate", desc: "record a converge gate's resolution (chant approve — a fact for the next tick, not an unblock)" },
@@ -2809,6 +2867,8 @@ export function createApp(
   const paintTerraformPlans = async (ir: GraphIR, multi: boolean): Promise<MemberPlanAnswer[]> => {
     const answers = await terraformPlans(multi);
     for (const a of answers) if (a.read) paintTerraformPlan(ir, a.read, a.member);
+    // #996: each `count`/`for_each` instance the plan names, as its own card beside its block.
+    addInstanceCards(ir);
     return answers.map(({ dir: _dir, read: _read, ...a }) => a);
   };
 
@@ -3348,7 +3408,8 @@ export function createApp(
         const env = opts.env ?? cfg.env;
         const members = await Promise.all(
           estateMembers(cfg.projectDirs!).map(async (m): Promise<MemberComponents> => {
-            if (m.kind !== "chant") return { member: m.name, dag: { nodes: [], edges: [], groups: {} } as unknown as GraphIR };
+            // #997: a member chant records no component release for is one card, carrying its last apply from the run index.
+            if (m.kind !== "chant") return { member: m.name, dag: { nodes: [memberRunsCard(m.kind)], edges: [], groups: {} } as unknown as GraphIR };
             try {
               let dag = await componentGraphIr(m.dir, tierTargetOpts(opts));
               // Each component's live status where the member can read it, as on a single project.
@@ -3360,11 +3421,22 @@ export function createApp(
           }),
         );
         const picture = estateComponents(members, ir);
-        // #899: each component's last release, from its member's ledger.
-        const chantMembers = estateMembers(cfg.projectDirs!).filter((m) => m.kind === "chant");
-        const { ir: released, released: count } = await withReleases(picture.ir, chantMembers, env ?? undefined);
-        picture.ir = withRunsSince(released, await runIndexEntries()).ir;
-        const note = [estateComponentsNote(picture, picture.ir.nodes.length), count ? `${count} of ${picture.ir.nodes.length} components have a release${env ? ` in ${env}` : ""}` : undefined].filter(Boolean).join(" · ") || undefined;
+        // #899: each component's last release, from its member's ledger. #997:
+        // every member's, whatever its kind; a member chant writes no ledger
+        // for answers none, and its one card takes its last apply and any run
+        // since that did not pass from the run index instead.
+        const { ir: released, released: count } = await withReleases(picture.ir, estateMembers(cfg.projectDirs!), env ?? undefined);
+        const runs = await runIndexEntries();
+        const { ir: applied, applied: applies } = withMemberApplies(withRunsSince(released, runs).ir, runs, !!ciRuns);
+        picture.ir = applied;
+        const note =
+          [
+            estateComponentsNote(picture, picture.ir.nodes.length),
+            count ? `${count} of ${picture.ir.nodes.length} components have a release${env ? ` in ${env}` : ""}` : undefined,
+            applies ? `${applies} ${applies === 1 ? "member has" : "members have"} an apply in the run index` : undefined,
+          ]
+            .filter(Boolean)
+            .join(" · ") || undefined;
         const { svg } = renderGraph(picture.ir, { boxes: "byStack", groupBadges: boxBadges(picture.ir) });
         return c.json({
           ir: picture.ir,
@@ -3950,6 +4022,20 @@ export function createApp(
         const drift = choudoufuPlanDrift(cfg.projectDirs);
         let driftedCards = 0;
         for (const e of drift.byDir.values()) driftedCards += paintPlanDrift(ir, e.drift, e.name);
+        // behold#995: members coloured from chant's drift record, through the one
+        // (status, read) table. On every overlay the members with no live half of
+        // their own (a Terraform root, a Pulumi stack); with `?drift=1` every kind
+        // `workspace drift` reads. Only on a declared workspace whose chant has it.
+        const driftWs = servedWorkspace();
+        const driftRecord =
+          driftWs && meetsFloor(driftWs.chant, DRIFT_RECORD_CHANT_FLOOR)
+            ? await paintWorkspaceDrift(
+                ir,
+                driftWs,
+                { env, plan: planWanted, kinds: new URL(c.req.url).searchParams.get("drift") === "1" ? DRIFT_KINDS : DRIFT_DEFAULT_KINDS },
+                { reader: rootReader(driftWs.root), blockGraph: (m) => memberBlockGraph(m, driftWs.root) },
+              )
+            : undefined;
         const coverNote =
           est.unobserved.length || est.dropped.length
             ? `live observe covered ${est.observed} of ${est.total} projects — ` +
@@ -4094,6 +4180,8 @@ export function createApp(
             // that says `0 drifted` there is a claim behold did not earn.
             // The figure is CARDS marked, which is what the legend counts.
             drift: { ...(drift.read ? { read: true, drifted: driftedCards } : { read: false }), ...(planWanted && planNotes(cfg.projectDirs) ? { note: planNotes(cfg.projectDirs) } : {}) },
+            // behold#995: what each member's drift record painted, and what it could not place.
+            ...(driftRecord ? { driftRecord } : {}),
             ...(note ? { note } : {}),
           },
         });
@@ -4368,7 +4456,8 @@ export function createApp(
   // <env> --json` per chant project (each chant member of a workspace or an
   // estate, in its own directory, ids `<member>/<id>`), through the read
   // contract, each refused below HEALTH_CHANT_FLOOR before anything is
-  // spawned. Rotation comes from each member's cached source graph. Cached per
+  // spawned. #997: a member of another kind is listed too, as one with no
+  // health read, and nothing is spawned for it. Rotation comes from each member's cached source graph. Cached per
   // environment for 30 s; `?fresh=1` reads again, and "Re-check live" drops it.
   // Read-only, and refused in a public view: it reads the live estate with
   // behold's own credentials, as /api/overlay does. A static export captures it
@@ -4380,9 +4469,9 @@ export function createApp(
     if (!isEnvName(env)) return c.json({ error: `${JSON.stringify(env)} isn't an env name`, code: "env" }, 400);
     const ws = servedWorkspace();
     const members: HealthMember[] = ws
-      ? ws.members.filter((m) => m.kind === "chant" && !m.reason).map((m) => ({ name: m.name, dir: m.abs }))
+      ? ws.members.filter((m) => !m.reason).map((m) => ({ name: m.name, dir: m.abs, ...(m.kind !== "chant" ? { kind: m.kind } : {}) }))
       : cfg.projectDirs
-        ? estateMembers(cfg.projectDirs).filter((m) => m.kind === "chant").map((m) => ({ name: m.name, dir: m.dir }))
+        ? estateMembers(cfg.projectDirs).map((m) => ({ name: m.name, dir: m.dir, ...(m.kind !== "chant" ? { kind: m.kind } : {}) }))
         : (memberKindOf(cfg.projectDir) ?? "chant") === "chant"
           ? [{ dir: cfg.projectDir }]
           : [];

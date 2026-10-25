@@ -16,6 +16,7 @@ import {
   parseLiveLs,
   parseLivePlan,
   readChoudoufuLive,
+  omissionStatus,
   verdictFor,
   type LiveLsDocument,
   type LivePlanDocument,
@@ -177,13 +178,18 @@ describe("verdictFor and paintChoudoufu — the palette (#370)", () => {
     expect(status(teamA, "aws_iam_role_policy_attachment.team_a")).toBe("neutral");
   });
 
-  it("the ten reasons: UNOWNED warn, ABSENT accent, three neutral by rung, five neutral and unobserved", () => {
+  // behold#995: each reason is read as chant's drift record reads it (ABSENT
+  // pending, every other one not-observed) and coloured by the one table.
+  // UNOWNED with no unowned[] row to pair is chant's not-observed (C1's ruling),
+  // where behold painted it warn before.
+  it("the ten reasons: ABSENT accent, UNOWNED with no row neutral and unobserved, three neutral by rung, five neutral and unobserved", () => {
     const at = (reason: string) => verdictFor("x", undefined, { estate: "e", choudoufu_version: "", upstream_version: "", omissions: [{ addr: "x", reason, detail: `d ${reason}` }] })!;
-    expect(at("ABSENT")._status).toBe("accent");
-    expect(at("UNOWNED")._status).toBe("warn"); // even with no unowned[] row to pair
-    for (const r of ["NEEDS_DISCOVERY", "PARENT_UNAVAILABLE", "LISTED_NOT_IMPORTABLE"]) expect(at(r)).toMatchObject({ _status: "neutral" });
+    expect(at("ABSENT")).toMatchObject({ _status: "accent", _drift: "pending" });
+    expect(omissionStatus("ABSENT")).toBe("pending");
+    expect(at("UNOWNED")).toEqual({ _status: "neutral", _drift: "not-observed", _unobserved: "d UNOWNED", attrs: { omission: "UNOWNED", detail: "d UNOWNED" } });
+    for (const r of ["NEEDS_DISCOVERY", "PARENT_UNAVAILABLE", "LISTED_NOT_IMPORTABLE"]) expect(at(r)).toMatchObject({ _status: "neutral", _drift: "not-observed" });
     for (const r of ["NEEDS_DISCOVERY", "PARENT_UNAVAILABLE", "LISTED_NOT_IMPORTABLE"]) expect(at(r)._unobserved).toBeUndefined();
-    for (const r of ["FAILED", "CYCLE", "SUPERSEDED", "UNREADABLE", "INCOMPLETE_BLOCK"]) expect(at(r)).toEqual({ _status: "neutral", _unobserved: `d ${r}`, attrs: { omission: r, detail: `d ${r}` } });
+    for (const r of ["FAILED", "CYCLE", "SUPERSEDED", "UNREADABLE", "INCOMPLETE_BLOCK"]) expect(at(r)).toEqual({ _status: "neutral", _drift: "not-observed", _unobserved: `d ${r}`, attrs: { omission: r, detail: `d ${r}` } });
     expect(at("SOMETHING_NEW")._status).toBe("neutral"); // an unknown word never paints drift
   });
 

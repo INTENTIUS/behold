@@ -161,7 +161,19 @@ function served({ preview = false, stdout = CLASSIFIED, stderr = UNCONFIRMED, ex
     return { done: Promise.resolve(exit) };
   };
   const app = new Hono();
-  adoptionRoutes(app, { workspace: () => ws, runner, broadcaster, preview: () => preview, spawnPlunge, env: () => ({ PATH: "/bin", PULUMI_SKIP_CONFIRMATIONS: "1" }) });
+  // The Terraform half's chant floor is not met here (chantVersion 0.0.1): it must hold only the terraform root, never the pulumi stack.
+  adoptionRoutes(app, {
+    workspace: () => ws,
+    runner,
+    broadcaster,
+    readReport: async () => {
+      throw new Error("no terraform read in this test");
+    },
+    chantVersion: () => "0.0.1",
+    preview: () => preview,
+    spawnPlunge,
+    env: () => ({ PATH: "/bin", PULUMI_SKIP_CONFIRMATIONS: "1" }),
+  });
   const post = (body: unknown) => app.request("/api/adopt/start", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const get = async (url: string) => {
     const r = await app.request(url);
@@ -173,7 +185,7 @@ function served({ preview = false, stdout = CLASSIFIED, stderr = UNCONFIRMED, ex
 describe("the adoption routes for a pulumi member (behold#999)", () => {
   it("keys the adopter on the member kind, in the table the Terraform half shares", () => {
     expect(adopterFor("pulumi")?.engine).toBe("plunge");
-    expect(Object.keys(ADOPTERS)).toEqual(["pulumi"]);
+    expect(Object.keys(ADOPTERS).sort()).toEqual(["pulumi", "terraform"]);
     expect(ADOPTION_WAITS.pulumi).toBeUndefined();
   });
 
@@ -188,7 +200,9 @@ describe("the adoption routes for a pulumi member (behold#999)", () => {
     const loose = body.offers.find((o: any) => o.member === "loose");
     expect(loose.start).toMatchObject({ offered: false });
     expect(loose.start.why).toMatch(/backend\.url/);
-    expect(body.offers.find((o: any) => o.member === "net")).toMatchObject({ offered: false });
+    // The terraform root is the Terraform half's: offered to choudoufu. Its chant floor never holds the pulumi offer.
+    expect(body.offers.find((o: any) => o.member === "net")).toMatchObject({ engine: "choudoufu" });
+    expect(body.refusal).toMatchObject({ code: "chant-too-old" });
     expect(body.offers.some((o: any) => o.member === "web")).toBe(false);
     expect(s.spawned).toHaveLength(0);
   });
@@ -229,12 +243,12 @@ describe("the adoption routes for a pulumi member (behold#999)", () => {
     expect(s.spawned.every((x) => !x.args.some((a) => a === "-y" || a.startsWith("--yes")))).toBe(true);
   });
 
-  it("refuses a start in preview, a stack named like a flag, and any kind it has no adopter for", async () => {
+  it("refuses a start in preview and a stack named like a flag, and leaves any other kind to the Terraform half's checks", async () => {
     expect((await served({ preview: true }).post({ member: "app" })).status).toBe(403);
     const s = served();
     expect((await s.post({ member: "app", stack: "--yes" })).status).toBe(422);
-    expect((await s.post({ member: "net" })).status).toBe(422);
-    expect((await s.post({ member: "web" })).status).toBe(422);
+    // A chant member goes the Terraform half's way, whose chant floor (not met here) answers first.
+    expect((await s.post({ member: "web" })).status).toBe(409);
     expect(s.spawned).toHaveLength(0);
   });
 

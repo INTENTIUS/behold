@@ -307,7 +307,9 @@ export function terraformCardFields(node: { attrs: Record<string, unknown> }): A
   if (typeof a.score === "number" || typeof a.block !== "string") return undefined;
   const reads = typeof a.reads === "string" ? [{ label: "reads", value: a.reads }] : [];
   const root = typeof a.root === "string" ? [{ label: "root", value: a.root }] : [];
-  const fields = [...planCardRows(a._plan), ...reads, ...root];
+  // #996: a counted block is the rollup of its instance cards.
+  const instances = Array.isArray(a._instances) && a._instances.length ? [{ label: "instances", value: String(a._instances.length) }] : [];
+  const fields = [...planCardRows(a._plan), ...instances, ...reads, ...root];
   return fields.length ? fields : [{ label: "block", value: a.block }];
 }
 
@@ -337,6 +339,7 @@ export function planCardRows(plan: unknown): Array<{ label: string; value: strin
   const p = plan as {
     source?: string;
     note?: string;
+    readReason?: string;
     action?: string;
     replacePaths?: string[];
     forcedFrom?: Array<{ path: string; from: string }>;
@@ -346,7 +349,8 @@ export function planCardRows(plan: unknown): Array<{ label: string; value: strin
     driftAction?: string;
   };
   if (p.source !== "plan") {
-    const why = p.note && /no provider credentials/.test(p.note) ? "state, no provider credentials" : p.source === "state" ? "state, the plan failed" : "none, declared only";
+    // behold#995: the cause is chant's `rootReads` reason, never a match on its note.
+    const why = p.readReason === "no-credentials" ? "state, no provider credentials" : p.source === "state" ? "state, the plan failed" : "none, declared only";
     return [
       { label: "plan", value: "not read" },
       { label: "read", value: why },

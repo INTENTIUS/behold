@@ -22,8 +22,10 @@
  * refused whole, as {@link WorkspaceReadError}: within a version chant only
  * adds fields, and a new version can change what one means.
  */
+import { spawn } from "node:child_process";
 import { resolve } from "node:path";
-import { runChantRaw } from "./chant.ts";
+import { pipeLines, resolveChant, runChantRaw } from "./chant.ts";
+import { decodeDriftLine, type DriftLine } from "./drift-line.ts";
 import { healthProblems, HEALTH_SCHEMA, type HealthDocument } from "./runtime-health.ts";
 
 /** The read contract version behold reads (chant's `reference/workspace-read-contract`). */
@@ -33,7 +35,7 @@ import { WORKSPACE_CHANT_FLOOR } from "./chant-floors.ts";
 export { WORKSPACE_CHANT_FLOOR };
 
 /** The read-contract commands behold reads, named the way chant's conformance suite names them. */
-export const BEHOLD_READS = ["ls", "graph", "status", "graph --intent", "search"] as const;
+export const BEHOLD_READS = ["ls", "graph", "status", "graph --intent", "search", "drift"] as const;
 export type WorkspaceReadCommand = (typeof BEHOLD_READS)[number];
 
 /**
@@ -48,6 +50,8 @@ export const JSON_FLAGS: Record<WorkspaceReadCommand, readonly string[]> = {
   "graph --intent": ["--json"],
   // behold#913: `workspace search` (INTENTIUS/chant#4374). The query goes last, after `--`, so the flag goes before it.
   search: ["--json"],
+  // behold#995: `workspace drift --member <name>` prints its drift document whatever it is given, as graph does.
+  drift: [],
 };
 
 /**
@@ -154,6 +158,45 @@ export const HEALTH_READ = "lifecycle health";
 /** chant's words when no configured lexicon has a health read: it prints no document and exits 1. */
 const NO_HEALTH_READ = /no configured lexicon has a health read|no health read in this lexicon/i;
 
+/**
+ * behold#999: what adopting a Terraform root into choudoufu would claim,
+ * `chant workspace promote <member> --state <file> --dry-run --json`, run at
+ * the workspace root. `--dry-run` is promote's read-only stage: chant stages
+ * the change in a throwaway git worktree, runs `choudoufu live-check` and
+ * `choudoufu live-import` without `-approve` there, records no gate and leaves
+ * the tree as it was. The document is promote's report, not a read-contract
+ * document (it carries no `contract`), so it is checked by
+ * {@link promoteReportOf} instead; its floor is `ADOPTION_REPORT_CHANT_FLOOR`.
+ * chant's conformance suite does not list it.
+ */
+export const PROMOTE_REPORT_READ = "promote --dry-run";
+
+/** The argv the adoption read runs. `--dry-run` is always there: this module never starts a promote that can gate or apply. */
+export function promoteReportArgv(member: string, state: string): string[] {
+  return ["workspace", "promote", member, "--state", state, "--dry-run", "--json"];
+}
+
+/**
+ * Check what the adoption read printed: a JSON object with promote's
+ * `outcome`. chant prints nothing on stdout when it refuses outright (no git
+ * repository, uncommitted changes, an unknown member), and says why on
+ * stderr, which the refusal carries. A failed check exits 1 and still prints
+ * its document, which is returned.
+ */
+export function promoteReportOf(run: TransportRun, shown: string): WorkspaceDocument {
+  const said = run.stderr.trim().split("\n").slice(-6).join(" ");
+  const remedy = `Run \`${shown}\` in the workspace root to see what it says.`;
+  if (!run.stdout.trim()) throw new WorkspaceReadError({ error: `${shown} printed nothing (exit ${run.status ?? "killed"})${said ? `: ${said}` : ""}`, code: "workspace-promote", remedy });
+  let doc: unknown;
+  try {
+    doc = JSON.parse(run.stdout);
+  } catch {
+    throw new WorkspaceReadError({ error: `${shown} printed something that is not JSON.`, code: "workspace-promote", remedy });
+  }
+  if (!isRecord(doc) || typeof doc.outcome !== "string") throw new WorkspaceReadError({ error: `${shown} printed JSON with no outcome.`, code: "workspace-promote", remedy });
+  return doc;
+}
+
 /** The reads named outside `chant workspace`, for a refusal's wording. */
 const OUTSIDE_WORKSPACE: readonly string[] = [...TRUNK_READS, CHANGE_SET_READ, CI_RUNS_READ];
 
@@ -181,6 +224,8 @@ export interface WorkspaceReader {
    * in a project's directory (or `dir`, when given).
    */
   readCapabilities(form: "workspace" | "project", dir?: string): Promise<WorkspaceDocument>;
+  /** behold#999: promote's read-only report for `member` with the state file `state` (absolute), as chant printed it. */
+  readPromoteReport(member: string, state: string): Promise<WorkspaceDocument>;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -354,6 +399,10 @@ export function workspaceReader(chant: ChantTransport): WorkspaceReader {
       const run = await chant.run(argv, dir !== undefined ? { dir } : undefined);
       return documentOf(run, `chant ${argv.join(" ")}${dir !== undefined ? ` (in ${dir})` : ""}`, "capabilities", CAPABILITIES_READ);
     },
+    async readPromoteReport(member, state) {
+      const argv = promoteReportArgv(member, state);
+      return promoteReportOf(await chant.run(argv), `chant ${argv.join(" ")}`);
+    },
   };
 }
 
@@ -374,4 +423,116 @@ export function rootTransport(root: string, env?: Record<string, string>): Chant
 /** The reader for a workspace root: {@link workspaceReader} over {@link rootTransport}. */
 export function rootReader(root: string, env?: Record<string, string>): WorkspaceReader {
   return workspaceReader(rootTransport(root, env));
+}
+
+// ── behold#998: the streamed drift read ─────────────────────────────────────
+
+/**
+ * behold#998: `chant workspace drift --member <name> [--read <read>]
+ * [--resource <addr>] --stream`, run at the workspace root. It prints chant's
+ * drift stream (src/drift-line.ts): NDJSON, one `drift-start`, a
+ * `drift-record` per instance as its read finishes, one `drift-settle`. Unlike
+ * every read above it is not one document, so it does not go through
+ * {@link documentOf} or the read budget's buffered spawn: each stdout line is
+ * decoded and handed on as it arrives, and a line that does not decode stops
+ * the read. It is not in {@link BEHOLD_READS} (chant's conformance suite
+ * lists documents, not streams). The non-streamed drift read is
+ * `read("drift", driftArgs(ask))` (behold#995), one drift document with the
+ * contract head, in {@link BEHOLD_READS}.
+ */
+export const DRIFT_STREAM_READ = "drift --stream";
+
+export interface DriftStreamAsk {
+  member: string;
+  read?: string;
+  resource?: string;
+  /** behold#995: the environment a chant member's live read needs (`--env`). */
+  env?: string;
+}
+
+/**
+ * The arguments after `workspace drift`, shared by the streamed read and the
+ * document read (behold#995, `read("drift", driftArgs(ask))`). Every value
+ * comes after its flag, never as an operand.
+ */
+export function driftArgs(ask: DriftStreamAsk): string[] {
+  return [
+    "--member", ask.member,
+    ...(ask.read ? ["--read", ask.read] : []),
+    ...(ask.resource ? ["--resource", ask.resource] : []),
+    ...(ask.env ? ["--env", ask.env] : []),
+  ];
+}
+
+/** The argv the streamed drift read runs. */
+export function driftStreamArgv(ask: DriftStreamAsk): string[] {
+  return ["workspace", "drift", ...driftArgs(ask), "--stream"];
+}
+
+/** A transport that hands stdout over line by line. `stderr` is kept for the failure's words. */
+export interface StreamTransport {
+  stream(argv: string[], onLine: (line: string) => void): { done: Promise<{ status: number | null; stderr: string }>; kill(): void };
+}
+
+/** How one streamed read ended. `refused` is the first line that did not decode; the process is killed then. */
+export interface DriftStreamEnd {
+  status: number | null;
+  stderr: string;
+  refused?: string;
+}
+
+/**
+ * Run one streamed drift read. Each decoded line goes to `onLine` the moment
+ * chant prints it. A line that is not a drift line kills the read, since
+ * nothing after it can be trusted to belong to the same stream.
+ */
+export function streamDrift(transport: StreamTransport, ask: DriftStreamAsk, onLine: (line: DriftLine) => void): { done: Promise<DriftStreamEnd>; kill(): void } {
+  const argv = driftStreamArgv(ask);
+  let refused: string | undefined;
+  const run = transport.stream(argv, (text) => {
+    if (refused !== undefined) return;
+    let line: DriftLine;
+    try {
+      line = decodeDriftLine(text);
+    } catch (e) {
+      refused = `chant ${argv.join(" ")} printed a line behold cannot read: ${(e as Error).message}`;
+      run.kill();
+      return;
+    }
+    onLine(line);
+  });
+  return {
+    done: run.done.then((r) => ({ ...r, ...(refused !== undefined ? { refused } : {}) })),
+    kill: () => run.kill(),
+  };
+}
+
+/**
+ * The stream transport over the workspace root's own chant, or over `bin`
+ * when given (`BEHOLD_DRIFT_CHANT`, for a chant built ahead of its release and
+ * for the e2e's fake). Killed by its process group, as a scheduled read is.
+ */
+export function rootStreamTransport(root: string, bin?: string): StreamTransport {
+  return {
+    stream(argv, onLine) {
+      const grouped = process.platform !== "win32";
+      const proc = spawn(bin ?? resolveChant(root).bin, argv, { cwd: root, stdio: ["ignore", "pipe", "pipe"], ...(grouped ? { detached: true } : {}) });
+      const err: Buffer[] = [];
+      proc.stderr.on("data", (d: Buffer) => err.push(d));
+      pipeLines(proc.stdout, onLine);
+      const done = new Promise<{ status: number | null; stderr: string }>((res) => {
+        proc.on("error", (e) => res({ status: 127, stderr: e.message }));
+        proc.on("close", (code) => res({ status: code, stderr: Buffer.concat(err).toString("utf8") }));
+      });
+      const kill = (): void => {
+        try {
+          if (grouped && proc.pid) process.kill(-proc.pid, "SIGTERM");
+          else proc.kill("SIGTERM");
+        } catch {
+          /* already gone */
+        }
+      };
+      return { done, kill };
+    },
+  };
 }
