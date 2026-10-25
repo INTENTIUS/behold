@@ -11,12 +11,19 @@
  * place on a node (`node: null`, such as a delete of a block the planning
  * commit no longer declares) are kept and listed beside the graph.
  *
+ * #996: an entry for one instance of a `count`/`for_each` block outlines that
+ * instance's card, `<blockNode>[0]`, by the id rule of src/instance-cards.ts,
+ * and its block card carries the rollup of all of them. chant maps such an
+ * entry to the block node until INTENTIUS/chant#4454 (C4) and to the
+ * instance node after; both give the same pair here.
+ *
  * Both reads go through the read contract (src/workspace-reader.ts), and the
  * route checks the floors in src/chant-floors.ts before spawning either. The
  * gate comes from a fresh status read, never from the page, so the overlay
  * names the commit, run and gate chant recorded for that change set.
  */
 import { floorFor, floorMet, floorRefusal } from "./chant-floors.ts";
+import { instanceOfNode } from "./instance-cards.ts";
 import type { Workspace } from "./workspace.ts";
 import { gatesFromStatus, type WorkspaceGate } from "./workspace-gates.ts";
 import { rootReader, WorkspaceReadError, type WorkspaceDocument, type WorkspaceReader, type WorkspaceRefusal } from "./workspace-reader.ts";
@@ -47,8 +54,11 @@ export interface OverlayEntry {
   type: string;
   action: string;
   bucket: ChangeBucket;
-  /** The graph node chant mapped the entry to, or null when the graph holds none for it. */
+  /** The graph node chant mapped the entry to, or null when the graph holds none for it.
+   * For one instance of a counted block, the instance's node (#996). */
   node: string | null;
+  /** Set on an instance's entry: the block node that rolls it up. */
+  block?: string;
   disruption: string | null;
   deposed: string | null;
   attributes: OverlayAttribute[];
@@ -56,8 +66,12 @@ export interface OverlayEntry {
 
 export interface OverlayNode {
   bucket: ChangeBucket;
-  /** Entries on this node, per action. */
+  /** Entries on this node, per action. On a block, its instances' entries summed. */
   actions: Record<string, number>;
+  /** On a block that rolls up instance entries: their instance node ids. */
+  instances?: string[];
+  /** On an instance: the block node that rolls it up. */
+  instanceOf?: string;
 }
 
 export interface ChangeSetOverlay {
@@ -137,13 +151,16 @@ export function overlayFrom(gate: Omit<WorkspaceGate, "dir">, doc: WorkspaceDocu
       unchanged++;
       continue;
     }
+    const node = str(e.node);
+    const inst = node ? instanceOfNode(node, e.address) : undefined;
     entries.push({
       member: String(e.member ?? ""),
       address: e.address,
       type: String(e.type ?? ""),
       action,
       bucket,
-      node: str(e.node),
+      node: inst ? inst.instance : node,
+      ...(inst ? { block: inst.block } : {}),
       disruption: str(e.disruption),
       deposed: str(e.deposed),
       attributes: arr(e.attributes).filter(isRecord).map(attributeOf),
@@ -154,10 +171,20 @@ export function overlayFrom(gate: Omit<WorkspaceGate, "dir">, doc: WorkspaceDocu
   for (const e of entries) {
     counts[e.bucket]++;
     if (!e.node) continue;
-    const n = (nodes[e.node] ??= { bucket: e.bucket, actions: {} });
-    if (STRENGTH[e.bucket] > STRENGTH[n.bucket]) n.bucket = e.bucket;
-    n.actions[e.action] = (n.actions[e.action] ?? 0) + 1;
+    const mark = (id: string): OverlayNode => {
+      const n = (nodes[id] ??= { bucket: e.bucket, actions: {} });
+      if (STRENGTH[e.bucket] > STRENGTH[n.bucket]) n.bucket = e.bucket;
+      n.actions[e.action] = (n.actions[e.action] ?? 0) + 1;
+      return n;
+    };
+    const n = mark(e.node);
+    if (e.block) {
+      n.instanceOf = e.block;
+      const rollup = mark(e.block);
+      if (!(rollup.instances ??= []).includes(e.node)) rollup.instances.push(e.node);
+    }
   }
+  for (const n of Object.values(nodes)) n.instances?.sort();
   const gaps = arr(cs.members)
     .filter(isRecord)
     .map((m) => ({
