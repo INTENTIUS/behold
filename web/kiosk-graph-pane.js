@@ -49,3 +49,15 @@ export function mayTellDrawn({ askHeard, waitedMs, askOn, mayShow, graceMs = 300
 export function keepsSceneInAsk({ askOn, sceneUp }) {
   return !!askOn && !!sceneUp;
 }
+
+/**
+ * Whether a kiosk frame draws its reports' scene on an empty svg in place of the graph's refusal (`refusal`, the
+ * precondition body /api/graph answered): a composed run's scene comes from its reports alone, so a checkout the graph
+ * refuses (a chant project the view never installed) is no reason to draw nothing. Only in a frame (`bare`), and only
+ * once the reports hold a scene; without one the refusal's card stays.
+ */
+export function refusalHoldsScene({ refusal, bare, answer }) {
+  if (!refusal || !bare || !answer || answer.error) return false;
+  const scene = answer.estateScene;
+  return !!(scene && Array.isArray(scene.roots) && scene.roots.some((r) => r && Array.isArray(r.resources) && r.resources.length));
+}
