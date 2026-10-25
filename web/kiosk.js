@@ -41,7 +41,7 @@ import { graphFolds, graphPending } from "./kiosk-graph-pane.js";
 import { askEventHelp, askMode, askShot, createAskPane, hasAsk, replyValues } from "./kiosk-ask.js";
 import { STATE_WORDS, outcomesOf, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
 import { startKioskLight } from "./kiosk-light.js"; // behold#937
-import { SIDE_PHONE, detailsModel, keepSide, renderSide, runTrace, sideState, sideStep, sideStored } from "./kiosk-side.js";
+import { SIDE_PHONE, detailsModel, keepSide, renderSide, runTrace, sideApplied, sideState, sideStep, sideStored } from "./kiosk-side.js";
 
 /** The scenarios terragucci#1014 numbers. An id not here is shown by the title demo.json carries. */
 export const SCENARIOS = {
@@ -1892,8 +1892,10 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     // the terminal's current turn is in, at that turn's step.
     const d = sideStep(s.demo && s.demo.demo, s.sideTurn, sideCycles);
     const runs = runsApi && runsApi.index && runsApi.index.doc ? runsApi.index.doc.runs : [];
-    const trace = runTrace(runs, d, { answer: s.answer, progress: s.progress, now: now().getTime() });
-    const details = detailsModel(s.answer, s.progress, s.sideAsk);
+    // The run view is the apply's: before this act's merge the one the kiosk holds is the last act's.
+    const progress = sideApplied(d) ? s.progress : null;
+    const trace = runTrace(runs, d, { answer: s.answer, progress, now: now().getTime() });
+    const details = detailsModel(s.answer, progress, s.sideAsk);
     renderSide(watch.side, { trace, details }, { traces: (host) => drawWaveTraces(host, s), onFold: () => setSide(false) });
   }
   if (watch && watch.sideTab && watch.sideTab.addEventListener) watch.sideTab.addEventListener("click", () => setSide(true));

@@ -70,6 +70,11 @@ export function sideStep(demo, turn, cycles) {
   return { ...(demo || {}), cycle, scenario: turn.scenario, step: turn.step };
 }
 
+/** Whether the step is at or past its act's merge, so the run view the kiosk holds is this act's apply. */
+export function sideApplied(demo) {
+  return !!demo && ["merged", "applying", "waiting", "resumed", "applied", "failed", "reset"].includes(demo.step);
+}
+
 const APPROVED_STEPS = new Set(["approved", "merged", "applying", "waiting", "resumed", "applied", "failed", "reset"]);
 
 /** A pipeline job's place in the trace: "plan", "approval", "apply" (with its wave, for an apply-wave-N job), or null for the bookkeeping jobs. */

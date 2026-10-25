@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { SIDE_STORE, applyParts, jobKind, detailsModel, jobTone, keepSide, runTrace, sideState, sideStep, sideStored } from "./kiosk-side.js";
+import { SIDE_STORE, applyParts, jobKind, detailsModel, jobTone, keepSide, runTrace, sideApplied, sideState, sideStep, sideStored } from "./kiosk-side.js";
 
 // The three-root estate of behold#937 (src/__fixtures__/terragucci-demo-ask), built as web/kiosk-light.test.js builds it.
 const FIX = join(import.meta.dirname, "..", "src", "__fixtures__", "terragucci-demo-ask");
@@ -167,5 +167,13 @@ describe("a pipeline with an approval job and an apply job per wave", () => {
       ["app", "done", 1_500],
     ]);
     expect(runTrace(runs, { cycle: 481, step: "applied" }).rows.map((r) => r.label).slice(2)).toEqual(["wave 1", "wave 2"]);
+  });
+});
+
+describe("the run view the pane reads", () => {
+  it("is this act's only from its merge on: before it, the kiosk still holds the last act's", () => {
+    expect(["pull-request", "planned", "approved"].map((step) => sideApplied({ step }))).toEqual([false, false, false]);
+    expect(["merged", "applying", "applied", "reset"].map((step) => sideApplied({ step }))).toEqual([true, true, true, true]);
+    expect(sideApplied(null)).toBe(false);
   });
 });
