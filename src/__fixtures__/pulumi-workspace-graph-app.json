@@ -1,0 +1,186 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/graph/v1/graph.schema.json",
+  "contract": 1,
+  "chant": "0.124.52",
+  "at": null,
+  "plantable": {
+    "plantable": false,
+    "box": null,
+    "reason": {
+      "code": "box-none",
+      "message": "no member's box block declares services, so there is no box to plant"
+    }
+  },
+  "version": 1,
+  "workspace": {
+    "name": "pulumi-workspace",
+    "root": "e2e/fixtures/pulumi-workspace",
+    "repo": "git@github.com:INTENTIUS/behold.git"
+  },
+  "members": [
+    {
+      "name": "app",
+      "dir": "app",
+      "kind": "pulumi",
+      "status": "composed",
+      "reason": null,
+      "chant": "0.124.52",
+      "irVersion": 1,
+      "live": false,
+      "cached": false,
+      "stamp": "sha256:981b4d58b4570c45192fd41a16384761d34a531ec336036d1d33844922471807",
+      "meta": {
+        "pulumiMember": {
+          "export": "stack-export.json",
+          "objects": 6,
+          "exported": true
+        },
+        "lint": {
+          "errors": 0,
+          "warnings": 0,
+          "findings": []
+        }
+      },
+      "box": null
+    }
+  ],
+  "nodes": [
+    {
+      "id": "app/app/aws:iam/role:Role::web",
+      "kind": "aws:iam/role:Role",
+      "lexicon": "terraform",
+      "attrs": {},
+      "member": "app"
+    },
+    {
+      "id": "app/app/aws:iam/rolePolicy:RolePolicy::webReadsAssets",
+      "kind": "aws:iam/rolePolicy:RolePolicy",
+      "lexicon": "terraform",
+      "attrs": {},
+      "member": "app"
+    },
+    {
+      "id": "app/app/aws:s3/bucket:Bucket::assets",
+      "kind": "aws:s3/bucket:Bucket",
+      "lexicon": "terraform",
+      "attrs": {},
+      "member": "app"
+    },
+    {
+      "id": "app/app/my:mod:Web::web-app",
+      "kind": "my:mod:Web",
+      "lexicon": "terraform",
+      "attrs": {},
+      "member": "app"
+    },
+    {
+      "id": "app/app/my:mod:Web$aws:lambda/function:Function::handler",
+      "kind": "aws:lambda/function:Function",
+      "lexicon": "terraform",
+      "attrs": {},
+      "member": "app"
+    },
+    {
+      "id": "app/app/pulumi:pulumi:Stack::app-dev",
+      "kind": "pulumi:pulumi:Stack",
+      "lexicon": "terraform",
+      "attrs": {},
+      "member": "app"
+    }
+  ],
+  "edges": [
+    {
+      "from": "app/app/aws:iam/role:Role::web",
+      "to": "app/app/pulumi:pulumi:Stack::app-dev",
+      "kind": "ref",
+      "viaAttr": "parent",
+      "member": "app"
+    },
+    {
+      "from": "app/app/aws:iam/rolePolicy:RolePolicy::webReadsAssets",
+      "to": "app/app/aws:iam/role:Role::web",
+      "kind": "ref",
+      "viaAttr": "dependencies",
+      "member": "app"
+    },
+    {
+      "from": "app/app/aws:iam/rolePolicy:RolePolicy::webReadsAssets",
+      "to": "app/app/aws:s3/bucket:Bucket::assets",
+      "kind": "ref",
+      "viaAttr": "dependencies",
+      "member": "app"
+    },
+    {
+      "from": "app/app/aws:iam/rolePolicy:RolePolicy::webReadsAssets",
+      "to": "app/app/pulumi:pulumi:Stack::app-dev",
+      "kind": "ref",
+      "viaAttr": "parent",
+      "member": "app"
+    },
+    {
+      "from": "app/app/aws:s3/bucket:Bucket::assets",
+      "to": "app/app/pulumi:pulumi:Stack::app-dev",
+      "kind": "ref",
+      "viaAttr": "parent",
+      "member": "app"
+    },
+    {
+      "from": "app/app/my:mod:Web::web-app",
+      "to": "app/app/pulumi:pulumi:Stack::app-dev",
+      "kind": "ref",
+      "viaAttr": "parent",
+      "member": "app"
+    },
+    {
+      "from": "app/app/my:mod:Web$aws:lambda/function:Function::handler",
+      "to": "app/app/aws:iam/role:Role::web",
+      "kind": "ref",
+      "viaAttr": "dependencies",
+      "member": "app"
+    },
+    {
+      "from": "app/app/my:mod:Web$aws:lambda/function:Function::handler",
+      "to": "app/app/my:mod:Web::web-app",
+      "kind": "ref",
+      "viaAttr": "parent",
+      "member": "app"
+    }
+  ],
+  "groups": {
+    "byMember": {
+      "app": [
+        "app/app/aws:iam/role:Role::web",
+        "app/app/aws:iam/rolePolicy:RolePolicy::webReadsAssets",
+        "app/app/aws:s3/bucket:Bucket::assets",
+        "app/app/my:mod:Web$aws:lambda/function:Function::handler",
+        "app/app/my:mod:Web::web-app",
+        "app/app/pulumi:pulumi:Stack::app-dev"
+      ]
+    },
+    "byLexicon": {
+      "terraform": [
+        "app/app/aws:iam/role:Role::web",
+        "app/app/aws:iam/rolePolicy:RolePolicy::webReadsAssets",
+        "app/app/aws:s3/bucket:Bucket::assets",
+        "app/app/my:mod:Web$aws:lambda/function:Function::handler",
+        "app/app/my:mod:Web::web-app",
+        "app/app/pulumi:pulumi:Stack::app-dev"
+      ]
+    },
+    "byStack": {
+      "app/terraform": [
+        "app/app/aws:iam/role:Role::web",
+        "app/app/aws:iam/rolePolicy:RolePolicy::webReadsAssets",
+        "app/app/aws:s3/bucket:Bucket::assets",
+        "app/app/my:mod:Web$aws:lambda/function:Function::handler",
+        "app/app/my:mod:Web::web-app",
+        "app/app/pulumi:pulumi:Stack::app-dev"
+      ]
+    }
+  },
+  "exports": [],
+  "imports": [],
+  "links": [],
+  "collectors": [],
+  "records": []
+}

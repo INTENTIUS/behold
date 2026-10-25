@@ -63,7 +63,7 @@ describe("the bundled estates' workspace declarations", () => {
 
   const installed = installedVersion(TERRAFORM_LEXICON, REPO);
   it.skipIf(!installed && !REQUIRE_PEERS)("pins the terraform lexicon at the version installed beside behold", () => {
-    for (const example of ["example-terraform-estate", "example-choudoufu-estate"]) {
+    for (const example of ["example-terraform-estate", "example-choudoufu-estate", "e2e/fixtures/pulumi-workspace"]) {
       const pin = declaration(example).pins?.find((p) => p.package === TERRAFORM_LEXICON);
       expect(pin?.version, example).toBe(installed);
     }
