@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ATMOS_TIP, CHANT_TIPS, DEFAULT_TIPS, EDGE, LINK_RESUME_MS, PLAIN_FREE_TIP, TERRAGRUNT_TIP, TIP_FADE_MS, TIP_MIN_MS, TIP_QUIET_MS, TIP_WAIT_MS, actTip, actTips, createTipSequencer, dockCorner, holdMs, safeLink, shouldDismiss } from "./kiosk-ask-tips.js";
+import { ATMOS_TIP, CHANT_TIPS, DEFAULT_TIPS, EDGE, LINK_RESUME_MS, PLAIN_FREE_TIP, TERRAGRUNT_TIP, TIP_FADE_MS, TIP_MIN_MS, TIP_QUIET_MS, TIP_WAIT_MS, actTip, actTips, createTipSequencer, dockCorner, holdMs, safeLink, shouldDismiss, tipArea } from "./kiosk-ask-tips.js";
 
 function rig(opts = {}) {
   const log = [];
@@ -355,5 +355,18 @@ describe("tip cards: a wait about to end", () => {
     seq.busy(busy("a", { tips, until: 5_000 }));
     advance(TIP_WAIT_MS);
     expect(shows(log)).toHaveLength(1);
+  });
+});
+
+describe("the room a tip docks in", () => {
+  const frame = { left: 5, top: 80, right: 1035, bottom: 900 };
+  it("is the graph frame above the prompt pane", () => {
+    expect(tipArea(frame, { top: 640 }, null)).toEqual({ left: 5, top: 80, width: 1030, height: 560 });
+    expect(tipArea(frame, null, null)).toEqual({ left: 5, top: 80, width: 1030, height: 820 });
+  });
+  it("ends where the side pane starts, open or folded to its tab", () => {
+    expect(tipArea(frame, { top: 640 }, { left: 1000, right: 1395, top: 80, bottom: 630 })).toEqual({ left: 5, top: 80, width: 995, height: 560 });
+    // A side pane beside the frame (the frame already narrowed for it) leaves the frame's room as it is.
+    expect(tipArea(frame, { top: 640 }, { left: 1045, right: 1395, top: 80, bottom: 630 }).width).toBe(1030);
   });
 });

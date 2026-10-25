@@ -2,7 +2,7 @@
 // takes, what the caption leads with, the badges, the delivery line, the
 // result card, the drawer's folded lines, and where an overlay goes.
 import { describe, expect, it } from "vitest";
-import { MODE_STORE, QUIET_MS, activeWave, badgeTitle, badgeWords, badges, behindStep, firstSentence, steadyRun, captionModel, changeRoots, doraLine, modeStored, placeBeside, quietDuration, quietWords, recordKey, resultModel, runningStep, shotFor, stepTone, tailLines } from "./kiosk-watch.js";
+import { MODE_STORE, QUIET_MS, activeWave, badgeTitle, badgeWords, badges, behindStep, firstSentence, holdEnds, steadyRun, captionModel, changeRoots, doraLine, modeStored, placeBeside, quietDuration, quietWords, recordKey, resultModel, runningStep, shotFor, stepTone, tailLines } from "./kiosk-watch.js";
 
 const C = "9f3c2a71d04e5b8c6a1f2e3d4c5b6a7980716253";
 const P = "1111111111111111111111111111111111111111";
@@ -261,5 +261,19 @@ describe("the quiet line", () => {
     expect(quietDuration(3725)).toBe("1 h 02 m");
     expect(firstSentence("Network is already done, and app's migration runs again.")).toBe("Network is already done, and app's migration runs again");
     expect(firstSentence("main moved to 1234abcd: port 8080 -> 9090. Wave 1 plans again")).toBe("main moved to 1234abcd: port 8080 -> 9090");
+  });
+});
+
+describe("a viewer's hold on the shot ends at the reset and at a new act", () => {
+  it("ends when the reset step comes, and when another cycle starts", () => {
+    expect(holdEnds({ cycle: 4, step: "applied" }, { cycle: 4, step: "reset" })).toBe(true);
+    expect(holdEnds({ cycle: 4, step: "applied" }, { cycle: 5, step: "pull-request" })).toBe(true);
+    expect(holdEnds({ cycle: 4, step: "reset" }, { cycle: 5, step: "pull-request" })).toBe(true);
+  });
+  it("holds through the act's own steps, and through the reset's repeated reads", () => {
+    expect(holdEnds({ cycle: 4, step: "planned" }, { cycle: 4, step: "applying" })).toBe(false);
+    expect(holdEnds({ cycle: 4, step: "reset" }, { cycle: 4, step: "reset" })).toBe(false);
+    expect(holdEnds(null, { cycle: 4, step: "reset" })).toBe(false);
+    expect(holdEnds({ cycle: 4, step: "applied" }, null)).toBe(false);
   });
 });

@@ -155,6 +155,18 @@ export function coneCaption(demo, answer) {
 }
 
 /**
+ * Whether a viewer's hold on Watch's shot (a click, a pan or a zoom on the graph holds it for PICK_HOLD_MS) ends with
+ * this step: at the act's reset, and when another act (cycle) starts. Each puts a different graph in the pane (the
+ * base checkout's, then the next act's), where the place the viewer moved to in the last one means nothing, so the
+ * shot frames it afresh. `prev` and `next` are the steps (demo.json's `demo`), either null.
+ */
+export function holdEnds(prev, next) {
+  if (!prev || !next) return false;
+  if (prev.cycle !== next.cycle) return true;
+  return next.step === "reset" && prev.step !== "reset";
+}
+
+/**
  * What may sit over the graph in Watch. On a held small stage (`held`: one
  * framing holds it, web/kiosk-shot.js heldFrame), nothing the step puts
  * there: the result card, the approval callout, the waves' badges and the

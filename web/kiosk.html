@@ -548,6 +548,47 @@
           border-radius: 0; box-shadow: none; padding-bottom: calc(var(--s3) + env(safe-area-inset-bottom, 0px)); padding-left: 16px; padding-right: 16px; }
       }
       /* ==== end layout: ask mode ==== */
+      /* ==== the side pane (web/kiosk-side.js): the act's run and the current line's details, right of the graph, above the prompt ==== */
+      #k-side, #k-side-tab { display: none; }
+      body { --k-side-w: clamp(280px, 25vw, 520px); --k-side-tab-w: 30px; }
+      body.k-ask.k-watch.k-side-open #view-pane { right: calc(var(--k-side-w) + 10px); }
+      body.k-ask.k-watch.k-side-folded #view-pane { right: calc(var(--k-side-tab-w) + 10px); }
+      body.k-ask.k-watch.k-side-open #k-side { display: flex; flex-direction: column; gap: var(--s4); position: absolute; top: 0; right: 5px; width: var(--k-side-w); max-height: calc(100% - var(--k-ask-h, 30vh) - 15px); box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain;
+        padding: var(--s3) var(--s4) var(--s4); border: 1px solid var(--rule); border-radius: 8px; background: var(--surface-pane-a, var(--bg)); color: var(--fg); font: clamp(0.9rem, 0.85vw, 1.1rem)/1.4 var(--font-ui); }
+      body.k-ask.k-watch.k-side-folded #k-side-tab { display: block; position: absolute; top: 0; right: 5px; width: var(--k-side-tab-w); bottom: calc(var(--k-ask-h, 30vh) + 10px); box-sizing: border-box; padding: var(--s3) 0; border: 1px solid var(--rule); border-radius: 8px;
+        background: var(--surface-pane-a, var(--bg)); color: var(--muted); font: 600 0.82rem var(--font-ui); writing-mode: vertical-rl; cursor: pointer; }
+      body.k-ask.k-watch.k-side-folded #k-side-tab:hover, body.k-ask.k-watch.k-side-folded #k-side-tab:focus-visible { color: var(--fg); border-color: var(--pending); }
+      #k-side .k-side-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3); }
+      #k-side .k-side-title { margin: 0; font: 600 0.9em var(--font-ui); color: var(--muted); }
+      #k-side .k-side-fold { font: 600 0.8em var(--font-ui); color: var(--muted); background: transparent; border: 1px solid var(--rule); border-radius: 999px; padding: 0.1em var(--s3); cursor: pointer; }
+      #k-side .k-side-fold:hover, #k-side .k-side-fold:focus-visible { color: var(--fg); border-color: var(--pending); }
+      #k-side .k-side-fold::after { content: " \203A"; }
+      #k-side .k-wf { margin-top: var(--s1); }
+      #k-side .k-wf-row.k-wf-plain { grid-template-columns: 5.6em minmax(0, 1fr) 3.6em; }
+      #k-side .k-wf-words { text-align: right; }
+      #k-side .k-side-part .k-wf-wave { padding-left: 0.9em; font-weight: 500; }
+      #k-side .k-side-part .k-wf-track { background: transparent; height: auto; }
+      #k-side .k-side-words { font-size: 0.86em; color: var(--ink2, var(--fg)); }
+      #k-side .k-side-seg.k-tone-done { background: color-mix(in srgb, var(--managed) 75%, transparent); }
+      #k-side .k-side-seg.k-tone-running { background: var(--runtime); }
+      #k-side .k-side-seg.k-tone-waiting { background: repeating-linear-gradient(135deg, var(--foreign) 0 4px, color-mix(in srgb, var(--foreign) 45%, transparent) 4px 8px); }
+      #k-side .k-side-seg.k-tone-failed { background: var(--degraded); }
+      #k-side .k-side-part.k-tone-done .k-side-words { color: var(--managed); }
+      #k-side .k-side-part.k-tone-failed .k-side-words { color: var(--degraded); }
+      #k-side .k-side-quiet { margin: 0; color: var(--muted); font-size: 0.86em; }
+      #k-side .k-side-traces .k-wf { margin-top: var(--s1); }
+      #k-side .k-side-card { padding-top: var(--s3); border-top: 1px solid var(--rule); display: grid; gap: var(--s2); }
+      #k-side .k-side-item p, #k-side .k-side-estate { margin: 0; overflow-wrap: anywhere; }
+      #k-side .k-side-name b, #k-side .k-side-estate b { font-weight: 700; margin-right: var(--s2); }
+      #k-side .k-side-type { color: var(--muted); font-size: 0.9em; }
+      #k-side .k-side-line { font: 0.92em var(--font-mono); padding-left: var(--s3); border-left: 2px solid var(--rule); }
+      #k-side .k-line-unknown { color: var(--foreign); border-left-style: dashed; border-left-color: var(--foreign); }
+      #k-side .k-line-applied { color: var(--managed); border-left-color: var(--managed); }
+      #k-side .k-side-written b { color: var(--managed); }
+      @media (max-width: 700px) {
+        body.k-ask.k-watch #k-side, body.k-ask.k-watch #k-side-tab { display: none !important; }
+      }
+      /* ==== end side pane ==== */
       /* ==== the demo banner (web/kiosk-banner.js): the example's name, its products, the code link ==== */
       #k-banner { display: flex; align-items: center; gap: var(--s2) var(--s5); min-width: 0; height: 34px; box-sizing: border-box; padding: 0 var(--s4); border-bottom: 1px solid var(--rule); background: var(--surface-pane-a, var(--bg)); overflow: hidden; white-space: nowrap; }
       #k-banner[hidden] { display: none; }
@@ -845,6 +886,9 @@
         <aside id="k-result" class="k-over" aria-label="The result" hidden></aside>
         <!-- behold#936: the prompt pane, in the header's and the caption's place while a step has a prompt (web/kiosk-ask.js). -->
         <section id="k-ask" aria-live="polite" aria-label="The prompt" hidden></section>
+        <!-- The prompt demo's side pane (web/kiosk-side.js): the act's run and what the current line names, right of the graph. -->
+        <aside id="k-side" aria-label="This act's run"></aside>
+        <button type="button" id="k-side-tab" aria-label="Show the run details">Run details</button>
         <footer id="k-caption" aria-live="polite"></footer>
         <!-- behold#781, behold#776: a phone's Watch only: the change's facts by the story, and the graph's marks as a list. -->
         <section id="k-change" aria-label="The change" hidden></section>
@@ -883,7 +927,7 @@
           bar: document.getElementById("bar"), frame: document.getElementById("view"), read: document.getElementById("k-read"), side: document.getElementById("runs-side"), main: document.getElementById("runs-main"), views: document.getElementById("views"),
           tools: { what: document.querySelector(".k-what"), pop: document.getElementById("k-what-pop"), theme: document.getElementById("k-theme"), runsToggle: document.getElementById("k-runs-toggle"), mode: document.getElementById("k-mode") },
           eh: { switchHost: document.getElementById("k-tools"), trailHost: document.getElementById("eh-trail"), tipsHost: document.getElementById("eh-tips"), modalHost: document.getElementById("eh-modals") },
-          watch: { layer: document.getElementById("k-watch"), caption: document.getElementById("k-caption"), change: document.getElementById("k-change"), waves: document.getElementById("k-waves"), callout: document.getElementById("k-callout"), ask: document.getElementById("k-ask"), drawer: document.getElementById("k-drawer"), badges: document.getElementById("k-badges"), result: document.getElementById("k-result") },
+          watch: { layer: document.getElementById("k-watch"), caption: document.getElementById("k-caption"), change: document.getElementById("k-change"), waves: document.getElementById("k-waves"), callout: document.getElementById("k-callout"), ask: document.getElementById("k-ask"), side: document.getElementById("k-side"), sideTab: document.getElementById("k-side-tab"), drawer: document.getElementById("k-drawer"), badges: document.getElementById("k-badges"), result: document.getElementById("k-result") },
         },
         { tool: pageTool(document), source: pageSource(document), runs: pageRuns(document) },
       );

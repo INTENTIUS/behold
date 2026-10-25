@@ -22,7 +22,7 @@ import { TOOLS } from "./tool-mark.js";
 import { graphWaves } from "./chant-pr-marks.js";
 import { createProgressPacer, trackWaves } from "./terragucci-live-pace.js";
 import { PICK_HOLD_MS, annMark, mergeRun, startRuns, statusIcon } from "./kiosk-runs.js";
-import { MODES, MODE_STORE, badges as waveBadges, badgeTitle, behindStep, steadyRun, captionModel, captionRoom, coneCaption, stepLine, watchOverlays, doraLine, modeStored, placeBeside, quietWords, recordKey, resultModel, runningStep, shotFor, stepTone, tailLines } from "./kiosk-watch.js";
+import { MODES, MODE_STORE, badges as waveBadges, badgeTitle, behindStep, steadyRun, holdEnds, captionModel, captionRoom, coneCaption, stepLine, watchOverlays, doraLine, modeStored, placeBeside, quietWords, recordKey, resultModel, runningStep, shotFor, stepTone, tailLines } from "./kiosk-watch.js";
 import { REFIT_WAIT_MS, debounced, shotMessage } from "./kiosk-shot.js";
 import { mountTrace } from "./kiosk-trace.js";
 import { startEventHelp } from "./kiosk-event-help-ui.js";
@@ -41,6 +41,7 @@ import { graphFolds, graphPending } from "./kiosk-graph-pane.js";
 import { askEventHelp, askMode, askShot, createAskPane, hasAsk, replyValues } from "./kiosk-ask.js";
 import { STATE_WORDS, outcomesOf, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
 import { startKioskLight } from "./kiosk-light.js"; // behold#937
+import { SIDE_PHONE, detailsModel, keepSide, renderSide, runTrace, sideApplied, sideState, sideStep, sideStored } from "./kiosk-side.js";
 
 /** The scenarios terragucci#1014 numbers. An id not here is shown by the title demo.json carries. */
 export const SCENARIOS = {
@@ -1853,7 +1854,73 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   };
   const applyAsk = () => {
     if (typeof document !== "undefined" && document.body && document.body.classList) document.body.classList.toggle("k-ask", !!s.askOn && !!s.watchMode);
+    applySide();
   };
+  // The side pane (web/kiosk-side.js): the act's run and what the terminal's current line names, right of the graph
+  // in Watch while the prompt pane is up, on a screen wider than a phone. Open until the viewer folds it.
+  s.sideOpen = sideStored(shelf);
+  s.sideAsk = null;
+  s.sideTurn = null;
+  // The cycle each scenario was last seen on in demo.json, for a turn the terminal plays after demo.json moved on.
+  const sideCycles = new Map();
+  let sideWas = null;
+  const sideNow = () => sideState({ ask: askMode(s), phone: typeof matchMedia === "function" && matchMedia(SIDE_PHONE).matches, open: s.sideOpen });
+  function applySide() {
+    if (typeof document === "undefined" || !document.body || !document.body.classList) return;
+    const st = sideNow();
+    document.body.classList.toggle("k-side-open", st === "open");
+    document.body.classList.toggle("k-side-folded", st === "folded");
+    if (st === sideWas) return;
+    sideWas = st;
+    // The graph's pane got narrower or wider: the frame refits on its own resize (web/app.js watchPaneForFit); the shot
+    // is told again once the layout has settled, and the tips dock in the new room.
+    if (typeof requestAnimationFrame === "function")
+      requestAnimationFrame(() => {
+        drawSide();
+        tellShot(true);
+      });
+  }
+  const setSide = (open) => {
+    s.sideOpen = open;
+    keepSide(shelf, open);
+    applySide();
+    if (open && watch && watch.side && watch.side.focus) watch.side.focus();
+  };
+  function drawSide() {
+    if (!watch || !watch.side || sideNow() !== "open") return;
+    // The terminal plays its steps in turn, and may be a step or an act behind demo.json: the trace is of the act
+    // the terminal's current turn is in, at that turn's step.
+    const d = sideStep(s.demo && s.demo.demo, s.sideTurn, sideCycles);
+    const runs = runsApi && runsApi.index && runsApi.index.doc ? runsApi.index.doc.runs : [];
+    // The run view is the apply's: before this act's merge the one the kiosk holds is the last act's.
+    const progress = sideApplied(d) ? s.progress : null;
+    const trace = runTrace(runs, d, { answer: s.answer, progress, now: now().getTime() });
+    const details = detailsModel(s.answer, progress, s.sideAsk);
+    renderSide(watch.side, { trace, details }, { traces: (host) => drawWaveTraces(host, s), onFold: () => setSide(false) });
+  }
+  if (watch && watch.sideTab && watch.sideTab.addEventListener) watch.sideTab.addEventListener("click", () => setSide(true));
+  if (watch && watch.side && watch.side.setAttribute) watch.side.setAttribute("tabindex", "-1");
+  // The prompt pane's height, which the side pane stands on: kept as --k-ask-h so the two never overlap.
+  if (watch && watch.ask && typeof ResizeObserver !== "undefined" && typeof document !== "undefined") {
+    new ResizeObserver(() => {
+      const h = watch.ask.hidden ? 0 : Math.ceil(watch.ask.getBoundingClientRect().height);
+      document.body.style.setProperty("--k-ask-h", `${h}px`);
+    }).observe(watch.ask);
+  }
+  // The card follows the prompt pane's current turn: what its ask lights, from the plan (web/kiosk-light.js).
+  if (typeof window !== "undefined" && window.addEventListener) {
+    const turn = (e) => {
+      const det = e && e.detail && typeof e.detail === "object" ? e.detail : {};
+      s.sideAsk = det.ask && typeof det.ask === "object" ? det.ask : null;
+      if (typeof det.scenario === "string" && typeof det.step === "string") s.sideTurn = { scenario: det.scenario, step: det.step };
+      drawSide();
+    };
+    for (const t of ["behold:ask-hold", "behold:ask-start", "behold:ask-light", "behold:ask-status", "behold:ask-done", "behold:ask-clear"]) window.addEventListener(t, turn);
+    if (typeof matchMedia === "function") {
+      const mq = matchMedia(SIDE_PHONE);
+      if (mq.addEventListener) mq.addEventListener("change", applySide);
+    }
+  }
   const askPane =
     watch && watch.ask
       ? createAskPane({
@@ -1874,8 +1941,13 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   const resetModal = askPane && typeof document !== "undefined" && document.body ? mountResetModal(document) : null;
   /** Take one narration (demo.json, or a replayed step), and ask for the run it is about when the step moved. */
   const setDemo = (answer) => {
+    const was = s.demo && s.demo.demo;
     s.demo = answer;
     const d = answer && answer.demo;
+    // A viewer's hold on the shot ends at the reset and at a new act: the graph in the pane is another one then, and
+    // the shot frames it to the pane as it is (a held view of the last graph left the reset's scene at the left edge).
+    if (holdEnds(was || null, d || null) && s.endHold) s.endHold();
+    if (d && typeof d.scenario === "string" && Number.isInteger(d.cycle)) sideCycles.set(d.scenario, d.cycle);
     if (askPane) {
       // behold#942: ask mode holds for the scenario, so the steps between prompts keep the graph and the pane.
       s.askHeld = askHeld(s.askHeld, d || null);
@@ -2072,6 +2144,12 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     // The layout moved under the frame: the shot goes again once it has settled.
     if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => tellShot(true));
   };
+  s.endHold = () => {
+    if (watchHoldAt === null && !s.watchHeld) return;
+    watchHoldAt = null;
+    s.watchHeld = null;
+    lastShot = null;
+  };
   const holdShot = () => {
     if (!s.watchMode) return;
     watchHoldAt = now().getTime();
@@ -2155,7 +2233,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const trailLineH = chip ? chip.getBoundingClientRect().height + 4 : 26;
     return captionRoom({ capHeight: c.height, extras, rowH, trailH, trailLineH, below: Math.max(0, f.bottom - c.bottom) });
   }
-  function tellShot(force, still) {
+  function tellShot(force, still, fresh = null) {
     if (!frame || !frame.contentWindow || !watch) return;
     // behold#940: ask mode holds in the frame between prompts and between shots, so it is told on its own, when it changes.
     if (askMode(s) !== askTold) {
@@ -2169,14 +2247,26 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       }
       return;
     }
-    if (s.watchHeld || !s.shot) return;
+    if (!s.shot) return;
+    // A viewer's hold keeps the frame they moved where it is. A frame that has just loaded (`fresh`, its window) has
+    // nothing of theirs: it takes the shot, or it would fit itself to the graph it first drew and not to the pane.
+    if (s.watchHeld && !fresh) return;
     const insets = shotInsets(s.shot);
     // The caption's tallest, for a held small stage's one framing; a stage that isn't held never reads it.
     const room = captionRoomPx();
     const key = `${s.shot.id}|${s.shot.ask ? "ask" : ""}|${insets.right || 0}|${Math.round((insets.top || 0) / 12)}|${Math.round((insets.left || 0) / 12)}|${Math.round((insets.bottom || 0) / 12)}|${s.shot.roots.join(",")}|${Math.round(room / 12)}`;
+    const msg = shotMessage({ roots: s.shot.roots, waves: s.shot.waves, whole: s.shot.whole, insets, id: s.shot.id, room, ask: s.shot.ask === true, ...(still ? { ms: 0 } : {}) });
+    if (s.watchHeld) {
+      try {
+        fresh.postMessage(msg, origin);
+      } catch {
+        /* the frame went away */
+      }
+      return;
+    }
     if (!force && key === lastShot) return;
     lastShot = key;
-    post(shotMessage({ roots: s.shot.roots, waves: s.shot.waves, whole: s.shot.whole, insets, id: s.shot.id, room, ask: s.shot.ask === true, ...(still ? { ms: 0 } : {}) }));
+    post(msg);
   }
   // behold#631: the projected cycle track, a chant kiosk's bottom band in place of the chip strip and the rail.
   const trackState = { cycle: null, pulls: [], key: null, since: null };
@@ -2268,6 +2358,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     // behold#781, behold#776: a phone's Watch says the change in words by the story, and lists the graph's marks.
     if (watch.change) drawChange(watch.change, s);
     drawWaves();
+    drawSide();
     // behold#775: on a phone, each finished wave's trace under the step (hidden on a wider screen, where the badges open them).
     let traces = watch.layer.querySelector(":scope > .k-w-traces");
     if (!traces) {
@@ -2980,10 +3071,10 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     watchBox(watch && watch.ask);
     el.addEventListener("load", () => {
       // A new frame takes Watch's shot before it draws, so it opens on it and never on the fit.
-      tellShot(true);
+      tellShot(true, false, el.contentWindow);
       tellFrame(true);
       // The frame reads its graph after load; tell it again once it has had the time.
-      for (const ms of [1500, 4000, 8000]) setTimeout(() => (tellFrame(true), tellShot(true)), ms);
+      for (const ms of [1500, 4000, 8000]) setTimeout(() => (tellFrame(true), tellShot(true, false, el.contentWindow)), ms);
     });
   };
   const swapFrame = () => {
