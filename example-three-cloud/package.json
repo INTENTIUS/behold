@@ -2,15 +2,16 @@
   "name": "behold-example-three-cloud",
   "private": true,
   "type": "module",
-  "description": "A website in three clouds behind Route 53, as a chant workspace on the floci emulators: behold's three-cloud demo and its exported page.",
+  "description": "A website in three clouds behind Route 53, as a chant workspace on the floci emulators: AWS and GCP as chant members, Azure as a choudoufu estate. behold's three-cloud demo and its exported page.",
   "scripts": {
     "emulators": "bash scripts/emulators-up.sh",
-    "front-door": "tsx scripts/front-door.ts all --out export"
+    "front-door": "tsx scripts/front-door.ts all --out export",
+    "change-set": "tsx scripts/front-door.ts plan --out .front-door/change-set.json"
   },
   "dependencies": {
     "@intentius/chant": "^0.124.52",
     "@intentius/chant-lexicon-aws": "^0.124.52",
-    "@intentius/chant-lexicon-azure": "^0.124.52",
-    "@intentius/chant-lexicon-gcp": "^0.124.52"
+    "@intentius/chant-lexicon-gcp": "^0.124.52",
+    "@intentius/chant-lexicon-terraform": "^0.124.52"
   }
 }

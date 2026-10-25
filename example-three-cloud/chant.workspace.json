@@ -1,10 +1,13 @@
 {
   "name": "three-cloud",
   "schema": 1,
+  "pins": [
+    { "package": "@intentius/chant-lexicon-terraform", "version": "0.124.52" }
+  ],
   "members": [
     { "name": "dns", "dir": "dns", "kind": "chant" },
     { "name": "aws", "dir": "aws", "kind": "chant" },
-    { "name": "azure", "dir": "azure", "kind": "chant" },
+    { "name": "azure", "dir": "azure", "kind": "choudoufu" },
     { "name": "gcp", "dir": "gcp", "kind": "chant" }
   ]
 }
