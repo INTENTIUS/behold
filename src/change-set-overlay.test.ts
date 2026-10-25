@@ -12,6 +12,7 @@ import { CHANGE_SET_SHOW_CHANT_FLOOR, CHANT_FLOORS, floorFor } from "./chant-flo
 import { gatesFromStatus } from "./workspace-gates.ts";
 import { overlayFloorRefusal, overlayFrom, readChangeSetOverlay, showRefusal } from "./change-set-overlay.ts";
 import { workspaceReader, type WorkspaceDocument } from "./workspace-reader.ts";
+import { choudoufuCardAliases } from "./drift-overlay.ts";
 import { publicReadRefusal } from "./public-mode.ts";
 import showSchema from "./trunk-lane-schemas/change-set-show.schema.json" with { type: "json" };
 import changeSetSchema from "./trunk-lane-schemas/change-set.schema.json" with { type: "json" };
@@ -227,5 +228,26 @@ else { process.stderr.write("unexpected " + line); process.exit(2); }
   it("is refused in a public view, as the lane is", () => {
     expect(publicReadRefusal("/api/workspace/change-set", new URLSearchParams())).toBeDefined();
     expect(publicReadRefusal("/api/workspace/lane", new URLSearchParams())).toBeDefined();
+  });
+});
+
+describe("a choudoufu gate's entries land on behold's card ids (behold#995, the B3 follow-up)", () => {
+  it("maps chant's <member>/<root>/<path> through the member's alias table onto the roster card the address names", () => {
+    const aliases = choudoufuCardAliases("azure", {
+      nodes: [{ id: "azure/module.site/azurerm_storage_account.sa", kind: "x", lexicon: "x", attrs: { root: "azure" } }] as never,
+    });
+    const shown: WorkspaceDocument = {
+      changeSet: {
+        digest: "d",
+        entries: [
+          { member: "azure", address: 'module.site["a"].azurerm_storage_account.sa', type: "azurerm_storage_account", action: "update", node: "azure/azure/module.site/azurerm_storage_account.sa" },
+          { member: "azure", address: "azurerm_key_vault.kv", type: "azurerm_key_vault", action: "create", node: "azure/azure/azurerm_key_vault.kv" },
+        ],
+      },
+    };
+    const o = overlayFrom({ ...gate(), member: "azure" }, shown, new Date(), aliases);
+    expect(o.nodes['azure/module.site["a"].azurerm_storage_account.sa']).toEqual({ bucket: "change", actions: { update: 1 } });
+    // A node the table does not know keeps chant's id: it outlines nothing and is still listed.
+    expect(o.entries.find((e) => e.address === "azurerm_key_vault.kv")!.node).toBe("azure/azure/azurerm_key_vault.kv");
   });
 });

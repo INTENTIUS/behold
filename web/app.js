@@ -4408,6 +4408,8 @@ function markStreamedDrift(ir, only) {
     }
     g.setAttribute("data-drift-status", a._drift.status);
     g.setAttribute("data-drift-tone", a._status || "neutral");
+    // behold#995: a status or read outside the (status, read) table is neutral, and the card says it is unknown.
+    g.toggleAttribute("data-drift-unknown", !!a._drift.unknown);
     if (a._drift.notReached) g.setAttribute("data-drift-not-reached", "");
     else g.removeAttribute("data-drift-not-reached");
     const tone = a._status || "neutral";

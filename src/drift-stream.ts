@@ -9,7 +9,7 @@
  * - `start`: a read opened, with the addresses it expects. The page shows
  *   each of them as reading, which is not a status: the fill stays what it
  *   was and the card is only dimmed and dashed.
- * - `record`: one record, with the tone it paints ({@link toneFor}).
+ * - `record`: one record, with the tone it paints (src/drift-tone.ts `toneFor`, behold#995's `(status, read)` table).
  * - `settle`: the read closed. Every address its start expected that no
  *   record answered becomes `not-observed`, reason `not-reached`, chant's
  *   fold rule (`foldDriftLines`), sent as a `record` frame of its own just
@@ -34,38 +34,13 @@ import type { WorkspaceMember } from "./workspace.ts";
 import { notReachedRecord, type DriftLine, type DriftRecord, type DriftStartLine } from "./drift-line.ts";
 import { streamDrift, type DriftStreamAsk, type StreamTransport } from "./workspace-reader.ts";
 
-/** The pinhole status a card is painted with (`attrs._status`). */
-export type CardTone = "good" | "warn" | "accent" | "neutral" | "runtime";
-
-export interface Tone {
-  tone: CardTone;
-  /** The words beside the colour, in the record's terms. */
-  label: string;
-}
-
 /**
- * The colour of one record.
- *
- * behold#995 (B2) replaces this function with its fixed `(status, read)`
- * table over the same record; everything that colours a streamed card calls
- * this one function and nothing else, so the swap is one import. Until then
- * the status alone decides, and a status it does not know is neutral and
- * says so.
+ * The colour of one record is behold#995's fixed `(status, read)` table
+ * (src/drift-tone.ts). Everything that colours a streamed card calls
+ * {@link toneFor} and nothing else.
  */
-export function toneFor(record: Pick<DriftRecord, "status" | "read" | "unobserved">): Tone {
-  switch (record.status) {
-    case "in-sync": return { tone: "good", label: "in sync" };
-    case "drifted": return { tone: "warn", label: "drifted" };
-    case "pending": return { tone: "accent", label: "pending" };
-    case "missing": return { tone: "warn", label: "missing" };
-    case "unclaimed": return { tone: "warn", label: "unclaimed" };
-    case "undeclared": return { tone: "warn", label: "undeclared" };
-    case "runtime": return { tone: "runtime", label: "runtime" };
-    case "recorded": return { tone: "neutral", label: "recorded (state only)" };
-    case "not-observed": return { tone: "neutral", label: `not observed: ${record.unobserved?.reason ?? "no reason given"}` };
-    default: return { tone: "neutral", label: `unknown status ${JSON.stringify(record.status)}` };
-  }
-}
+export { toneFor, type CardTone, type Tone } from "./drift-tone.ts";
+import { toneFor, type CardTone } from "./drift-tone.ts";
 
 /** An address behold passes to `--resource`: a managed resource, in any module. Never a flag, never a data source. */
 const RESOURCE = /^(module\.[A-Za-z_][\w-]*(\[[^\]\n]{1,200}\])?\.)*[A-Za-z_][\w-]*\.[A-Za-z_][\w-]*$/;
@@ -93,7 +68,7 @@ export function resourceBlocks(addresses: readonly string[]): string[] {
 export type DriftFrame =
   | { run: number; kind: "begin"; member: string; plan: "per-resource" | "member"; resources: string[] }
   | { run: number; kind: "start"; member: string; resource?: string; read: string; expected: string[] }
-  | { run: number; kind: "record"; member: string; address: string; node: string | null; status: string; read: string; tone: CardTone; label: string; reason?: string; notReached?: true }
+  | { run: number; kind: "record"; member: string; address: string; node: string | null; status: string; read: string; tone: CardTone; label: string; reason?: string; notReached?: true; unknown?: true }
   | { run: number; kind: "settle"; member: string; resource?: string; read: string; notReached: string[]; counts: Record<string, number> }
   | { run: number; kind: "failed"; member: string; resource?: string; error: string }
   | { run: number; kind: "end"; member: string };
@@ -104,6 +79,7 @@ function recordFrame(run: number, member: string, r: DriftRecord, notReached = f
     run, kind: "record", member, address: r.address, node: r.node, status: r.status, read: r.read, tone: t.tone, label: t.label,
     ...(r.unobserved ? { reason: r.unobserved.reason } : {}),
     ...(notReached ? { notReached: true as const } : {}),
+    ...(t.unknown ? { unknown: true as const } : {}),
   };
 }
 

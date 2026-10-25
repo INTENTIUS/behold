@@ -23,13 +23,12 @@
  * one-run override, so the scratch config stays the same bytes for the source
  * read and the plan read.
  *
- * Which read answered each root is said only on stderr, one note per root
- * (`terraform.roots.<root>: the plan read answered ...`, `... so the state
- * read answered; plan attributes are absent`, `no read answered, declared
- * only (...)`); `sources` does not reach the graph IR. So the notes are parsed
- * here and every card in a root carries its root's answer. A card in a root
- * that fell back is never shown as "no changes": it says the plan was not
- * read and which read answered instead.
+ * Which read answered each root comes from the IR's `rootReads`
+ * (INTENTIUS/chant#4452), never from chant's note text (behold#995), and
+ * every card in a root carries its root's answer. A chant that puts no
+ * `rootReads` on the IR reports no root, and its cards carry no answer. A
+ * card in a root that fell back is never shown as "no changes": it says the
+ * plan was not read and which read answered instead.
  *
  * Only plan facts leave this module. The plan IR also carries each block's
  * declared attributes (its HCL `source` among them); none of that is copied
@@ -76,6 +75,8 @@ export type PlanAnswer = "plan" | "state" | "none";
 export interface PlanRootAnswer {
   root: string;
   answered: PlanAnswer;
+  /** The root's `rootReads` reason, when chant gave one. */
+  reason?: string;
   /** chant's note for the root, verbatim. */
   note: string;
 }
@@ -86,6 +87,8 @@ export interface PlanCardFacts {
   source: PlanAnswer;
   /** Set when the source is not the plan: chant's note, saying why. */
   note?: string;
+  /** behold#995: the root's `rootReads` reason (`no-credentials`, `plan-failed`, `needs-init`, ...), set when the plan did not answer. */
+  readReason?: string;
   action?: string;
   actions?: Record<string, string[]>;
   reason?: string;
@@ -109,26 +112,48 @@ export interface TerraformPlanRead {
 
 export type TerraformPlanResult = { ok: true; read: TerraformPlanRead } | { ok: false; refusal: PlanRefusal };
 
-/** chant's per-root note, after the `warning: [terraform] ` prefix. */
-const NOTE = /terraform\.roots\.([^:\s]+): (.*)$/;
+/**
+ * The observation's per-root report, as chant puts it on the graph IR
+ * (`GraphIR.rootReads`, INTENTIUS/chant#4452): keyed `terraform.roots.<root>`,
+ * `depth` the read asked for, `fellBackTo` the one that answered when that
+ * read failed, `reason` a machine-stable cause. Read here instead of chant's
+ * notes (behold#995): rewording a note can no longer change what a card says.
+ */
+export interface RootRead {
+  depth: string;
+  fellBackTo?: "state" | "live" | "declared";
+  reason?: string;
+}
 
-/** The roots chant named, and which read answered each. */
-export function parsePlanNotes(stderr: string): PlanRootAnswer[] {
-  const out = new Map<string, PlanRootAnswer>();
-  for (const line of stripAnsi(stderr).split("\n")) {
-    const m = NOTE.exec(line.trim());
-    if (!m) continue;
-    const [, root, rest] = m as unknown as [string, string, string];
-    const answered: PlanAnswer | undefined = rest.startsWith("the plan read answered")
-      ? "plan"
-      : /so the state read answered/.test(rest)
-        ? "state"
-        : rest.startsWith("no read answered")
-          ? "none"
-          : undefined;
-    if (answered) out.set(root, { root, answered, note: `terraform.roots.${root}: ${rest}` });
+/** `rootReads` off an IR, when chant put it there (chant before #4452 does not). */
+export function rootReadsOf(ir: unknown): Record<string, RootRead> {
+  const reads = (ir as { rootReads?: unknown } | null)?.rootReads;
+  if (!reads || typeof reads !== "object" || Array.isArray(reads)) return {};
+  const out: Record<string, RootRead> = {};
+  for (const [key, v] of Object.entries(reads as Record<string, unknown>)) {
+    if (!v || typeof v !== "object" || typeof (v as RootRead).depth !== "string") continue;
+    out[key] = v as RootRead;
   }
-  return [...out.values()].sort((a, b) => a.root.localeCompare(b.root));
+  return out;
+}
+
+/** The roots chant reported, and which read answered each: `fellBackTo ?? depth`. */
+export function planRootAnswers(ir: unknown): PlanRootAnswer[] {
+  const out: PlanRootAnswer[] = [];
+  for (const [key, rr] of Object.entries(rootReadsOf(ir))) {
+    if (!key.startsWith("terraform.roots.")) continue;
+    const root = key.slice("terraform.roots.".length);
+    const read = rr.fellBackTo ?? rr.depth;
+    const answered: PlanAnswer = read === "plan" ? "plan" : read === "state" ? "state" : "none";
+    const why = rr.reason ? ` (${rr.reason})` : "";
+    const words = rr.fellBackTo === undefined
+      ? `the ${rr.depth} read answered`
+      : rr.fellBackTo === "declared"
+        ? `no read answered, declared only: the ${rr.depth} read failed${why}`
+        : `the ${rr.depth} read failed${why}, so the ${rr.fellBackTo} read answered`;
+    out.push({ root, answered, ...(rr.reason ? { reason: rr.reason } : {}), note: `${key}: ${words}` });
+  }
+  return out.sort((a, b) => a.root.localeCompare(b.root));
 }
 
 const strings = (v: unknown): string[] | undefined => (Array.isArray(v) && v.every((x) => typeof x === "string") && v.length ? (v as string[]) : undefined);
@@ -184,9 +209,9 @@ function forcedFromOf(id: string, root: string | undefined, paths: string[], edg
   return out.length ? out : undefined;
 }
 
-/** Turn chant's plan IR and its notes into the read. Pure; exported for testing. */
-export function terraformPlanReadOf(ir: Pick<GraphIR, "nodes"> & Partial<Pick<GraphIR, "edges">>, stderr: string): TerraformPlanRead {
-  const roots = parsePlanNotes(stderr);
+/** Turn chant's plan IR, with its `rootReads`, into the read. Pure; exported for testing. */
+export function terraformPlanReadOf(ir: Pick<GraphIR, "nodes"> & Partial<Pick<GraphIR, "edges">>): TerraformPlanRead {
+  const roots = planRootAnswers(ir);
   const byRoot = new Map(roots.map((r) => [r.root, r]));
   const cards: Record<string, PlanCardFacts> = {};
   for (const n of ir.nodes) {
@@ -204,7 +229,7 @@ export function terraformPlanReadOf(ir: Pick<GraphIR, "nodes"> & Partial<Pick<Gr
         cards[n.id] = from ? { ...facts, forcedFrom: from } : facts;
       }
     } else if (answer) {
-      cards[n.id] = { source: answer.answered, note: answer.note };
+      cards[n.id] = { source: answer.answered, note: answer.note, ...(answer.reason ? { readReason: answer.reason } : {}) };
     }
   }
   return { roots, cards };
@@ -268,7 +293,7 @@ export async function readTerraformPlan(dir: string, deps: PlanReadDeps = {}): P
   } catch {
     return { ok: false, refusal: { error: `chant printed something that is not a graph for ${dir}.`, code: "terraform-plan", remedy: "Check the chant behold runs: `behold doctor`." } };
   }
-  return { ok: true, read: terraformPlanReadOf(ir, res.stderr) };
+  return { ok: true, read: terraformPlanReadOf(ir) };
 }
 
 /**

@@ -10,7 +10,7 @@ import {
   TERRAFORM_OBSERVE_ENV,
   TERRAFORM_PLAN_READ,
   paintTerraformPlan,
-  parsePlanNotes,
+  planRootAnswers,
   planReadFloorRefusal,
   readTerraformPlan,
   terraformPlanArgs,
@@ -24,33 +24,47 @@ import {
 // moved from 1 to 2, `updated` is updated with its token (a sensitive
 // variable) changed, and `downstream` reads the replaced block's new id.
 const HERE = dirname(fileURLToPath(import.meta.url));
-const recorded = (): { stderr: string[]; ir: GraphIR } => JSON.parse(readFileSync(join(HERE, "__fixtures__", "terraform-plan-ir.json"), "utf8"));
+// behold#995: which read answered comes from the IR's `rootReads` (chant#4452).
+// The fixture was printed before chant carried the field, so the root's report
+// is put on it here, as chant's integration branch now writes it: the plan
+// read answered root `app`.
+const recorded = (): { stderr: string[]; ir: GraphIR } => {
+  const r = JSON.parse(readFileSync(join(HERE, "__fixtures__", "terraform-plan-ir.json"), "utf8")) as { stderr: string[]; ir: GraphIR };
+  (r.ir as unknown as { rootReads: unknown }).rootReads = { "terraform.roots.app": { depth: "plan" } };
+  return r;
+};
 
-/** chant's note for a root whose plan failed on credentials, verbatim in shape (describe-resources.ts, planAdapter). */
-const STATE_NOTE =
-  "\u001b[33mwarning\u001b[0m: [terraform] terraform.roots.app: the plan read failed (no provider credentials: Error: No valid credential sources found), so the state read answered; plan attributes are absent";
-const NONE_NOTE = "warning: [terraform] terraform.roots.net: no read answered, declared only (the plan read could not reach the backend)";
+/** A root whose plan failed on credentials and fell back to state, as rootReads reports it. */
+const withRead = (ir: GraphIR, reads: Record<string, unknown>): GraphIR => ({ ...ir, rootReads: reads }) as unknown as GraphIR;
+const STATE_READ = { "terraform.roots.app": { depth: "plan", fellBackTo: "state", reason: "no-credentials" } };
 
-describe("which read answered each root (#910)", () => {
-  it("reads chant's three notes, ANSI and prefix included", () => {
-    const roots = parsePlanNotes([recorded().stderr.join("\n"), STATE_NOTE.replace("roots.app", "roots.db"), NONE_NOTE].join("\n"));
+describe("which read answered each root (#910, behold#995)", () => {
+  it("reads rootReads off the IR: the plan, a fall back to state, and none", () => {
+    const roots = planRootAnswers({
+      rootReads: {
+        "terraform.roots.app": { depth: "plan" },
+        "terraform.roots.db": { depth: "plan", fellBackTo: "state", reason: "no-credentials" },
+        "terraform.roots.net": { depth: "plan", fellBackTo: "declared", reason: "backend" },
+      },
+    });
     expect(roots.map((r) => [r.root, r.answered])).toEqual([
       ["app", "plan"],
       ["db", "state"],
       ["net", "none"],
     ]);
-    expect(roots[1]!.note).toMatch(/^terraform\.roots\.db: the plan read failed \(no provider credentials/);
+    expect(roots[1]!.note).toBe("terraform.roots.db: the plan read failed (no-credentials), so the state read answered");
   });
 
-  it("ignores the per-entity warnings", () => {
-    expect(parsePlanNotes("warning: terraform: not observed — app/var.token (Terraform::Variable) — no reader")).toEqual([]);
+  it("an IR with no rootReads reports no root, and never parses chant's notes", () => {
+    expect(planRootAnswers({ nodes: [] })).toEqual([]);
+    expect(planRootAnswers({ rootReads: { "other.key": { depth: "plan" } } })).toEqual([]);
   });
 });
 
 describe("the plan facts per card (#910)", () => {
   it("carries the replace, the attribute that forces it and where that value comes from", () => {
-    const { ir, stderr } = recorded();
-    const read = terraformPlanReadOf(ir, stderr.join("\n"));
+    const { ir } = recorded();
+    const read = terraformPlanReadOf(ir);
     const replaced = read.cards["app/terraform_data.replaced"]!;
     expect(replaced.source).toBe("plan");
     expect(replaced.action).toBe("replace");
@@ -64,8 +78,8 @@ describe("the plan facts per card (#910)", () => {
   });
 
   it("prints them on the card: plan, forced by, from, read", () => {
-    const { ir, stderr } = recorded();
-    const read = terraformPlanReadOf(ir, stderr.join("\n"));
+    const { ir } = recorded();
+    const read = terraformPlanReadOf(ir);
     expect(planCardRows(read.cards["app/terraform_data.replaced"])).toEqual([
       { label: "plan", value: "replace" },
       { label: "forced by", value: "triggers_replace 1 -> 2" },
@@ -94,7 +108,7 @@ describe("the plan facts per card (#910)", () => {
         planAfterUnknown: ["id", "input", "output"],
       },
     } as GraphIR["nodes"][number]);
-    const read = terraformPlanReadOf(ir, stderr.join("\n"));
+    const read = terraformPlanReadOf(ir);
     expect(read.cards["app/terraform_data.created"]).toEqual({
       source: "plan",
       action: "create",
@@ -109,8 +123,8 @@ describe("the plan facts per card (#910)", () => {
   });
 
   it("keeps sensitive values as (sensitive): the token's change has no value in it", () => {
-    const { ir, stderr } = recorded();
-    const read = terraformPlanReadOf(ir, stderr.join("\n"));
+    const { ir } = recorded();
+    const read = terraformPlanReadOf(ir);
     expect(read.cards["app/terraform_data.updated"]!.changes).toContainEqual({ path: "input.token", before: "(sensitive)", after: "(sensitive)" });
     expect(JSON.stringify(read)).not.toMatch(/s3cr3t/);
   });
@@ -118,14 +132,14 @@ describe("the plan facts per card (#910)", () => {
   it("copies plan facts only, never the block's other attributes", () => {
     const { ir, stderr } = recorded();
     ir.nodes[1]!.attrs.source = 'variable "token" { default = "s3cr3t" }';
-    const read = terraformPlanReadOf(ir, stderr.join("\n"));
+    const read = terraformPlanReadOf(ir);
     expect(JSON.stringify(read)).not.toContain("s3cr3t");
   });
 
   it("a root that fell back to state says so on every card and never reads as no changes", () => {
     const { ir } = recorded();
     for (const n of ir.nodes) for (const k of Object.keys(n.attrs)) if (k.startsWith("plan")) delete n.attrs[k];
-    const read = terraformPlanReadOf(ir, STATE_NOTE);
+    const read = terraformPlanReadOf(withRead(ir, STATE_READ));
     expect(read.roots).toEqual([expect.objectContaining({ root: "app", answered: "state" })]);
     for (const facts of Object.values(read.cards)) {
       expect(facts.source).toBe("state");
@@ -138,12 +152,12 @@ describe("the plan facts per card (#910)", () => {
       expect(JSON.stringify(rows)).not.toMatch(/no changes/);
     }
     expect(terraformPlanNote([{ member: "tf", roots: read.roots }])).toBe(
-      "plan: tf: app plan not read, the state read answered (the plan read failed (no provider credentials: Error: No valid credential sources found), so the state read answered; plan attributes are absent)",
+      "plan: tf: app plan not read, the state read answered (the plan read failed (no-credentials), so the state read answered)",
     );
   });
 
   it("a root nothing answered is declared only on the card", () => {
-    const rows = planCardRows({ source: "none", note: NONE_NOTE });
+    const rows = planCardRows({ source: "none", note: "terraform.roots.net: no read answered, declared only: the plan read failed (backend-unreachable)", readReason: "backend-unreachable" });
     expect(rows).toEqual([
       { label: "plan", value: "not read" },
       { label: "read", value: "none, declared only" },
@@ -155,8 +169,8 @@ describe("the plan facts per card (#910)", () => {
   });
 
   it("paints `_plan` onto the estate's composed ids", () => {
-    const { ir, stderr } = recorded();
-    const read = terraformPlanReadOf(ir, stderr.join("\n"));
+    const { ir } = recorded();
+    const read = terraformPlanReadOf(ir);
     const composed = { ...ir, nodes: ir.nodes.map((n) => ({ ...n, id: `tf/${n.id}` })) } as GraphIR;
     expect(paintTerraformPlan(composed, read, "tf")).toBe(3);
     expect((composed.nodes.find((n) => n.id === "tf/app/terraform_data.replaced")!.attrs._plan as { action: string }).action).toBe("replace");

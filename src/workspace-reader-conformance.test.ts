@@ -15,6 +15,8 @@
 // read, as hud's adapter does (arugula-salad/hud reader-conformance.test.ts).
 import { describe, expect, it } from "vitest";
 import { describeWorkspaceReaderConformance, type ChantTransport, type ReadContractCommand } from "@intentius/chant/workspace/conformance/vitest";
+import { READ_CONTRACT_COMMANDS } from "@intentius/chant/workspace/conformance";
+import { driftDocumentOf } from "./drift-overlay.ts";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { workspaceFromLs, memberIrFromGraphDocument } from "./workspace.ts";
@@ -48,16 +50,22 @@ function use(command: WorkspaceReadCommand, doc: WorkspaceDocument): void {
     const drawn = drawnOf(doc);
     if (drawn.failure?.kind === "query") throw new Error(`the search document from chant ${String(doc.chant)} is a refusal: ${drawn.failure.message}`);
     if (!Array.isArray(doc.members)) throw new Error("the workspace search document lists no members");
+  } else if (command === "drift") {
+    // behold#995: the suite reads a member with no drift read, so the document is the error one, and behold must read it as that.
+    const read = driftDocumentOf(doc);
+    if (read.records.length && read.error) throw new Error("a drift document with an error carries no records");
   }
 }
 
 // behold#913: `search` joined the suite with chant#4374. Against an older chant the suite has no search to run,
 // so it is left out there, and the reader's own search is held by src/search.test.ts.
 const SUITE_HAS_SEARCH = meetsFloor(resolvedVersion("@intentius/chant"), SEARCH_CONTRACT_CHANT_FLOOR);
+// behold#995: `drift` joined the suite with chant's `workspace drift`. A chant whose suite does not list it has no drift read to run.
+const SUITE_HAS_DRIFT = (READ_CONTRACT_COMMANDS as readonly string[]).includes("drift");
 
 describeWorkspaceReaderConformance({
   name: "behold",
-  commands: BEHOLD_READS.filter((c) => c !== "search" || SUITE_HAS_SEARCH) as ReadContractCommand[],
+  commands: BEHOLD_READS.filter((c) => (c !== "search" || SUITE_HAS_SEARCH) && (c !== "drift" || SUITE_HAS_DRIFT)) as ReadContractCommand[],
   reader: (chant: ChantTransport) => {
     const reader = workspaceReader({ run: (argv) => chant.run(argv) });
     return {
@@ -79,7 +87,7 @@ describe("every workspace read goes through the reader (#468)", () => {
     for (const f of readdirSync(src)) {
       if (!f.endsWith(".ts") || f.endsWith(".test.ts") || f === "workspace-reader.ts") continue;
       const text = readFileSync(join(src, f), "utf8");
-      if (/\[\s*"workspace"\s*,\s*"(ls|graph|status|records|runs|wip|search)"/.test(text)) offenders.push(f);
+      if (/\[\s*"workspace"\s*,\s*"(ls|graph|status|records|runs|wip|search|drift)"/.test(text)) offenders.push(f);
       // behold#913: and plain search, the same document for one project.
       if (/\[\s*"search"\s*,/.test(text) || /runChant(Raw)?\(\s*\[\s*"search"/.test(text)) offenders.push(f);
       // #680: the trunk lane's reads go through the reader too.

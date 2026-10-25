@@ -755,13 +755,69 @@ repaints only its own card.
   as a record frame before the settle frame. A read that fails or prints a
   line that does not decode is a `failed` frame: its cards stop reading and
   keep the colour they had. A read that never started stops the run.
-- **Colour** is `toneFor(record)` in src/drift-stream.ts, by status. #995's
-  `(status, read)` table replaces that one function.
+- **Colour** is `toneFor(record)`, #995's `(status, read)` table
+  (src/drift-tone.ts, below). A status or read outside it is neutral, and the
+  card carries `data-drift-unknown` and says so in its tooltip.
 - One run at a time (`409 drift-streaming`); `{stop: true}` stops it.
   `BEHOLD_DRIFT_CHANT` names the chant the read runs, for a chant built
   ahead of the release that adds `workspace drift --stream`, and for
   `just e2e-streamed-drift`'s fake (e2e/fixtures/fake-chant-drift). No floor
   is registered yet: the release is not known.
+
+### Colour from the drift record (#995)
+
+Every card's live colour is one fixed table over chant's drift record
+(chant#4451), keyed on the record's `status` and the `read` that answered,
+and on nothing else: `DRIFT_TONE_TABLE` and `toneFor` in src/drift-tone.ts.
+No engine is named there, so a Pulumi member (path 2, chant#4453) colours
+through the same cells as the rest. The read limits the claim: an
+`ownership` read's `in-sync` is green and labelled "bound (ownership only)"
+(#404), a `state` read's `recorded` is neutral, and a state read that says
+`in-sync` or `drifted` (a record chant refuses) is neutral and labelled. An
+unknown status or read is neutral and labelled unknown, never a guessed
+colour.
+
+- **The drift document.** `chant workspace drift --member <name> [--read
+  <read>] [--resource <addr>] [--env <env>]` prints one member's drift
+  document (contract 1, `drift: "v1"`), read by the member's own engine. It is
+  `read("drift", driftArgs(ask))` on the workspace reader, the sixth
+  `BEHOLD_READS` entry, held by chant's conformance suite when that suite
+  lists `drift`. `paintWorkspaceDrift` (src/drift-overlay.ts) reads it per
+  member and paints `_status`, `_drift: {status, read, label, reason?,
+  engineCode?, fellBackFrom?, unknown?}` and `_unobserved` on each card.
+  `/api/overlay` on a declared workspace whose chant meets
+  `DRIFT_RECORD_CHANT_FLOOR` (0.124.53, the release not cut yet) does this on
+  every read for the members with no live half of their own (`terraform`,
+  `pulumi`), and with `?drift=1` for `chant` and `choudoufu` members too, at
+  the cost of a second live read. `meta.driftRecord` lists each member's
+  painted and unplaced records and chant's error. With `?plan=1` a terraform
+  or choudoufu member is asked `--read plan`.
+- **The reads behold still makes itself colour through the same table.** A
+  choudoufu member's `live-plan`/`live-ls` paint (src/choudoufu-live.ts
+  `verdictFor`) gives each address the status chant's adapter gives it
+  (`bound` in-sync, `unowned`/`adoptable` unclaimed, `ABSENT` pending, every
+  other omission not-observed, a listed item nothing declares undeclared) and
+  takes the table's tone, read `ownership`. A component status row's
+  reconciliation fallback (src/component-status.ts `reconciliationStatus`) is
+  chant's `componentStatusDriftRecords` mapping, read `live-read`.
+- **UNOWNED, settled with chant.** An `UNOWNED` omission with no `unowned[]`
+  row is `not-observed` (`read-failed`, `engineCode: "UNOWNED"`), as chant C1
+  decided: neutral, not `warn`. With its `unowned[]` row it is `unclaimed`
+  and `warn`, as before.
+- **Which read answered a root** is the IR's `rootReads` (chant#4452):
+  `terraform.roots.<root>` with `depth`, `fellBackTo` and `reason`
+  (src/terraform-plan.ts `planRootAnswers`, src/choudoufu-chant-read.ts
+  `rootAnswerOf`). chant's note text is not parsed. A chant that puts no
+  `rootReads` on the IR reports no root: a stock root's cards carry no plan
+  answer, and a choudoufu re-check reads as live-plan alone.
+- **choudoufu card ids and chant node ids (the B3 follow-up).** behold keeps
+  a choudoufu member's card ids, the roster's `<member>/<address>`, because
+  saved layouts are keyed on them, while chant names the same blocks
+  `<member>/<root>/<block path>`. One alias table, built from chant's graph
+  of the member (`choudoufuCardAliases`, src/drift-overlay.ts), maps a chant
+  node and an instance address onto the card (`cardIdFor`), and both the
+  change-set overlay (src/change-set-overlay.ts) and drift records use it. A
+  node the table does not know lands on no card and is listed.
 
 ### What a read cost (#420, #421)
 

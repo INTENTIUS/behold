@@ -63,7 +63,7 @@ describe("resourceBlocks", () => {
 
 describe("toneFor", () => {
   it("paints an unknown status neutral and says so", () => {
-    expect(toneFor({ status: "nonsense" as never, read: "plan" })).toEqual({ tone: "neutral", label: 'unknown status "nonsense"' });
+    expect(toneFor({ status: "nonsense" as never, read: "plan" })).toEqual({ tone: "neutral", label: 'unknown status "nonsense"', unknown: true });
     expect(toneFor({ status: "in-sync", read: "plan" }).tone).toBe("good");
   });
 });

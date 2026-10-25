@@ -61,6 +61,7 @@ import type { MemberVia } from "./member-ir.ts";
 import type { ChoudoufuChantAnswer } from "./choudoufu-chant-read.ts";
 import { resolve } from "node:path";
 import type { MemberKindSpec } from "./member-kind.ts";
+import { toneFor } from "./drift-tone.ts";
 
 // ---------------------------------------------------------------------------
 // The documents.
@@ -285,24 +286,28 @@ export function parseLivePlan(run: Captured, dir: string): LivePlanParse {
  * key is a plain attr (an inspect row) except `_status`, which is the paint. */
 export interface LiveVerdict {
   _status: "good" | "warn" | "accent" | "neutral";
+  /** behold#995: the drift status chant's record gives this verdict; `_status` is the table's tone for it, read `ownership`. */
+  _drift?: string;
   _unobserved?: string;
   physicalId?: string;
   ownership?: "owned" | "foreign";
   attrs: Record<string, unknown>;
 }
 
-const REASON_TONE: Record<string, LiveVerdict["_status"]> = {
-  UNOWNED: "warn",
-  ABSENT: "accent",
-  NEEDS_DISCOVERY: "neutral",
-  PARENT_UNAVAILABLE: "neutral",
-  LISTED_NOT_IMPORTABLE: "neutral",
-  FAILED: "neutral",
-  CYCLE: "neutral",
-  SUPERSEDED: "neutral",
-  UNREADABLE: "neutral",
-  INCOMPLETE_BLOCK: "neutral",
-};
+/**
+ * behold#995: the drift status chant's record gives each omission reason
+ * (INTENTIUS/chant#4451, `choudoufuLivePlanDriftRecords`): `ABSENT` is
+ * pending, and every other reason is not-observed, `UNOWNED` with no
+ * `unowned[]` row included (chant's ruling, which behold follows: nothing in
+ * the document says what holds the identity). The colour is then the one
+ * `(status, read)` table's (src/drift-tone.ts), read `ownership`.
+ */
+export function omissionStatus(reason: string): "pending" | "not-observed" {
+  return reason === "ABSENT" ? "pending" : "not-observed";
+}
+
+/** The paint for a status from an ownership read: the table's, never a tone chosen here. */
+const ownershipTone = (status: string): LiveVerdict["_status"] => toneFor({ status, read: "ownership" }).tone as LiveVerdict["_status"];
 
 /** The reasons whose `neutral` is "looked and could not answer" — carried as
  * `_unobserved` so the cover note and the pane say so — as opposed to the
@@ -359,7 +364,8 @@ export function verdictFor(address: string, ls: LiveLsDocument | undefined, plan
     // is whether live-ls lists it under the estate's tag.
     const marked = !!item;
     return {
-      _status: "good",
+      _status: ownershipTone("in-sync"),
+      _drift: "in-sync",
       ...(id ? { physicalId: id } : {}),
       ownership: "owned",
       attrs: {
@@ -372,7 +378,6 @@ export function verdictFor(address: string, ls: LiveLsDocument | undefined, plan
     };
   }
   if (omission) {
-    const tone = REASON_TONE[omission.reason] ?? "neutral";
     const base: Record<string, unknown> = { omission: omission.reason, detail: omission.detail, ...listing };
     // #413: the same gesture one branch over. NEEDS_DISCOVERY means the
     // declaration carries no identity of its own, which on its own is a
@@ -387,7 +392,8 @@ export function verdictFor(address: string, ls: LiveLsDocument | undefined, plan
       const adopt = adoptLine(adoptable);
       const matched = (adoptable.matched ?? []).filter((m) => m && m.attribute);
       return {
-        _status: "warn",
+        _status: ownershipTone("unclaimed"),
+        _drift: "unclaimed",
         physicalId: adoptable.identity,
         ownership: "foreign",
         attrs: {
@@ -411,31 +417,37 @@ export function verdictFor(address: string, ls: LiveLsDocument | undefined, plan
         // plan left the instance out is the second thing, not the first, and
         // it used to be the whole thing with the tags under it as JSON.
         return {
-          _status: "warn",
+          _status: ownershipTone("unclaimed"),
+          _drift: "unclaimed",
           physicalId: unowned.identity,
           ownership: "foreign",
           attrs: { adopt, ...base },
         };
       }
       return {
-        _status: "warn",
+        _status: ownershipTone("unclaimed"),
+        _drift: "unclaimed",
         physicalId: unowned.identity,
         ownership: "foreign",
         attrs: { ...base, ...(unowned.tofu_estate ? { ownedBy: unowned.tofu_estate } : {}) },
       };
     }
+    const status = omissionStatus(omission.reason);
     return {
-      _status: tone,
-      ...(UNOBSERVED_REASONS.has(omission.reason) ? { _unobserved: omission.detail } : {}),
+      _status: ownershipTone(status),
+      _drift: status,
+      // chant reads every reason but ABSENT as not-observed; the ones whose rung
+      // already said why keep their detail as a row rather than an unobserved line.
+      ...(status === "not-observed" && (UNOBSERVED_REASONS.has(omission.reason) || omission.reason === "UNOWNED") ? { _unobserved: omission.detail || `${omission.reason} with no unowned[] row` } : {}),
       attrs: base,
     };
   }
-  if (gap) return { _status: "neutral", attrs: { listing: gap.detail } };
+  if (gap) return { _status: ownershipTone("not-observed"), _drift: "not-observed", attrs: { listing: gap.detail } };
   if (item) {
     // Listed under the estate's tag and not in the plan's document at all —
     // the plan did not consider it, which is a fact worth a row, not a colour
     // the plan never gave.
-    return { _status: "neutral", _unobserved: "listed under the estate's tag but absent from live-plan's document", physicalId: item.id, ownership: "owned", attrs: {} };
+    return { _status: ownershipTone("not-observed"), _drift: "not-observed", _unobserved: "listed under the estate's tag but absent from live-plan's document", physicalId: item.id, ownership: "owned", attrs: {} };
   }
   return undefined;
 }
@@ -453,11 +465,13 @@ export function paintChoudoufu(ir: GraphIR, ls: LiveLsDocument | undefined, plan
     if (n.lexicon !== CHOUDOUFU_LEXICON || isRecord(n.attrs.producer)) continue;
     declared.add(n.id);
     const v = verdictFor(n.id, ls, plan) ?? {
-      _status: "neutral" as const,
+      _status: ownershipTone("not-observed"),
       _unobserved: plan ? "not mentioned by live-plan or live-ls" : "no live-plan document for this estate",
       attrs: {},
     };
-    n.attrs = { ...n.attrs, ...v.attrs, _status: v._status, ...(v._unobserved ? { _unobserved: v._unobserved } : {}) };
+    // behold#995: the card carries the record's words beside the table's tone, as a card painted from chant's drift document does (src/drift-overlay.ts).
+    const status = v._drift ?? "not-observed";
+    n.attrs = { ...n.attrs, ...v.attrs, _status: v._status, _drift: { status, read: "ownership", label: toneFor({ status, read: "ownership" }).label }, ...(v._unobserved ? { _unobserved: v._unobserved } : {}) };
     if (v.physicalId) n.physicalId = v.physicalId;
     if (v.ownership) n.ownership = v.ownership;
   }
@@ -474,7 +488,8 @@ export function paintChoudoufu(ir: GraphIR, ls: LiveLsDocument | undefined, plan
         ...(estate ? { estate } : {}),
         marked: "carries this estate's marker, declared nowhere in its configuration",
         ...(item.slot ? { slot: item.slot } : {}),
-        _status: "warn",
+        // undeclared, read ownership, in chant's record (`choudoufuLiveLsDriftRecords`).
+        _status: ownershipTone("undeclared"),
       },
     });
   }

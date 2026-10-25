@@ -35,7 +35,7 @@ import { WORKSPACE_CHANT_FLOOR } from "./chant-floors.ts";
 export { WORKSPACE_CHANT_FLOOR };
 
 /** The read-contract commands behold reads, named the way chant's conformance suite names them. */
-export const BEHOLD_READS = ["ls", "graph", "status", "graph --intent", "search"] as const;
+export const BEHOLD_READS = ["ls", "graph", "status", "graph --intent", "search", "drift"] as const;
 export type WorkspaceReadCommand = (typeof BEHOLD_READS)[number];
 
 /**
@@ -50,6 +50,8 @@ export const JSON_FLAGS: Record<WorkspaceReadCommand, readonly string[]> = {
   "graph --intent": ["--json"],
   // behold#913: `workspace search` (INTENTIUS/chant#4374). The query goes last, after `--`, so the flag goes before it.
   search: ["--json"],
+  // behold#995: `workspace drift --member <name>` prints its drift document whatever it is given, as graph does.
+  drift: [],
 };
 
 /**
@@ -434,8 +436,9 @@ export function rootReader(root: string, env?: Record<string, string>): Workspac
  * {@link documentOf} or the read budget's buffered spawn: each stdout line is
  * decoded and handed on as it arrives, and a line that does not decode stops
  * the read. It is not in {@link BEHOLD_READS} (chant's conformance suite
- * lists documents, not streams). The non-streamed drift read is a separate
- * command beside it.
+ * lists documents, not streams). The non-streamed drift read is
+ * `read("drift", driftArgs(ask))` (behold#995), one drift document with the
+ * contract head, in {@link BEHOLD_READS}.
  */
 export const DRIFT_STREAM_READ = "drift --stream";
 
@@ -443,16 +446,27 @@ export interface DriftStreamAsk {
   member: string;
   read?: string;
   resource?: string;
+  /** behold#995: the environment a chant member's live read needs (`--env`). */
+  env?: string;
 }
 
-/** The argv the streamed drift read runs. `resource` and `read` come after their flag, never as an operand. */
-export function driftStreamArgv(ask: DriftStreamAsk): string[] {
+/**
+ * The arguments after `workspace drift`, shared by the streamed read and the
+ * document read (behold#995, `read("drift", driftArgs(ask))`). Every value
+ * comes after its flag, never as an operand.
+ */
+export function driftArgs(ask: DriftStreamAsk): string[] {
   return [
-    "workspace", "drift", "--member", ask.member,
+    "--member", ask.member,
     ...(ask.read ? ["--read", ask.read] : []),
     ...(ask.resource ? ["--resource", ask.resource] : []),
-    "--stream",
+    ...(ask.env ? ["--env", ask.env] : []),
   ];
+}
+
+/** The argv the streamed drift read runs. */
+export function driftStreamArgv(ask: DriftStreamAsk): string[] {
+  return ["workspace", "drift", ...driftArgs(ask), "--stream"];
 }
 
 /** A transport that hands stdout over line by line. `stderr` is kept for the failure's words. */
