@@ -105,6 +105,8 @@ describe("the card about the current line", () => {
     expect(d.items[0]).toMatchObject({ name: "subnet", type: "terraform_data", action: "create", estate: "network" });
     expect(d.items[0].lines[0]).toMatchObject({ state: "unknown" });
     expect(d.estates).toEqual([{ name: "network", words: "state network.tfstate", written: false }]);
+    // An estate with nothing to say yet is not named.
+    expect(detailsModel({ ...answer, binaries: { network: "choudoufu" } }, null, { light: ["network/terraform_data.subnet"] }).estates).toEqual([]);
   });
 
   it("follows the paths downstream, at most three items, and says how many more", () => {

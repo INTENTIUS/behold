@@ -178,14 +178,18 @@ export function detailsModel(answer, progress, ask, { max = 3 } = {}) {
       type: t.type,
       action: res.action || null,
       estate: lastSegment(res.root),
-      lines: lines.filter((l) => l.key === key).map((l) => lineState(l, answer, progress)),
+      // An id line only for a resource the apply creates: an update keeps its id, and its card shows the value that moves.
+      lines: lines.filter((l) => l.key === key && !(l.path === "id" && res.action !== "create")).map((l) => lineState(l, answer, progress)),
     };
   });
   const marks = stateMarks(answer, progress);
-  const estates = sel.roots.map((root) => {
-    const m = marks[root];
-    return { name: lastSegment(root), words: m ? stateWords(m) || null : null, written: !!(m && m.written) };
-  });
+  // An estate is named only once there is something to say of it: its apply's outcome, its records written.
+  const estates = sel.roots
+    .map((root) => {
+      const m = marks[root];
+      return { name: lastSegment(root), words: m ? stateWords(m) || null : null, written: !!(m && m.written) };
+    })
+    .filter((e) => e.words);
   return { items, more: Math.max(0, sel.lit.length - items.length), estates };
 }
 
