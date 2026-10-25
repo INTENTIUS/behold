@@ -7,7 +7,8 @@
 // in $ADOPT_STUB_REPORT (example-terraform-estate/recorded/adoption/<root>.json).
 // With -approve it prints one line and writes nothing either: the e2e reads
 // the log to see whether -approve was ever asked for.
-const { appendFileSync, readFileSync } = require("node:fs");
+// behold is "type": "module", so node loads this extensionless file as ESM.
+import { appendFileSync, readFileSync } from "node:fs";
 const argv = process.argv.slice(2);
 if (process.env.ADOPT_STUB_LOG) appendFileSync(process.env.ADOPT_STUB_LOG, JSON.stringify({ argv, cwd: process.cwd() }) + "\n");
 const flag = (name) => (argv.find((a) => a.startsWith(`-${name}=`)) || "").slice(name.length + 2);
