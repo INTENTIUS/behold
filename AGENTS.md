@@ -1710,7 +1710,22 @@ overlay gives that project's nodes.
 
 `example-three-cloud` is a chant workspace (`dns`, `aws`, `azure`, `gcp`) on
 floci, floci-az and floci-gcp; docs/src/content/docs/using/three-cloud.mdx is
-its page. `behold demo three-cloud` runs `scripts/emulators-up.sh` (the
+its page. `azure` is a choudoufu estate (`azure/*.tf`, choudoufu#2246), so the
+demo requires choudoufu, `--local` boots no emulator for it (the setup starts
+floci-az, with TLS), and the root's `chant.config.json` names it as the
+terraform lexicon's `azure` root. `scripts/front-door.ts plan --out <file>`
+(`npm run change-set`) composes one change set: chant parts for dns, aws and
+gcp, and azure's choudoufu part from `choudoufuPlanSet`;
+e2e/three-cloud-change-set-e2e.sh asserts it. dns reads azure's
+`azureEndpoint` through chant (chant#4455): dns/src/records.component.ts
+has `memberOutputsComponent("azure")` and a records step whose cfn-deploy
+input is `stackOutput("azure", "azureEndpoint")`, and dns lists `terraform`
+with `terraform.roots.azure` at `../azure`, which is the change signal. No
+chant release has `member-outputs` yet (0.124.52 lacks it), so the demo
+needs a chant linked from chant's integration/choudoufu-engine; behold's own
+code does not import it, so there is no floor. The e2e's second half runs
+`chant components pr-plan --member dns` over a change to azure/ and asserts
+dns's records step names azure under its unresolved inputs. `behold demo three-cloud` runs `scripts/emulators-up.sh` (the
 emulators under chant's own container names, with the Docker socket, floci-az
 running Container Apps unmocked), then serves with `--local --env local`.
 `--local` on a workspace boots every chant member's emulators
