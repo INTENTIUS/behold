@@ -176,6 +176,7 @@ import { floorFor, floorMet, floorRefusal } from "./chant-floors.ts";
 import { allowedHostsFrom, guardRequest } from "./request-guard.ts";
 import { applyMemberPasses, memberKindOf, memberKindSpec, memberPassNote, servesAsEstate, type MemberPassRun } from "./member-kind.ts";
 import { TerraformReadError, terraformMemberWorkspace, terraformReaderState, terraformVia } from "./terraform-member.ts";
+import { addInstanceCards } from "./instance-cards.ts";
 import { paintTerraformPlan, readTerraformPlan, terraformPlanNote, type MemberPlanAnswer, type PlanReadDeps, type TerraformPlanRead } from "./terraform-plan.ts";
 import { normalizeTerraformNodes } from "./terraform-lens.ts";
 import { invalidateMember, memberIr, memberIrCacheStats, memberSourceStamp } from "./member-ir.ts";
@@ -2801,6 +2802,8 @@ export function createApp(
   const paintTerraformPlans = async (ir: GraphIR, multi: boolean): Promise<MemberPlanAnswer[]> => {
     const answers = await terraformPlans(multi);
     for (const a of answers) if (a.read) paintTerraformPlan(ir, a.read, a.member);
+    // #996: each `count`/`for_each` instance the plan names, as its own card beside its block.
+    addInstanceCards(ir);
     return answers.map(({ dir: _dir, read: _read, ...a }) => a);
   };
 

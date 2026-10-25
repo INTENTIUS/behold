@@ -118,6 +118,7 @@ import {
 import { SCRATCH_PREFIX, assertScratch } from "./scratch.ts";
 import { attachLintFindings, terraformLintNote } from "./terraform-lint.ts";
 import { redactSensitiveSources } from "./terraform-redact.ts";
+import { addInstanceCards } from "./instance-cards.ts";
 import { GRAPH_LINT_REPORT_CHANT_FLOOR } from "./chant-floors.ts";
 import { meetsFloor } from "./floor.ts";
 import {
@@ -816,6 +817,8 @@ const terraformPasses: MemberPasses = {
     const elision = hasTerraformEntities(ir)
       ? (groupTerraformByRoot(normalizeTerraformNodes(ir)), filterTerraformCards(ir, detail))
       : { dropped: {}, total: 0 };
+    // #996: chant's instance nodes (C4), tied to their block card. A no-op until chant emits them.
+    if (hasTerraformEntities(ir)) addInstanceCards(ir);
     return {
       // The roots half is membership-driven and survives an empty elision: a
       // served member says which roots it found and which directories of `.tf`
