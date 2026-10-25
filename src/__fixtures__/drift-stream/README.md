@@ -1,0 +1,1 @@
+Copied from INTENTIUS/chant packages/core/src/__fixtures__/drift-record/choudoufu-resource.ndjson at fdce0d963 (integration/choudoufu-engine). Hand-written there, in the layout choudoufu live-plan -resource writes.

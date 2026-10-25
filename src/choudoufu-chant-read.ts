@@ -40,7 +40,9 @@
  * choudoufu rebuilds prior state from the account, so chant's `planDrift` is
  * empty there and is not read.
  *
- * If chant's plan read fails, `live-plan` alone answered: ownership is painted
+ * Which reads answered is the IR's `rootReads` (chant#4452, behold#995), and
+ * chant's note only for a chant that puts none on the IR (released up to
+ * 0.124.52). If chant's plan read fails, `live-plan` alone answered: ownership is painted
  * from the handed document, no plan facts are cached, and the answer says why.
  * If chant's `live-plan` fails, no document is handed back and the member is
  * not observed, as when behold's own `live-plan` failed.
@@ -55,7 +57,7 @@ import { meetsFloor } from "./floor.ts";
 import { choudoufuSpawnOverride, ChoudoufuReadError } from "./choudoufu-member.ts";
 import { parseLivePlan, type LivePlanDocument } from "./choudoufu-live.ts";
 import { resolvedVersion, TERRAFORM_LEXICON_PKG, terraformReaderState, writeTerraformScratchProject } from "./terraform-member.ts";
-import { PLAN_READ_ENV, TERRAFORM_OBSERVE_ENV } from "./terraform-plan.ts";
+import { hasRootReads, PLAN_READ_ENV, rootReadReasonWords, rootReadsOf, TERRAFORM_OBSERVE_ENV } from "./terraform-plan.ts";
 
 /** The member's source stamp, the key its cached change set is stored under (src/member-ir.ts). */
 export { memberSourceStamp } from "./member-ir.ts";
@@ -135,8 +137,29 @@ export async function choudoufuChantUnavailable(deps: ChoudoufuChantDeps | null 
   return undefined;
 }
 
-/** chant's per-root note, after the `warning: [terraform] ` prefix: which reads answered. */
-export function rootAnswerOf(stderr: string, root: string): { answered: ChoudoufuChantAnswer; note?: string } {
+/**
+ * Which reads answered the member's root, from the IR's `rootReads`
+ * (INTENTIUS/chant#4452), never from chant's note text (behold#995): both
+ * when the root's report is `live+plan` and nothing fell back, `live-plan`
+ * alone otherwise, a chant with no `rootReads` included. The note is built
+ * from the report's own fields.
+ */
+export function rootAnswerOf(ir: unknown, root: string, stderr = ""): { answered: ChoudoufuChantAnswer; note?: string } {
+  const key = `terraform.roots.${root}`;
+  // A chant before chant#4452 puts no rootReads on the IR and says it in its note.
+  if (!hasRootReads(ir)) return rootAnswerOfNotes(stderr, root);
+  const rr = rootReadsOf(ir)[key];
+  if (!rr) return { answered: "live" };
+  if (rr.depth === "live+plan" && rr.fellBackTo === undefined) return { answered: "live+plan", note: `${key}: the plan read answered, beside live-plan, which answered presence and ownership` };
+  const why = rr.reason ? ` (${rootReadReasonWords(rr.reason)})` : "";
+  return {
+    answered: "live",
+    note: rr.fellBackTo === "declared" ? `${key}: no read answered${why}` : `${key}: the ${rr.depth} read failed${why}, so live-plan alone answered; plan attributes are absent`,
+  };
+}
+
+/** The fallback for a chant whose IR carries no `rootReads` (released up to 0.124.52): chant's note for the root. */
+export function rootAnswerOfNotes(stderr: string, root: string): { answered: ChoudoufuChantAnswer; note?: string } {
   const prefix = `terraform.roots.${root}: `;
   for (const line of stripAnsi(stderr).split("\n")) {
     const at = line.indexOf(prefix);
@@ -203,7 +226,13 @@ export async function readChoudoufuThroughChant(dir: string, deps: ChoudoufuChan
     const env = { ...(choudoufuSpawnOverride() ?? {}), [TERRAFORM_OBSERVE_ENV]: "plan", [LIVE_PLAN_DIR_ENV]: handed };
     const run = deps?.run ?? (async (args: string[], cwd: string, e: Record<string, string>) => (await import("./chant.ts")).runChantRaw(args, cwd, e));
     const res = await run(choudoufuChantArgs(), project, env);
-    const answer = rootAnswerOf(res.stderr, root);
+    let ir: GraphIR | undefined;
+    try {
+      ir = res.code === 0 ? (JSON.parse(res.stdout) as GraphIR) : undefined;
+    } catch {
+      ir = undefined;
+    }
+    const answer = rootAnswerOf(ir, root, res.stderr);
     let text: string;
     try {
       text = readFileSync(join(handed, livePlanDocumentFile(root)), "utf8");
@@ -217,12 +246,9 @@ export async function readChoudoufuThroughChant(dir: string, deps: ChoudoufuChan
     const parsed = parseLivePlan({ code: 0, stdout: text, stderr: "" }, dir);
     if (!parsed.ok) throw new ChoudoufuReadError(parsed.refusal, dir);
     let drift = new Map<string, PlanResourceDrift>();
-    if (res.code === 0 && answer.answered === "live+plan") {
-      try {
-        drift = planDriftFromIr(JSON.parse(res.stdout) as GraphIR, root);
-      } catch {
-        return { plan: parsed.doc, answered: "live", note: `chant printed something that is not a graph for ${dir}; the plan was not read`, drift };
-      }
+    if (res.code === 0 && !ir) return { plan: parsed.doc, answered: "live", note: `chant printed something that is not a graph for ${dir}; the plan was not read`, drift };
+    if (ir && answer.answered === "live+plan") {
+      drift = planDriftFromIr(ir, root);
       return { plan: parsed.doc, answered: "live+plan", ...(answer.note ? { note: answer.note } : {}), drift };
     }
     return { plan: parsed.doc, answered: "live", ...(answer.note ? { note: answer.note } : {}), drift };

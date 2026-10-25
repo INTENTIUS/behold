@@ -127,6 +127,19 @@ makes, `declaredReportUrl` in src/workspace.ts, floor
 declaration included; the flag overrides it, and each answer's `urlFrom` says
 `flag` or `declaration`. With neither, nothing changes.
 
+A member of another kind in an estate's components picture (#997): chant
+writes its release ledger per component and a TerraformApplyOp writes no
+release, so a `choudoufu` or `terraform` member is one card,
+`<member>/<kind>` (lexicon `member-runs`, src/component-releases.ts), with
+every resource of the member under it. Its `apply` and `_lastApply` are the
+run index's newest `apply` entry for that member that passed (an entry with
+no `member` is a run of the whole workspace and is not taken as one), and
+its `since` and `_runSince` the newest entry after it, the member's or the
+workspace's, when that did not pass. A card the index names nothing of says
+`no runs recorded`, or `no run index read` when behold has no report URL;
+behold never makes one up. The members are read through the same
+`ciRunIndexOf` as the runs pane.
+
 ## A plan job run locally (behold#685)
 
 `POST /api/chant/ci/local` `{job: "plan", commit, pr, env?, base?, member?,
@@ -153,6 +166,63 @@ and pushes release records and gate facts), and behold has no emulator notion
 that holds for it: `ci run` gives the job a clean environment that keeps HOME,
 so `serve --local`'s emulator env does not reach the job and the operator's
 own credentials would. Cached-step marks wait on chant#4015.
+
+## Adopting a Terraform root into choudoufu (behold#999)
+
+A `terraform` member of a declared workspace is offered adoption into
+choudoufu, the engine tier, through chant's `chant workspace promote <member>
+--state <file>` (src/adoption.ts, floor `ADOPTION_REPORT_CHANT_FLOOR`, set to
+0.124.53 until the chant release carrying the report is cut). The panel's
+**Adopt** tab (web/adopt.js) shows, per member, what the engine tier gives
+and what it does not, the command, and promote's report.
+
+- `GET /api/adopt`: each adoptable member's offer `{member, kind, dir,
+  offered, engine, gains, limits, stateHint, state: {file, present},
+  command, approve, recorded, start: {offered, why?}}`. A `pulumi` member is
+  listed `offered: false` with `waits` (plunge P-L4, INTENTIUS/plunge#7):
+  `ADOPTERS` and `ADOPTION_WAITS` are keyed on member kind, and the Pulumi
+  half adds its adopter there.
+- `GET /api/adopt/report?member=<name>[&state=<file>]`: promote's read-only
+  stage, `workspace promote <member> --state <abs> --dry-run --json`, through
+  the reader (`readPromoteReport`, `PROMOTE_REPORT_READ`). chant stages in a
+  throwaway worktree, runs `choudoufu live-check` and `live-import` without
+  `-approve`, records no gate and leaves the tree as it was. Its `adoption`
+  field (chant's `adoption-report.ts`, parsed from choudoufu's text) lists
+  every resource instance; behold gives each a `fate`: `claimed` (VERIFIED,
+  DRIFTED) or `left-out` (MISSING, UNTAGGABLE, UNADMITTED_TYPE), with a
+  `why` and choudoufu's `detail`. An unknown status is listed as `unknown`,
+  never dropped.
+- `POST /api/adopt/start` `{member, state?}`: the delegated write. It starts
+  `workspace promote <member> --state <abs> --json` (never `--dry-run`,
+  never `-approve`) at the workspace root through the runner's `track`.
+  chant's gate decides: without an approval of the patch's digest promote
+  records a pending gate on `chant/lifecycle` and exits 3 (`gated`), and
+  nothing in the tree or the cloud is written; after `chant approve
+  workspace-promote <member> --plan <digest>`, the same start applies the
+  patch and runs `live-import -approve`. behold never approves here; the
+  approve line is shown to copy. `GET /api/adopt/runs/:id` answers one start
+  (`outcome`, `digest`, `words`, `approve`, `report`), the last 20 in memory;
+  the SSE `adopt-run` event names one that moved.
+- The state file is a file name in the member's declared directory
+  (`terraform.tfstate` by default), never a path. A root on a remote backend
+  pulls one there under a name git ignores first, since promote refuses a
+  member with uncommitted changes.
+
+Refusals: no declared workspace `404`, below the floor `409 chant-too-old`,
+preview `403` for the start, a kind behold does not adopt `422 adopt-kind`,
+no state file `422 adopt-state`, a second command while one runs `409 busy`.
+A terragucci or SQL Yodeler repo refuses the start through the write
+allowlist (`409`), and `--public` refuses every `/api/adopt` read (`403`)
+and the start (`405`). The tab is not drawn in a public view, an embed, a
+static export or a guarded repo.
+
+`behold demo terraform-estate` serves `serve --adopt-recorded
+recorded/adoption` (DemoServe `adoptRecorded`): one recorded `<member>.json`
+per root in promote's shape, labelled recorded (`RECORDED_NOTE`), and no
+start. `just e2e-adopt` (e2e/adopt-terraform-e2e.sh) runs the whole path over
+a real chant and serve with choudoufu replaced by
+e2e/fixtures/adopt/choudoufu, and asserts the report lists every resource
+with its fate and that nothing is written before approval.
 
 ## A terragucci estate, from its reports (#490)
 
@@ -656,6 +726,98 @@ No live result is cached to build the first picture and none is reused. A
 pending member becomes a real one only when its own read completes, and the
 live pass a progressive request starts is the same one per member under the
 same budget: a progressive load costs the estate no extra spawn.
+
+### Drift, streamed card by card (#998)
+
+`POST /api/workspace/drift/stream {member, addresses?}` (palette: **"Stream
+drift card by card: <member>"**) runs `chant workspace drift --member <name>
+--stream` at the workspace root and narrates it as `drift` frames on
+`/api/events` (src/drift-stream.ts). The stream is chant's drift record in
+NDJSON (chant#4451): one `drift-start` with the addresses it expects, one
+`drift-record` per instance as its read finishes, one `drift-settle`. Each
+line is decoded in `streamDrift` (src/workspace-reader.ts, checks in
+src/drift-line.ts, written out from chant's decoder at fdce0d963 until a chant
+release exports `@intentius/chant/drift-record`), and each record frame
+repaints only its own card.
+
+- **Per resource on a choudoufu member.** choudoufu's single-resource path
+  (`live-plan -resource`, choudoufu#2245) plans one resource and writes its
+  records when that plan ends, and there is no whole-estate stream. So behold
+  asks once per resource block (`--resource <addr>`, instance keys dropped,
+  data sources left out), one after another, from the card addresses the page
+  sends; the cards change colour resource by resource. Any other member is
+  asked once without `--resource`.
+- **Reading is not a status.** Between a start and its settle, an expected
+  card that has not reported is `data-drift-reading`: dimmed and dashed, its
+  fill and `_status` unchanged. Only a record sets `_status`.
+- **Not reached.** At settle, every expected address no record answered
+  becomes `not-observed` with reason `not-reached` (chant's fold rule), sent
+  as a record frame before the settle frame. A read that fails or prints a
+  line that does not decode is a `failed` frame: its cards stop reading and
+  keep the colour they had. A read that never started stops the run.
+- **Colour** is `toneFor(record)`, #995's `(status, read)` table
+  (src/drift-tone.ts, below). A status or read outside it is neutral, and the
+  card carries `data-drift-unknown` and says so in its tooltip.
+- One run at a time (`409 drift-streaming`); `{stop: true}` stops it.
+  `BEHOLD_DRIFT_CHANT` names the chant the read runs, for a chant built
+  ahead of the release that adds `workspace drift --stream`, and for
+  `just e2e-streamed-drift`'s fake (e2e/fixtures/fake-chant-drift). No floor
+  is registered yet: the release is not known.
+
+### Colour from the drift record (#995)
+
+Every card's live colour is one fixed table over chant's drift record
+(chant#4451), keyed on the record's `status` and the `read` that answered,
+and on nothing else: `DRIFT_TONE_TABLE` and `toneFor` in src/drift-tone.ts.
+No engine is named there, so a Pulumi member (path 2, chant#4453) colours
+through the same cells as the rest. The read limits the claim: an
+`ownership` read's `in-sync` is green and labelled "bound (ownership only)"
+(#404), a `state` read's `recorded` is neutral, and a state read that says
+`in-sync` or `drifted` (a record chant refuses) is neutral and labelled. An
+unknown status or read is neutral and labelled unknown, never a guessed
+colour.
+
+- **The drift document.** `chant workspace drift --member <name> [--read
+  <read>] [--resource <addr>] [--env <env>]` prints one member's drift
+  document (contract 1, `drift: "v1"`), read by the member's own engine. It is
+  `read("drift", driftArgs(ask))` on the workspace reader, the sixth
+  `BEHOLD_READS` entry, held by chant's conformance suite when that suite
+  lists `drift`. `paintWorkspaceDrift` (src/drift-overlay.ts) reads it per
+  member and paints `_status`, `_drift: {status, read, label, reason?,
+  engineCode?, fellBackFrom?, unknown?}` and `_unobserved` on each card.
+  `/api/overlay` on a declared workspace whose chant meets
+  `DRIFT_RECORD_CHANT_FLOOR` (0.124.53, the release not cut yet) does this on
+  every read for the members with no live half of their own (`terraform`,
+  `pulumi`), and with `?drift=1` for `chant` and `choudoufu` members too, at
+  the cost of a second live read. `meta.driftRecord` lists each member's
+  painted and unplaced records and chant's error. With `?plan=1` a terraform
+  or choudoufu member is asked `--read plan`.
+- **The reads behold still makes itself colour through the same table.** A
+  choudoufu member's `live-plan`/`live-ls` paint (src/choudoufu-live.ts
+  `verdictFor`) gives each address the status chant's adapter gives it
+  (`bound` in-sync, `unowned`/`adoptable` unclaimed, `ABSENT` pending, every
+  other omission not-observed, a listed item nothing declares undeclared) and
+  takes the table's tone, read `ownership`. A component status row's
+  reconciliation fallback (src/component-status.ts `reconciliationStatus`) is
+  chant's `componentStatusDriftRecords` mapping, read `live-read`.
+- **UNOWNED, settled with chant.** An `UNOWNED` omission with no `unowned[]`
+  row is `not-observed` (`read-failed`, `engineCode: "UNOWNED"`), as chant C1
+  decided: neutral, not `warn`. With its `unowned[]` row it is `unclaimed`
+  and `warn`, as before.
+- **Which read answered a root** is the IR's `rootReads` (chant#4452):
+  `terraform.roots.<root>` with `depth`, `fellBackTo` and `reason`
+  (src/terraform-plan.ts `planRootAnswers`, src/choudoufu-chant-read.ts
+  `rootAnswerOf`). chant's note text is not parsed. A chant that puts no
+  `rootReads` on the IR reports no root: a stock root's cards carry no plan
+  answer, and a choudoufu re-check reads as live-plan alone.
+- **choudoufu card ids and chant node ids (the B3 follow-up).** behold keeps
+  a choudoufu member's card ids, the roster's `<member>/<address>`, because
+  saved layouts are keyed on them, while chant names the same blocks
+  `<member>/<root>/<block path>`. One alias table, built from chant's graph
+  of the member (`choudoufuCardAliases`, src/drift-overlay.ts), maps a chant
+  node and an instance address onto the card (`cardIdFor`), and both the
+  change-set overlay (src/change-set-overlay.ts) and drift records use it. A
+  node the table does not know lands on no card and is listed.
 
 ### What a read cost (#420, #421)
 
@@ -1446,7 +1608,12 @@ or null where chant mapped none), `nodes` (`<member>/<id>` to the strongest
 bucket and the actions on it), `counts`, `unchanged`, `gaps` (members that
 failed to plan or have holes), `gate` (commit, run, `releaseDigest`) and
 `planned` (a release gate's release and environment, chant#4045). An entry
-with no node is kept and listed in the Change set tab, never dropped. The page
+with no node is kept and listed in the Change set tab, never dropped. An entry
+for one instance of a counted block (#996) is put on the instance's node,
+`<blockNode>[k]`, with `block` naming the block, whether chant mapped it to the
+block node (before chant#4454) or the instance node; the block's node carries
+the rollup (`instances`), so its card is outlined when the instance cards are
+not drawn. The page
 (web/change-set-overlay.js) outlines each card in the drift legend's tokens
 (managed for create, foreign for update or replace, degraded for delete or
 forget) with a tag above it, never a fill; it is opened from the "change set"
@@ -1569,7 +1736,9 @@ document, so it is checked against chant's schema, vendored unchanged in
 src/health-schema/ (chant PR #4193 at d727944c4) and validated with ajv, with
 a hole's `reason` loosened to any string; a document the schema refuses is
 refused whole. A project with no lexicon that reads health is `none`, not a
-failure. A member below the floor is refused before anything is spawned; when
+failure. A member of another kind (#997) is listed as `none` without a
+spawn: the read builds a chant project and it has none. A member below the
+floor is refused before anything is spawned; when
 every member is, the answer carries the refusal and `degraded`.
 
 The answer is `nodes` (per id: `healthy`, `unhealthy` or `unknown` with
@@ -1597,7 +1766,22 @@ overlay gives that project's nodes.
 
 `example-three-cloud` is a chant workspace (`dns`, `aws`, `azure`, `gcp`) on
 floci, floci-az and floci-gcp; docs/src/content/docs/using/three-cloud.mdx is
-its page. `behold demo three-cloud` runs `scripts/emulators-up.sh` (the
+its page. `azure` is a choudoufu estate (`azure/*.tf`, choudoufu#2246), so the
+demo requires choudoufu, `--local` boots no emulator for it (the setup starts
+floci-az, with TLS), and the root's `chant.config.json` names it as the
+terraform lexicon's `azure` root. `scripts/front-door.ts plan --out <file>`
+(`npm run change-set`) composes one change set: chant parts for dns, aws and
+gcp, and azure's choudoufu part from `choudoufuPlanSet`;
+e2e/three-cloud-change-set-e2e.sh asserts it. dns reads azure's
+`azureEndpoint` through chant (chant#4455): dns/src/records.component.ts
+has `memberOutputsComponent("azure")` and a records step whose cfn-deploy
+input is `stackOutput("azure", "azureEndpoint")`, and dns lists `terraform`
+with `terraform.roots.azure` at `../azure`, which is the change signal. No
+chant release has `member-outputs` yet (0.124.52 lacks it), so the demo
+needs a chant linked from chant's integration/choudoufu-engine; behold's own
+code does not import it, so there is no floor. The e2e's second half runs
+`chant components pr-plan --member dns` over a change to azure/ and asserts
+dns's records step names azure under its unresolved inputs. `behold demo three-cloud` runs `scripts/emulators-up.sh` (the
 emulators under chant's own container names, with the Docker socket, floci-az
 running Container Apps unmocked), then serves with `--local --env local`.
 `--local` on a workspace boots every chant member's emulators
@@ -2233,6 +2417,17 @@ same facts per card as JSON.
   stays pending with no physical id, and chant carries its plan attributes
   onto the declared node anyway (chant#4372). Its rows read `plan: create`,
   `unknown: N until apply`, `read: plan`.
+- **A `count`/`for_each` block draws a card per instance** (#996,
+  src/instance-cards.ts). The id is the block's node id and the key as
+  Terraform prints it, `app/aws_s3_bucket.logs[0]`, `<member>/` in front on an
+  estate, the same rule chant's graph uses for its instance nodes
+  (INTENTIUS/chant#4454). Until chant emits them, behold derives them from the
+  plan's per-instance rows (`planActions` by instance address, each change and
+  drift row's `instance`), so each card has its own action, changes and drift.
+  An instance node chant draws is kept and only painted. The block card stays
+  as the rollup: chant's aggregate `_plan`, `attrs._instances` and an
+  `instances` row. A key under a module instance (`module.a[0]...[1]`) stays
+  in the rollup. A choudoufu member's roster is per instance already.
 - **choudoufu members read ownership and the plan through chant together**
   (src/choudoufu-chant-read.ts, #924): src/choudoufu-plan.ts is gone, and a
   re-check's `live-plan` is chant's, handed back to behold. See the choudoufu

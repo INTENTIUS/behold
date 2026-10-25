@@ -79,14 +79,15 @@ describe("demos.json — the committed catalog (#209)", () => {
 
   // #824: the front door. Its setup boots the three emulators under chant's
   // own names, so `--local` finds and reuses them for every member.
+  // choudoufu#2246: the azure site is a choudoufu estate, so it needs choudoufu.
   it("the three-cloud entry boots three emulators and serves the workspace on them", () => {
     const t = registry.find((e) => e.name === "three-cloud");
     expect(t, "no three-cloud entry in demos.json").toBeTruthy();
-    expect(t!.requires).toEqual(["docker", "curl"]);
+    expect(t!.requires).toEqual(["docker", "curl", "choudoufu"]);
     expect(t!.setup).toBe("bash scripts/emulators-up.sh");
     expect(t!.serve).toEqual({ local: true, env: "local" });
     const dir = join(REPO, t!.dir!);
-    for (const f of ["chant.workspace.json", "scripts/emulators-up.sh", "scripts/front-door.ts", "dns/ops/front-door.op.ts", "dns/src/route53.ts", "aws/src/site.ts", "azure/src/site.ts", "gcp/src/site.ts"]) {
+    for (const f of ["chant.workspace.json", "scripts/emulators-up.sh", "scripts/front-door.ts", "dns/ops/front-door.op.ts", "dns/src/route53.ts", "aws/src/site.ts", "azure/main.tf", "azure/site.tf", "chant.config.json", "gcp/src/site.ts"]) {
       expect(existsSync(join(dir, f)), f).toBe(true);
     }
     const up = readFileSync(join(dir, "scripts/emulators-up.sh"), "utf8");

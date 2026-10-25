@@ -69,6 +69,13 @@ example name="terralith-4":
 e2e:
     bash e2e/run.sh
 
+# behold#999: adopt a Terraform root into choudoufu over a real chant and serve,
+# choudoufu replaced by e2e/fixtures/adopt/choudoufu. Asserts the report lists
+# every resource with its fate and that nothing is written before approval.
+# Needs a chant at the adoption report's floor (BEHOLD_E2E_CHANT_PKG to point at one).
+e2e-adopt:
+    bash e2e/adopt-terraform-e2e.sh
+
 # End-to-end (#59, epic #54's definition of done): the unified component view
 # (waves + live status + CI + resources) against a real project — loomster on
 # Floci. Needs loomster checked out and its Floci already up (`just local-up`
@@ -139,6 +146,16 @@ e2e-helm-logical:
 #   just e2e-flux-estate
 e2e-flux-estate:
     bash e2e/flux-estate-k3d-e2e.sh
+
+# behold#998: streamed drift in the choudoufu-estate demo. The demo's own setup
+# (a scratch floci, choudoufu init, the monolith applied), served with a fake
+# chant for the streamed drift read only (e2e/fixtures/fake-chant-drift), and
+# the monolith's cards watched in a headless browser as they change colour one
+# by one. Needs Docker, choudoufu and a Chrome or playwright's chromium;
+# SKIPs with exit 0 without Docker or choudoufu.
+#   just e2e-streamed-drift
+e2e-streamed-drift:
+    bash e2e/streamed-drift-e2e.sh
 
 # behold#490: terragucci's example painted from example-terragucci-reports,
 # through the real server and the real Terraform read. Needs TERRAGUCCI (a

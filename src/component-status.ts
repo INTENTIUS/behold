@@ -25,6 +25,7 @@
  * epic keeps separate from this component-level facet. The component DAG
  * stays the spine; status hangs off each node by name.
  */
+import { toneFor } from "./drift-tone.ts";
 import type { GraphIR, ComponentStatusRow, ComponentResourceRollup, ReleaseRecord, RunOrigin } from "@intentius/chant";
 import { tickFreshness, type ConvergeComponentVerdict, type TickComponentVerdicts } from "./operator.ts";
 
@@ -93,10 +94,13 @@ export type ResourceRollup = ComponentResourceRollup;
  *  3. No rollup (or an empty one), but `live` was reported ->
  *     good when live, neutral when not — the coarse but machine-real
  *     presence signal. A healthy `stack` with no rollup lands here.
- *  4. None of the above — the pre-0.18.29
- *     reconciliation/detail heuristic, kept only as a defensive fallback:
- *     `reconciled` -> good; `unrecorded` -> good iff `detail` starts "live";
- *     `stale`/`drifted` -> warn; `unknown`/default -> neutral.
+ *  4. None of the above — the reconciliation verdict, kept as the last
+ *     fallback and, since behold#995, read as chant's drift record reads it
+ *     ({@link reconciliationStatus}) and coloured by the one `(status, read)`
+ *     table (src/drift-tone.ts): `reconciled` in-sync -> good; `stale`
+ *     missing and `drifted` -> warn; `unknown` not-observed -> neutral.
+ *     `unrecorded` stays a presence answer, as tier 3's `live` is: good when
+ *     `detail` says live, neutral otherwise (#165, below).
  *
  * ## Why a HEALTHY stack no longer paints (behold#100)
  *
@@ -172,23 +176,42 @@ export function componentStatusColor(
     return "warn";
   }
   if (row.live !== undefined) return row.live ? "good" : "neutral";
+  // `unrecorded` is a presence answer here, the same one tier 3 gives from
+  // `live`: live -> good, not live -> neutral. A component with no artifact to
+  // record (an infra stack) is deployed and unrecorded by design, and the lens
+  // paints it deployed (#165). Read as chant's drift record reads it, it would
+  // be drifted (warn) or pending (accent), turning a healthy estate red; that
+  // mapping is {@link reconciliationStatus}, kept for drift records only.
+  if (row.reconciliation === "unrecorded") return reconciliationStatus(row) === "drifted" ? "good" : "neutral";
+  // behold#995: every other verdict is a drift record's status (chant's
+  // `componentStatusDriftRecords`), coloured by the one (status, read) table,
+  // read `live-read`. No tone is chosen here.
+  return toneFor({ status: reconciliationStatus(row), read: "live-read" }).tone as ComponentStatusColor;
+}
+
+/**
+ * The drift status chant's record gives a component status row
+ * (INTENTIUS/chant#4451, `componentStatusDriftRecords`): `reconciled`
+ * in-sync, `drifted` drifted, `stale` missing, `unrecorded` drifted when live
+ * (something runs that no release accounts for), pending when not, and
+ * not-observed when live was not asked; `unknown` and anything else
+ * not-observed. A row from a chant before 0.18.29 carries no `live`, and its
+ * `detail` still says it: "live..." for a live one.
+ */
+export function reconciliationStatus(row: Pick<ComponentStatusRow, "reconciliation" | "detail" | "live">): string {
   switch (row.reconciliation) {
     case "reconciled":
-      return "good";
-    case "unrecorded":
-      // Pre-0.18.29 fallback only (see doc comment above) — `detail`'s two
-      // "unrecorded" strings (lifecycle/status.ts reconcileStatus) are:
-      //   "live[ and chant-owned], but no release record exists — …"   (live)
-      //   "no release record and nothing observed live"                (not live)
-      // Both contain "live" (the second negates it at the end), so anchor on
-      // the start of the string, not mere presence of the word.
-      return row.detail.startsWith("live") ? "good" : "neutral";
-    case "stale":
+      return "in-sync";
     case "drifted":
-      return "warn";
-    case "unknown":
+      return "drifted";
+    case "stale":
+      return "missing";
+    case "unrecorded": {
+      const live = row.live ?? (typeof row.detail === "string" ? (row.detail.startsWith("live") ? true : /nothing observed live/.test(row.detail) ? false : undefined) : undefined);
+      return live === true ? "drifted" : live === false ? "pending" : "not-observed";
+    }
     default:
-      return "neutral";
+      return "not-observed";
   }
 }
 

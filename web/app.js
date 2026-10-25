@@ -25,6 +25,7 @@ import { renderLane } from "./terragucci-lifecycle.js";
 import { renderReleases } from "./releases.js";
 import { renderTrunkLane } from "./trunk-lane.js";
 import { startLocalRuns } from "./local-run.js";
+import { startAdopt } from "./adopt.js";
 import { entriesFor as csEntriesFor, gapLines as csGapLines, inspectHeading as csInspectHeading, nodeMarks as csNodeMarks, offGraph as csOffGraph, overlayHeader as csHeader, overlayLegend as csLegend, PREVIEW_NOTE as CS_PREVIEW_NOTE } from "./change-set-overlay.js";
 import { collisionFilter as coFilter, collisionHeader as coHeader, collisionMarks as coMarks, collisionsFor as coFor, COLLISION_NOTE as CO_NOTE, FILES_NOTE as CO_FILES_NOTE, FILTER_OFF as CO_FILTER_OFF, FILTER_ON as CO_FILTER_ON, gapLines as coGapLines, hideEdge as coHideEdge, itemRow as coItemRow, nodeRow as coNodeRow, sideLines as coSideLines } from "./collision-marks.js";
 import { dimEdge as hmDimEdge, HEALTH_NOTE as HM_NOTE, healthHeader as hmHeader, healthLegendRows as hmLegendRows, healthMarks as hmMarks, healthRows as hmRows, memberLines as hmMemberLines } from "./health-marks.js";
@@ -53,6 +54,7 @@ import { networkFindings, OUTSIDE, traceRoute } from "./net-trace.js";
 import { readCostLine } from "./read-cost.js";
 import { mountHistoryPicker } from "./history-picker.js";
 import { applyMemberFrame, createMemberFrames, pendingLine, stillPending } from "./pending.js";
+import { applyDriftFrame, driftLine, memberAddresses } from "./drift-stream.js";
 import { initTheme, setTheme, mountThemePicker, readableOn, inkOn, colorForCategory, onThemeChange, getTokens, getTheme, pinTokensFor, barVarFor } from "./theme.js";
 // #399 M2 / #401 M4 of #397: the colour-by modes' arithmetic and the
 // provenance badge's wording — every decision the behaviour overlay makes,
@@ -1581,10 +1583,43 @@ function inspect(node) {
     }
   }
 
+  // #997: a choudoufu or terraform member's one card. chant records no
+  // release for it, so its last apply is the run index's newest apply of the
+  // member that passed, and the run after it that did not pass, if any.
+  if (node.lexicon === "member-runs") {
+    const runs = section("runs");
+    const last = node.attrs._lastApply;
+    if (last) {
+      if (last.url) {
+        const a = document.createElement("a");
+        a.href = last.url;
+        a.textContent = `${last.runId} · ${last.forge}`;
+        a.target = "_blank";
+        a.rel = "noreferrer noopener";
+        a.title = `${last.url}, the address the run index entry itself carries. behold never invents this link.`;
+        runs("last apply", a);
+      } else {
+        runs("last apply", `${last.runId} · ${last.forge}`);
+      }
+      runs("commit", last.commit);
+      runs("ended", last.ended);
+    } else {
+      runs("last apply", "none in the run index");
+    }
+    const since = node.attrs._runSince;
+    if (since) {
+      runs("since", `${since.job} ${since.status === "fail" ? "failed" : since.status} at ${since.commit.slice(0, 12)}`);
+      runs("", `run ${since.runId}, ended ${since.ended}, ${since.member ? `for ${since.member}` : "for the whole workspace"}.`);
+    } else if (typeof node.attrs.runs === "string") {
+      runs("", node.attrs.runs === "no run index read" ? "behold was given no run index (--ci-report-url), so it has no run of this member to show." : `${node.attrs.runs}: chant's run index names no apply of this member.`);
+    }
+  }
+
   // Declared attributes — the source-of-truth values / cross-resource refs.
   // The `release` chip is the card's abbreviation of the section above, not a
   // declared value, so it stays out of this list when the section rendered.
-  const attrKeys = Object.keys(node.attrs || {}).filter((k) => !k.startsWith("_") && !((k === "release" || k === "since") && release));
+  const memberRuns = node.lexicon === "member-runs";
+  const attrKeys = Object.keys(node.attrs || {}).filter((k) => !k.startsWith("_") && !((k === "release" || k === "since") && release) && !(memberRuns && (k === "apply" || k === "since" || k === "runs")));
   if (attrKeys.length) {
     const decl = section("declared");
     // #393 item 10: a choudoufu card that can be adopted leads with the write
@@ -4335,6 +4370,74 @@ function markPendingCards(ir) {
       t.textContent = "still reading this member — not yet observed";
       g.appendChild(t);
     }
+  }
+}
+
+/**
+ * behold#998: the cards a drift stream reached (web/drift-stream.js). A card
+ * a record coloured wears its tone on the bar and the outline, with
+ * `data-drift-status` naming the record's status; a card a started read has
+ * not reported yet is `data-drift-reading`, dimmed and dashed, and its fill
+ * is left alone, since reading is not a status. The same post-render stamp
+ * as markPendingCards, for the same reason. `only`, when given, limits the
+ * pass to those ids, so a frame repaints the cards it moved and no others.
+ */
+function markStreamedDrift(ir, only) {
+  const svg = document.querySelector("#graph svg");
+  if (!svg) return;
+  const ids = only ? new Set(only) : null;
+  for (const n of (ir && ir.nodes) || []) {
+    if (ids && !ids.has(n.id)) continue;
+    const a = n.attrs || {};
+    if (!a._drift && !a._driftReading && !ids) continue;
+    const g = svg.querySelector('[data-node-id="' + CSS.escape(n.id) + '"]');
+    if (!g) continue;
+    g.toggleAttribute("data-drift-reading", !!a._driftReading);
+    let tip = g.querySelector("title[data-drift]");
+    if (a._driftReading) {
+      if (!tip) {
+        tip = document.createElementNS("http://www.w3.org/2000/svg", "title");
+        tip.setAttribute("data-drift", "1");
+        g.prepend(tip);
+      }
+      tip.textContent = "reading: the drift read has started and has not reported this card yet";
+    }
+    if (!a._drift) {
+      if (tip) tip.remove();
+      continue;
+    }
+    g.setAttribute("data-drift-status", a._drift.status);
+    g.setAttribute("data-drift-tone", a._status || "neutral");
+    // behold#995: a status or read outside the (status, read) table is neutral, and the card says it is unknown.
+    g.toggleAttribute("data-drift-unknown", !!a._drift.unknown);
+    if (a._drift.notReached) g.setAttribute("data-drift-not-reached", "");
+    else g.removeAttribute("data-drift-not-reached");
+    const tone = a._status || "neutral";
+    const bar = g.querySelector('rect[width="4"]');
+    if (bar) bar.setAttribute("fill", tone === "runtime" ? "var(--runtime)" : `var(--pin-${tone}Bar)`);
+    const card = g.querySelector("rect");
+    if (card && card !== bar) card.setAttribute("stroke", `var(--pin-${tone}Stroke)`);
+    if (!a._driftReading) {
+      if (!tip) {
+        tip = document.createElementNS("http://www.w3.org/2000/svg", "title");
+        tip.setAttribute("data-drift", "1");
+        g.prepend(tip);
+      }
+      tip.textContent = `${a._drift.label} (${a._drift.read} read)`;
+    }
+  }
+}
+
+/** behold#998: ask the server to stream one member's drift. Frames arrive on /api/events. */
+async function startDriftStream(member) {
+  const m = declaredMember(member);
+  const body = { member, ...(m && m.kind === "choudoufu" ? { addresses: memberAddresses(lastGraphIr, member) } : {}) };
+  try {
+    const r = await fetch("/api/workspace/drift/stream", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) showToast(j.error || `the drift stream did not start (${r.status})`, false);
+  } catch (e) {
+    showToast(`the drift stream did not start: ${e.message}`, false);
   }
 }
 
@@ -7296,6 +7399,32 @@ async function initLocalRuns() {
 }
 initLocalRuns();
 
+// --- behold#999: adopt a Terraform root into choudoufu ------------------------
+// promote's dry-run report per root and the gated command. Start runs a
+// command, so the tab is drawn only where Local is: a served workspace, never
+// in a public view, an embed, a static export or a guarded repo. Preview draws
+// it with Start disabled (the route refuses it there too).
+async function initAdopt() {
+  if (staticMode || publicMode || embedOpts.embed) return;
+  const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
+  if (!project.workspace || project.publicMode || project.terragucci || project.sqlYodeler) return;
+  const offer = await apiFetch("/api/adopt").then((r) => r.json()).catch(() => ({}));
+  if (!Array.isArray(offer.offers) || !offer.offers.length) return;
+  const host = addPanelTab("adopt", "Adopt", "Adopt a Terraform root into choudoufu with chant workspace promote: the report of what it claims, and the gated command.");
+  if (!host) return;
+  host.id = "tab-adopt";
+  let started = false;
+  const start = () => {
+    if (started) return;
+    started = true;
+    startAdopt(host, { fetchJson: (url, init) => fetch(url, init).then((r) => r.json()), events, toast: showToast });
+  };
+  const tab = document.querySelector('#panel-tabs button[data-tab="adopt"]');
+  if (tab) tab.addEventListener("click", start);
+  if (host.classList.contains("active")) start();
+}
+initAdopt();
+
 // --- #683: feature flags, on or off per environment ---------------------------
 // The Flags tab reads /api/workspace/flags when it is opened: each flag of the
 // workspace with its owner, work item and value per environment, a flip
@@ -9734,6 +9863,7 @@ function render(ir, svg, m) {
   markIdentityCards(ir); // the identity mark: a tag badge on the card's top-right edge
   markDriftedCards(ir); // #404: same, for a bound card the plan would change — after the carve/operator stamps, so it can see and yield to them
   markPendingCards(ir); // #422: and the cards whose member has not answered yet
+  markStreamedDrift(ir); // behold#998: and the cards a drift stream coloured or is still reading
   markTerragucciCards(); // #490: and what terragucci's reports found, dated
   markYodelCards(); // #526: and SQL Yodeler's drift, dated
   if (csAnswer) markChangeSetCards(); // #681: and the change set a gate binds, as a preview
@@ -11320,6 +11450,24 @@ events.addEventListener("member", (e) => {
   renderStatusbar();
 });
 
+// behold#998: one frame per drift line, as chant prints it (src/drift-stream.ts).
+// Payload-carrying like `member`: the cards are on screen, and each frame
+// repaints the cards it moved and nothing else, so they change one by one.
+events.addEventListener("drift", (e) => {
+  let frame;
+  try {
+    frame = JSON.parse(e.data);
+  } catch {
+    return;
+  }
+  if (!lastGraphIr) return;
+  const { moved, reading } = applyDriftFrame(lastGraphIr, frame);
+  if (moved.length) markStreamedDrift(lastGraphIr, moved);
+  const line = driftLine(frame, reading);
+  if (line) nowline(line);
+  if (frame.kind === "end") renderGraphLegend();
+});
+
 // #914: an agent's POST /api/view.
 events.addEventListener("view", (e) => agentMove(e.data));
 
@@ -12287,6 +12435,13 @@ function paletteCommands() {
   // #910: a stock Terraform root's plan, through chant, onto its cards.
   if (!staticMode && !publicMode && !view.env && projectInfo && (projectInfo.memberKinds || []).includes("terraform")) {
     c.push(["Read the plan on the Terraform roots (replaces, forcing attributes, unknowns, drift)", () => readTerraformPlan()]);
+  }
+  // behold#998: stream one member's drift, card by card. A read, but a POST.
+  if (!staticMode && !publicMode && projectInfo && projectInfo.workspace) {
+    for (const m of projectInfo.workspace.members || []) {
+      if (m.repo || m.kind === "other") continue;
+      c.push([`Stream drift card by card: ${m.name}${m.kind === "choudoufu" ? " (one resource at a time)" : ""}`, () => startDriftStream(m.name)]);
+    }
   }
   c.push(["Fit graph to view", () => fitGraph()]);
   c.push(["Export: current graph as SVG", () => exportSvg()]);
