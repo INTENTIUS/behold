@@ -34,6 +34,7 @@ import { carveProgress, splitCarveState, type CarveState } from "./carve-manifes
 import { opCardFields } from "./ops-lens.ts";
 import { ROW_ASPECT, ROW_MIN_CARDS, rowColumns, withRowChains, type RowBand, type RowGrid } from "./edgeless.ts";
 import { SUMMARY_LEXICON, summaryCardFields } from "./collapse-lens.ts";
+import { MEMBER_RUNS_LEXICON } from "./component-releases.ts";
 import { STACK_OF, stackFields } from "./stack-lens.ts";
 import { STACK_LEXICON } from "./stack-order.ts";
 import { routeEdges } from "./edge-route.ts";
@@ -164,6 +165,24 @@ registerPack({
           ...(typeof node.attrs.since === "string" ? [{ label: "since", value: node.attrs.since }] : []),
         ]
       : undefined,
+});
+
+// #997: a member chant records no component release for (choudoufu,
+// terraform) is one card leading with its engine and its last apply, from the
+// run index, or the words saying the index holds none.
+registerPack({
+  lexicon: MEMBER_RUNS_LEXICON,
+  iconFor: () => undefined,
+  fields: (node) => {
+    const a = node.attrs as Record<string, unknown>;
+    const str = (k: string): string | undefined => (typeof a[k] === "string" ? (a[k] as string) : undefined);
+    return [
+      ...(str("engine") ? [{ label: "engine", value: str("engine")! }] : []),
+      ...(str("apply") ? [{ label: "last apply", value: str("apply")! }] : []),
+      ...(str("since") ? [{ label: "since", value: str("since")! }] : []),
+      ...(str("runs") ? [{ label: "runs", value: str("runs")! }] : []),
+    ];
+  },
 });
 
 // behold#876: the card for everyone outside the estate. Its words say what it

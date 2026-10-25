@@ -31,6 +31,13 @@ export const HEALTH_TTL_MS = 30_000;
 export interface HealthMember {
   name?: string;
   dir: string;
+  /**
+   * #997: the member's kind, when it is not a chant project. chant's health
+   * read builds a chant project, and a `choudoufu` or `terraform` member has
+   * none to build, so such a member is listed with `none` and no chant is
+   * spawned for it. Absent means a chant project.
+   */
+  kind?: string;
 }
 
 /** What one member's read came to, for the page's legend and an agent. */
@@ -73,6 +80,7 @@ export async function readHealthOverlay(members: HealthMember[], env: string, de
   const floor = floorFor(HEALTH_READ_NAME);
   const reads = await Promise.all(
     members.map(async (m) => {
+      if (m.kind && m.kind !== "chant") return { m, read: { member: m.name ?? null, chant: null, none: true } as HealthMemberRead };
       const chant = deps.chantVersion(m.dir) ?? null;
       const base = { member: m.name ?? null, chant };
       if (!floorMet(floor, chant ?? undefined)) return { m, read: { ...base, refusal: floorRefusal(floor, chant ?? undefined) } as HealthMemberRead };
