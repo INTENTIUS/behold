@@ -2,7 +2,7 @@
 // Pure: the model from a tool id and the list; web/kiosk.html draws it.
 //
 // Logo policy (web/kiosk-vendor.js): a logo appears only where its owner's published rules allow one. choudoufu's,
-// chant's (the chant repo's docs/public/brand/mark.svg) and terragucci's are ours. Terragrunt's and Atmos's icons, from gruntwork-io/terragrunt (docs/src/assets/icons/terragrunt-icon.svg)
+// chant's (the chant repo's docs/public/brand/logo.svg, its face) and terragucci's are ours. Terragrunt's and Atmos's icons, from gruntwork-io/terragrunt (docs/src/assets/icons/terragrunt-icon.svg)
 // and cloudposse/atmos (docs/img/atmos-logo-128.svg), appear on the demos that use those tools (maintainer, 2026-10-24). OpenTofu, Terragrunt and Atmos are shown by name, as text, and link to their official sites.
 
 import { vendorOf } from "./kiosk-vendor.js";

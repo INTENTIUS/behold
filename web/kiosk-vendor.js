@@ -180,7 +180,7 @@ export const VENDORS = {
     hides: ["terragucci", "terragrunt", "gruntwork"],
   },
   // chant's own pull-request pipeline across three CloudFormation stacks. The logo is chant's mark (web/vendors/chant.svg,
-  // from the chant repo's docs/public/brand/mark.svg). `heading` is the banner's title where it differs from the others'.
+  // from the chant repo's docs/public/brand/logo.svg, its face). `heading` is the banner's title where it differs from the others'.
   "chant-compose": {
     name: "chant",
     title: "One plan, one apply, across stacks",
