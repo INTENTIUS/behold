@@ -11,26 +11,26 @@ The demo answers one question: turn Azure off, and where does traffic go?
 npx @intentius/behold demo three-cloud
 ```
 
-That copies `example-three-cloud` to `./behold-demos/three-cloud`, boots floci, floci-az and floci-gcp, and serves the workspace with the `local` environment picked. It needs Docker and pulls three emulator images the first time.
+That copies `example-three-cloud` to `./behold-demos/three-cloud`, boots floci, floci-az and floci-gcp, runs `choudoufu init` in the Azure estate, and serves the workspace with the `local` environment picked. It needs Docker and [choudoufu](https://github.com/INTENTIUS/choudoufu) on `PATH` (or `CHOUDOUFU_BIN`), and pulls three emulator images and the azurerm provider the first time. On a Mac, floci-az serves the TLS certificate choudoufu's `scripts/floci-az-mac-cert.sh` makes, which you run once and trust in the keychain.
 
 ## What you are looking at
 
-The estate is a chant workspace of four members, drawn as four boxes:
+The estate is a chant workspace of four members, drawn as four boxes. `dns`, `aws` and `gcp` are chant projects. `azure` is a [choudoufu](https://github.com/INTENTIUS/choudoufu) estate: Terraform with a `live` block, whose ownership is a tag on each resource.
 
 | member | what it declares |
 |---|---|
 | `dns` | the hosted zone, three health checks, three latency CNAMEs, and an A record naming the GCP load balancer |
 | `aws` | a VPC (`VpcDefault`: public and private subnets in two zones, internet and NAT gateways) and the `FargateAlb` composite: the service, its task, the load balancer |
-| `azure` | a Log Analytics workspace, a VNet with a subnet for the Container Apps environment, the environment, a user-assigned identity, and the app with external ingress |
+| `azure` | in `azure/*.tf`, through hashicorp/azurerm: the resource group, a Log Analytics workspace, a VNet with a subnet for the Container Apps environment, the environment, a user-assigned identity, and the app with external ingress |
 | `gcp` | a custom VPC and a subnet for Cloud Run's egress, and the Cloud Run service (public, running as its own service account) behind a global external Application Load Balancer: address, forwarding rule, HTTP proxy, URL map, backend service, serverless NEG |
 
-Each cloud publishes its endpoint with `output()` (`awsEndpoint`, `azureEndpoint`, `gcpEndpoint`), and `dns` declares a parameter of the same name. That shared name is the edge behold draws from each record's endpoint to the cloud that answers it. Config Connector YAML has no outputs, so `chant build` warns that the gcp member's output is not written; the edge is still drawn, and the Op below reads the load balancer's IP from the emulator and hands it to `dns`.
+Each cloud publishes its endpoint as an output (`awsEndpoint` and `gcpEndpoint` with chant's `output()`, `azureEndpoint` as a Terraform output), and `dns` declares a parameter of the same name. That shared name is the edge behold draws from each record's endpoint to the cloud that answers it. Config Connector YAML has no outputs, so `chant build` warns that the gcp member's output is not written; the edge is still drawn, and the Op below reads the load balancer's IP from the emulator and hands it to `dns`.
 
 ## Turning Azure off
 
 The `front-door` Op, in `dns/ops/front-door.op.ts`, rebuilds the whole picture:
 
-1. Apply gcp, azure, aws and dns to the emulators, then wait until the Azure health check reads healthy.
+1. Apply gcp, azure, aws and dns to the emulators, then wait until the Azure health check reads healthy. The azure estate goes through chant's terraform lexicon: `choudoufuPlanSet` plans it as a one-root set, and `choudoufuWaveApply` applies exactly that set.
 2. Deactivate the Azure app's active revision, so its endpoint answers 503.
 3. Wait until `chant lifecycle health` reads the Azure check unhealthy.
 4. Export the page.
@@ -48,6 +48,14 @@ Afterwards the Azure check is unhealthy, the Azure record is dimmed and reads `o
 The emulators' checkers run inside floci's container, where a floci-az or floci-gcp hostname resolves to nothing. The Op therefore gives each deployed health check the emulator container's address and port, and the checkers send the endpoint as the `Host` header, as Route 53 does for a check with an `IPAddress`. The source declares the checks as they would be on AWS, without either field.
 
 floci runs each load balancer listener on the listener's own port in its container, so the AWS check is given port 80 rather than floci's API port.
+
+## One change set over four members
+
+```sh
+npm run change-set
+```
+
+That plans every member without applying anything and writes one chant change-set document to `.front-door/change-set.json`: a `chant` part for each of `dns`, `aws` and `gcp`, from `chant lifecycle plan local --json`, and a `choudoufu` part for `azure`, from `choudoufuPlanSet`, with choudoufu's root digest as its `nativeDigest`. One document digest covers all four, so a gate over it binds every part. Its root `chant.config.json` names the estate as the terraform lexicon's `azure` root, which is how `choudoufuPlanSet` finds it.
 
 ## The exported page
 
