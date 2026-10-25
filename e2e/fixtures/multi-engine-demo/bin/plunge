@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# behold#1000: a fake plunge for the multi-engine demo's e2e, standing in for
+# the aws member's engine where a real run would need floci, the nodejs
+# language host and pulumi-aws. It answers only what chant and
+# scripts/front-door.ts ask a member on plunge, and never applies:
+#
+#   plunge stack select [--create] [--secrets-provider passphrase] <stack>
+#       exit 0 (front-door selects the stack before it plans)
+#   plunge preview --json [--stack <s>]
+#       prints FAKE_PLUNGE_PREVIEW (default ../aws-preview-settled.json):
+#       every resource `same`, the stack's awsEndpoint known.
+#       ../aws-preview-changed.json plans the log group's retention 7 -> 14.
+#   plunge stack output --json --show-secrets=false [--stack <s>]
+#       the stack step's outputs from ../aws-stack-export.json
+#   plunge drift --resource <urn> --stream [--stack <s>] [--member <m>]
+#       one read's NDJSON in the layout plunge's P-L5 prints (chant's
+#       lexicons/pulumi/src/testdata/plunge-drift): a drift-start, one
+#       drift-record, a drift-settle. The URN named by FAKE_PLUNGE_DRIFTED is
+#       drifted (retentionInDays 7 -> 14) once a file named `aws` is in
+#       FAKE_OOB_DIR, which is how the e2e makes the out-of-band edit
+#       `front-door.ts oob-edit aws` makes on floci; every other URN, and that
+#       one before the edit, is in sync. Every call is appended to
+#       FAKE_PLUNGE_LOG when it is set.
+#
+# The fixtures one directory up are hand-written to the documented `pulumi stack
+# export` and `pulumi preview --json` shapes for the resources aws/index.ts
+# declares, not recorded from a run. Anything else exits 2, so nothing can
+# mistake this for an apply.
+set -euo pipefail
+# front-door links PLUNGE_BIN into .front-door/bin, so the fixtures are found
+# from where the link points, not from where it sits.
+SELF="$0"
+while [ -L "$SELF" ]; do
+  t="$(readlink "$SELF")"
+  case "$t" in /*) SELF="$t" ;; *) SELF="$(dirname "$SELF")/$t" ;; esac
+done
+HERE="$(cd "$(dirname "$SELF")/.." && pwd)"
+EXPORT="${FAKE_PLUNGE_EXPORT:-$HERE/aws-stack-export.json}"
+[ -z "${FAKE_PLUNGE_LOG:-}" ] || printf 'plunge %s\n' "$*" >>"$FAKE_PLUNGE_LOG"
+case "${1:-} ${2:-}" in
+  "stack select") exit 0 ;;
+  "stack output")
+    case " $* " in *" --json "*) ;; *) echo "fake plunge: stack output only with --json" >&2; exit 2 ;; esac
+    case " $* " in *" --show-secrets=false "*) ;; *) echo "fake plunge: stack output only with --show-secrets=false" >&2; exit 2 ;; esac
+    node -e 'const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); const s = d.deployment.resources.find((r) => r.type === "pulumi:pulumi:Stack"); process.stdout.write(JSON.stringify(s.outputs ?? {}) + "\n");' "$EXPORT"
+    exit 0 ;;
+esac
+case "${1:-}" in
+  preview)
+    case " $* " in *" --json "*) ;; *) echo "fake plunge: preview only with --json" >&2; exit 2 ;; esac
+    cat "${FAKE_PLUNGE_PREVIEW:-$HERE/aws-preview-settled.json}"
+    exit 0 ;;
+  drift)
+    shift
+    urn="" stream=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --resource) urn="$2"; shift 2 ;;
+        --stack|--member) shift 2 ;;
+        --stream) stream=1; shift ;;
+        *) echo "fake plunge: unknown drift argument $1" >&2; exit 2 ;;
+      esac
+    done
+    [ -n "$urn" ] && [ -n "$stream" ] || { echo "fake plunge: drift needs --resource <urn> --stream" >&2; exit 2; }
+    now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+    type="${urn#*::*::}"; type="${type%%::*}"
+    ev='"evidence":{"tool":"plunge","version":"0.0.0-fake","command":"plunge drift --resource '"$urn"' --stream"'
+    printf '{"type":"drift-start","drift":"v1","member":"three-cloud-aws","engine":"plunge","read":"refresh","resource":"%s","at":"%s","expected":["%s"],%s}}\n' "$urn" "$(now)" "$urn" "$ev"
+    if [ -n "${FAKE_OOB_DIR:-}" ] && [ -e "$FAKE_OOB_DIR/aws" ] && [ "$urn" = "${FAKE_PLUNGE_DRIFTED:-}" ]; then
+      printf '{"type":"drift-record","member":"three-cloud-aws","engine":"plunge","address":"%s","resourceType":"%s","node":null,"observedAt":"%s","read":"refresh","status":"drifted","attributes":[{"path":"retentionInDays","before":7,"after":14}],%s,"engineCode":"update"}}\n' "$urn" "$type" "$(now)" "$ev"
+      counts='{"drifted":1}'
+    else
+      printf '{"type":"drift-record","member":"three-cloud-aws","engine":"plunge","address":"%s","resourceType":"%s","node":null,"observedAt":"%s","read":"refresh","status":"in-sync",%s,"engineCode":"same"}}\n' "$urn" "$type" "$(now)" "$ev"
+      counts='{"in-sync":1}'
+    fi
+    printf '{"type":"drift-settle","drift":"v1","member":"three-cloud-aws","engine":"plunge","read":"refresh","counts":%s,"reads":{"recordsRead":1,"recordKeys":1,"recordListCalls":0,"providerReads":1,"stackRefreshes":0},"at":"%s"}\n' "$counts" "$(now)"
+    exit 0 ;;
+esac
+echo "fake plunge (behold#1000 e2e): only stack select, stack output, preview and drift are answered, got: $*" >&2
+exit 2

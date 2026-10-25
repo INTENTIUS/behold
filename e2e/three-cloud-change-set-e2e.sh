@@ -3,12 +3,15 @@
 # Azure site planned by choudoufu. The bundled example is copied out, its
 # emulators booted under scratch names, and `scripts/front-door.ts plan`
 # composes one change set over the four members: `chant lifecycle plan` for
-# dns, aws and gcp, and chant's choudoufuPlanSet (`choudoufu live-plan-set`)
-# for the azure estate. Asserted from the document the step writes, never its
-# exit code:
+# dns and gcp, chant's choudoufuPlanSet (`choudoufu live-plan-set`) for the
+# azure estate, and `plunge preview` for the aws program (behold#1000; plunge
+# is the fake in e2e/fixtures/multi-engine-demo/bin, which answers from
+# hand-written fixtures and never applies). Asserted from the document the
+# step writes, never its exit code:
 #
 #   1. four members under one document digest: azure's part has planner
-#      choudoufu, beside dns, aws and gcp with planner chant, all planned;
+#      choudoufu and aws's pulumi, beside dns and gcp with planner chant, all
+#      planned;
 #   2. azure's part carries choudoufu's root digest as nativeDigest, and its
 #      entries are the estate's own (the container app is a create on a
 #      fresh floci-az);
@@ -25,17 +28,21 @@
 #
 #   4. the change names azure (dns's terraform.roots.azure), so the azure
 #      component and records are both planned;
-#   5. records's step lists azure under its unresolved inputs: its cfn-deploy
-#      member's hole says `inputs from azure`, the report lists
-#      azure.azureEndpoint under its unknownInputs and its reads name it
-#      unknown;
+#   5. records's step lists azure under its unresolved inputs: the report
+#      lists azure.azureEndpoint under its unknownInputs and its reads name it
+#      unknown, and its cfn-deploy part is either a hole that says `inputs
+#      from azure`, or, on a chant that previews a stack with an input still
+#      unknown (chant#4423's covered rounds, chant main), a preview with
+#      entries and no hole;
 #   6. the azure#outputs part has a hole naming azure.azureEndpoint.
 #
-# The example needs a chant with member-outputs (chant#4455), which no
-# release has yet: the copy installs the example's pins, so link one, e.g.
-# BEHOLD_E2E_CHANT_LINK="/path/to/chant/packages/core /path/to/chant/lexicons/terraform".
-# dns's components import it, so without one the whole script skips, with
-# the reason.
+# The example needs a chant with member-outputs (chant#4455) and the pulumi
+# lexicon (chant#4453), which no release has yet: link chant main's, built,
+# e.g. BEHOLD_E2E_CHANT_LINK="/path/to/chant/packages/core
+# /path/to/chant/lexicons/terraform /path/to/chant/lexicons/pulumi". dns's
+# components import them, so without them the whole script skips, with the
+# reason. e2e/multi-engine-demo-e2e.sh asserts the rest of behold#1000: the
+# composed graph, the drift colours and a moved part refusing the set.
 #
 # Nothing is applied. Scratch discipline (src/scratch.ts): the containers
 # are behold-three-cloud-floci, -floci-az and -floci-gcp on their own ports,
@@ -52,6 +59,14 @@ TARGET="$WORK/three-cloud"
 CHOUDOUFU="${CHOUDOUFU_BIN:-choudoufu}"
 if ! docker info >/dev/null 2>&1; then echo "skip: Docker is not running"; exit 0; fi
 if ! command -v "$CHOUDOUFU" >/dev/null 2>&1; then echo "skip: ${CHOUDOUFU} is not on PATH (set CHOUDOUFU_BIN to name a build)"; exit 0; fi
+# The azure part is a choudoufu set plan, which needs choudoufu v0.22.0 or
+# newer (chant's MIN_CHOUDOUFU_WAVES_VERSION); a dev build names no release
+# and is let through, as chant lets it through.
+CHOUDOUFU_VERSION=$("$CHOUDOUFU" version 2>/dev/null | sed -n 's/^choudoufu v\([0-9][0-9.]*\).*/\1/p' | head -1)
+if [ -n "$CHOUDOUFU_VERSION" ] && [ "$(printf '%s\n0.22.0\n' "$CHOUDOUFU_VERSION" | sort -V | head -1)" != 0.22.0 ]; then
+  echo "FAIL: $(command -v "$CHOUDOUFU") is choudoufu v$CHOUDOUFU_VERSION, older than v0.22.0, which the azure part's set plan needs; set CHOUDOUFU_BIN to a build of choudoufu main" >&2
+  exit 1
+fi
 
 export FLOCI_CONTAINER=behold-three-cloud-floci FLOCI_AZ_CONTAINER=behold-three-cloud-floci-az FLOCI_GCP_CONTAINER=behold-three-cloud-floci-gcp
 export FLOCI_PORT=4661 FLOCI_AZ_PORT=4662 FLOCI_GCP_PORT=4663
@@ -68,19 +83,25 @@ export AWS_ENDPOINT_URL="http://localhost:$FLOCI_PORT" AZURE_ENDPOINT_URL="http:
 
 echo "→ copy example-three-cloud to $TARGET and install its chant"
 mkdir -p "$TARGET"
-tar -C example-three-cloud --exclude node_modules --exclude .front-door --exclude export --exclude .terraform --exclude .tofu-records -cf - . | tar -C "$TARGET" -xf -
+tar -C example-three-cloud --exclude node_modules --exclude .front-door --exclude export --exclude .terraform --exclude .tofu-records \
+  --exclude .plunge --exclude stack-export.json --exclude Pulumi.local.yaml -cf - . | tar -C "$TARGET" -xf -
 npm --prefix "$TARGET" install --no-audit --no-fund --silent
 # dns's components import member-outputs, so a chant that has it is linked
 # before anything loads them.
 for dir in ${BEHOLD_E2E_CHANT_LINK:-}; do
   name=$(node -p "require('$dir/package.json').name")
   rm -rf "$TARGET/node_modules/$name"
+  mkdir -p "$(dirname "$TARGET/node_modules/$name")"
   ln -s "$dir" "$TARGET/node_modules/$name"
 done
-if [ ! -f "$TARGET/node_modules/@intentius/chant/src/components/verbs/member-outputs.ts" ]; then
-  echo "skip: the copy's chant has no member-outputs (chant#4455), which dns's components import; set BEHOLD_E2E_CHANT_LINK to chant's packages/core and lexicons/terraform from integration/choudoufu-engine"
+if [ ! -f "$TARGET/node_modules/@intentius/chant/src/components/verbs/member-outputs.ts" ] || [ ! -f "$TARGET/node_modules/@intentius/chant-lexicon-pulumi/workspace-kinds.json" ]; then
+  echo "skip: the copy has no chant with member-outputs (chant#4455) or no @intentius/chant-lexicon-pulumi, which dns's components import; set BEHOLD_E2E_CHANT_LINK to chant main's packages/core, lexicons/terraform and lexicons/pulumi"
   exit 0
 fi
+# The aws member's engine: the fake plunge, for front-door's calls and chant's.
+# The export stands where a live apply-aws writes it.
+export PATH="$PWD/e2e/fixtures/multi-engine-demo/bin:$PATH" PLUNGE_BIN="$PWD/e2e/fixtures/multi-engine-demo/bin/plunge"
+cp e2e/fixtures/multi-engine-demo/aws-stack-export.json "$TARGET/aws/stack-export.json"
 
 echo "→ boot the emulators under scratch names, choudoufu init in azure"
 bash "$TARGET/scripts/emulators-up.sh"
@@ -108,8 +129,10 @@ if (JSON.stringify(Object.keys(by).sort()) !== JSON.stringify(["aws", "azure", "
 ok("four members in one document");
 if (by.azure.planner !== "choudoufu" || by.azure.status !== "planned") fail(`azure is ${said(by.azure)}`);
 ok("azure is a choudoufu part, planned");
-for (const m of ["dns", "aws", "gcp"]) if (by[m].planner !== "chant" || by[m].status !== "planned") fail(`${m} is ${said(by[m])}`);
-ok("dns, aws and gcp are chant parts beside it, planned");
+if (by.aws.planner !== "pulumi" || by.aws.status !== "planned") fail(`aws is ${said(by.aws)}`);
+ok("aws is a pulumi part (plunge preview), planned");
+for (const m of ["dns", "gcp"]) if (by[m].planner !== "chant" || by[m].status !== "planned") fail(`${m} is ${said(by[m])}`);
+ok("dns and gcp are chant parts beside them, planned");
 if (typeof by.azure.nativeDigest !== "string" || !by.azure.nativeDigest) fail("azure carries no nativeDigest (choudoufu's root digest)");
 if (typeof by.azure.planDigest !== "string" || !by.azure.planDigest) fail("azure carries no planDigest");
 ok(`azure binds planDigest ${by.azure.planDigest}, choudoufu root digest ${by.azure.nativeDigest}`);
@@ -167,8 +190,10 @@ ok("records's reads name azure's azureEndpoint unknown");
 const part = doc.members.find((m: any) => m.member === "local");
 if (!part) fail("the change set has no part for local (records's cfn-deploy)");
 const hole = (part.holes ?? []).find((h: any) => typeof h.reason === "string" && /inputs from (\S+, )*azure\b/.test(h.reason));
-if (!hole) fail(`records's cfn-deploy part has no hole naming azure among its unresolved inputs (${JSON.stringify(part.holes)})`);
-ok(`records's step lists azure under its unresolved inputs: ${hole.reason}`);
+const previewed = (part.holes ?? []).length === 0 && doc.entries.some((e: any) => e.member === "local");
+if (hole) ok(`records's step lists azure under its unresolved inputs: ${hole.reason}`);
+else if (previewed) ok(`records's cfn-deploy is previewed with azure.azureEndpoint unknown: ${doc.entries.filter((e: any) => e.member === "local").length} entries, no hole`);
+else fail(`records's cfn-deploy part has neither a hole naming azure nor a preview (${JSON.stringify(part.holes)})`);
 
 const outputs = doc.members.find((m: any) => m.member === "azure#outputs");
 if (!outputs) fail("the change set has no azure#outputs part");

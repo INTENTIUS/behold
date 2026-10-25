@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# behold#1000: the chant behold's streamed drift read reaches in the
+# multi-engine demo's e2e (BEHOLD_DRIFT_CHANT), one engine per member:
+#
+#   chant workspace drift --member <name> [--resource <addr>] [--env <env>] --stream
+#
+# - aws (pulumi, on plunge) goes to the real chant the copy installed
+#   (FAKE_REAL_CHANT), whose pulumi lexicon runs `plunge drift --resource
+#   <urn> --stream` per resource in aws/stack-export.json. plunge is the fake
+#   in bin/ beside this script (on PATH ahead of any other), so the record
+#   chant decodes and places is plunge's layout, through chant's own adapter.
+# - dns and gcp (chant) and azure (choudoufu, one --resource at a time) are
+#   recorded streams in chant's drift-stream layout (chant#4451), since a real
+#   live read needs the emulators with the members applied, which is the
+#   maintainer's live run. dns and gcp are read `live-read`, azure `plan`.
+#
+# Every card a stream names is in sync, except the one FAKE_DRIFT_EDITED_<M>
+# names (FAKE_DRIFT_EDITED_DNS, _GCP, _AZURE), which is drifted once a file
+# named after the member is in FAKE_OOB_DIR: the record the member's engine
+# prints after `scripts/front-door.ts oob-edit <member>`. The e2e makes the
+# edit by writing that file, so behold, serving all along, reads the member
+# before and after it. dns and gcp list the cards FAKE_DRIFT_ADDRS_DNS and
+# _GCP name. Anything else exits 2.
+set -euo pipefail
+if [ "${1:-}" != workspace ] || [ "${2:-}" != drift ]; then
+  echo "fake chant (behold#1000 e2e): only 'workspace drift --stream' is answered, got: $*" >&2
+  exit 2
+fi
+shift 2
+args=("$@")
+member="" resource="" stream=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --member) member="$2"; shift 2 ;;
+    --resource) resource="$2"; shift 2 ;;
+    --read|--env) shift 2 ;;
+    --stream) stream=1; shift ;;
+    *) echo "fake chant: unknown argument $1" >&2; exit 2 ;;
+  esac
+done
+[ -n "$stream" ] && [ -n "$member" ] || { echo "fake chant: needs --member and --stream" >&2; exit 2; }
+
+if [ "$member" = aws ]; then
+  [ -x "${FAKE_REAL_CHANT:-}" ] || { echo "fake chant: FAKE_REAL_CHANT names no chant to read the pulumi member with" >&2; exit 2; }
+  export PATH="$(cd "$(dirname "$0")" && pwd)/bin:$PATH"
+  exec "$FAKE_REAL_CHANT" workspace drift "${args[@]}"
+fi
+
+# The cards to name, written by the e2e once it has read the graph.
+# shellcheck disable=SC1091
+if [ -n "${FAKE_OOB_DIR:-}" ] && [ -f "$FAKE_OOB_DIR/picks" ]; then . "$FAKE_OOB_DIR/picks"; fi
+case "$member" in
+  dns) engine=chant read=live-read edited="${FAKE_DRIFT_EDITED_DNS:-}" addrs="${FAKE_DRIFT_ADDRS_DNS:-$edited}" ;;
+  gcp) engine=chant read=live-read edited="${FAKE_DRIFT_EDITED_GCP:-}" addrs="${FAKE_DRIFT_ADDRS_GCP:-$edited}" ;;
+  azure) engine=choudoufu read=plan edited="${FAKE_DRIFT_EDITED_AZURE:-}" addrs="$resource" ;;
+  *) echo "fake chant: no recorded stream for member $member" >&2; exit 2 ;;
+esac
+[ "$engine" != choudoufu ] || [ -n "$resource" ] || { echo "fake chant: a choudoufu member is read one --resource at a time" >&2; exit 2; }
+now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+ev='"evidence":{"tool":"'"$engine"'","version":"0.0.0-fake"}'
+expected=$(printf '%s\n' $addrs | node -e 'process.stdout.write(JSON.stringify(require("fs").readFileSync(0, "utf8").split("\n").filter(Boolean)))')
+printf '{"type":"drift-start","drift":"v1","member":"%s","engine":"%s","read":"%s",%s"expected":%s}\n' "$member" "$engine" "$read" "${resource:+\"resource\":\"$resource\",}" "$expected"
+drifted=0 insync=0
+for a in $addrs; do
+  if [ -n "${FAKE_OOB_DIR:-}" ] && [ -e "$FAKE_OOB_DIR/$member" ] && [ "$a" = "$edited" ]; then
+    printf '{"type":"drift-record","member":"%s","engine":"%s","address":"%s","node":null,"observedAt":"%s","read":"%s","status":"drifted","attributes":[{"path":"edited-out-of-band"}],%s}\n' "$member" "$engine" "$a" "$(now)" "$read" "$ev"
+    drifted=$((drifted + 1))
+  else
+    printf '{"type":"drift-record","member":"%s","engine":"%s","address":"%s","node":null,"observedAt":"%s","read":"%s","status":"in-sync",%s}\n' "$member" "$engine" "$a" "$(now)" "$read" "$ev"
+    insync=$((insync + 1))
+  fi
+done
+counts="{" sep=""
+if [ "$insync" -gt 0 ]; then counts="$counts\"in-sync\":$insync"; sep=","; fi
+if [ "$drifted" -gt 0 ]; then counts="$counts$sep\"drifted\":$drifted"; fi
+counts="$counts}"
+printf '{"type":"drift-settle","drift":"v1","member":"%s","engine":"%s","read":"%s","counts":%s}\n' "$member" "$engine" "$read" "$counts"
