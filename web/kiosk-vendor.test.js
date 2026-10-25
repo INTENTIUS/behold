@@ -151,7 +151,7 @@ describe("the branding table (behold#571)", () => {
       // choudoufu and chant are ours: their credits say so instead.
       if (v.owner !== "Intentius") expect(v.credit).toMatch(/(does not|don't) endorse this demo\./);
     }
-    expect(VENDORS.choudoufu.credit).toMatch(/AWS and Kubernetes/);
+    expect(VENDORS.choudoufu.credit).toMatch(/AWS, GCP, Azure and Kubernetes/);
     expect(VENDORS.choudoufu.credit).not.toMatch(/experimental/i);
   });
   it("links each name in the credit, the tool's to its site and OpenTofu's where its scenarios run on it", () => {
