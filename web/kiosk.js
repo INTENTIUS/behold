@@ -41,7 +41,7 @@ import { graphFolds, graphPending } from "./kiosk-graph-pane.js";
 import { askEventHelp, askMode, askShot, createAskPane, hasAsk, replyValues } from "./kiosk-ask.js";
 import { STATE_WORDS, outcomesOf, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
 import { startKioskLight } from "./kiosk-light.js"; // behold#937
-import { SIDE_PHONE, detailsModel, keepSide, renderSide, runTrace, sideState, sideStored } from "./kiosk-side.js";
+import { SIDE_PHONE, detailsModel, keepSide, renderSide, runTrace, sideState, sideStep, sideStored } from "./kiosk-side.js";
 
 /** The scenarios terragucci#1014 numbers. An id not here is shown by the title demo.json carries. */
 export const SCENARIOS = {
@@ -1860,6 +1860,9 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   // in Watch while the prompt pane is up, on a screen wider than a phone. Open until the viewer folds it.
   s.sideOpen = sideStored(shelf);
   s.sideAsk = null;
+  s.sideTurn = null;
+  // The cycle each scenario was last seen on in demo.json, for a turn the terminal plays after demo.json moved on.
+  const sideCycles = new Map();
   let sideWas = null;
   const sideNow = () => sideState({ ask: askMode(s), phone: typeof matchMedia === "function" && matchMedia(SIDE_PHONE).matches, open: s.sideOpen });
   function applySide() {
@@ -1885,7 +1888,9 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   };
   function drawSide() {
     if (!watch || !watch.side || sideNow() !== "open") return;
-    const d = s.demo && s.demo.demo;
+    // The terminal plays its steps in turn, and may be a step or an act behind demo.json: the trace is of the act
+    // the terminal's current turn is in, at that turn's step.
+    const d = sideStep(s.demo && s.demo.demo, s.sideTurn, sideCycles);
     const runs = runsApi && runsApi.index && runsApi.index.doc ? runsApi.index.doc.runs : [];
     const trace = runTrace(runs, d, { answer: s.answer, progress: s.progress, now: now().getTime() });
     const details = detailsModel(s.answer, s.progress, s.sideAsk);
@@ -1903,15 +1908,12 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   // The card follows the prompt pane's current turn: what its ask lights, from the plan (web/kiosk-light.js).
   if (typeof window !== "undefined" && window.addEventListener) {
     const turn = (e) => {
-      const ask = e && e.detail && e.detail.ask && typeof e.detail.ask === "object" ? e.detail.ask : null;
-      s.sideAsk = ask;
+      const det = e && e.detail && typeof e.detail === "object" ? e.detail : {};
+      s.sideAsk = det.ask && typeof det.ask === "object" ? det.ask : null;
+      if (typeof det.scenario === "string" && typeof det.step === "string") s.sideTurn = { scenario: det.scenario, step: det.step };
       drawSide();
     };
-    for (const t of ["behold:ask-start", "behold:ask-light", "behold:ask-status", "behold:ask-done"]) window.addEventListener(t, turn);
-    window.addEventListener("behold:ask-clear", () => {
-      s.sideAsk = null;
-      drawSide();
-    });
+    for (const t of ["behold:ask-hold", "behold:ask-start", "behold:ask-light", "behold:ask-status", "behold:ask-done", "behold:ask-clear"]) window.addEventListener(t, turn);
     if (typeof matchMedia === "function") {
       const mq = matchMedia(SIDE_PHONE);
       if (mq.addEventListener) mq.addEventListener("change", applySide);
@@ -1943,6 +1945,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     // A viewer's hold on the shot ends at the reset and at a new act: the graph in the pane is another one then, and
     // the shot frames it to the pane as it is (a held view of the last graph left the reset's scene at the left edge).
     if (holdEnds(was || null, d || null) && s.endHold) s.endHold();
+    if (d && typeof d.scenario === "string" && Number.isInteger(d.cycle)) sideCycles.set(d.scenario, d.cycle);
     if (askPane) {
       // behold#942: ask mode holds for the scenario, so the steps between prompts keep the graph and the pane.
       s.askHeld = askHeld(s.askHeld, d || null);

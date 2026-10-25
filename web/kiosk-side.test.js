@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { SIDE_STORE, applyParts, detailsModel, jobTone, keepSide, runTrace, sideState, sideStored } from "./kiosk-side.js";
+import { SIDE_STORE, applyParts, jobKind, detailsModel, jobTone, keepSide, runTrace, sideState, sideStep, sideStored } from "./kiosk-side.js";
 
 // The three-root estate of behold#937 (src/__fixtures__/terragucci-demo-ask), built as web/kiosk-light.test.js builds it.
 const FIX = join(import.meta.dirname, "..", "src", "__fixtures__", "terragucci-demo-ask");
@@ -126,5 +126,44 @@ describe("the card about the current line", () => {
     expect(detailsModel(answer, null, { prompt: "hi" })).toBeNull();
     expect(detailsModel(answer, null, { light: ["network/terraform_data.nope"] })).toBeNull();
     expect(detailsModel({ error: "x" }, null, { light: ["network/terraform_data.subnet"] })).toBeNull();
+  });
+});
+
+describe("the step the trace follows", () => {
+  const cycles = new Map([["edit", 7], ["create", 8]]);
+  it("is the terminal's turn, on the act its scenario ran in, while demo.json is ahead", () => {
+    expect(sideStep({ cycle: 8, scenario: "create", step: "planned" }, { scenario: "edit", step: "applying" }, cycles)).toMatchObject({ cycle: 7, scenario: "edit", step: "applying" });
+    expect(sideStep({ cycle: 8, scenario: "create", step: "planned" }, { scenario: "create", step: "pull-request" }, cycles)).toMatchObject({ cycle: 8, step: "pull-request" });
+  });
+  it("is demo.json's step before any turn has played, or for a scenario never seen", () => {
+    const d = { cycle: 8, scenario: "create", step: "planned" };
+    expect(sideStep(d, null, cycles)).toBe(d);
+    expect(sideStep(d, { scenario: "other", step: "applied" }, cycles)).toBe(d);
+    expect(sideStep(null, null, cycles)).toBeNull();
+  });
+});
+
+describe("a pipeline with an approval job and an apply job per wave", () => {
+  const J = (name, status, a = null, b = null) => ({ id: name, name, status, started_at: a, ended_at: b });
+  const runs = [
+    { id: 13, cycle: 481, trigger: "merge", event: "push", created_at: "2026-10-25T04:38:23Z", jobs: [J("check", "success", "2026-10-25T04:38:23.693Z", "2026-10-25T04:38:28.276Z"), J("apply-wave-1", "success", "2026-10-25T04:38:30.000Z", "2026-10-25T04:38:38.000Z"), J("apply-wave-2", "success", "2026-10-25T04:38:39.000Z", "2026-10-25T04:38:40.500Z"), J("tips", "success", "2026-10-25T04:38:45.000Z", "2026-10-25T04:38:46.000Z")] },
+    { id: 12, cycle: 481, trigger: "push", event: "pull_request_approved", created_at: "2026-10-25T04:38:18Z", jobs: [J("plan", "skipped"), J("approval", "success", "2026-10-25T04:38:18.681Z", "2026-10-25T04:38:19.000Z")] },
+    { id: 10, cycle: 481, trigger: "plan", event: "pull_request", created_at: "2026-10-25T04:38:01Z", jobs: [J("plan", "success", "2026-10-25T04:38:01.000Z", "2026-10-25T04:38:06.000Z"), J("plan-note", "success", "2026-10-25T04:38:06.700Z", "2026-10-25T04:38:07.800Z")] },
+  ];
+
+  it("names the jobs it shows and leaves the bookkeeping out", () => {
+    expect(["plan", "replan", "approval", "apply", "apply-wave-3", "plan-note", "check", "tips"].map((n) => jobKind(n) && (jobKind(n).label || jobKind(n).kind))).toEqual(["plan", "re-plan", "approval", "apply", "apply", null, null, null]);
+  });
+
+  it("times the approval from the plan to the approval job, and one row per wave named for its estates", () => {
+    const progress = { states: [{ number: 1, roots: ["network"] }, { number: 2, roots: ["app"] }] };
+    const tr = runTrace(runs, { cycle: 481, step: "applied" }, { progress });
+    expect(tr.rows.map((r) => [r.label, r.tone, r.ms])).toEqual([
+      ["plan", "done", 5_000],
+      ["approval", "done", 13_000],
+      ["network", "done", 8_000],
+      ["app", "done", 1_500],
+    ]);
+    expect(runTrace(runs, { cycle: 481, step: "applied" }).rows.map((r) => r.label).slice(2)).toEqual(["wave 1", "wave 2"]);
   });
 });

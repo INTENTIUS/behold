@@ -57,15 +57,42 @@ export function jobTone(status) {
   return "skipped";
 }
 
+/**
+ * The step the trace is drawn at: the terminal's current turn (`turn`, `{ scenario, step }` from the prompt pane's
+ * events), on the cycle its scenario was last seen on (`cycles`, scenario to cycle), since the terminal plays its
+ * steps in turn and may be behind demo.json (`demo`). demo.json's step when no turn has played, or the turn's
+ * scenario was never seen.
+ */
+export function sideStep(demo, turn, cycles) {
+  if (!turn || !cycles || !cycles.has(turn.scenario)) return demo || null;
+  const cycle = cycles.get(turn.scenario);
+  if (demo && demo.cycle === cycle) return { ...demo, step: turn.step };
+  return { ...(demo || {}), cycle, scenario: turn.scenario, step: turn.step };
+}
+
 const APPROVED_STEPS = new Set(["approved", "merged", "applying", "waiting", "resumed", "applied", "failed", "reset"]);
+
+/** A pipeline job's place in the trace: "plan", "approval", "apply" (with its wave, for an apply-wave-N job), or null for the bookkeeping jobs. */
+export function jobKind(name) {
+  const n = String(name || "");
+  if (n === "plan" || n === "replan") return { kind: "plan", label: n === "replan" ? "re-plan" : "plan" };
+  if (n === "approval") return { kind: "approval" };
+  const w = /^apply-wave-(\d+)$/.exec(n);
+  if (w) return { kind: "apply", wave: Number(w[1]) };
+  if (n === "apply") return { kind: "apply", wave: null };
+  return null;
+}
 
 /**
  * The act's run as trace rows, in the order they ran: `{ rows, from, to }`. Each row is `{ key, label, tone, at, end,
- * ms, depth }`, times in epoch ms (`end` null while it runs), `depth` 1 for an estate's part of the apply. The rows:
- * - the plan: the pull request's run's plan job;
- * - the approval: from the plan's end to the merge's run (or to now, while the step still waits on it);
- * - the apply: the merge's run's apply job, then each estate's part of it from the run view (no time of its own: the
- *   run view states each part's outcome, not when it ran).
+ * ms, depth }`, times in epoch ms (`end` null while it runs), `depth` 1 for an estate's part of the apply. The rows,
+ * from the jobs of the act's runs (the bookkeeping jobs, checks, notes and tips, left out):
+ * - the plan (and a re-plan);
+ * - the approval: the wait from the plan's end to the approval (its job's end, else the first apply's run), or to now
+ *   while the step still waits on it;
+ * - the apply: one row per apply job, named for the estates its wave applies when the run view says (else "wave N"),
+ *   and, for a single apply job, each estate's part of it from the run view (no time of its own: the run view states
+ *   each part's outcome, not when it ran).
  * `runs` is the runs index (web/kiosk-runs.js), `demo` the step, `answer` and `progress` the kiosk's terragucci reads.
  */
 export function runTrace(runs, demo, { answer = null, progress = null, now = Date.now() } = {}) {
@@ -73,40 +100,38 @@ export function runTrace(runs, demo, { answer = null, progress = null, now = Dat
   const mine = (Array.isArray(runs) ? runs : [])
     .filter((r) => r && r.cycle === demo.cycle)
     .sort((a, b) => (ms(a.created_at) || 0) - (ms(b.created_at) || 0) || (a.id || 0) - (b.id || 0));
-  const rows = [];
-  const jobRow = (run, job, label) => {
-    const at = ms(job.started_at);
-    const end = ms(job.ended_at);
-    const tone = jobTone(job.status);
-    if (at === null && tone === "skipped") return null;
-    return { key: `${run.id}/${job.id ?? job.name}`, label, tone, at, end, ms: at !== null ? (end ?? now) - at : null, depth: 0, run: run.id };
-  };
-  const plans = mine.filter((r) => r.trigger === "plan" || r.event === "pull_request");
-  const applies = mine.filter((r) => !plans.includes(r));
-  const plan = plans[plans.length - 1] || null;
-  if (plan) {
-    for (const j of plan.jobs || []) {
-      if (j.name !== "plan") continue;
-      const row = jobRow(plan, j, "plan");
-      if (row) rows.push(row);
-    }
-  }
-  const planEnd = rows.length ? rows[rows.length - 1].end : null;
-  const merge = applies[0] || null;
-  if (planEnd !== null) {
-    const mergeAt = merge ? ms(merge.created_at) : null;
-    const approved = mergeAt !== null || APPROVED_STEPS.has(demo.step);
-    const end = approved ? mergeAt : null;
-    rows.push({ key: "approval", label: "approval", tone: approved ? "done" : "waiting", at: planEnd, end, ms: end !== null ? Math.max(0, end - planEnd) : approved ? null : Math.max(0, now - planEnd), depth: 0 });
-  }
-  for (const run of applies) {
+  const jobs = [];
+  for (const run of mine) {
     for (const j of run.jobs || []) {
-      if (j.name !== "apply") continue;
-      const row = jobRow(run, j, "apply");
-      if (!row) continue;
-      rows.push(row);
-      for (const part of applyParts(answer, progress)) rows.push({ ...part, key: `${row.key}/${part.root}`, at: row.at, end: row.end, ms: null, depth: 1 });
+      const k = jobKind(j.name);
+      const at = ms(j.started_at);
+      if (!k || (at === null && jobTone(j.status) === "skipped")) continue;
+      jobs.push({ run, job: j, ...k, at, end: ms(j.ended_at), created: ms(run.created_at) });
     }
+  }
+  const row = (x, label) => ({ key: `${x.run.id}/${x.job.id ?? x.job.name}`, label, tone: jobTone(x.job.status), at: x.at, end: x.end, ms: x.at !== null ? (x.end ?? now) - x.at : null, depth: 0, run: x.run.id });
+  const rows = [];
+  const plans = jobs.filter((x) => x.kind === "plan");
+  for (const x of plans) rows.push(row(x, x.label));
+  const applies = jobs.filter((x) => x.kind === "apply");
+  const planEnd = plans.length ? plans[plans.length - 1].end : null;
+  if (planEnd !== null) {
+    const job = jobs.find((x) => x.kind === "approval" && x.end !== null);
+    const firstApply = applies.length ? applies[0].created ?? applies[0].at : null;
+    const done = job ? job.end : firstApply;
+    const approved = done !== null || APPROVED_STEPS.has(demo.step);
+    rows.push({ key: "approval", label: "approval", tone: approved ? "done" : "waiting", at: planEnd, end: done, ms: done !== null ? Math.max(0, done - planEnd) : approved ? null : Math.max(0, now - planEnd), depth: 0 });
+  }
+  const waveRoots = new Map();
+  for (const w of (progress && Array.isArray(progress.states) ? progress.states : [])) {
+    const roots = w.composed && Array.isArray(w.composed.members) ? w.composed.members.map((m) => m.root) : Array.isArray(w.roots) ? w.roots : [];
+    if (Number.isInteger(w.number) && roots.length) waveRoots.set(w.number, roots.map(lastSegment).join(", "));
+  }
+  for (const x of applies) {
+    const label = x.wave === null ? "apply" : waveRoots.get(x.wave) || `wave ${x.wave}`;
+    const r = row(x, label);
+    rows.push(r);
+    if (applies.length === 1) for (const part of applyParts(answer, progress)) rows.push({ ...part, key: `${r.key}/${part.root}`, at: r.at, end: r.end, ms: null, depth: 1 });
   }
   const times = rows.flatMap((r) => [r.at, r.end]).filter((t) => t !== null);
   const from = times.length ? Math.min(...times) : null;
