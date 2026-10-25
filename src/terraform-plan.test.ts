@@ -10,6 +10,7 @@ import {
   TERRAFORM_OBSERVE_ENV,
   TERRAFORM_PLAN_READ,
   paintTerraformPlan,
+  parsePlanNotes,
   planRootAnswers,
   planReadFloorRefusal,
   readTerraformPlan,
@@ -55,9 +56,24 @@ describe("which read answered each root (#910, behold#995)", () => {
     expect(roots[1]!.note).toBe("terraform.roots.db: the plan read failed (no-credentials), so the state read answered");
   });
 
-  it("an IR with no rootReads reports no root, and never parses chant's notes", () => {
-    expect(planRootAnswers({ nodes: [] })).toEqual([]);
+  it("rootReads, when present, is the only source: a note beside it is not read", () => {
     expect(planRootAnswers({ rootReads: { "other.key": { depth: "plan" } } })).toEqual([]);
+    const { ir } = recorded();
+    expect(terraformPlanReadOf(withRead(ir, STATE_READ), "warning: [terraform] terraform.roots.app: the plan read answered").roots[0]!.answered).toBe("state");
+  });
+
+  it("a released chant with no rootReads on the IR: chant's notes are read instead (0.124.52)", () => {
+    const NOTE_STATE = "\u001b[33mwarning\u001b[0m: [terraform] terraform.roots.db: the plan read failed (no provider credentials: Error: No valid credential sources found), so the state read answered; plan attributes are absent";
+    const roots = parsePlanNotes(["warning: [terraform] terraform.roots.app: the plan read answered (`terraform plan`)", NOTE_STATE, "warning: [terraform] terraform.roots.net: no read answered, declared only"].join("\n"));
+    expect(roots.map((r) => [r.root, r.answered, r.reason])).toEqual([
+      ["app", "plan", undefined],
+      ["db", "state", "no-credentials"],
+      ["net", "none", undefined],
+    ]);
+    const { ir } = recorded();
+    delete (ir as unknown as { rootReads?: unknown }).rootReads;
+    expect(terraformPlanReadOf(ir, NOTE_STATE.replace("roots.db", "roots.app")).roots).toEqual([expect.objectContaining({ root: "app", answered: "state", reason: "no-credentials" })]);
+    expect(planRootAnswers(ir)).toEqual([]);
   });
 });
 

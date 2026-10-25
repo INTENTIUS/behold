@@ -40,8 +40,9 @@
  * choudoufu rebuilds prior state from the account, so chant's `planDrift` is
  * empty there and is not read.
  *
- * Which reads answered is the IR's `rootReads` (chant#4452, behold#995),
- * never chant's note text. If chant's plan read fails, `live-plan` alone answered: ownership is painted
+ * Which reads answered is the IR's `rootReads` (chant#4452, behold#995), and
+ * chant's note only for a chant that puts none on the IR (released up to
+ * 0.124.52). If chant's plan read fails, `live-plan` alone answered: ownership is painted
  * from the handed document, no plan facts are cached, and the answer says why.
  * If chant's `live-plan` fails, no document is handed back and the member is
  * not observed, as when behold's own `live-plan` failed.
@@ -56,7 +57,7 @@ import { meetsFloor } from "./floor.ts";
 import { choudoufuSpawnOverride, ChoudoufuReadError } from "./choudoufu-member.ts";
 import { parseLivePlan, type LivePlanDocument } from "./choudoufu-live.ts";
 import { resolvedVersion, TERRAFORM_LEXICON_PKG, terraformReaderState, writeTerraformScratchProject } from "./terraform-member.ts";
-import { PLAN_READ_ENV, rootReadsOf, TERRAFORM_OBSERVE_ENV } from "./terraform-plan.ts";
+import { hasRootReads, PLAN_READ_ENV, rootReadsOf, TERRAFORM_OBSERVE_ENV } from "./terraform-plan.ts";
 
 /** The member's source stamp, the key its cached change set is stored under (src/member-ir.ts). */
 export { memberSourceStamp } from "./member-ir.ts";
@@ -143,8 +144,10 @@ export async function choudoufuChantUnavailable(deps: ChoudoufuChantDeps | null 
  * alone otherwise, a chant with no `rootReads` included. The note is built
  * from the report's own fields.
  */
-export function rootAnswerOf(ir: unknown, root: string): { answered: ChoudoufuChantAnswer; note?: string } {
+export function rootAnswerOf(ir: unknown, root: string, stderr = ""): { answered: ChoudoufuChantAnswer; note?: string } {
   const key = `terraform.roots.${root}`;
+  // A chant before chant#4452 puts no rootReads on the IR and says it in its note.
+  if (!hasRootReads(ir)) return rootAnswerOfNotes(stderr, root);
   const rr = rootReadsOf(ir)[key];
   if (!rr) return { answered: "live" };
   if (rr.depth === "live+plan" && rr.fellBackTo === undefined) return { answered: "live+plan", note: `${key}: the plan read answered, beside live-plan, which answered presence and ownership` };
@@ -153,6 +156,19 @@ export function rootAnswerOf(ir: unknown, root: string): { answered: ChoudoufuCh
     answered: "live",
     note: rr.fellBackTo === "declared" ? `${key}: no read answered${why}` : `${key}: the ${rr.depth} read failed${why}, so live-plan alone answered; plan attributes are absent`,
   };
+}
+
+/** The fallback for a chant whose IR carries no `rootReads` (released up to 0.124.52): chant's note for the root. */
+export function rootAnswerOfNotes(stderr: string, root: string): { answered: ChoudoufuChantAnswer; note?: string } {
+  const prefix = `terraform.roots.${root}: `;
+  for (const line of stripAnsi(stderr).split("\n")) {
+    const at = line.indexOf(prefix);
+    if (at === -1) continue;
+    const rest = line.slice(at + prefix.length).trim();
+    if (rest.startsWith("the plan read answered")) return { answered: "live+plan", note: `${prefix}${rest}` };
+    if (rest.startsWith("the plan read failed") || rest.startsWith("no read answered")) return { answered: "live", note: `${prefix}${rest}` };
+  }
+  return { answered: "live" };
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -216,7 +232,7 @@ export async function readChoudoufuThroughChant(dir: string, deps: ChoudoufuChan
     } catch {
       ir = undefined;
     }
-    const answer = rootAnswerOf(ir, root);
+    const answer = rootAnswerOf(ir, root, res.stderr);
     let text: string;
     try {
       text = readFileSync(join(handed, livePlanDocumentFile(root)), "utf8");

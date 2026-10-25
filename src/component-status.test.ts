@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { componentLooksDeployed, componentStatusColor, reconciliationStatus, joinComponentStatus, joinTickVerdicts, releaseStatus, releaseChip, releaseOrigin, releaseCompareKey } from "./component-status.ts";
+import { componentStatusColor, reconciliationStatus, joinComponentStatus, joinTickVerdicts, releaseStatus, releaseChip, releaseOrigin, releaseCompareKey } from "./component-status.ts";
 import { TICK_VERDICT_TTL_MS, type TickComponentVerdicts } from "./operator.ts";
 import type { ReleaseRecord, GraphIR, ComponentStatusRow } from "@intentius/chant";
 
@@ -49,20 +49,17 @@ describe("componentStatusColor — pre-0.18.29 fallback (no live/stack at all)",
     expect(componentStatusColor(RECONCILED)).toBe("good");
   });
 
-  // behold#995: the verdict is read as chant's drift record reads it, and the
-  // (status, read) table colours it. Something live that no release accounts
-  // for is drifted (warn), and nothing live and nothing recorded is pending
-  // (accent), where behold used to say good and neutral.
-  it("paints unrecorded-but-live warn — drifted: live and no release accounts for it", () => {
+  // behold#995: chant's drift record reads these as drifted and pending
+  // (reconciliationStatus), but the colour stays a presence answer, as tier
+  // 3's `live` is: an unrecorded infra component is deployed by design (#165).
+  it("paints unrecorded-but-live good — deployed outside the release ledger", () => {
     expect(reconciliationStatus(UNRECORDED_LIVE)).toBe("drifted");
-    expect(componentStatusColor(UNRECORDED_LIVE)).toBe("warn");
+    expect(componentStatusColor(UNRECORDED_LIVE)).toBe("good");
   });
 
-  it("paints unrecorded-and-not-live accent — pending, and not deployed", () => {
+  it("paints unrecorded-and-not-live neutral — genuinely not deployed", () => {
     expect(reconciliationStatus(UNRECORDED_NO_LIVE)).toBe("pending");
-    expect(componentStatusColor(UNRECORDED_NO_LIVE)).toBe("accent");
-    expect(componentLooksDeployed(UNRECORDED_NO_LIVE)).toBe(false);
-    expect(componentLooksDeployed(UNRECORDED_LIVE)).toBe(true);
+    expect(componentStatusColor(UNRECORDED_NO_LIVE)).toBe("neutral");
   });
 
   it("paints stale warn — was recorded, now gone", () => {

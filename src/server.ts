@@ -54,7 +54,7 @@ import { mergeClusterRoot, runningK3dClusters } from "./cluster-root.ts";
 import { synthesizeHelmReleases, discoverReleaseUnits } from "./helm-releases.ts";
 import { ghReady, resolveWorkflow, dispatchAndFollow, followRun, joinCiProgress } from "./gh-run.ts";
 import { saveDispatchedRun, readDispatchedRun, concludeDispatchedRun, type DispatchedRun } from "./ci-run-store.ts";
-import { joinComponentStatus, joinTickVerdicts, componentLooksDeployed } from "./component-status.ts";
+import { joinComponentStatus, joinTickVerdicts, componentStatusColor } from "./component-status.ts";
 import { reclassifyOverlay, pruneImports, attachRuntimeContainment, pruneRuntimeChildren } from "./overlay.ts";
 import { addValueMatchEdges } from "./value-match.ts";
 import { addK8sDeclaredEdges } from "./k8s-edges.ts";
@@ -4756,7 +4756,7 @@ export function createApp(
     if (!force && flociTargeted) {
       try {
         const rows = await componentStatus(cfg.projectDir, env);
-        const deployed = rows.filter((r) => componentLooksDeployed(r)).map((r) => r.component);
+        const deployed = rows.filter((r) => componentStatusColor(r) !== "neutral").map((r) => r.component);
         const blocked = component === "all" ? deployed : deployed.includes(component) ? [component] : [];
         if (blocked.length) {
           const who = component === "all" ? `${blocked.length} component(s) are` : `"${component}" is`;

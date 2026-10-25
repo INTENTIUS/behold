@@ -97,9 +97,10 @@ export type ResourceRollup = ComponentResourceRollup;
  *  4. None of the above — the reconciliation verdict, kept as the last
  *     fallback and, since behold#995, read as chant's drift record reads it
  *     ({@link reconciliationStatus}) and coloured by the one `(status, read)`
- *     table (src/drift-tone.ts): `reconciled` in-sync -> good; `unrecorded`
- *     and live drifted -> warn, not live pending -> accent; `stale` missing
- *     and `drifted` -> warn; `unknown` not-observed -> neutral.
+ *     table (src/drift-tone.ts): `reconciled` in-sync -> good; `stale`
+ *     missing and `drifted` -> warn; `unknown` not-observed -> neutral.
+ *     `unrecorded` stays a presence answer, as tier 3's `live` is: good when
+ *     `detail` says live, neutral otherwise (#165, below).
  *
  * ## Why a HEALTHY stack no longer paints (behold#100)
  *
@@ -175,22 +176,17 @@ export function componentStatusColor(
     return "warn";
   }
   if (row.live !== undefined) return row.live ? "good" : "neutral";
-  // behold#995: the reconciliation verdict is a drift record's status (chant's
-  // `componentStatusDriftRecords`), and the colour is the one (status, read)
-  // table's, read `live-read`. No tone is chosen here.
+  // `unrecorded` is a presence answer here, the same one tier 3 gives from
+  // `live`: live -> good, not live -> neutral. A component with no artifact to
+  // record (an infra stack) is deployed and unrecorded by design, and the lens
+  // paints it deployed (#165). Read as chant's drift record reads it, it would
+  // be drifted (warn) or pending (accent), turning a healthy estate red; that
+  // mapping is {@link reconciliationStatus}, kept for drift records only.
+  if (row.reconciliation === "unrecorded") return reconciliationStatus(row) === "drifted" ? "good" : "neutral";
+  // behold#995: every other verdict is a drift record's status (chant's
+  // `componentStatusDriftRecords`), coloured by the one (status, read) table,
+  // read `live-read`. No tone is chosen here.
   return toneFor({ status: reconciliationStatus(row), read: "live-read" }).tone as ComponentStatusColor;
-}
-
-/**
- * Whether a row says something of the component is deployed: any colour but
- * neutral, except the reconciliation fallback's `pending` (accent, behold#995),
- * which says nothing is.
- */
-export function componentLooksDeployed(row: Pick<ComponentStatusRow, "reconciliation" | "detail" | "live" | "stack" | "resources">): boolean {
-  const colour = componentStatusColor(row);
-  if (colour === "neutral") return false;
-  const fallback = row.live === undefined && !(row.stack && row.stack.healthy === false) && !(row.resources && row.resources.total > 0);
-  return !(fallback && reconciliationStatus(row) === "pending");
 }
 
 /**
