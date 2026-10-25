@@ -127,6 +127,19 @@ makes, `declaredReportUrl` in src/workspace.ts, floor
 declaration included; the flag overrides it, and each answer's `urlFrom` says
 `flag` or `declaration`. With neither, nothing changes.
 
+A member of another kind in an estate's components picture (#997): chant
+writes its release ledger per component and a TerraformApplyOp writes no
+release, so a `choudoufu` or `terraform` member is one card,
+`<member>/<kind>` (lexicon `member-runs`, src/component-releases.ts), with
+every resource of the member under it. Its `apply` and `_lastApply` are the
+run index's newest `apply` entry for that member that passed (an entry with
+no `member` is a run of the whole workspace and is not taken as one), and
+its `since` and `_runSince` the newest entry after it, the member's or the
+workspace's, when that did not pass. A card the index names nothing of says
+`no runs recorded`, or `no run index read` when behold has no report URL;
+behold never makes one up. The members are read through the same
+`ciRunIndexOf` as the runs pane.
+
 ## A plan job run locally (behold#685)
 
 `POST /api/chant/ci/local` `{job: "plan", commit, pr, env?, base?, member?,
@@ -1569,7 +1582,9 @@ document, so it is checked against chant's schema, vendored unchanged in
 src/health-schema/ (chant PR #4193 at d727944c4) and validated with ajv, with
 a hole's `reason` loosened to any string; a document the schema refuses is
 refused whole. A project with no lexicon that reads health is `none`, not a
-failure. A member below the floor is refused before anything is spawned; when
+failure. A member of another kind (#997) is listed as `none` without a
+spawn: the read builds a chant project and it has none. A member below the
+floor is refused before anything is spawned; when
 every member is, the answer carries the refusal and `degraded`.
 
 The answer is `nodes` (per id: `healthy`, `unhealthy` or `unknown` with

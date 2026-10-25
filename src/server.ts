@@ -78,7 +78,7 @@ import { hasTerragruntUnits } from "./terragrunt-units.ts";
 import { summarizePlan } from "./reconcile.ts";
 import { renderGraph, renderArchitecture, renderBanded, renderCarveEstate, renderCarveMorph, renderMoveMorph } from "./render.ts";
 import { boxBadges, collapseBoxes, collapseNote } from "./collapse-lens.ts";
-import { withReleases, withRunsSince } from "./component-releases.ts";
+import { memberRunsCard, withMemberApplies, withReleases, withRunsSince } from "./component-releases.ts";
 import { declaresComponents, estateComponents, estateComponentsNote, type MemberComponents } from "./estate-components.ts";
 import { stackAlike, stackNote } from "./stack-lens.ts";
 import { readCarveReport, carveReportToIr, carveNote } from "./carve-lens.ts";
@@ -3340,7 +3340,8 @@ export function createApp(
         const env = opts.env ?? cfg.env;
         const members = await Promise.all(
           estateMembers(cfg.projectDirs!).map(async (m): Promise<MemberComponents> => {
-            if (m.kind !== "chant") return { member: m.name, dag: { nodes: [], edges: [], groups: {} } as unknown as GraphIR };
+            // #997: a member chant records no component release for is one card, carrying its last apply from the run index.
+            if (m.kind !== "chant") return { member: m.name, dag: { nodes: [memberRunsCard(m.kind)], edges: [], groups: {} } as unknown as GraphIR };
             try {
               let dag = await componentGraphIr(m.dir, tierTargetOpts(opts));
               // Each component's live status where the member can read it, as on a single project.
@@ -3352,11 +3353,22 @@ export function createApp(
           }),
         );
         const picture = estateComponents(members, ir);
-        // #899: each component's last release, from its member's ledger.
-        const chantMembers = estateMembers(cfg.projectDirs!).filter((m) => m.kind === "chant");
-        const { ir: released, released: count } = await withReleases(picture.ir, chantMembers, env ?? undefined);
-        picture.ir = withRunsSince(released, await runIndexEntries()).ir;
-        const note = [estateComponentsNote(picture, picture.ir.nodes.length), count ? `${count} of ${picture.ir.nodes.length} components have a release${env ? ` in ${env}` : ""}` : undefined].filter(Boolean).join(" · ") || undefined;
+        // #899: each component's last release, from its member's ledger. #997:
+        // every member's, whatever its kind; a member chant writes no ledger
+        // for answers none, and its one card takes its last apply and any run
+        // since that did not pass from the run index instead.
+        const { ir: released, released: count } = await withReleases(picture.ir, estateMembers(cfg.projectDirs!), env ?? undefined);
+        const runs = await runIndexEntries();
+        const { ir: applied, applied: applies } = withMemberApplies(withRunsSince(released, runs).ir, runs, !!ciRuns);
+        picture.ir = applied;
+        const note =
+          [
+            estateComponentsNote(picture, picture.ir.nodes.length),
+            count ? `${count} of ${picture.ir.nodes.length} components have a release${env ? ` in ${env}` : ""}` : undefined,
+            applies ? `${applies} ${applies === 1 ? "member has" : "members have"} an apply in the run index` : undefined,
+          ]
+            .filter(Boolean)
+            .join(" · ") || undefined;
         const { svg } = renderGraph(picture.ir, { boxes: "byStack", groupBadges: boxBadges(picture.ir) });
         return c.json({
           ir: picture.ir,
@@ -4360,7 +4372,8 @@ export function createApp(
   // <env> --json` per chant project (each chant member of a workspace or an
   // estate, in its own directory, ids `<member>/<id>`), through the read
   // contract, each refused below HEALTH_CHANT_FLOOR before anything is
-  // spawned. Rotation comes from each member's cached source graph. Cached per
+  // spawned. #997: a member of another kind is listed too, as one with no
+  // health read, and nothing is spawned for it. Rotation comes from each member's cached source graph. Cached per
   // environment for 30 s; `?fresh=1` reads again, and "Re-check live" drops it.
   // Read-only, and refused in a public view: it reads the live estate with
   // behold's own credentials, as /api/overlay does. A static export captures it
@@ -4372,9 +4385,9 @@ export function createApp(
     if (!isEnvName(env)) return c.json({ error: `${JSON.stringify(env)} isn't an env name`, code: "env" }, 400);
     const ws = servedWorkspace();
     const members: HealthMember[] = ws
-      ? ws.members.filter((m) => m.kind === "chant" && !m.reason).map((m) => ({ name: m.name, dir: m.abs }))
+      ? ws.members.filter((m) => !m.reason).map((m) => ({ name: m.name, dir: m.abs, ...(m.kind !== "chant" ? { kind: m.kind } : {}) }))
       : cfg.projectDirs
-        ? estateMembers(cfg.projectDirs).filter((m) => m.kind === "chant").map((m) => ({ name: m.name, dir: m.dir }))
+        ? estateMembers(cfg.projectDirs).map((m) => ({ name: m.name, dir: m.dir, ...(m.kind !== "chant" ? { kind: m.kind } : {}) }))
         : (memberKindOf(cfg.projectDir) ?? "chant") === "chant"
           ? [{ dir: cfg.projectDir }]
           : [];

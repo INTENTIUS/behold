@@ -12,7 +12,7 @@
  * release a live status read finds (src/component-status.ts): the `release`
  * chip and the `_release` attr web/release.js draws.
  */
-import type { GraphIR } from "@intentius/chant";
+import type { GraphIR, IRNode } from "@intentius/chant";
 import type { ReleaseRecord } from "@intentius/chant/lifecycle/release-ledger";
 import { releaseChip, releaseStatus, type ReleaseStatus } from "./component-status.ts";
 import type { CiRunEntry } from "./ci-run-index.ts";
@@ -124,4 +124,82 @@ export function withRunsSince(ir: GraphIR, entries: readonly CiRunEntry[]): { ir
     return { ...n, attrs: { ...n.attrs, since: `${since.job} ${SINCE_WORD[since.status] ?? since.status} ${since.commit.slice(0, 7)}`, [RUN_SINCE]: run } };
   });
   return { ir: marked ? { ...ir, nodes } : ir, marked };
+}
+
+/**
+ * #997: the card a member gets in an estate's components picture when chant
+ * records no component release for it: a `choudoufu` or `terraform` member
+ * (and, once behold reads one, a `pulumi` member). chant's release ledger is
+ * written per component (`components release`, the auto-release, a promote),
+ * and a TerraformApplyOp writes none, so for these members the only record of
+ * an apply chant keeps is its run index: each `chant ci run` job's entry,
+ * keyed by the member whose directory it ran in. One card per member stands
+ * for its whole root, so every resource of the member is drawn under it.
+ */
+export const MEMBER_RUNS_LEXICON = "member-runs";
+/** The card's kind. */
+export const MEMBER_RUNS_KIND = "MemberRuns";
+/** The attr a member card carries its newest apply that passed under. */
+export const LAST_APPLY = "_lastApply";
+
+/** A member's newest apply that passed, as the run index recorded it. */
+export interface LastApply {
+  runId: string;
+  commit: string;
+  ended: string;
+  key: string;
+  forge: string;
+  /** Present only when the index entry's run origin carries an absolute http(s) URL. */
+  url?: string;
+}
+
+/** The one card standing for a member of `kind` in its own box. Its id is the kind, composed below the member as `<member>/<kind>`. */
+export function memberRunsCard(kind: string): IRNode {
+  return { id: kind, kind: MEMBER_RUNS_KIND, lexicon: MEMBER_RUNS_LEXICON, attrs: { engine: kind } } as IRNode;
+}
+
+const httpUrl = (v: unknown): string | undefined => (typeof v === "string" && /^https?:\/\//.test(v) ? v : undefined);
+
+/**
+ * Each member card's last apply and the run since it that did not pass, from
+ * the run index. The last apply is the newest `apply` entry for the card's
+ * member that passed; a run of the whole workspace (no `member`) is not taken
+ * as one, since the index cannot say the member was in it. The run since is
+ * the newest entry, the member's or the whole workspace's, that ended after
+ * it, when that entry did not pass (as {@link withRunsSince} does for a
+ * release). With no apply recorded, the member's newest run is shown when it
+ * did not pass. A card the index names no run of says so in words: `indexed`
+ * false means behold was given no run index to read at all. Pure.
+ */
+export function withMemberApplies(ir: GraphIR, entries: readonly CiRunEntry[], indexed: boolean): { ir: GraphIR; applied: number } {
+  let applied = 0;
+  const newest = (es: readonly CiRunEntry[]): CiRunEntry | undefined => [...es].sort((a, b) => b.ended.localeCompare(a.ended))[0];
+  const nodes = ir.nodes.map((n) => {
+    if (n.lexicon !== MEMBER_RUNS_LEXICON) return n;
+    const at = n.id.indexOf("/");
+    const member = at >= 0 ? n.id.slice(0, at) : undefined;
+    const mine = entries.filter((e) => member !== undefined && e.member === member);
+    const last = newest(mine.filter((e) => e.job === "apply" && e.status === "ok"));
+    const after = last ? newest(entries.filter((e) => e.ended > last.ended && (!e.member || e.member === member))) : newest(mine);
+    const since = after && after.status !== "ok" ? after : undefined;
+    const attrs: Record<string, unknown> = { ...n.attrs };
+    if (last) {
+      applied++;
+      const url = httpUrl(last.runOrigin?.url);
+      const apply: LastApply = { runId: last.runId, commit: last.commit, ended: last.ended, key: last.key, forge: last.runOrigin?.forge ?? "unknown", ...(url ? { url } : {}) };
+      attrs.apply = `${last.commit.slice(0, 7)} · ${last.ended.slice(0, 10)}`;
+      attrs[LAST_APPLY] = apply;
+    } else if (!since) {
+      attrs.runs = indexed ? (mine.length ? "no apply recorded" : "no runs recorded") : "no run index read";
+    } else {
+      attrs.apply = "none recorded";
+    }
+    if (since) {
+      const run: RunSince = { job: since.job, status: since.status, runId: since.runId, commit: since.commit, ended: since.ended, ...(since.member ? { member: since.member } : {}) };
+      attrs.since = `${since.job} ${SINCE_WORD[since.status] ?? since.status} ${since.commit.slice(0, 7)}`;
+      attrs[RUN_SINCE] = run;
+    }
+    return { ...n, attrs };
+  });
+  return { ir: { ...ir, nodes }, applied };
 }
