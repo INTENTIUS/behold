@@ -11,7 +11,7 @@
 #     otherwise (a branch or a commit). When the two differ, both are kept.
 #     When neither names a version, no CI image is removed.
 #   - dangling images: unnamed (<none>:<none>) and used by no container;
-#   - BuildKit's cache past DEMO_BUILD_CACHE_MAX (default 5GB);
+#   - BuildKit's cache past DEMO_BUILD_CACHE_MAX (default 12GB);
 #   - stopped containers older than DEMO_CLEANUP_CONTAINER_AGE (default 24h)
 #     that no compose project made, such as a Forgejo job's container left
 #     behind;
@@ -44,7 +44,7 @@ conf() { # name, default: a value from demo.env, read without sourcing it
   printf '%s' "${v:-$2}"
 }
 
-BUILD_CACHE_MAX="$(conf DEMO_BUILD_CACHE_MAX 5GB)"
+BUILD_CACHE_MAX="$(conf DEMO_BUILD_CACHE_MAX 12GB)"
 JOURNAL_MAX="$(conf DEMO_JOURNAL_MAX 500M)"
 DISK_WARN="$(conf DEMO_DISK_WARN 85)"
 CONTAINER_AGE="$(conf DEMO_CLEANUP_CONTAINER_AGE 24h)"

@@ -15,13 +15,25 @@
 #   demo-host.sh start      bring the stack up (systemd runs this at boot)
 #   demo-host.sh pause      stop the driver and keep it stopped (the watchdog
 #                           leaves it alone) until the next start
+#   demo-host.sh update-prepare [--terragucci-ref <ref>] [--behold-ref <ref>]
+#                           the part of an update that never touches the
+#                           loop, run while it and the site carry on: write
+#                           the refs given to demo.env, move the behold
+#                           checkout, fetch terragucci (without moving its
+#                           checkout, which the running driver reads), install
+#                           the units and build the behold and driver images.
 #   demo-host.sh update [--terragucci-ref <ref>] [--behold-ref <ref>]
-#                           write the refs given to demo.env, move both
-#                           checkouts to the refs in demo.env, rebuild, and
-#                           restart. The driver bootstraps again when the
-#                           terragucci commit changed. Before it starts the
-#                           services, it clears what a failed recreate left
-#                           (clear-strays).
+#                           write the refs given to demo.env, move the behold
+#                           checkout, build (quick after update-prepare), then
+#                           wait for a quiet step (demo.json says reset or
+#                           applied, at most DEMO_QUIET_WAIT seconds, 900),
+#                           stop the driver, move the terragucci checkout and
+#                           start the services again. The driver bootstraps
+#                           again when the terragucci commit changed. Before
+#                           it starts the services, it clears what a failed
+#                           recreate left (clear-strays). behold is recreated
+#                           only when its image changed, and Caddy restarted
+#                           only when the Caddyfile did.
 #   demo-host.sh clear-strays
 #                           remove the containers compose made for behold or
 #                           the driver that aren't running under the name
@@ -226,6 +238,55 @@ checkouts() {
   checkout behold "$(conf BEHOLD_REF main)"
 }
 
+update_refs() { # [--terragucci-ref <ref>] [--behold-ref <ref>]: write the refs given to demo.env
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --terragucci-ref) set_conf TERRAGUCCI_REF "${2:?}"; shift 2 ;;
+      --behold-ref) set_conf BEHOLD_REF "${2:?}"; shift 2 ;;
+      *) die "unknown argument '$1'" ;;
+    esac
+  done
+}
+
+fetch_terragucci() { # fetch only: the running driver reads the checkout, so it moves once the driver is stopped
+  [ -d "$ROOT/terragucci/.git" ] || return 0
+  git -C "$ROOT/terragucci" fetch -q --tags --force origin
+}
+
+# The loop can be interrupted only at a step where no wave is waiting or
+# applying (INTENTIUS/terragucci#1014): demo.json says reset or applied. Each
+# is held for the scenario's hold (20 seconds by default), so this looks every
+# second, on the host, right before the driver stops. A driver that isn't
+# running, or a demo.json not written yet, has nothing to interrupt. Past
+# DEMO_QUIET_WAIT seconds (900, a few cycles of the host's scenarios) it gives
+# up and the update stops with the driver untouched.
+wait_quiet() {
+  local url limit start step
+  url="http://127.0.0.1:$(conf TERRAGUCCI_FLOCI_PORT 4580)/$(conf DEMO_REPORTS s3://demo-reports/demo | sed 's#^s3://##')/demo.json"
+  limit="$(conf DEMO_QUIET_WAIT 900)"
+  if [ "$(docker inspect -f '{{.State.Running}}' demo-host-driver 2>/dev/null)" != true ]; then
+    log "the driver isn't running; nothing to wait for"
+    return 0
+  fi
+  start="$(date +%s)"
+  while :; do
+    step="$(curl -fsS -m 5 "$url" 2>/dev/null | jq -r '.step // "none"' 2>/dev/null || echo none)"
+    case "$step" in
+      reset|applied|none) log "demo.json says $step; stopping the driver"; return 0 ;;
+    esac
+    [ $(( $(date +%s) - start )) -lt "$limit" ] \
+      || die "demo.json still says $step after ${limit}s (DEMO_QUIET_WAIT); the driver keeps running and nothing moved but the behold checkout and the images"
+    sleep 1
+  done
+}
+
+# The Caddyfile is bind-mounted as one file, which a moved checkout replaces;
+# Caddy restarts to mount the new one only when its content changed, so an
+# update that didn't touch it keeps the site up throughout.
+caddy_current() {
+  [ "$(docker exec demo-host-caddy cat /etc/caddy/Caddyfile 2>/dev/null)" = "$(cat "$HERE/Caddyfile")" ]
+}
+
 install_units() {
   local u
   for u in demo-host.service demo-host-watchdog.service demo-host-cleanup.service demo-host-cleanup.timer; do
@@ -413,15 +474,27 @@ cmd_pause() {
   log "the driver is stopped and stays stopped until '$0 start'"
 }
 
+cmd_update_prepare() {
+  update_refs "$@"
+  mkdir -p "$ROOT" "$ROOT/views"
+  checkout behold "$(conf BEHOLD_REF main)"
+  fetch_terragucci
+  # The checkout may have moved this script; carry on from the new one.
+  exec "$ROOT/behold/deploy/demo-host/demo-host.sh" update-prepare-rest
+}
+
+cmd_update_prepare_rest() {
+  install_units
+  log "building the behold and driver images; the loop and the site carry on"
+  compose build
+  log "prepared: behold $(conf BEHOLD_REF main); update moves terragucci to $(conf TERRAGUCCI_REF main) at a quiet step"
+}
+
 cmd_update() {
-  while [ "$#" -gt 0 ]; do
-    case "$1" in
-      --terragucci-ref) set_conf TERRAGUCCI_REF "${2:?}"; shift 2 ;;
-      --behold-ref) set_conf BEHOLD_REF "${2:?}"; shift 2 ;;
-      *) die "unknown argument '$1'" ;;
-    esac
-  done
-  checkouts
+  update_refs "$@"
+  mkdir -p "$ROOT" "$ROOT/views"
+  checkout behold "$(conf BEHOLD_REF main)"
+  fetch_terragucci
   # The checkout may have moved this script; carry on from the new one.
   exec "$ROOT/behold/deploy/demo-host/demo-host.sh" update-rest
 }
@@ -430,10 +503,17 @@ cmd_update_rest() {
   install_units
   compose build
   clear_strays
+  # Everything above runs while the loop does. The driver reads the terragucci
+  # checkout as it runs, so that moves only once the driver is stopped, at a
+  # quiet step.
+  wait_quiet
+  compose stop driver
+  checkout terragucci "$(conf TERRAGUCCI_REF main)"
   # A new terragucci commit makes driver-entry.sh run the bootstrap again.
   compose up -d --force-recreate driver
+  # behold is recreated only when its image or settings changed.
   compose up -d
-  cmd_reload_caddy
+  if caddy_current; then log "Caddy's Caddyfile is unchanged; Caddy keeps running"; else cmd_reload_caddy; fi
   running_as_named
   log "updated: terragucci $(conf TERRAGUCCI_REF main), behold $(conf BEHOLD_REF main)"
   # The images of the release before are no longer needed: clean up now, in
@@ -480,6 +560,8 @@ main() {
     bootstrap-rest) need_root; cmd_bootstrap_rest "$@" ;;
     start) need_root; cmd_start ;;
     pause) need_root; cmd_pause ;;
+    update-prepare) need_root; cmd_update_prepare "$@" ;;
+    update-prepare-rest) need_root; cmd_update_prepare_rest ;;
     update) need_root; cmd_update "$@" ;;
     update-rest) need_root; cmd_update_rest ;;
     open) need_root; cmd_open ;;

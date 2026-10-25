@@ -198,7 +198,7 @@ describe("cleanup.sh never removes what the host still needs", () => {
     expect(r.calls).toContain("docker builder prune --force --max-used-space 3GB");
     expect(r.calls).toContain("journalctl --vacuum-size=200M");
     // An older buildx names the cap --keep-storage.
-    expect(cleanup({ builderFlag: "--keep-storage" }).calls).toContain("docker builder prune --force --keep-storage 5GB");
+    expect(cleanup({ builderFlag: "--keep-storage" }).calls).toContain("docker builder prune --force --keep-storage 12GB");
   });
 
   it("logs the disk and docker system df before and after", () => {
