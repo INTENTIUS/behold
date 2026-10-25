@@ -1,7 +1,7 @@
 {
   "$schema": "https://intentius.io/chant/schemas/workspace/graph/v1/graph.schema.json",
   "contract": 1,
-  "chant": "0.124.52",
+  "chant": "0.124.34",
   "at": null,
   "plantable": {
     "plantable": false,
@@ -24,15 +24,15 @@
       "kind": "pulumi",
       "status": "composed",
       "reason": null,
-      "chant": "0.124.52",
+      "chant": "0.124.34",
       "irVersion": 1,
       "live": false,
       "cached": false,
-      "stamp": "sha256:981b4d58b4570c45192fd41a16384761d34a531ec336036d1d33844922471807",
+      "stamp": "sha256:93ccca40ad4f0f95b8c6dfb8d394e426090f4411e8b1d49207bf13ba389a660a",
       "meta": {
         "pulumiMember": {
           "export": "stack-export.json",
-          "objects": 6,
+          "objects": 5,
           "exported": true
         },
         "lint": {
@@ -48,54 +48,40 @@
     {
       "id": "app/app/aws:iam/role:Role::web",
       "kind": "aws:iam/role:Role",
-      "lexicon": "terraform",
+      "lexicon": "pulumi",
       "attrs": {},
       "member": "app"
     },
     {
       "id": "app/app/aws:iam/rolePolicy:RolePolicy::webReadsAssets",
       "kind": "aws:iam/rolePolicy:RolePolicy",
-      "lexicon": "terraform",
+      "lexicon": "pulumi",
       "attrs": {},
       "member": "app"
     },
     {
       "id": "app/app/aws:s3/bucket:Bucket::assets",
       "kind": "aws:s3/bucket:Bucket",
-      "lexicon": "terraform",
+      "lexicon": "pulumi",
       "attrs": {},
       "member": "app"
     },
     {
       "id": "app/app/my:mod:Web::web-app",
       "kind": "my:mod:Web",
-      "lexicon": "terraform",
+      "lexicon": "pulumi",
       "attrs": {},
       "member": "app"
     },
     {
       "id": "app/app/my:mod:Web$aws:lambda/function:Function::handler",
       "kind": "aws:lambda/function:Function",
-      "lexicon": "terraform",
-      "attrs": {},
-      "member": "app"
-    },
-    {
-      "id": "app/app/pulumi:pulumi:Stack::app-dev",
-      "kind": "pulumi:pulumi:Stack",
-      "lexicon": "terraform",
+      "lexicon": "pulumi",
       "attrs": {},
       "member": "app"
     }
   ],
   "edges": [
-    {
-      "from": "app/app/aws:iam/role:Role::web",
-      "to": "app/app/pulumi:pulumi:Stack::app-dev",
-      "kind": "ref",
-      "viaAttr": "parent",
-      "member": "app"
-    },
     {
       "from": "app/app/aws:iam/rolePolicy:RolePolicy::webReadsAssets",
       "to": "app/app/aws:iam/role:Role::web",
@@ -108,27 +94,6 @@
       "to": "app/app/aws:s3/bucket:Bucket::assets",
       "kind": "ref",
       "viaAttr": "dependencies",
-      "member": "app"
-    },
-    {
-      "from": "app/app/aws:iam/rolePolicy:RolePolicy::webReadsAssets",
-      "to": "app/app/pulumi:pulumi:Stack::app-dev",
-      "kind": "ref",
-      "viaAttr": "parent",
-      "member": "app"
-    },
-    {
-      "from": "app/app/aws:s3/bucket:Bucket::assets",
-      "to": "app/app/pulumi:pulumi:Stack::app-dev",
-      "kind": "ref",
-      "viaAttr": "parent",
-      "member": "app"
-    },
-    {
-      "from": "app/app/my:mod:Web::web-app",
-      "to": "app/app/pulumi:pulumi:Stack::app-dev",
-      "kind": "ref",
-      "viaAttr": "parent",
       "member": "app"
     },
     {
@@ -153,28 +118,25 @@
         "app/app/aws:iam/rolePolicy:RolePolicy::webReadsAssets",
         "app/app/aws:s3/bucket:Bucket::assets",
         "app/app/my:mod:Web$aws:lambda/function:Function::handler",
-        "app/app/my:mod:Web::web-app",
-        "app/app/pulumi:pulumi:Stack::app-dev"
+        "app/app/my:mod:Web::web-app"
       ]
     },
     "byLexicon": {
-      "terraform": [
+      "pulumi": [
         "app/app/aws:iam/role:Role::web",
         "app/app/aws:iam/rolePolicy:RolePolicy::webReadsAssets",
         "app/app/aws:s3/bucket:Bucket::assets",
         "app/app/my:mod:Web$aws:lambda/function:Function::handler",
-        "app/app/my:mod:Web::web-app",
-        "app/app/pulumi:pulumi:Stack::app-dev"
+        "app/app/my:mod:Web::web-app"
       ]
     },
     "byStack": {
-      "app/terraform": [
+      "app/pulumi": [
         "app/app/aws:iam/role:Role::web",
         "app/app/aws:iam/rolePolicy:RolePolicy::webReadsAssets",
         "app/app/aws:s3/bucket:Bucket::assets",
         "app/app/my:mod:Web$aws:lambda/function:Function::handler",
-        "app/app/my:mod:Web::web-app",
-        "app/app/pulumi:pulumi:Stack::app-dev"
+        "app/app/my:mod:Web::web-app"
       ]
     }
   },

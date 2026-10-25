@@ -4,16 +4,19 @@
 # Serves e2e/fixtures/pulumi-workspace (one member, `app`, a Pulumi.yaml and
 # the `pulumi stack export` checked in beside it as stack-export.json) the way
 # `behold serve <root>` serves a declared workspace, through the chant and the
-# terraform lexicon installed beside behold, and asserts:
-#   - /api/graph draws the export's six resources as cards, edged by parent
-#     and dependencies, and no UnreadableMember box;
+# pulumi lexicon installed beside behold, and asserts:
+#   - /api/graph draws the export's five resources as cards (no card for the
+#     stack root, chant#4456), edged by parent and dependencies, and no
+#     UnreadableMember box;
 #   - no card carries a colour other than neutral;
 #   - /api/overlay draws the same cards neutral, each saying chant has no
 #     live read for a pulumi member.
 #
 # Nothing runs Pulumi, nothing reaches a cloud, and nothing is written under
 # the fixture (chant writes its reader project under the OS temp directory).
-# Needs @intentius/chant-lexicon-terraform 0.124.49 or newer beside behold.
+# Needs @intentius/chant-lexicon-pulumi beside behold at the version the
+# fixture's chant.workspace.json pins (chant#4453 moved the kind there, and
+# chant reads a pinned package's kinds only at the pinned version).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 PORT="${BEHOLD_E2E_PORT:-4697}"
@@ -43,7 +46,6 @@ check() {
       "app/app/aws:s3/bucket:Bucket::assets",
       "app/app/my:mod:Web$aws:lambda/function:Function::handler",
       "app/app/my:mod:Web::web-app",
-      "app/app/pulumi:pulumi:Stack::app-dev",
     ];
     const mode = process.argv[1];
     let s = ""; process.stdin.on("data", d => (s += d)).on("end", () => {

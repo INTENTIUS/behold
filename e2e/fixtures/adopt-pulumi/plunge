@@ -1,0 +1,62 @@
+#!/usr/bin/env node
+// behold#999's e2e stand-in for plunge: no cloud, no provider, no Pulumi
+// engine. It logs every invocation to $ADOPT_STUB_LOG (one JSON line: argv,
+// cwd, the backend URL and PULUMI_SKIP_CONFIRMATIONS as it saw them) and
+// answers only `plunge stack adopt`, in the text plunge prints
+// (pkg/cmd/pulumi/stack/stack_adopt.go printAdoption) and with plunge's gate:
+// the checkpoint is the member's stack-export.json, every custom resource but
+// a provider is classed (aws:* pending, kubernetes:* marker, the rest record),
+// and nothing is written unless --yes is passed or PULUMI_SKIP_CONFIRMATIONS
+// is set, as plunge itself decides. A confirmed adoption writes the adoption
+// record under the file:// backend's root (.plunge/stacks/<project>/<stack>/
+// adoption), which is the one write the e2e looks for.
+// ESM syntax: behold's package.json says "type": "module", and node's syntax
+// detection runs it as a module wherever it is copied.
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { join } from "node:path";
+const argv = process.argv.slice(2);
+const backend = process.env.PULUMI_BACKEND_URL || "";
+const skip = process.env.PULUMI_SKIP_CONFIRMATIONS;
+if (process.env.ADOPT_STUB_LOG) appendFileSync(process.env.ADOPT_STUB_LOG, JSON.stringify({ argv, cwd: process.cwd(), backend, skip: skip ?? null }) + "\n");
+if (argv[0] !== "stack" || argv[1] !== "adopt") {
+  console.error(`stub plunge: ${argv.slice(0, 2).join(" ")} is not stubbed`);
+  process.exit(2);
+}
+if (!backend.startsWith("plunge+file://")) {
+  console.error("error: `stack adopt` needs the plunge backend; log in with `plunge login plunge+<diy url>`");
+  process.exit(255);
+}
+const at = argv.indexOf("--stack");
+const stack = at >= 0 ? argv[at + 1] : "dev";
+const yes = argv.includes("--yes") || argv.includes("-y") || (skip !== undefined && skip !== "" && skip !== "false" && skip !== "0");
+const raw = readFileSync(join(process.cwd(), "stack-export.json"), "utf8");
+const deployment = JSON.parse(raw).deployment;
+const digest = createHash("sha256").update(JSON.stringify(deployment)).digest("hex");
+const project = (/^name:\s*(\S+)/m.exec(readFileSync(join(process.cwd(), "Pulumi.yaml"), "utf8")) || [, "app"])[1];
+const root = backend.slice("plunge+file://".length);
+const dir = join(root, ".plunge", "stacks", project, stack);
+const record = join(dir, "adoption");
+const rows = (deployment.resources || [])
+  .filter((r) => r.custom && !String(r.type).startsWith("pulumi:providers:"))
+  .map((r) => {
+    const t = String(r.type);
+    const [own, reason] = t.startsWith("aws:") ? ["pending", "classed at the first run, from the provider's schema"] : t.startsWith("kubernetes:") ? ["marker", ""] : ["record", "the type has no tags"];
+    return `  ${r.urn}  ${r.id || ""}  ownership: ${own}${reason ? ` (${reason})` : ""}`;
+  })
+  .sort();
+if (existsSync(record)) {
+  console.log(`${stack} was already adopted from this checkpoint (digest ${digest}); nothing was written.`);
+  for (const l of rows) console.log(l);
+  process.exit(0);
+}
+console.log(`Adopting ${stack} (checkpoint digest ${digest}):`);
+for (const l of rows) console.log(l);
+if (!yes) {
+  console.error("error: non-interactive mode requires --yes flag");
+  process.exit(255);
+}
+mkdirSync(dir, { recursive: true });
+writeFileSync(record, JSON.stringify({ format: "plunge-adoption/v1", source: "stub", checkpointDigest: digest, resources: rows.length }) + "\n");
+console.log(`Adopted ${stack}: ${rows.length} resources recorded (checkpoint digest ${digest}).`);
+for (const l of rows) console.log(l);

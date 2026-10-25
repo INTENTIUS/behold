@@ -48,8 +48,9 @@ import { terraformSpec } from "./terraform-member.ts";
  * (src/workspace.ts, `pulumiWorkspaceVia`). So a `.behold.json` entry naming
  * it is doctor's "declared, but this behold has no reader for it", and a
  * `chant.workspace.json` member of kind `pulumi` is drawn. The key is chant's
- * kind string, never the lexicon that supplies it: chant moves the kind out
- * of the terraform lexicon later, and the word stays the same. */
+ * kind string, never the lexicon that supplies it: chant moved the kind from
+ * the terraform lexicon to @intentius/chant-lexicon-pulumi (chant#4453), and
+ * the word stayed the same. */
 export const MEMBER_KINDS = ["chant", "choudoufu", "terraform", "pulumi"] as const;
 export type MemberKind = (typeof MEMBER_KINDS)[number];
 
