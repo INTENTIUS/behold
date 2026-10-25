@@ -264,10 +264,14 @@ const LOOK_OF = { applied: "applied", "no-changes": "applied", partial: "partial
 export function stateMarks(answer, progress) {
   const roots = answer && Array.isArray(answer.roots) ? rootsOf(answer).map((r) => r.path) : progress && Array.isArray(progress.reads) ? progress.reads.map((r) => r.root) : [];
   // behold#940: an estate of choudoufu's has no state file: it holds records, one per resource, written as each applies.
-  const estate = !!(answer && answer.estateScene && Array.isArray(answer.estateScene.roots) && answer.estateScene.roots.length);
+  // The reports' binaries say so too, and still do when a pin holds the scene back (a pull request being planned):
+  // the scene alone would call the same estates state files for that while.
+  const scene = !!(answer && answer.estateScene && Array.isArray(answer.estateScene.roots) && answer.estateScene.roots.length);
+  const binaries = (answer && answer.binaries) || {};
   const out = {};
   for (const root of roots) {
     const a = applyOf(root, progress);
+    const estate = scene || binaries[root] === "choudoufu";
     const file = estate ? { file: lastSegment(root), from: "estate", estate: true } : stateFile(root, progress);
     out[root] = { ...file, written: !!a && a.state === "written", look: a && a.apply ? LOOK_OF[a.apply] || null : null, covered: !!(a && a.covered) };
   }

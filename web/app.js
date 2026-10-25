@@ -44,7 +44,7 @@ import { drawLight as klDraw } from "./kiosk-light-frame.js"; // behold#937
 import { badgeWords as klBadge, planOf as klPlanOf } from "./kiosk-light.js"; // behold#940
 import { composedRun } from "./kiosk-light.js";
 import { graphMayShow, keepsSceneInAsk, mayTellDrawn, refusalHoldsScene } from "./kiosk-graph-pane.js";
-import { askDeltas, clearScene, drawScene, sceneModel, slotCounts as klSlotCounts } from "./kiosk-estate-scene.js"; // behold#940
+import { askDeltas, clearScene, drawScene, sceneModel, slotCounts as klSlotCounts, waitingModel } from "./kiosk-estate-scene.js"; // behold#940
 import { cardProgress as tgCardProgress, progressLines as tgProgressLines, progressSection as tgProgressSection, stampProgress as tgStampProgress } from "./terragucci-progress.js";
 import { seconds, whyQuery, whyView } from "./why.js";
 import { edgeKey, edgeLabel, edgeLegend, edgeTitle, isCiKind, viaIndex } from "./edge-kind.js";
@@ -4724,7 +4724,9 @@ function klArrange(svg) {
   const progress = tgStoryOn() ? tgPacedProgress() : tgProgress;
   const plan = klPlanOf(answer, progress);
   const open = klRoom();
-  const model = sceneModel(answer, plan, progress, open);
+  // The pin hides the plan for now (a pull request being planned, the reset): the estates' boxes, each waiting for
+  // its cards, in place of a dark pane or the last act's cards.
+  const model = sceneModel(answer, plan, progress, open) || klWaitingModel(answer, progress, open);
   if (model) {
     const first = !klArranged;
     drawScene(svg, model);
@@ -4748,6 +4750,11 @@ function klArrange(svg) {
   layoutDeltas = got.deltas;
   renderLayout();
   klArranged = true;
+}
+/** behold: the waiting scene, from the unpinned reports' estates, when the pinned answer is the same run's with its plan held back. */
+function klWaitingModel(pinned, progress, open) {
+  if (!tgAnswer || tgAnswer.error || pinned.estateScene) return null;
+  return waitingModel(tgAnswer, klPlanOf(tgAnswer, progress), open);
 }
 // #568: the reads edges between roots of one repo, drawn over the card view.
 // #569: drawn so the view shows the change without the panel: each read is a

@@ -8,7 +8,7 @@ import { terragucciSource } from "./terragucci-source.ts";
 // @ts-expect-error the kiosk's browser modules have no declaration files
 import { cardLines, dependentsOf, lineState, planOf, selectLight, slotState, startKioskLight, stateMarks, stateWords, unknownSlots } from "../web/kiosk-light.js";
 // @ts-expect-error see above
-import { sceneModel } from "../web/kiosk-estate-scene.js";
+import { sceneModel, waitingModel, WAITING_WORDS } from "../web/kiosk-estate-scene.js";
 // @ts-expect-error see above
 import { pinnedAnswer } from "../web/terragucci-change.js";
 
@@ -124,6 +124,32 @@ describe("a composed choudoufu run's scene (behold#940)", () => {
     const a = await answerOf(false);
     expect(pinnedAnswer(a, "base").estateScene).toBeUndefined();
     expect(pinnedAnswer(a, "base").pull_request).toBeNull();
+  });
+
+  it("waits in each estate's box while the pin holds the plan back, in place of a dark pane or the last act's cards", async () => {
+    const a = await answerOf(false);
+    const pinned = pinnedAnswer(a, "base");
+    expect(sceneModel(pinned, planOf(pinned), null, { width: 1900, height: 740 })).toBeNull();
+    const m = waitingModel(a, planOf(a), { width: 1900, height: 740 });
+    expect(m.waiting).toBe(true);
+    expect(m.roots.map((r: { path: string }) => r.path)).toEqual(["network", "app", "edge"]);
+    for (const r of m.roots) {
+      expect(r.cards).toEqual([]);
+      expect(r.waiting.words).toBe(WAITING_WORDS);
+      expect(r.waiting.y).toBeGreaterThanOrEqual(r.y);
+      expect(r.waiting.y + r.waiting.h).toBeLessThanOrEqual(r.y + r.h);
+    }
+    expect(m.edges).toEqual([]);
+    expect(waitingModel(pinned, planOf(pinned), { width: 1900, height: 740 })).toBeNull();
+  });
+
+  it("keeps an estate an estate when the pin holds the scene back: no state file, and no label of its name alone", async () => {
+    const pinned = { ...pinnedAnswer(await answerOf(false), "base"), binaries: { network: "choudoufu", app: "choudoufu", edge: "choudoufu" } };
+    const marks = stateMarks(pinned, null);
+    expect(marks.network).toMatchObject({ estate: true });
+    expect(stateWords(marks.network)).toBe("");
+    // A root another binary plans keeps its state file.
+    expect(stateMarks({ ...pinned, binaries: { network: "terraform" } }, null).network.estate).toBeUndefined();
   });
 
   it("is absent on a plain composed run", async () => {
