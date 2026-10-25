@@ -61,6 +61,11 @@ export interface DemoServe {
   /** Environment the served process itself starts with, so every chant read
    * it spawns inherits it. A variable the user already set wins. */
   processEnv?: Record<string, string>;
+  /** behold#999: a directory in the copy holding one recorded `<member>.json`
+   * per Terraform root, what `chant workspace promote <member> --state <file>
+   * --dry-run --json` prints. The Adopt tab serves it, labelled recorded, in
+   * place of a live read the demo has no state or cloud for. */
+  adoptRecorded?: string;
 }
 
 /** Which catalog file an entry came from (#388): `demos.json`, shipped in the
@@ -141,6 +146,8 @@ function validEntry(e: unknown): e is DemoEntry {
   }
   if (!Array.isArray(d.requires) || d.requires.some((r) => typeof r !== "string")) return false;
   if (!d.serve || typeof d.serve !== "object") return false;
+  // behold#999: a directory inside the copy, never outside it.
+  if (d.serve.adoptRecorded !== undefined && (typeof d.serve.adoptRecorded !== "string" || !d.serve.adoptRecorded || isAbsolute(d.serve.adoptRecorded) || d.serve.adoptRecorded.split(/[\\/]/).includes(".."))) return false;
   if (d.serve.dirs !== undefined && (!Array.isArray(d.serve.dirs) || d.serve.dirs.some((x) => typeof x !== "string") || !d.serve.dirs.length)) return false;
   // #372: a spawn environment is a flat string map or nothing.
   if (

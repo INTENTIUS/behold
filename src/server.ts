@@ -72,6 +72,7 @@ import { chantPrFacets, chantPrRoute, prLoopOf, reportSourceOf } from "./chant-p
 import { ChantDemo, chantDemoRoutes } from "./chant-demo.ts";
 import { ciReportUrlOf, ciRunsRoutes, readCiRunIndex, type CiRunEntry } from "./ci-run-index.ts";
 import { localRunRoutes } from "./ci-local-run.ts";
+import { adoptionRoutes } from "./adoption.ts";
 import type { GitRun } from "./terragucci-lifecycle.ts";
 import { TERRAGUCCI_COMPONENTS_FILE, componentJobs, componentsIrFromDeclaration, componentRootMap, readTerragucciComponents, waveTitles, type TerragucciComponents } from "./terragucci-components.ts";
 import { hasTerragruntUnits } from "./terragrunt-units.ts";
@@ -279,6 +280,8 @@ export interface ServerOptions {
   ciReportUrl?: string;
   /** #818: the served workspace's declared `ci.reportUrl` (chant#4160), read when `ciReportUrl` isn't given. */
   ciReportUrlDeclared?: string;
+  /** behold#999: `serve --adopt-recorded <dir>`, a demo's recorded adoption reports (one `<member>.json`), served by the Adopt tab in place of running promote. */
+  adoptRecorded?: string;
   /** #471: hud's address (`--hud`, BEHOLD_HUD_URL). A proposed decision in a
    * "why" links to its review there; without it the decision is named by id. */
   hud?: string;
@@ -1164,6 +1167,15 @@ export function createApp(
     const ciRunFor = ciRuns ? ciRunsRoutes(app, { ...ciRuns, ...via }) : undefined;
     // behold#685: a plan job run on this machine (chant ci run --local), beside CI's run of it from the index.
     localRunRoutes(app, { workspace: servedWorkspace, runner, broadcaster, ...(cfg.env ? { env: cfg.env } : {}), preview: () => !!cfg.previewMode, ...(ciRunFor ? { ciRunFor } : {}) });
+    // behold#999: adopt a Terraform root into choudoufu: promote's read-only report, and the gated promote started as a delegated write.
+    adoptionRoutes(app, {
+      workspace: servedWorkspace,
+      runner,
+      broadcaster,
+      readReport: (root, member, state) => rootReader(root).readPromoteReport(member, state),
+      preview: () => !!cfg.previewMode,
+      recorded: () => cfg.adoptRecorded,
+    });
     chantPrRoute(app, () => cfg.projectDir, {
       ...(chantDemo ? { demoReports: (d: string, g?: GitRun) => chantDemo.prReports(d, g), ...(runs ? { source: runs } : {}) } : runs ? { source: runs } : {}),
       ...(cfg.chantReportUrl ? { reportUrl: cfg.chantReportUrl } : {}),
@@ -2245,6 +2257,8 @@ export function createApp(
     // is only served from `behold serve <root>`.
     cfg.workspace = undefined;
     setServedWorkspace(undefined);
+    // behold#999: recorded adoption reports belong to the demo they came with.
+    cfg.adoptRecorded = undefined;
     // #389: one directory composes too when chant cannot read it — see servesAsEstate.
     cfg.projectDirs = servesAsEstate(dirs) ? dirs : undefined;
     // #372: a demo's scratch emulator reaches its choudoufu spawns through

@@ -167,6 +167,63 @@ that holds for it: `ci run` gives the job a clean environment that keeps HOME,
 so `serve --local`'s emulator env does not reach the job and the operator's
 own credentials would. Cached-step marks wait on chant#4015.
 
+## Adopting a Terraform root into choudoufu (behold#999)
+
+A `terraform` member of a declared workspace is offered adoption into
+choudoufu, the engine tier, through chant's `chant workspace promote <member>
+--state <file>` (src/adoption.ts, floor `ADOPTION_REPORT_CHANT_FLOOR`, set to
+0.124.53 until the chant release carrying the report is cut). The panel's
+**Adopt** tab (web/adopt.js) shows, per member, what the engine tier gives
+and what it does not, the command, and promote's report.
+
+- `GET /api/adopt`: each adoptable member's offer `{member, kind, dir,
+  offered, engine, gains, limits, stateHint, state: {file, present},
+  command, approve, recorded, start: {offered, why?}}`. A `pulumi` member is
+  listed `offered: false` with `waits` (plunge P-L4, INTENTIUS/plunge#7):
+  `ADOPTERS` and `ADOPTION_WAITS` are keyed on member kind, and the Pulumi
+  half adds its adopter there.
+- `GET /api/adopt/report?member=<name>[&state=<file>]`: promote's read-only
+  stage, `workspace promote <member> --state <abs> --dry-run --json`, through
+  the reader (`readPromoteReport`, `PROMOTE_REPORT_READ`). chant stages in a
+  throwaway worktree, runs `choudoufu live-check` and `live-import` without
+  `-approve`, records no gate and leaves the tree as it was. Its `adoption`
+  field (chant's `adoption-report.ts`, parsed from choudoufu's text) lists
+  every resource instance; behold gives each a `fate`: `claimed` (VERIFIED,
+  DRIFTED) or `left-out` (MISSING, UNTAGGABLE, UNADMITTED_TYPE), with a
+  `why` and choudoufu's `detail`. An unknown status is listed as `unknown`,
+  never dropped.
+- `POST /api/adopt/start` `{member, state?}`: the delegated write. It starts
+  `workspace promote <member> --state <abs> --json` (never `--dry-run`,
+  never `-approve`) at the workspace root through the runner's `track`.
+  chant's gate decides: without an approval of the patch's digest promote
+  records a pending gate on `chant/lifecycle` and exits 3 (`gated`), and
+  nothing in the tree or the cloud is written; after `chant approve
+  workspace-promote <member> --plan <digest>`, the same start applies the
+  patch and runs `live-import -approve`. behold never approves here; the
+  approve line is shown to copy. `GET /api/adopt/runs/:id` answers one start
+  (`outcome`, `digest`, `words`, `approve`, `report`), the last 20 in memory;
+  the SSE `adopt-run` event names one that moved.
+- The state file is a file name in the member's declared directory
+  (`terraform.tfstate` by default), never a path. A root on a remote backend
+  pulls one there under a name git ignores first, since promote refuses a
+  member with uncommitted changes.
+
+Refusals: no declared workspace `404`, below the floor `409 chant-too-old`,
+preview `403` for the start, a kind behold does not adopt `422 adopt-kind`,
+no state file `422 adopt-state`, a second command while one runs `409 busy`.
+A terragucci or SQL Yodeler repo refuses the start through the write
+allowlist (`409`), and `--public` refuses every `/api/adopt` read (`403`)
+and the start (`405`). The tab is not drawn in a public view, an embed, a
+static export or a guarded repo.
+
+`behold demo terraform-estate` serves `serve --adopt-recorded
+recorded/adoption` (DemoServe `adoptRecorded`): one recorded `<member>.json`
+per root in promote's shape, labelled recorded (`RECORDED_NOTE`), and no
+start. `just e2e-adopt` (e2e/adopt-terraform-e2e.sh) runs the whole path over
+a real chant and serve with choudoufu replaced by
+e2e/fixtures/adopt/choudoufu, and asserts the report lists every resource
+with its fate and that nothing is written before approval.
+
 ## A terragucci estate, from its reports (#490)
 
 `behold serve <repo> --terragucci <dir|s3://bucket/prefix|https://…>`
