@@ -16,6 +16,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import type { GraphIR, Layout, ComponentStatusRow } from "@intentius/chant";
+import type { MemberKind } from "./member-kind.ts";
 import { detectProject } from "./project.ts";
 import { meetsFloor } from "./floor.ts";
 import { stripAnsi } from "./ansi.ts";
@@ -158,8 +159,9 @@ export { TRAFFIC_FLOOR };
 /** Does this member's own read take `--traffic` (#402)? A chant member does
  * when its own chant has the flag; a terraform member is read by behold's
  * chant, which does. A choudoufu member's read is not chant's at all
- * (src/behaviour-delta.ts predicts that kind through a reader project). */
-export function memberTakesTraffic(dir: string, kind: "chant" | "choudoufu" | "terraform"): boolean {
+ * (src/behaviour-delta.ts predicts that kind through a reader project), and
+ * neither is a pulumi member's (behold#994: a checked-in stack export). */
+export function memberTakesTraffic(dir: string, kind: MemberKind): boolean {
   if (kind === "terraform") return true;
   if (kind !== "chant") return false;
   return meetsFloor(resolveChant(dir).version, TRAFFIC_FLOOR);

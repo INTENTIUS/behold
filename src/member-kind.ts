@@ -40,8 +40,18 @@ import { chantConfigPath } from "./project.ts";
 import { terraformSpec } from "./terraform-member.ts";
 
 /** The vocabulary `.behold.json` may use. Closed on purpose: a kind is a
- * contract behold knows how to read, not a label a project invents. */
-export const MEMBER_KINDS = ["chant", "choudoufu", "terraform"] as const;
+ * contract behold knows how to read, not a label a project invents.
+ *
+ * `pulumi` (behold#994) is a word with no row: behold has no reader of its
+ * own for a Pulumi program, and chant reads one only as a declared workspace
+ * member, from the `pulumi stack export` checked in beside its Pulumi.yaml
+ * (src/workspace.ts, `pulumiWorkspaceVia`). So a `.behold.json` entry naming
+ * it is doctor's "declared, but this behold has no reader for it", and a
+ * `chant.workspace.json` member of kind `pulumi` is drawn. The key is chant's
+ * kind string, never the lexicon that supplies it: chant moved the kind from
+ * the terraform lexicon to @intentius/chant-lexicon-pulumi (chant#4453), and
+ * the word stayed the same. */
+export const MEMBER_KINDS = ["chant", "choudoufu", "terraform", "pulumi"] as const;
 export type MemberKind = (typeof MEMBER_KINDS)[number];
 
 export function isMemberKind(s: unknown): s is MemberKind {

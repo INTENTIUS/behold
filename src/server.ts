@@ -1169,7 +1169,7 @@ export function createApp(
     const ciRunFor = ciRuns ? ciRunsRoutes(app, { ...ciRuns, ...via }) : undefined;
     // behold#685: a plan job run on this machine (chant ci run --local), beside CI's run of it from the index.
     localRunRoutes(app, { workspace: servedWorkspace, runner, broadcaster, ...(cfg.env ? { env: cfg.env } : {}), preview: () => !!cfg.previewMode, ...(ciRunFor ? { ciRunFor } : {}) });
-    // behold#999: adopt a Terraform root into choudoufu: promote's read-only report, and the gated promote started as a delegated write.
+    // behold#999: adopt a stock member into its engine tier. A Terraform root into choudoufu: promote's read-only report, and the gated promote started as a delegated write. A Pulumi stack into plunge: plunge stack adopt's read-only classification, and the same classification started as a delegated action; the confirm is a person's.
     adoptionRoutes(app, {
       workspace: servedWorkspace,
       runner,

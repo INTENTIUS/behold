@@ -220,12 +220,17 @@ describe("loadBeholdConfig", () => {
   });
 
   it("keeps a member whose kind it cannot read, with the reason — never silently as chant", () => {
-    const cfg = loadBeholdConfig(make(JSON.stringify({ members: [{ dir: "x", kind: "pulumi" }, { dir: "y", kind: "choudoufu" }, { kind: "chant" }, { dir: "" }] })));
-    expect(cfg.members).toHaveLength(2); // an entry with no dir is not a declaration
-    expect(cfg.members![0]).toEqual({ dir: "x", invalid: expect.stringContaining('unknown member kind "pulumi"') });
+    const cfg = loadBeholdConfig(make(JSON.stringify({ members: [{ dir: "x", kind: "cloudformation" }, { dir: "y", kind: "choudoufu" }, { kind: "chant" }, { dir: "" }, { dir: "z", kind: "pulumi" }] })));
+    expect(cfg.members).toHaveLength(3); // an entry with no dir is not a declaration
+    expect(cfg.members![0]).toEqual({ dir: "x", invalid: expect.stringContaining('unknown member kind "cloudformation"') });
     expect(cfg.members![0]).toEqual({ dir: "x", invalid: expect.stringContaining("kinds are: chant, choudoufu") });
     // #369: choudoufu is a registered kind, so its declaration is kept as one.
     expect(cfg.members![1]).toEqual({ dir: "y", kind: "choudoufu" });
+    // #994: pulumi is a word behold knows, read only as a chant.workspace.json
+    // member, so a .behold.json entry naming it is "declared, no reader", and
+    // the kinds listed are the ones it can read here, which pulumi is not.
+    expect(cfg.members![2]).toEqual({ dir: "z", invalid: expect.stringContaining('member kind "pulumi" is declared, but this behold has no reader for it') });
+    expect((cfg.members![2] as { invalid: string }).invalid).not.toMatch(/kinds are:.*pulumi/);
   });
 });
 
@@ -313,7 +318,7 @@ describe("detectProjectShape", () => {
   // member used to disappear into.
   it("reports a declared member that fails its kind's probe, and one whose kind it does not know", () => {
     const dir = make({
-      ".behold.json": JSON.stringify({ members: ["a", { dir: "b", kind: "chant" }, { dir: "c", kind: "pulumi" }] }),
+      ".behold.json": JSON.stringify({ members: ["a", { dir: "b", kind: "chant" }, { dir: "c", kind: "cloudformation" }] }),
       "a/chant.config.ts": "export default {};",
       "b/README.md": "not a chant project",
     });
@@ -323,7 +328,7 @@ describe("detectProjectShape", () => {
       membersFrom: "behold-config",
       invalidMembers: [
         { dir: "b", invalid: "declared as chant, but b has no a chant.config.* file" },
-        { dir: "c", invalid: expect.stringContaining('unknown member kind "pulumi"') },
+        { dir: "c", invalid: expect.stringContaining('unknown member kind "cloudformation"') },
       ],
     });
   });

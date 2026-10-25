@@ -69,6 +69,20 @@ example name="terralith-4":
 e2e:
     bash e2e/run.sh
 
+# behold#994: a pulumi member in a chant workspace (e2e/fixtures/pulumi-workspace,
+# a checked-in stack export) renders as its resources, neutral, not as an
+# unreadable box. No cloud, no Pulumi; needs the pulumi lexicon the fixture pins beside behold.
+e2e-pulumi-workspace:
+    bash e2e/pulumi-workspace-e2e.sh
+
+# behold#999: adopt a stock Pulumi stack into plunge over a real chant and
+# serve, plunge replaced by e2e/fixtures/adopt-pulumi/plunge. Asserts the
+# report lists every resource with its fate and that nothing is written before
+# a person runs the confirm line. Needs the pulumi lexicon
+# (BEHOLD_E2E_PULUMI_LEXICON to point at chant's lexicons/pulumi).
+e2e-adopt-pulumi:
+    bash e2e/adopt-pulumi-e2e.sh
+
 # behold#999: adopt a Terraform root into choudoufu over a real chant and serve,
 # choudoufu replaced by e2e/fixtures/adopt/choudoufu. Asserts the report lists
 # every resource with its fate and that nothing is written before approval.

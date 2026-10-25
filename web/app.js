@@ -7399,18 +7399,20 @@ async function initLocalRuns() {
 }
 initLocalRuns();
 
-// --- behold#999: adopt a Terraform root into choudoufu ------------------------
-// promote's dry-run report per root and the gated command. Start runs a
-// command, so the tab is drawn only where Local is: a served workspace, never
-// in a public view, an embed, a static export or a guarded repo. Preview draws
-// it with Start disabled (the route refuses it there too).
+// --- behold#999: adopt a stock member into its engine tier --------------------
+// A Terraform root into choudoufu: promote's dry-run report per root and the
+// gated command. A Pulumi stack into plunge: plunge stack adopt's
+// classification and the confirm command. Start runs a command, so the tab is
+// drawn only where Local is: a served workspace, never in a public view, an
+// embed, a static export or a guarded repo. Preview draws it with Start
+// disabled (the route refuses it there too).
 async function initAdopt() {
   if (staticMode || publicMode || embedOpts.embed) return;
   const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
   if (!project.workspace || project.publicMode || project.terragucci || project.sqlYodeler) return;
   const offer = await apiFetch("/api/adopt").then((r) => r.json()).catch(() => ({}));
   if (!Array.isArray(offer.offers) || !offer.offers.length) return;
-  const host = addPanelTab("adopt", "Adopt", "Adopt a Terraform root into choudoufu with chant workspace promote: the report of what it claims, and the gated command.");
+  const host = addPanelTab("adopt", "Adopt", "Adopt a stock member into its engine tier: a Terraform root into choudoufu with chant workspace promote, a Pulumi stack into plunge with plunge stack adopt. Each is gated; nothing is written before a person approves or confirms.");
   if (!host) return;
   host.id = "tab-adopt";
   let started = false;

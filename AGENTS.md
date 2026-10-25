@@ -21,7 +21,7 @@ apply creds.
 A directory with a `chant.workspace.json` is a chant workspace (chant ≥ 0.81.0,
 INTENTIUS/chant#2524). `behold serve <root>` serves it from chant's own member
 list (`chant workspace ls --json`, read contract 1; any other contract is
-refused), and reads each `chant`, `terraform` and `choudoufu` member through
+refused), and reads each `chant`, `terraform`, `choudoufu` and `pulumi` member through
 `chant workspace graph --member <name>`. A `choudoufu` member takes its block
 graph from it (the estate's own edges, each block's `file` and `line`) and
 joins it onto choudoufu's `live-check` roster, which still names the cards,
@@ -29,7 +29,15 @@ the rungs and the cross-estate references: chant's graph is one node per
 block, ownership is per instance, and chant carries no rung or reference
 (src/choudoufu-workspace.ts, #465). The ids are the roster's, as before, so a
 saved layout keeps matching. behold's own lexicon read of a choudoufu
-directory stays for a loose view only. Node ids are `<member>/<id>` with the declared member name, the same
+directory stays for a loose view only. A `pulumi` member (#994) is read through
+the same `workspace graph --member` and nothing else: chant reads the `pulumi
+stack export` checked in beside its Pulumi.yaml as stack-export.json, so its
+cards are the export's resources, edged by `parent` and `dependencies`. behold
+has no reader of its own for the kind, keys on the kind string and not on the
+lexicon that supplies it, and sends it no live read: chant has none, so the
+overlay draws it neutral with `_unobserved` saying so (`pulumiWorkspaceVia`,
+src/workspace.ts; the fixture is e2e/fixtures/pulumi-workspace, the e2e
+`just e2e-pulumi-workspace` and src/pulumi-member.test.ts). Node ids are `<member>/<id>` with the declared member name, the same
 form chant composes. A member chant cannot read is drawn as one
 `UnreadableMember` node carrying `attrs._unreadable: {code, message}` with
 chant's reason code. An `other` member is listed on startup and in doctor and
@@ -139,6 +147,50 @@ workspace's, when that did not pass. A card the index names nothing of says
 `no runs recorded`, or `no run index read` when behold has no report URL;
 behold never makes one up. The members are read through the same
 `ciRunIndexOf` as the runs pane.
+
+## Adopting a Pulumi stack into plunge (behold#999)
+
+A `pulumi` member of a declared workspace is offered adoption into plunge,
+the engine tier, through plunge's own `plunge stack adopt` (INTENTIUS/plunge#7,
+P-L4). The Adopt tab and `GET /api/adopt` say what it gains (a record per
+resource, marker tags, no stack lock, the checkpoint's IDs kept, a recorded
+adoption that a re-run leaves alone, a back-out through `plunge stack export`
+and `pulumi stack import`) and what it does not (plunge's refusals, bridged
+types classed at the first run, record-only ownership for untaggable types).
+
+- `GET /api/adopt/report?member=<name>[&stack=<name>]` runs `plunge stack
+  adopt --stack <s> --non-interactive` in the member's directory, with
+  `PULUMI_BACKEND_URL=plunge+<backend.url from Pulumi.yaml>`, no stdin and no
+  `--yes`. That is plunge's read-only stage: it lists every resource with
+  its ownership (marker, record, pending) and refuses with "non-interactive
+  mode requires --yes flag", having written nothing. Each resource gets its
+  fate and why. When plunge refuses the adoption (pending operations, a
+  provider hiding the markers, an aws-native create-only-tag type), each
+  reason is listed, with the URN it names.
+- `POST /api/adopt/start` `{member, stack?}` runs the same classification
+  through the runner's `track` and answers the confirm command, `cd <dir> &&
+  PULUMI_BACKEND_URL=<url> plunge stack adopt --stack <s> --yes`. A person
+  runs it. behold never passes `--yes` or `-y`, drops
+  `PULUMI_SKIP_CONFIRMATIONS` from the environment it hands plunge, and
+  refuses any other plunge argv before spawning (`assertClassificationOnly`,
+  src/pulumi-adoption.ts). After the confirm, point Pulumi.yaml's
+  `backend.url` at `plunge+<url>` so chant runs the member through plunge.
+- The backend comes from the member's Pulumi.yaml only, never login state. A
+  `file://`, `s3://`, `gs://` or `azblob://` URL is a DIY backend; a
+  `plunge+` one is already plunge's. No URL, or a Pulumi Cloud URL, gets no
+  start, and the offer says why. The stack is read off the checked-in
+  `stack-export.json` URNs unless the request names one.
+- A plunge without `stack adopt` is detected from its answer (outcome
+  `no-adopt`), not from a version.
+- The table is keyed on member kind (`ADOPTERS`, src/adoption.ts), the same
+  names the Terraform half uses on integration/choudoufu-engine.
+  `/api/adopt*` is refused in a public view, and the start goes through the
+  terragucci and SQL Yodeler write allowlist.
+- Tests: src/pulumi-adoption.test.ts, web/adopt-pulumi.test.js, and the e2e
+  `just e2e-adopt-pulumi` (e2e/adopt-pulumi-e2e.sh with the stand-in
+  e2e/fixtures/adopt-pulumi/plunge), which asserts nothing is written before
+  a person runs the confirm line, even with `PULUMI_SKIP_CONFIRMATIONS=true`
+  in behold's environment.
 
 ## A plan job run locally (behold#685)
 

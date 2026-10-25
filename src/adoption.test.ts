@@ -83,7 +83,7 @@ function served({ version = ADOPTION_REPORT_CHANT_FLOOR, preview = false, record
 }
 
 describe("what adoption offers (behold#999)", () => {
-  it("offers each terraform member to choudoufu with what it gains, its limits and the command; Pulumi waits on P-L4; a chant member is not listed", async () => {
+  it("offers each terraform member to choudoufu with what it gains, its limits and the command; a Pulumi stack is offered to plunge; a chant member is not listed", async () => {
     const s = served();
     const { body } = await s.get("/api/adopt");
     expect(body.refusal).toBeNull();
@@ -95,7 +95,9 @@ describe("what adoption offers (behold#999)", () => {
     expect(by.net.gains.join(" ")).toMatch(/marker tags/);
     expect(by.net.limits.join(" ")).toMatch(/MISSING, UNTAGGABLE and UNADMITTED_TYPE/);
     expect(by.edge.start).toMatchObject({ offered: false, why: expect.stringMatching(/no terraform\.tfstate in edge/) });
-    expect(by.stack).toEqual({ member: "stack", kind: "pulumi", dir: "stack", offered: false, waits: ADOPTION_WAITS.pulumi });
+    // P-L4 landed: the pulumi member is offered to plunge (src/pulumi-adoption.test.ts covers it). This one has no Pulumi.yaml, so no start.
+    expect(by.stack).toMatchObject({ member: "stack", kind: "pulumi", offered: true, engine: "plunge", start: { offered: false } });
+    expect(ADOPTION_WAITS).toEqual({});
     expect(s.spawned).toEqual([]);
   });
 
@@ -144,7 +146,7 @@ describe("the report (behold#999)", () => {
     expect((await s.get("/api/adopt/report?member=net&state=../app/terraform.tfstate")).status).toBe(400);
     expect((await s.get("/api/adopt/report?member=net&state=%2Fetc%2Fpasswd")).status).toBe(400);
     expect((await s.get("/api/adopt/report?member=edge")).body).toMatchObject({ code: "adopt-state" });
-    expect((await s.get("/api/adopt/report?member=stack")).body).toMatchObject({ code: "adopt-kind", error: ADOPTION_WAITS.pulumi });
+    expect((await s.get("/api/adopt/report?member=stack")).body).toMatchObject({ code: "adopt-backend" });
     expect((await s.get("/api/adopt/report?member=app")).status).toBe(422);
     expect((await s.get("/api/adopt/report?member=nope")).status).toBe(400);
     expect(s.reads).toEqual([]);

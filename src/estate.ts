@@ -31,7 +31,7 @@ import { memberKindOf, memberKindSpec, type MemberKind } from "./member-kind.ts"
 import { CLUSTER_SCOPED } from "./zoom-notes.ts";
 import { choudoufuWorkspaceVia } from "./choudoufu-workspace.ts";
 import { bareFolderMemberName } from "./terraform-member.ts";
-import { CONTRACT_READ_KINDS, servedWorkspace, unreadableMemberIr, unreadableMembers, workspaceMemberOf, workspaceVia, WorkspaceMemberError } from "./workspace.ts";
+import { CONTRACT_READ_KINDS, pulumiWorkspaceVia, servedWorkspace, unreadableMemberIr, unreadableMembers, workspaceMemberOf, workspaceVia, WorkspaceMemberError } from "./workspace.ts";
 
 // ---------------------------------------------------------------------------
 // Bounded member reads (#295). Every estate read below fans out one `chant
@@ -134,9 +134,11 @@ const memberViaFor = (dir: string): MemberVia => {
   // #464: a declared member of a kind chant composes is read through the
   // workspace contract, by the root's chant. #465: a choudoufu member too,
   // with choudoufu's own roster joined on (src/choudoufu-workspace.ts says why).
+  // #994: a pulumi member has no read but the contract's, so no fallback.
   const declared = workspaceMemberOf(dir);
   const ws = servedWorkspace();
   if (!declared || !ws || !CONTRACT_READ_KINDS.has(declared.kind)) return own;
+  if (declared.kind === "pulumi") return pulumiWorkspaceVia(declared, ws.root);
   return declared.kind === "choudoufu" ? choudoufuWorkspaceVia(declared, ws.root) : workspaceVia(declared, ws.root, own);
 };
 

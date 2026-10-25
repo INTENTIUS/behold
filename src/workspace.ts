@@ -431,8 +431,12 @@ export function workspaceGraphArgs(root: string, member: string, opts: GraphOpti
   return args;
 }
 
-/** Kinds chant reads through `workspace graph`. A choudoufu member's roster, rungs and cross-estate references still come from choudoufu: src/choudoufu-workspace.ts says why (#465). */
-export const CONTRACT_READ_KINDS = new Set(["chant", "terraform", "choudoufu"]);
+/** Kinds chant reads through `workspace graph`. A choudoufu member's roster, rungs and cross-estate references still come from choudoufu: src/choudoufu-workspace.ts says why (#465). A pulumi member is read through it and nothing else: {@link pulumiWorkspaceVia} (behold#994). */
+export const CONTRACT_READ_KINDS = new Set(["chant", "terraform", "choudoufu", "pulumi"]);
+
+/** Why a pulumi member has no live read, as the overlay's `_unobserved` says it. */
+export const PULUMI_NO_LIVE_READ =
+  "chant reads a pulumi member from the stack export checked in beside its Pulumi.yaml and has no live read for one, so nothing was observed";
 
 /**
  * How a declared member of a kind chant reads is read: through the contract,
@@ -449,6 +453,43 @@ export function workspaceVia(member: WorkspaceMember, root: string, fallback: Me
     read: async (dir, opts) => {
       if (!workspaceGraphTakes(opts)) return fallback.read(dir, opts);
       const doc = await rootReader(root, envOverridesFor(opts)).read("graph", workspaceGraphArgs(root, member.name, opts));
+      return memberIrFromGraphDocument(doc, member.name);
+    },
+  };
+}
+
+/**
+ * How a declared `pulumi` member is read (behold#994): `chant workspace graph
+ * --member <name>`, which reads the member's checked-in `pulumi stack export`
+ * (stack-export.json) and never runs the program or calls `pulumi`. The nodes
+ * are the export's resources, `kind` the Pulumi type token
+ * (`aws:s3/bucket:Bucket`), and the edges its `parent` and `dependencies`.
+ * The kind comes from @intentius/chant-lexicon-pulumi (chant#4453; it was the
+ * terraform lexicon's before), and the stack root draws no node (chant#4456);
+ * behold keys on the kind string only.
+ *
+ * There is no fallback. A pulumi directory has no chant.config and no `.tf`,
+ * so the member's own `chant graph` cannot read it, and the options the
+ * contract does not carry (a detail level, a lens, up/down, a namespace,
+ * traffic) are dropped rather than sent there to fail: every node is a
+ * resource already, and none of them has a lens.
+ *
+ * Nor is there a live read. chant has none for this kind, so a live or
+ * overlay read throws {@link PULUMI_NO_LIVE_READ} and the estate overlay
+ * draws the member's source with every card neutral and `_unobserved` saying
+ * why, the path any member takes when its live read fails. behold paints no
+ * other colour on a pulumi card until chant supplies one.
+ */
+export function pulumiWorkspaceVia(member: WorkspaceMember, root: string): MemberVia {
+  return {
+    tool: () => {
+      const chant = resolveChant(root);
+      return `workspace\0${chant.bin}\0${chant.version ?? ""}\0pulumi`;
+    },
+    read: async (_dir, opts) => {
+      if (opts.live || opts.overlay) throw new Error(PULUMI_NO_LIVE_READ);
+      const { detail: _detail, lens: _lens, up: _up, down: _down, namespace: _namespace, traffic: _traffic, ...source } = opts;
+      const doc = await rootReader(root, envOverridesFor(source)).read("graph", workspaceGraphArgs(root, member.name, source));
       return memberIrFromGraphDocument(doc, member.name);
     },
   };

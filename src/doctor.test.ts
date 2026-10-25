@@ -329,7 +329,7 @@ describe("diagnose", () => {
   // `.behold.json` is said out loud before the estate serves without it.
   it("fails the project line on a declared member with an unknown kind, naming the kinds it reads", async () => {
     const dir = fixture({
-      ".behold.json": JSON.stringify({ members: ["a", { dir: "b", kind: "pulumi" }] }),
+      ".behold.json": JSON.stringify({ members: ["a", { dir: "b", kind: "cloudformation" }] }),
       "a/chant.config.ts": `export default { lexicons: [], environments: ["local"] };`,
       "b/main.tf": "",
       ...CHANT,
@@ -341,10 +341,29 @@ describe("diagnose", () => {
     expect(report.ok).toBe(false);
     const project = by(report, "project");
     expect(project.status).toBe("fail");
-    expect(project.detail).toContain("a (chant); invalid: b — unknown member kind \"pulumi\"");
+    expect(project.detail).toContain("a (chant); invalid: b — unknown member kind \"cloudformation\"");
     expect(project.fix).toContain("Member kinds this behold reads: chant, choudoufu");
     // The chant line asks only the chant members.
     expect(by(report, "chant").detail).toBe(`a: chant ${AT_FLOOR} (behold's floor ${AT_FLOOR})`);
+  });
+
+  // #994: pulumi is a kind behold knows but reads only through
+  // chant.workspace.json, so in .behold.json it is "declared, no reader".
+  it("fails the project line on a declared pulumi member, which behold reads only as a chant workspace member", async () => {
+    const dir = fixture({
+      ".behold.json": JSON.stringify({ members: ["a", { dir: "b", kind: "pulumi" }] }),
+      "a/chant.config.ts": `export default { lexicons: [], environments: ["local"] };`,
+      "b/Pulumi.yaml": "name: b\nruntime: nodejs\n",
+      ...CHANT,
+    });
+
+    const report = await diagnose(dir, probes());
+
+    expect(report.ok).toBe(false);
+    const project = by(report, "project");
+    expect(project.status).toBe("fail");
+    expect(project.detail).toContain("invalid: b — member kind \"pulumi\" is declared, but this behold has no reader for it");
+    expect(project.fix).not.toMatch(/reads:.*pulumi/);
   });
 
   // #369: the choudoufu line, only on an estate with a choudoufu member.

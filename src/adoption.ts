@@ -30,8 +30,12 @@
  * uncommitted changes.
  *
  * The seam for other engines is the member's kind: {@link ADOPTERS} holds what
- * one kind adopts into. A Pulumi stack's adoption waits on plunge P-L4
- * (INTENTIUS/plunge#7) and is listed in {@link ADOPTION_WAITS} until then.
+ * one kind adopts into. A stock Pulumi stack (kind `pulumi`) is adopted into
+ * plunge with `plunge stack adopt` (INTENTIUS/plunge#7, P-L4):
+ * src/pulumi-adoption.ts says how, and why its start is plunge's read-only
+ * classification and never the confirm. Each route takes a pulumi member
+ * ahead of the terraform body below, and the chant floor here is the
+ * Terraform half's only: the Pulumi half needs no chant feature.
  *
  * `behold demo terraform-estate` has no state file and no live system, so it
  * serves a recorded report per root (`serve --adopt-recorded <dir>`, one
@@ -49,6 +53,7 @@ import type { Runner } from "./public-mode.ts";
 import { chantApproveCommand } from "./terragucci-lifecycle.ts";
 import type { Workspace, WorkspaceMember } from "./workspace.ts";
 import { WorkspaceReadError, type WorkspaceDocument } from "./workspace-reader.ts";
+import { classify, defaultSpawnPlunge, PULUMI_ADOPTER, pulumiOffer, pulumiPlanFor, pulumiReportOf, pulumiRunOf, type PulumiAdoptRun, type SpawnPlunge } from "./pulumi-adoption.ts";
 
 /** chant's gate op for a promotion (chant src/op/gate-name.ts WORKSPACE_PROMOTE_GATE_OP). */
 export const PROMOTE_GATE_OP = "workspace-promote";
@@ -95,12 +100,10 @@ export const TERRAFORM_ADOPTER: Adopter = {
 };
 
 /** Member kinds that can be adopted, by kind. */
-export const ADOPTERS: Readonly<Record<string, Adopter>> = { terraform: TERRAFORM_ADOPTER };
+export const ADOPTERS: Readonly<Record<string, Adopter>> = { terraform: TERRAFORM_ADOPTER, pulumi: PULUMI_ADOPTER };
 
 /** Kinds whose adoption is planned and not built yet, and what it waits on. */
-export const ADOPTION_WAITS: Readonly<Record<string, string>> = {
-  pulumi: "Adopting a Pulumi stack waits on plunge P-L4 (INTENTIUS/plunge#7).",
-};
+export const ADOPTION_WAITS: Readonly<Record<string, string>> = {};
 
 export function adopterFor(kind: string): Adopter | undefined {
   return Object.prototype.hasOwnProperty.call(ADOPTERS, kind) ? ADOPTERS[kind] : undefined;
@@ -290,6 +293,10 @@ export interface AdoptionOptions {
   recorded?: () => string | undefined;
   chantVersion?: (dir: string) => string | undefined;
   spawn?: SpawnChant;
+  /** Starts plunge for a pulumi member's classification. Tests pass their own. */
+  spawnPlunge?: SpawnPlunge;
+  /** The environment plunge is started from (PULUMI_SKIP_CONFIRMATIONS is always dropped). */
+  env?: () => NodeJS.ProcessEnv;
   now?: () => Date;
 }
 
@@ -320,12 +327,18 @@ export const RECORDED_NOTE =
  */
 export function adoptionRoutes(app: Hono, opts: AdoptionOptions): void {
   const runs: AdoptRunRecord[] = [];
+  const pulumiRuns: PulumiAdoptRun[] = [];
   const spawnChant = opts.spawn ?? defaultSpawn;
+  const spawnPlunge = opts.spawnPlunge ?? defaultSpawnPlunge;
+  const plungeEnvBase = () => (opts.env ? opts.env() : process.env);
   const now = () => (opts.now ? opts.now() : new Date());
   const versionOf = (dir: string) => (opts.chantVersion ?? ((d: string) => resolveChant(d).version))(dir);
   const floor = floorFor("adoption report");
   let seq = 0;
 
+  // The Pulumi half needs no chant floor: a pulumi member is refused only without a workspace.
+  const noWorkspace = (ws: Workspace | undefined): Refusal | undefined =>
+    ws ? undefined : { error: "behold isn't serving a declared chant workspace, and adoption is offered for a member of one.", code: "no-workspace" };
   const closed = (ws: Workspace | undefined): Refusal | undefined => {
     if (!ws) return { error: "behold isn't serving a declared chant workspace, and chant workspace promote adopts a member of one.", code: "no-workspace" };
     if (opts.recorded?.()) return undefined;
@@ -337,11 +350,14 @@ export function adoptionRoutes(app: Hono, opts: AdoptionOptions): void {
 
   app.get("/api/adopt", (c) => {
     const ws = opts.workspace();
-    const refusal = closed(ws);
+    // The answer's refusal is the Terraform half's (its chant floor); a pulumi offer carries its own start and is never held by it.
+    const hasTerraform = (ws?.members ?? []).some((m) => m.kind === TERRAFORM_ADOPTER.kind);
+    const refusal = hasTerraform || !ws ? closed(ws) : noWorkspace(ws);
     const recorded = opts.recorded?.();
     const offers = (ws?.members ?? []).flatMap((m): Record<string, unknown>[] => {
       const adopter = adopterFor(m.kind);
       if (!adopter) return ADOPTION_WAITS[m.kind] ? [{ member: m.name, kind: m.kind, dir: m.dir, offered: false, waits: ADOPTION_WAITS[m.kind] }] : [];
+      if (m.kind === "pulumi") return [{ ...pulumiOffer(m, !!opts.preview?.()), ...(recorded ? { start: { offered: false, why: "the demo serves recorded reports; there is no stack to adopt" } } : {}) }];
       const state = stateFileFor(m);
       const statePath = state.ok ? state.abs : DEFAULT_STATE_FILE;
       const rec = recorded ? recordedReport(recorded, m.name) : undefined;
@@ -375,6 +391,13 @@ export function adoptionRoutes(app: Hono, opts: AdoptionOptions): void {
 
   app.get("/api/adopt/report", async (c) => {
     const ws = opts.workspace();
+    const pulumiMember = ws ? memberOf(ws, c.req.query("member")) : undefined;
+    if (pulumiMember?.kind === "pulumi") {
+      const planned = pulumiPlanFor(pulumiMember, c.req.query("stack"));
+      if (!planned.ok) return c.json({ error: planned.error, code: planned.code, remedy: PULUMI_ADOPTER.state }, planned.code === "adopt" ? 400 : 422);
+      const { classification } = await classify(planned.plan, spawnPlunge, plungeEnvBase());
+      return c.json(pulumiReportOf(planned.plan, classification, pulumiMember.kind), 200, { "cache-control": "no-store" });
+    }
     const refusal = closed(ws);
     if (refusal) return c.json(refusal, refusal.code === "no-workspace" ? 404 : 409);
     const member = memberOf(ws!, c.req.query("member"));
@@ -426,8 +449,8 @@ export function adoptionRoutes(app: Hono, opts: AdoptionOptions): void {
 
   app.post("/api/adopt/start", async (c) => {
     const ws = opts.workspace();
-    const refusal = closed(ws);
-    if (refusal) return c.json(refusal, refusal.code === "no-workspace" ? 404 : 409);
+    const early = noWorkspace(ws);
+    if (early) return c.json(early, 404);
     if (opts.preview?.()) return c.json({ error: "adoption is not started in preview mode", code: "preview" }, 403);
     if (opts.recorded?.()) return c.json({ error: "the demo serves a recorded report; there is no state file or live system to adopt", code: "adopt-recorded" }, 409);
     let body: Record<string, unknown>;
@@ -435,10 +458,35 @@ export function adoptionRoutes(app: Hono, opts: AdoptionOptions): void {
       const parsed = await c.req.json();
       body = isRecord(parsed) ? parsed : {};
     } catch {
-      return c.json({ error: "the body is JSON: {member, state?}", code: "adopt" }, 400);
+      return c.json({ error: "the body is JSON: {member, state?} or, for a pulumi member, {member, stack?}", code: "adopt" }, 400);
     }
     const member = memberOf(ws!, body.member);
     if (!member) return c.json({ error: "member names a member of the workspace", code: "adopt" }, 400);
+    if (member.kind === "pulumi") {
+      // The Pulumi half: plunge's classification, never its confirm (src/pulumi-adoption.ts).
+      const planned = pulumiPlanFor(member, typeof body.stack === "string" ? body.stack : undefined);
+      if (!planned.ok) return c.json({ error: planned.error, code: planned.code, remedy: PULUMI_ADOPTER.state }, planned.code === "adopt" ? 400 : 422);
+      const plan = planned.plan;
+      const id = `adopt-${(++seq).toString(36)}-${now().getTime().toString(36)}`;
+      const prec: PulumiAdoptRun = { id, member: member.name, kind: member.kind, plan, startedAt: now().toISOString(), endedAt: null, exitCode: null, classification: null };
+      const started = opts.runner.track(`plunge stack adopt ${plan.stack} (${member.name}, classify only)`, async (io) => {
+        io.line(`▶ ${plan.command}`);
+        const { code, classification } = await classify(plan, spawnPlunge, plungeEnvBase());
+        prec.exitCode = code;
+        prec.classification = classification;
+        prec.endedAt = now().toISOString();
+        io.line(String(pulumiRunOf(prec).words));
+        opts.broadcaster.emit("adopt-run", id);
+        // Without --yes plunge exits non-zero once it has listed everything: that is its gate holding, not a failure.
+        return classification.outcome === "classified" || classification.outcome === "already-adopted" ? 0 : code || 1;
+      });
+      if (!started) return c.json({ error: `busy: ${opts.runner.running} is running`, code: "busy" }, 409);
+      pulumiRuns.unshift(prec);
+      pulumiRuns.splice(ADOPT_RUNS_KEPT);
+      return c.json({ started: true, id, command: plan.command, confirm: plan.confirm }, 202);
+    }
+    const refusal = closed(ws);
+    if (refusal) return c.json(refusal, refusal.code === "no-workspace" ? 404 : 409);
     const adopter = adopterFor(member.kind);
     if (!adopter) return c.json({ error: ADOPTION_WAITS[member.kind] ?? `${member.name} is kind ${member.kind}, which behold offers no adoption for.`, code: "adopt-kind" }, 422);
     const state = stateFileFor(member, typeof body.state === "string" ? body.state : undefined);
@@ -480,6 +528,8 @@ export function adoptionRoutes(app: Hono, opts: AdoptionOptions): void {
 
   app.get("/api/adopt/runs/:id", (c) => {
     const id = c.req.param("id");
+    const prec = ID.test(id) ? pulumiRuns.find((r) => r.id === id) : undefined;
+    if (prec) return c.json(pulumiRunOf(prec), 200, { "cache-control": "no-store" });
     const rec = ID.test(id) ? runs.find((r) => r.id === id) : undefined;
     if (!rec) return c.json({ absent: `behold has no adoption ${id}: it keeps the last ${ADOPT_RUNS_KEPT} it started, in memory.` }, 404, { "cache-control": "no-store" });
     return c.json(adoptRunOf(rec), 200, { "cache-control": "no-store" });
