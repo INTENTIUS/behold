@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { SIDE_STORE, applyParts, jobKind, detailsModel, jobTone, keepSide, runTrace, sideApplied, sideState, sideStep, sideStored } from "./kiosk-side.js";
+import { SIDE_STORE, actRunView, applyParts, jobKind, detailsModel, jobTone, keepSide, runTrace, sideApplied, sideState, sideStep, sideStored } from "./kiosk-side.js";
 
 // The three-root estate of behold#937 (src/__fixtures__/terragucci-demo-ask), built as web/kiosk-light.test.js builds it.
 const FIX = join(import.meta.dirname, "..", "src", "__fixtures__", "terragucci-demo-ask");
@@ -175,5 +175,45 @@ describe("the run view the pane reads", () => {
     expect(["pull-request", "planned", "approved"].map((step) => sideApplied({ step }))).toEqual([false, false, false]);
     expect(["merged", "applying", "applied", "reset"].map((step) => sideApplied({ step }))).toEqual([true, true, true, true]);
     expect(sideApplied(null)).toBe(false);
+  });
+});
+
+describe("an act before its own apply says nothing applied", () => {
+  // The kiosk's run view read is the last merge's: an earlier act's, applied, written, its values filled.
+  const leaked = { ...progressOf(read("run-applied.json")), run: { commit: "2a64938856a4ccddeb8bf662b5ee5686e220d751", present: true } };
+  const scene = { ...answer, binaries: { network: "choudoufu", app: "choudoufu", edge: "choudoufu" } };
+  const ask = { light: ["network/terraform_data.subnet"], paths: true };
+  const words = (d) => JSON.stringify(d);
+  const APPLIED = /created|filled from|applied|records written|written/;
+
+  it("at the approval step, with the last merge's run view in hand, the card and the trace keep to plan-time facts", () => {
+    for (const step of ["pull-request", "planned", "approved"]) {
+      const demo = { cycle: 488, step, commit: "b6326854b7a54d55f7aecf032c73cd4ca52300f8" };
+      const view = actRunView(demo, leaked);
+      expect(view).toBeNull();
+      const d = detailsModel(scene, view, ask);
+      expect(words(d)).not.toMatch(APPLIED);
+      expect(d.items.flatMap((i) => i.lines.map((l) => l.state))).not.toContain("applied");
+      expect(d.items.some((i) => i.lines.some((l) => /known after apply/.test(l.text)))).toBe(true);
+      expect(d.estates).toEqual([]);
+      expect(applyParts(scene, view)).toEqual([]);
+    }
+  });
+
+  it("after the merge, a run view of another commit is still not this act's", () => {
+    const demo = { cycle: 488, step: "applying", commit: "eeceb433a52885525dcd1365a7e794b13d906714" };
+    expect(actRunView(demo, leaked)).toBeNull();
+    expect(words(detailsModel(scene, actRunView(demo, leaked), ask))).not.toMatch(APPLIED);
+    expect(actRunView({ ...demo, step: "reset", commit: "adf41a02" }, leaked)).toBeNull();
+  });
+
+  it("says applied once the act's own merge has written it", () => {
+    const demo = { cycle: 488, step: "applied", commit: "2a649388" };
+    const view = actRunView(demo, leaked);
+    expect(view).toBe(leaked);
+    const d = detailsModel(scene, view, ask);
+    expect(d.estates.map((e) => e.words)).toEqual(expect.arrayContaining(["applied \u00b7 records written"]));
+    expect(actRunView(demo, { ...leaked, run: { ...leaked.run, present: false } })).toBeNull();
+    expect(actRunView(demo, { ...leaked, run: undefined })).toBeNull();
   });
 });

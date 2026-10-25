@@ -41,7 +41,7 @@ import { graphFolds, graphPending } from "./kiosk-graph-pane.js";
 import { askEventHelp, askMode, askShot, createAskPane, hasAsk, replyValues } from "./kiosk-ask.js";
 import { STATE_WORDS, outcomesOf, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
 import { startKioskLight } from "./kiosk-light.js"; // behold#937
-import { SIDE_PHONE, detailsModel, keepSide, renderSide, runTrace, sideApplied, sideState, sideStep, sideStored } from "./kiosk-side.js";
+import { SIDE_PHONE, detailsModel, keepSide, renderSide, actRunView, runTrace, sideApplied, sideState, sideStep, sideStored } from "./kiosk-side.js";
 
 /** The scenarios terragucci#1014 numbers. An id not here is shown by the title demo.json carries. */
 export const SCENARIOS = {
@@ -1863,6 +1863,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   s.sideTurn = null;
   // The cycle each scenario was last seen on in demo.json, for a turn the terminal plays after demo.json moved on.
   const sideCycles = new Map();
+  const sideMerges = new Map();
   let sideWas = null;
   const sideNow = () => sideState({ ask: askMode(s), phone: typeof matchMedia === "function" && matchMedia(SIDE_PHONE).matches, open: s.sideOpen });
   function applySide() {
@@ -1890,10 +1891,11 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     if (!watch || !watch.side || sideNow() !== "open") return;
     // The terminal plays its steps in turn, and may be a step or an act behind demo.json: the trace is of the act
     // the terminal's current turn is in, at that turn's step.
-    const d = sideStep(s.demo && s.demo.demo, s.sideTurn, sideCycles);
+    const at = sideStep(s.demo && s.demo.demo, s.sideTurn, sideCycles);
+    const d = at && sideMerges.has(at.cycle) ? { ...at, commit: sideMerges.get(at.cycle) } : at;
     const runs = runsApi && runsApi.index && runsApi.index.doc ? runsApi.index.doc.runs : [];
-    // The run view is the apply's: before this act's merge the one the kiosk holds is the last act's.
-    const progress = sideApplied(d) ? s.progress : null;
+    // The run view is the apply's: only this act's own, from its merge on (the kiosk's read can be the last merge's).
+    const progress = actRunView(d, s.progress);
     const trace = runTrace(runs, d, { answer: s.answer, progress, now: now().getTime() });
     const details = detailsModel(s.answer, progress, s.sideAsk);
     renderSide(watch.side, { trace, details }, { traces: (host) => drawWaveTraces(host, s), onFold: () => setSide(false) });
@@ -1948,6 +1950,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     // the shot frames it to the pane as it is (a held view of the last graph left the reset's scene at the left edge).
     if (holdEnds(was || null, d || null) && s.endHold) s.endHold();
     if (d && typeof d.scenario === "string" && Number.isInteger(d.cycle)) sideCycles.set(d.scenario, d.cycle);
+    // Each act's merge commit, as demo.json named it from the merge on (the reset names the base instead).
+    if (d && Number.isInteger(d.cycle) && d.step !== "reset" && sideApplied(d) && typeof d.commit === "string") sideMerges.set(d.cycle, d.commit);
     if (askPane) {
       // behold#942: ask mode holds for the scenario, so the steps between prompts keep the graph and the pane.
       s.askHeld = askHeld(s.askHeld, d || null);

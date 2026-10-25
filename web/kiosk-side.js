@@ -75,6 +75,20 @@ export function sideApplied(demo) {
   return !!demo && ["merged", "applying", "waiting", "resumed", "applied", "failed", "reset"].includes(demo.step);
 }
 
+/**
+ * The run view the pane may read for the act at `demo`: only once the act has merged, and only the run view of the
+ * act's own merge commit (`progress.run.commit`, which the reads name). The kiosk's read can be the last merge's run
+ * view (an earlier act's, or another demo's), and before this act's apply nothing of its own has been written: the
+ * pane then shows plan-time facts alone. Null when there is none to read.
+ */
+export function actRunView(demo, progress) {
+  if (!sideApplied(demo) || !progress || progress.error || !progress.run || progress.run.present === false) return null;
+  const have = typeof progress.run.commit === "string" ? progress.run.commit : "";
+  const want = typeof demo.commit === "string" ? demo.commit : "";
+  if (have.length < 7 || want.length < 7 || !(have.startsWith(want) || want.startsWith(have))) return null;
+  return progress;
+}
+
 const APPROVED_STEPS = new Set(["approved", "merged", "applying", "waiting", "resumed", "applied", "failed", "reset"]);
 
 /** A pipeline job's place in the trace: "plan", "approval", "apply" (with its wave, for an apply-wave-N job), or null for the bookkeeping jobs. */
