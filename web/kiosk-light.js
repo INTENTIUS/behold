@@ -274,9 +274,13 @@ export function stateMarks(answer, progress) {
   return out;
 }
 
-/** The words of a state's label: its file (or an estate's name), its look, and that it was written. */
+/**
+ * The words of a state's label: its file, its look, and that it was written. An estate has no file to name, and its
+ * name is already its box's title: its label says only the look and the records written, and is empty (no label is
+ * drawn) until there is one of them to say. A label of the name alone read as a second copy of the box.
+ */
 export function stateWords(m) {
-  return [m.estate ? m.file : `state ${m.file}`, m.look ? LOOK_WORDS[m.look] : null, m.written ? (m.estate ? "records written" : "written") : null, m.covered ? COVERED_WORDS : null].filter(Boolean).join(" \u00b7 ");
+  return [m.estate ? null : `state ${m.file}`, m.look ? LOOK_WORDS[m.look] : null, m.written ? (m.estate ? "records written" : "written") : null, m.covered ? COVERED_WORDS : null].filter(Boolean).join(" \u00b7 ");
 }
 
 // ---------------------------------------------------------------------------

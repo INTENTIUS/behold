@@ -94,7 +94,9 @@ describe("a composed choudoufu run's scene (behold#940)", () => {
     const a = await answerOf(true);
     const marks = stateMarks(a, progressApplied);
     expect(marks.network).toMatchObject({ estate: true, written: true, look: "applied" });
-    expect(stateWords(marks.network)).toBe("network · applied · records written");
+    expect(stateWords(marks.network)).toBe("applied · records written");
+    // Before anything is decided an estate's label has nothing its box's title does not say: none is drawn.
+    expect(stateWords(stateMarks(a, null).network)).toBe("");
     // A plain root keeps its state file's words.
     expect(stateWords({ file: "app.tfstate", look: "applied", written: true })).toBe("state app.tfstate · applied · written");
   });

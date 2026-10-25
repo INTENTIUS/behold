@@ -114,6 +114,7 @@ function drawStates(layer, answer, progress, h) {
     const g = make("g", { "data-kl-state": r.path, "data-kl-look": m.look || "none", "pointer-events": "none" });
     if (host) g.setAttribute("data-kl-layer", "1");
     const words = stateWords(m);
+    if (!words) continue; // an estate with nothing decided yet: its box's title already names it
     const w = Math.max(120, words.length * 7.4 + 20);
     const x = box.x + 14;
     const rect = make("rect", { x, y: y - 17, width: w, height: 22, rx: 4, fill: "var(--panel, var(--bg))", stroke: "var(--frame-neutral, var(--neutral))", "stroke-width": 1.5 });
