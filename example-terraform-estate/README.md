@@ -93,7 +93,7 @@ naming both packages, the ranges behold declares, where it looked, and the line
 that puts them back:
 
 ```sh
-npm install @intentius/chant-lexicon-terraform@^0.124.51 @cdktn/hcl2json@^0.24.0
+npm install @intentius/chant-lexicon-terraform@^0.124.52 @cdktn/hcl2json@^0.24.0
 ```
 
 The estate is a declared chant workspace, and chant reads a member's kind from
