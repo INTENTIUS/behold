@@ -42,6 +42,8 @@ STATE=/var/lib/demo-host
 VIEW=/view
 # The node user of behold's image, which runs behold.
 BEHOLD_UID=1000
+# Set by reader_keys: 1 when it made behold a new floci key, which behold reads only when it starts.
+READER_KEY_NEW=""
 
 log() { echo "[driver-entry] $(date -u +%FT%TZ) $*" >&2; }
 die() { log "FAIL: $*"; exit 1; }
@@ -101,15 +103,25 @@ reader_keys() {
     '{Version: "2012-10-17", Statement: [
        {Effect: "Allow", Action: ["s3:GetObject"], Resource: [$obj]},
        {Effect: "Allow", Action: ["s3:ListBucket"], Resource: [$bucket], Condition: {StringLike: {"s3:prefix": [$p]}}}]}')"
-  # An existing user (floci kept it) answers 409; the policy and a new key follow either way.
+  # An existing user (floci kept it) answers 409; the policy follows either way.
   iam CreateUser "UserName=behold-reader" >/dev/null 2>&1 || true
   iam PutUserPolicy "UserName=behold-reader" "PolicyName=reports-read" "PolicyDocument=$policy" >/dev/null \
     || die "floci refused the reader's policy"
+  # floci keeps its users while it runs, so after an update (a new terragucci
+  # commit, the same floci) the key behold reads with is still the reader's:
+  # behold keeps it and is not restarted, and the site serves throughout.
+  local old have keys
+  keys="$(iam ListAccessKeys "UserName=behold-reader" 2>/dev/null | tr -d '\n' | grep -o '<AccessKeyId>[^<]*' | sed 's/^<AccessKeyId>//' || true)"
+  have="$(sed -n 's/^AWS_ACCESS_KEY_ID=//p' "$dir/behold-s3.env" 2>/dev/null || true)"
+  if [ -n "$have" ] && grep -qxF "$have" <<<"$keys"; then
+    READER_KEY_NEW=""
+    log "behold keeps its floci key $have (s3:GetObject and s3:ListBucket on $bucket${prefix:+/$prefix}/ only)"
+    return 0
+  fi
   # A user floci kept from an earlier bootstrap still holds that run's keys, and
   # IAM allows two, so the old ones go before a new one is made. behold is
   # restarted on the new key, so nothing still reads with an old one.
-  local old
-  for old in $(iam ListAccessKeys "UserName=behold-reader" 2>/dev/null | tr -d '\n' | grep -o '<AccessKeyId>[^<]*' | sed 's/^<AccessKeyId>//'); do
+  for old in $keys; do
     iam DeleteAccessKey "UserName=behold-reader" "AccessKeyId=$old" >/dev/null || die "floci kept the reader's old key $old"
   done
   out="$(iam CreateAccessKey "UserName=behold-reader")" || die "floci made no key for the reader"
@@ -120,6 +132,7 @@ reader_keys() {
   ( umask 077; printf 'AWS_ACCESS_KEY_ID=%s\nAWS_SECRET_ACCESS_KEY=%s\n' "$id" "$secret" > "$dir/behold-s3.env.new" )
   chown "$BEHOLD_UID:$BEHOLD_UID" "$dir" "$dir/behold-s3.env.new"
   mv "$dir/behold-s3.env.new" "$dir/behold-s3.env"
+  READER_KEY_NEW=1
   log "behold reads $REPORTS with floci key $id (s3:GetObject and s3:ListBucket on $bucket${prefix:+/$prefix}/ only)"
 }
 
@@ -291,9 +304,13 @@ if [ "$have" != "$HEAD_SHA" ]; then
   node scripts/build-cli.mjs >/dev/null
   stack/demo.sh up
   reader_keys
+  views_before="$(missing_views)"
   view_checkouts "$(viewer_token)"
-  # behold reads its keys when it starts.
-  docker restart demo-host-behold >/dev/null 2>&1 || log "demo-host-behold is not running yet; it reads the keys when it starts"
+  # behold reads its keys, and finds the view checkouts, when it starts: restarted
+  # only when either is new, so an update's bootstrap leaves the site serving.
+  if [ -n "$READER_KEY_NEW" ] || [ "$(missing_views)" != "$views_before" ]; then
+    docker restart demo-host-behold >/dev/null 2>&1 || log "demo-host-behold is not running yet; it reads the keys when it starts"
+  fi
   curl -fsS -o /dev/null -X PUT "$FLOCI/demo-host" 2>/dev/null || true
   printf '%s' "$HEAD_SHA" | curl -fsS -o /dev/null -X PUT --data-binary @- "$FLOCI/demo-host/bootstrapped" \
     || die "could not record the bootstrap in floci"

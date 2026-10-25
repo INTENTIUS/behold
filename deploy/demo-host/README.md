@@ -161,7 +161,7 @@ subcommands below still work by hand.
 |---|---|
 | `demo-host-status` | `demo-host.sh status`: the containers, `demo.json`, the last stalls. Changes nothing. |
 | `demo-host-bootstrap` | `demo-host.sh bootstrap` one piece per phase, for a fresh instance: copy the script and the secrets file (`DEMO_SECRETS`, default `./secrets.env`), install Docker, check out behold, write `demo.env` and Caddy's password (and remove the copied secrets file), check out terragucci and behold, install the units, build the images, start the driver and the watchdog, wait for the driver's base apply (up to 75 minutes), then bring up behold and Caddy. Not for the live host. |
-| `demo-host-update` | Waits until `demo.json` says `reset` or `applied` (read from floci on the host), runs `demo-host.sh update` with `--terragucci-ref "$TERRAGUCCI_REF"` and `--behold-ref "$BEHOLD_REF"` for whichever of the two is set, then waits until floci holds the driver's base for the new terragucci commit (`bootstrapped at terragucci <commit>` in the driver's log). |
+| `demo-host-update` | Runs `demo-host.sh update-prepare` (the behold checkout and the behold and driver images, while the loop and the site carry on), then `demo-host.sh update`, each with `--terragucci-ref "$TERRAGUCCI_REF"` and `--behold-ref "$BEHOLD_REF"` for whichever of the two is set; `update` waits on the host for `demo.json` to say `reset` or `applied` before it stops the driver. Then it waits until floci holds the driver's base for the new terragucci commit (`bootstrapped at terragucci <commit>` in the driver's log). |
 | `demo-host-go-public` | Launch morning. Checks that `demo.intentius.io` resolves to the Elastic IP and answers on https. While the host's `Caddyfile` still has the plain-http site by the address, it waits for a quiet step, runs `demo-host.sh update` so the host takes what behold's `main` holds (behold #590 removes that site), and fails if `main` still has it. It reloads Caddy and checks the address no longer serves the view. Then it stops at the gate `take-the-password-off`. After `npx chant approve demo-host-go-public take-the-password-off --actor <you>` and another run, it runs `demo-host.sh open` and checks the site answers 200 without a password. |
 | `demo-host-infra` | The AWS stack: build, change set, gate `apply-change-set`, execute, drift detection. See "Building and deploying it". |
 
@@ -323,7 +323,8 @@ it every day at 04:00 UTC (and at boot if the host was off then), and
   `packages/terragucci/package.json` when it is a branch or a commit; when the
   two differ, both stay. With no version, it removes none;
 - dangling images, the unnamed (`<none>:<none>`) ones no container uses;
-- BuildKit's cache past `DEMO_BUILD_CACHE_MAX` (5GB):
+- BuildKit's cache past `DEMO_BUILD_CACHE_MAX` (12GB, which keeps the Go and npm cache mounts the
+  driver's demo image builds from):
   `docker builder prune --max-used-space`, or `--keep-storage` on a buildx
   older than 0.17;
 - stopped containers older than `DEMO_CLEANUP_CONTAINER_AGE` (24h) that no
@@ -400,11 +401,22 @@ checkout. Once the releases are cut, point the host at the tags:
 sudo /opt/demo/behold/deploy/demo-host/demo-host.sh update --terragucci-ref v<x.y.z> --behold-ref behold-v<x.y.z>
 ```
 
-`update` writes both refs to `demo.env`, moves the checkouts, rebuilds the
-behold image, and recreates the driver. Because the terragucci commit changed,
-the driver runs its bootstrap again, which builds the CI images for that tag
-and applies the base. `update` with no flags moves the checkouts to whatever
-refs `demo.env` already names, for example after a fix lands on `main`.
+`update` writes both refs to `demo.env`, moves the behold checkout, rebuilds
+the behold and driver images, waits for a quiet step, stops the driver, moves
+the terragucci checkout and starts the driver again. Because the terragucci
+commit changed, the driver runs its bootstrap again (`stack/demo.sh up`), which
+builds the job images and applies the bases of the tools `DEMO_SCENARIOS` runs
+on, then starts the loop. `update` with no flags moves the checkouts to
+whatever refs `demo.env` already names, for example after a fix lands on
+`main`. `update-prepare`, with the same flags, does the part before the quiet
+step on its own, while the loop runs, so the `update` after it builds nothing.
+
+The site serves behold throughout: behold is recreated only when its image
+changed (a few seconds), Caddy is restarted only when the Caddyfile changed,
+and the bootstrap keeps behold's floci key (floci keeps it while it runs), so
+it restarts behold only when it had to make a new key or a view checkout.
+`DEMO_REPOS` should name only repos of `DEMO_SCENARIOS`' tools, the one behold
+serves first among them: `up` makes no repo for a tool no scenario runs.
 
 A recreate that failed part-way can leave a container compose made for
 behold or the driver that isn't the one it means to run: one only created or
@@ -420,10 +432,13 @@ file or other container. The `up` after it makes `demo-host-behold` (and
 `demo-host-driver`) again, and `update` fails if either isn't running under
 that name after. `demo-host.sh clear-strays` does the clearing step alone.
 
-`update` restarts the driver wherever it is in a cycle, so run it while
-`demo.json` says `reset` or `applied`, when no wave is waiting or applying.
-`TERRAGUCCI_REF=v<x.y.z> BEHOLD_REF=behold-v<x.y.z> npx chant run demo-host-update`
-in `chant/` waits for that step itself, then waits for the new bootstrap.
+`update` stops the driver only at a step where no wave is waiting or applying:
+it waits on the host, looking every second, until `demo.json` says `reset` or
+`applied`, for at most `DEMO_QUIET_WAIT` seconds (900, from `demo.env`). Past
+that it stops with the driver still running and the terragucci checkout where
+it was. `TERRAGUCCI_REF=v<x.y.z> BEHOLD_REF=behold-v<x.y.z> npx chant run demo-host-update`
+in `chant/` runs `update-prepare` and `update`, then waits for the new
+bootstrap.
 
 ## What this relies on from the other lanes
 

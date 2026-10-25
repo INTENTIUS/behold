@@ -1,5 +1,5 @@
 import { Op, gate, phase, shell } from "@intentius/chant/op";
-import { demoHost, waitBootstrapped, waitQuiet } from "./remote";
+import { demoHost, waitBootstrapped } from "./remote";
 
 /** The public name, as demo.env names it. */
 const NAME = "${DEMO_HOSTNAME:-demo.intentius.io}";
@@ -34,7 +34,7 @@ case "$code" in 200|401) echo "https://${NAME}/ answers $code" ;; *) echo "https
     ]),
     phase("Drop the address site", [
       shell(`if ! bash ops/host.sh ip-site; then echo "the host's Caddyfile has no by-address site"; exit 0; fi
-(${waitQuiet}) || exit 1
+# host.sh update waits for a quiet step (reset or applied) before it stops the driver.
 bash ops/host.sh update
 (${waitBootstrapped}) || exit 1
 if bash ops/host.sh ip-site; then
