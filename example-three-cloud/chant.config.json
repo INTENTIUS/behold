@@ -1,0 +1,9 @@
+{
+  "lexicons": ["terraform"],
+  "terraform": {
+    "binary": "choudoufu",
+    "roots": {
+      "azure": { "dir": "azure" }
+    }
+  }
+}
