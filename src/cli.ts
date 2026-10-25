@@ -54,7 +54,7 @@ Usage:
   behold serve <project-dir…> [--port <n>] [--host <addr>] [--allow-host <name,…>] [--hud <url>] [--env <name>] [--poll <secs>] [--local]
                 [--public] [--terragucci <src> [--terragucci-project <p>] [--terragucci-poll <secs>] [--terragucci-runs <src>]]
                 [--repos <parent>] [--yodel-report <file|dir>] [--chant-report-url <url>] [--chant-demo <src>]
-                [--ci-report-url <url>]
+                [--ci-report-url <url>] [--adopt-recorded <dir>]
   behold carve <report.json> [--port <n>]
   behold shot "<query>" [project-dir] [--env <name>] [--snapshot <ref>] [-o <out.png>] [--url <serve>]
                 [--width <px>] [--height <px>] [--link-base <url>] [--view <k=v&...>]
@@ -234,6 +234,11 @@ Options:
                       pr-report/v1 under each step's reports keys, never from
                       the workflow file's --report-url. A record of another
                       contract major is refused.
+  --adopt-recorded <dir>
+                      serve only, for a demo: the Adopt tab serves the
+                      recorded <member>.json in <dir> (what chant workspace
+                      promote --dry-run --json prints) instead of running
+                      promote, labelled recorded, and starts no adoption.
   --ci-report-url <s3://…|https://…|file://…|dir>
                       serve only: where chant's runner keeps its run index
                       (BEHOLD_CI_REPORT_URL too): the --report-url of
@@ -407,6 +412,7 @@ export async function run(argv: string[]): Promise<void> {
   let yodelReport: string | undefined;
   let chantReportUrl: string | undefined;
   let chantDemo: string | undefined;
+  let adoptRecorded: string | undefined;
   let ciReportUrl: string | undefined = process.env.BEHOLD_CI_REPORT_URL || undefined;
   let isPublic = false;
   let reposParent: string | undefined;
@@ -433,6 +439,7 @@ export async function run(argv: string[]): Promise<void> {
     else if (a === "--chant-report-url") chantReportUrl = rest[++i];
     else if (a === "--chant-demo") chantDemo = rest[++i];
     else if (a === "--ci-report-url") ciReportUrl = rest[++i];
+    else if (a === "--adopt-recorded") adoptRecorded = rest[++i];
     else if (a === "--yodel-report") yodelReport = rest[++i];
     else if (a === "--env") env = rest[++i];
     else if (a === "--poll") pollSecs = Number(rest[++i]);
@@ -594,6 +601,7 @@ export async function run(argv: string[]): Promise<void> {
     ...(chantReportUrl ? { chantReportUrl } : {}),
     ...(chantDemo ? { chantDemo } : {}),
     ...(ciReportUrl ? { ciReportUrl } : {}),
+    ...(adoptRecorded ? { adoptRecorded: resolve(adoptRecorded) } : {}),
     ...(terragucci ? { terragucci: { source: terragucci, ...(terragucciProject ? { project: terragucciProject } : {}), ...(terragucciPoll !== undefined ? { pollSecs: terragucciPoll } : {}), ...(terragucciRuns ? { runsSource: terragucciRuns } : {}) } } : {}),
   });
 }
@@ -916,6 +924,8 @@ async function runDemo(rest: string[]): Promise<void> {
   const serveArgs = ["serve", ...loaded.serveDirs, "--port", String(port)];
   if (entry.serve.local) serveArgs.push("--local");
   if (entry.serve.env) serveArgs.push("--env", entry.serve.env);
+  // behold#999: a demo's recorded adoption reports, in the copy.
+  if (entry.serve.adoptRecorded) serveArgs.push("--adopt-recorded", join(target, entry.serve.adoptRecorded));
   // #372: the demo's scratch emulator reaches the estate's choudoufu spawns
   // through this seam, in this process, which `serve` below shares.
   setChoudoufuSpawnEnv(entry.serve.spawnEnv);

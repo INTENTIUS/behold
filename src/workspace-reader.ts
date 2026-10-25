@@ -154,6 +154,45 @@ export const HEALTH_READ = "lifecycle health";
 /** chant's words when no configured lexicon has a health read: it prints no document and exits 1. */
 const NO_HEALTH_READ = /no configured lexicon has a health read|no health read in this lexicon/i;
 
+/**
+ * behold#999: what adopting a Terraform root into choudoufu would claim,
+ * `chant workspace promote <member> --state <file> --dry-run --json`, run at
+ * the workspace root. `--dry-run` is promote's read-only stage: chant stages
+ * the change in a throwaway git worktree, runs `choudoufu live-check` and
+ * `choudoufu live-import` without `-approve` there, records no gate and leaves
+ * the tree as it was. The document is promote's report, not a read-contract
+ * document (it carries no `contract`), so it is checked by
+ * {@link promoteReportOf} instead; its floor is `ADOPTION_REPORT_CHANT_FLOOR`.
+ * chant's conformance suite does not list it.
+ */
+export const PROMOTE_REPORT_READ = "promote --dry-run";
+
+/** The argv the adoption read runs. `--dry-run` is always there: this module never starts a promote that can gate or apply. */
+export function promoteReportArgv(member: string, state: string): string[] {
+  return ["workspace", "promote", member, "--state", state, "--dry-run", "--json"];
+}
+
+/**
+ * Check what the adoption read printed: a JSON object with promote's
+ * `outcome`. chant prints nothing on stdout when it refuses outright (no git
+ * repository, uncommitted changes, an unknown member), and says why on
+ * stderr, which the refusal carries. A failed check exits 1 and still prints
+ * its document, which is returned.
+ */
+export function promoteReportOf(run: TransportRun, shown: string): WorkspaceDocument {
+  const said = run.stderr.trim().split("\n").slice(-6).join(" ");
+  const remedy = `Run \`${shown}\` in the workspace root to see what it says.`;
+  if (!run.stdout.trim()) throw new WorkspaceReadError({ error: `${shown} printed nothing (exit ${run.status ?? "killed"})${said ? `: ${said}` : ""}`, code: "workspace-promote", remedy });
+  let doc: unknown;
+  try {
+    doc = JSON.parse(run.stdout);
+  } catch {
+    throw new WorkspaceReadError({ error: `${shown} printed something that is not JSON.`, code: "workspace-promote", remedy });
+  }
+  if (!isRecord(doc) || typeof doc.outcome !== "string") throw new WorkspaceReadError({ error: `${shown} printed JSON with no outcome.`, code: "workspace-promote", remedy });
+  return doc;
+}
+
 /** The reads named outside `chant workspace`, for a refusal's wording. */
 const OUTSIDE_WORKSPACE: readonly string[] = [...TRUNK_READS, CHANGE_SET_READ, CI_RUNS_READ];
 
@@ -181,6 +220,8 @@ export interface WorkspaceReader {
    * in a project's directory (or `dir`, when given).
    */
   readCapabilities(form: "workspace" | "project", dir?: string): Promise<WorkspaceDocument>;
+  /** behold#999: promote's read-only report for `member` with the state file `state` (absolute), as chant printed it. */
+  readPromoteReport(member: string, state: string): Promise<WorkspaceDocument>;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -353,6 +394,10 @@ export function workspaceReader(chant: ChantTransport): WorkspaceReader {
       const argv = capabilitiesArgv(form);
       const run = await chant.run(argv, dir !== undefined ? { dir } : undefined);
       return documentOf(run, `chant ${argv.join(" ")}${dir !== undefined ? ` (in ${dir})` : ""}`, "capabilities", CAPABILITIES_READ);
+    },
+    async readPromoteReport(member, state) {
+      const argv = promoteReportArgv(member, state);
+      return promoteReportOf(await chant.run(argv), `chant ${argv.join(" ")}`);
     },
   };
 }
