@@ -456,6 +456,13 @@ export class TerraformReadError extends Error {
  * points at. Derived from the chant install behold itself resolves, so it is
  * the same tree the rest of behold reads from. */
 export function beholdNodeModules(from = beholdDir()): string | undefined {
+  // behold's own node_modules first, when chant is installed there. Resolving
+  // follows symlinks to the real path, so a chant linked in from a local build
+  // (a checkout of chant's integration branch) has no node_modules above it,
+  // and the scratch project would get no link at all.
+  for (const own of [join(resolve(from), "node_modules"), join(resolve(from), "..", "node_modules")]) {
+    if (existsSync(join(own, "@intentius", "chant", "package.json"))) return own;
+  }
   const req = createRequire(join(resolve(from), "noop.js"));
   let entry: string;
   try {

@@ -171,6 +171,19 @@ export function parsePlanNotes(stderr: string): PlanRootAnswer[] {
   return [...out.values()].sort((a, b) => a.root.localeCompare(b.root));
 }
 
+/** A `rootReads` reason in words for the note a person reads; a reason chant adds later is shown as it came. */
+export function rootReadReasonWords(reason: string): string {
+  const words: Record<string, string> = {
+    "no-credentials": "no provider credentials",
+    "plan-failed": "the plan failed",
+    "needs-init": "the root needs init, which chant never runs",
+    "backend-unreachable": "the plan read could not reach the backend",
+    "state-read-failed": "the state read failed",
+    "read-failed": "the read failed",
+  };
+  return words[reason] ?? reason;
+}
+
 /** The roots chant reported, and which read answered each: `fellBackTo ?? depth`. */
 export function planRootAnswers(ir: unknown): PlanRootAnswer[] {
   const out: PlanRootAnswer[] = [];
@@ -179,7 +192,7 @@ export function planRootAnswers(ir: unknown): PlanRootAnswer[] {
     const root = key.slice("terraform.roots.".length);
     const read = rr.fellBackTo ?? rr.depth;
     const answered: PlanAnswer = read === "plan" ? "plan" : read === "state" ? "state" : "none";
-    const why = rr.reason ? ` (${rr.reason})` : "";
+    const why = rr.reason ? ` (${rootReadReasonWords(rr.reason)})` : "";
     const words = rr.fellBackTo === undefined
       ? `the ${rr.depth} read answered`
       : rr.fellBackTo === "declared"
