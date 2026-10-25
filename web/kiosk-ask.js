@@ -262,6 +262,8 @@ export function playback(beats, elapsedMs, opts = {}) {
       lined,
       busy,
       busySince: starts[i] + t.busyAt,
+      // When this busy line is due to end, from the step's start: its reply, or the next beat; null when the step's end decides.
+      busyUntil: beat.reply && lined ? starts[i] + t.replyAt : i + 1 < beats.length ? starts[i + 1] : null,
       sumSecs,
       replied,
       replyChars,
@@ -448,11 +450,11 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
   const emit = (type, detail) => {
     if (win && typeof win.dispatchEvent === "function" && typeof CustomEvent === "function") win.dispatchEvent(new CustomEvent(type, { detail }));
   };
-  /** `behold:ask-busy` whenever the busy line changes: `{ busy, id, tips, cycle, scenario, step }` (id null when none shows). */
+  /** `behold:ask-busy` whenever the busy line changes: `{ busy, id, tips, until, cycle, scenario, step }` (id null when none shows; `until`: when it is due to end, ms, or null). */
   const setBusy = (id, part) => {
     if (id === busyId) return;
     busyId = id;
-    emit("behold:ask-busy", { busy: id !== null, id, tips: part && part.tips ? part.tips : null, cycle: demo ? demo.cycle : null, scenario: demo ? demo.scenario : null, step: demo ? demo.step : null });
+    emit("behold:ask-busy", { busy: id !== null, id, tips: part && part.tips ? part.tips : null, until: part && Number.isFinite(part.until) ? part.until : null, cycle: demo ? demo.cycle : null, scenario: demo ? demo.scenario : null, step: demo ? demo.step : null });
   };
   const detailOf = (beat) => ({ ask: beat, step: demo.step, scenario: demo.scenario });
   const el = (cls, text) => {
@@ -533,7 +535,7 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
     for (const f of pb.frames) {
       const beat = beats[f.index];
       const tn = f.lined || beat.note ? { mark: f.mark, text: f.text, note: !!beat.note, typing: f.typing || f.ready, ready: f.ready, parts: [] } : { cont: true, mark: "", text: "", parts: [] };
-      if (f.busy) tn.parts.push({ k: "busy", label: label(beat), since: startedAt + f.busySince, tips: beat.tips, bid: `b${f.index}` });
+      if (f.busy) tn.parts.push({ k: "busy", label: label(beat), since: startedAt + f.busySince, until: f.busyUntil === null ? nextAt() : startedAt + f.busyUntil, tips: beat.tips, bid: `b${f.index}` });
       else if (f.sumSecs !== null) tn.parts.push({ k: "sum", label: label(beat), secs: f.sumSecs });
       if (f.replied) tn.parts.push({ k: "reply", text: (replies[f.index] || "").slice(0, f.replyChars), typing: f.replyTyping });
       if (f.diffShown > 0) tn.parts.push({ k: "diff", lines: diffLines(beat).slice(0, f.diffShown) });
@@ -545,7 +547,7 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
     if (pb.done && tail && !(last && last.busy)) {
       const since = beats.length ? startedAt + pb.end : Math.min(t, elapsedSince());
       busyAt = since - startedAt;
-      const part = { k: "busy", label: busyLabel(tail), since, tips: tailTips, bid: "tail" };
+      const part = { k: "busy", label: busyLabel(tail), since, until: nextAt(), tips: tailTips, bid: "tail" };
       if (turns.length) turns[turns.length - 1].parts.push(part);
       else turns.push({ cont: true, mark: "", text: "", parts: [part] });
     }
@@ -556,6 +558,11 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
     const ready = !typingNext && ((pb.gap && !busyNow) || (pb.done && !busyNow && !closing));
     return { pb, turns, ready, hostReady: ready || typingNext, busyAt: busyAt === null ? (pb.done ? pb.end : null) : busyAt };
   }
+  /** When the driver expects the next step (demo.next.at), in ms, or null. */
+  const nextAt = () => {
+    const at = demo && demo.next && typeof demo.next.at === "string" ? Date.parse(demo.next.at) : NaN;
+    return Number.isFinite(at) ? at : null;
+  };
   const elapsedSince = () => {
     const from = demo && typeof demo.started_at === "string" ? Date.parse(demo.started_at) : NaN;
     return Number.isFinite(from) ? from : startedAt;

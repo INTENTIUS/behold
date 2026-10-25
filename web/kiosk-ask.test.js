@@ -369,6 +369,21 @@ describe("createAskPane: a session of turns", () => {
     const later = kids().find((c) => (c.className || "").startsWith("ask-reply"));
     expect(later.classes).not.toContain("ask-new");
   });
+  it("tells the tips when a busy line is due to end: the reply, else the driver's next step", () => {
+    const clock = { t: T0 };
+    const { pane, events, tick } = make(clock);
+    const ask = { prompt: "go", status: "Planning", reply: "ok" };
+    pane.setStep(demo("planned", { ask }));
+    const t = beatTiming(ask, { reply: "ok" });
+    clock.t = T0 + t.busyAt + 1;
+    tick();
+    const until = () => events.filter((e) => e[0] === "behold:ask-busy" && e[1].busy).map((e) => e[1].until);
+    expect(until()).toEqual([T0 + t.replyAt]);
+    clock.t = T0 + t.end + BUSY_MIN_MS;
+    tick();
+    pane.setStep(demo("applying", { ask: { status: "Applying" }, next: { at: "2026-10-24T10:01:00Z" } }));
+    expect(until().at(-1)).toBe(Date.parse("2026-10-24T10:01:00Z"));
+  });
   it("makes a step that arrives while another plays wait for it, then plays it in order", () => {
     const clock = { t: T0 };
     const { pane, host, events, tick } = make(clock);

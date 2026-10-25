@@ -272,3 +272,22 @@ describe("tip cards: a press outside closes", () => {
     expect(shouldDismiss(null, host)).toBe(false);
   });
 });
+
+describe("tip cards: a wait about to end", () => {
+  it("shows no tip when the busy line is due to end before it could be read, and keeps the act's tip", () => {
+    const { seq, log, advance } = rig();
+    seq.busy(busy("a", { tips, until: TIP_WAIT_MS + 1_000 }));
+    advance(30_000);
+    expect(log).toEqual([]);
+    seq.busy(busy("b", { tips, until: 30_000 + TIP_WAIT_MS + TIP_MIN_MS + 1 }));
+    advance(TIP_WAIT_MS);
+    expect(shows(log)).toHaveLength(1);
+  });
+  it("shows the tip when the due time has passed (the driver is late) or is unknown", () => {
+    const { seq, log, advance } = rig();
+    advance(10_000);
+    seq.busy(busy("a", { tips, until: 5_000 }));
+    advance(TIP_WAIT_MS);
+    expect(shows(log)).toHaveLength(1);
+  });
+});

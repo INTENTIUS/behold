@@ -4,7 +4,8 @@
  *
  * The timing is a pure sequencer ({@link createTipSequencer}), tested with fake timers:
  * - a tip may show only while a busy line has been running at least {@link TIP_WAIT_MS} (an apply wait), with no
- *   typing and no reply; the pane says when a busy line starts or ends (`behold:ask-busy`) and when any new line
+ *   typing and no reply, and not when the line is due to end (`until`: its reply, the next beat, the driver's
+ *   `next.at`) before the tip could be read; the pane says when a busy line starts or ends (`behold:ask-busy`) and when any new line
  *   starts (`behold:ask-line`: a typed prompt, a reply, a busy line, the ready light);
  * - any such terminal event takes an open tip down at once, and no tip starts in the {@link TIP_QUIET_MS} after one;
  * - at most one tip per act (a scenario of a cycle): the step's own first tip, else the act's built-in one
@@ -161,7 +162,9 @@ export function createTipSequencer({ show, hide, enabled = () => true, pick = (d
   const fire = () => {
     if (!eligible() || now() < since + waitMs || now() < quietUntil) return schedule();
     const tip = validTips(detail.tips)[0] || pick(detail);
-    if (!tip || show(tip) === false) return;
+    // A wait due to end before the tip could be read shows none (the act keeps its tip): no flash of a card.
+    const left = Number.isFinite(detail.until) ? detail.until - now() : Infinity;
+    if (!tip || (left > 0 && left < holdMs(tip, minMs)) || show(tip) === false) return;
     up = true;
     current = tip;
     spent.add(actKey(detail));
