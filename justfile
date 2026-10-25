@@ -140,6 +140,16 @@ e2e-helm-logical:
 e2e-flux-estate:
     bash e2e/flux-estate-k3d-e2e.sh
 
+# behold#998: streamed drift in the choudoufu-estate demo. The demo's own setup
+# (a scratch floci, choudoufu init, the monolith applied), served with a fake
+# chant for the streamed drift read only (e2e/fixtures/fake-chant-drift), and
+# the monolith's cards watched in a headless browser as they change colour one
+# by one. Needs Docker, choudoufu and a Chrome or playwright's chromium;
+# SKIPs with exit 0 without Docker or choudoufu.
+#   just e2e-streamed-drift
+e2e-streamed-drift:
+    bash e2e/streamed-drift-e2e.sh
+
 # behold#490: terragucci's example painted from example-terragucci-reports,
 # through the real server and the real Terraform read. Needs TERRAGUCCI (a
 # terragucci checkout) and the terraform lexicon beside behold; skips without.

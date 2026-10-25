@@ -219,7 +219,8 @@ import { flagsFloorRefusal, readFeatureFlags } from "./feature-flags.ts";
 import { COLLISION_READ, collisionsFloorRefusal, readCollisions } from "./collision-marks.ts";
 import { sqlYodelerLaneRoute } from "./sql-yodeler-lane.ts";
 import { cachedHealth, invalidateHealth, readHealthOverlay, rememberHealth, type HealthMember } from "./health-overlay.ts";
-import { rootReader } from "./workspace-reader.ts";
+import { rootReader, rootStreamTransport } from "./workspace-reader.ts";
+import { runDriftStream } from "./drift-stream.ts";
 import { PUBLIC_SEARCHES_IN_FLIGHT, SearchAskError, cachedCapabilities, checkAsk, drawnOf, runSearch, searchTarget, type SearchTarget } from "./search.ts";
 import { resolvedVersion } from "./terraform-member.ts";
 import { writeViewQuery } from "../web/view-url.js";
@@ -1824,6 +1825,53 @@ export function createApp(
     return c.json({ workspace: true, member: ask.member, ms, hud: !!cfg.hud, ...withChain(read.why, whyChant) });
   });
 
+  // behold#998: streamed drift. Starts one run of `chant workspace drift
+  // --member <name> --stream` (per resource on a choudoufu member) and narrates
+  // it as `drift` frames on /api/events (src/drift-stream.ts). It reads and
+  // writes nothing, but it reaches the account, so it is a POST with a JSON
+  // body like every other started command, refused under --public by the
+  // request guard. The page sends its member's card addresses; the server
+  // keeps only resource addresses from them, and they go to chant after
+  // `--resource`, never as an operand.
+  let driftRun: { id: number; member: string; stop: AbortController } | null = null;
+  let driftRuns = 0;
+  app.post("/api/workspace/drift/stream", async (c) => {
+    const ws = servedWorkspace();
+    if (!ws) return c.json({ error: "behold isn't serving a declared chant workspace, so there is no member to stream drift for.", code: "no-workspace" }, 404);
+    if (!(c.req.header("content-type") ?? "").includes("application/json")) return c.json({ error: "send application/json", code: "bad-drift" }, 415);
+    const text = await c.req.text().catch(() => "");
+    if (text.length > MAX_BODY_BYTES * 4) return c.json({ error: `a drift stream body is capped at ${MAX_BODY_BYTES * 4} bytes`, code: "too-large" }, 413);
+    let body: { member?: unknown; addresses?: unknown; stop?: unknown };
+    try {
+      body = JSON.parse(text || "null") ?? {};
+    } catch {
+      return c.json({ error: "body must be JSON", code: "bad-drift" }, 400);
+    }
+    if (body.stop === true) {
+      if (driftRun) driftRun.stop.abort();
+      return c.json({ stopped: driftRun ? driftRun.id : null });
+    }
+    const member = ws.members.find((m) => m.name === body.member);
+    if (!member || member.reason) return c.json({ error: member ? `${member.name} can't be read: ${member.because ?? member.reason}` : `${String(body.member)} isn't a member of ${ws.name}.`, code: "drift-member" }, 400);
+    if (driftRun) return c.json({ error: `drift is already streaming for ${driftRun.member} (run ${driftRun.id}).`, code: "drift-streaming", run: driftRun.id }, 409);
+    const addresses = Array.isArray(body.addresses) ? body.addresses.filter((a): a is string => typeof a === "string") : [];
+    const run = { id: ++driftRuns, member: member.name, stop: new AbortController() };
+    driftRun = run;
+    void runDriftStream({
+      run: run.id,
+      member,
+      addresses,
+      transport: rootStreamTransport(ws.root, process.env.BEHOLD_DRIFT_CHANT || undefined),
+      emit: (frame) => broadcaster.emit("drift", JSON.stringify(frame)),
+      signal: run.stop.signal,
+    })
+      .catch((e) => broadcaster.emit("drift", JSON.stringify({ run: run.id, kind: "failed", member: member.name, error: (e as Error).message })))
+      .finally(() => {
+        if (driftRun === run) driftRun = null;
+      });
+    return c.json({ run: run.id, member: member.name, kind: member.kind }, 202);
+  });
+
   // #477: approve one workspace gate, by key. The member's directory, env and
   // plan digest come from a fresh status read, never from the page. A framed
   // behold draws no button and leaves this to its host (#476).
@@ -2697,6 +2745,7 @@ export function createApp(
         { method: "GET", path: "/api/workspace/collisions", desc: "the graph nodes two or more in-flight work items touch (#684), from chant workspace status <env> --json overlap (chant#4025): nodes [{node, items, entries [{changeSet, member, address, source, items}]}], files [{items, files}] for files two items changed (no node), unplaced for shared entries chant mapped to no node, items [{item, path, state, commits, with}] (every in-flight item, with empty when it collides with none), changeSets, unattributed; overlap absent (an older chant) or null (no work kind declared, or the read failed) is a refusal with code no-overlap or overlap-unavailable; behold records and locks nothing; a chant below 0.124.29 is refused with refusal code chant-too-old and degraded" },
         { method: "GET", path: "/api/workspace/repos", desc: "an org-level workspace's repo members (behold#931, chant#3168), from one chant workspace graph at the root: repo (the org's own workspace.repo), repos [{name, url, rev, workspace, status, reason, read, workspaceName, label, members [{name, kind, status, reason}]}]; a failed fetch is status failed with chant's reason (command-failed); behold fetches and writes nothing; a chant below 0.124.47 is refused with refusal code chant-too-old and degraded" },
         { method: "GET", path: "/api/workspace/why", desc: "why a member (?member=) or a node (?node=<member>/<id>) is the way it is: the decisions covering it, the runs and commits behind it, and from chant 0.124.29 the chain from each commit's work item to its green tag, release, gate resolution and deploys (trace, #682), from chant workspace graph --intent <region> --json; read on demand, cancelled with the request (#471)" },
+        { method: "POST", path: "/api/workspace/drift/stream", desc: "JSON {member, addresses?} (or {stop: true}): stream one member's drift, chant workspace drift --member <name> --stream, per resource (--resource) on a choudoufu member; each line arrives as a `drift` event on /api/events (begin, start, record, settle, failed, end) and colours its card as it lands; one run at a time (#998)" },
         { method: "GET", path: "/api/workspace/points", desc: "the workspace's open decision points (#472), from chant workspace points --open --json: points [{id, point, title, question, questionType, candidates, subject, gate {op, gate, env} when a gate asked it, state, quorum {count, roles}, model, askedOn, askedBy, stale, path, command}], unread answer kinds with chant's reason; a gate in /api/workspace/gates whose answer.id is a point's id waits on it; behold answers none and has no write route; a chant below 0.107.0 is refused with refusal code chant-too-old and degraded" },
         { method: "POST", path: "/api/workspace/gates/approve", desc: "approve one workspace gate: JSON body {key, env}; env and plan come from a fresh status read; recorded as the request's approver with --actor and --note, a signed gate signed with that person's key or refused 422 code signed (#690); preview-locked (#477); a policy-override gate answers 422 code override with its command (#519); a gate that waits on a decision point answers 422 code decision-point with the points answer line (#472)" },
         { method: "POST", path: "/api/operator/approve/:op/:gate", desc: "record a converge gate's resolution (chant approve — a fact for the next tick, not an unblock)" },

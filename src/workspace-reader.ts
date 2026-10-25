@@ -22,8 +22,10 @@
  * refused whole, as {@link WorkspaceReadError}: within a version chant only
  * adds fields, and a new version can change what one means.
  */
+import { spawn } from "node:child_process";
 import { resolve } from "node:path";
-import { runChantRaw } from "./chant.ts";
+import { pipeLines, resolveChant, runChantRaw } from "./chant.ts";
+import { decodeDriftLine, type DriftLine } from "./drift-line.ts";
 import { healthProblems, HEALTH_SCHEMA, type HealthDocument } from "./runtime-health.ts";
 
 /** The read contract version behold reads (chant's `reference/workspace-read-contract`). */
@@ -374,4 +376,104 @@ export function rootTransport(root: string, env?: Record<string, string>): Chant
 /** The reader for a workspace root: {@link workspaceReader} over {@link rootTransport}. */
 export function rootReader(root: string, env?: Record<string, string>): WorkspaceReader {
   return workspaceReader(rootTransport(root, env));
+}
+
+// ── behold#998: the streamed drift read ─────────────────────────────────────
+
+/**
+ * behold#998: `chant workspace drift --member <name> [--read <read>]
+ * [--resource <addr>] --stream`, run at the workspace root. It prints chant's
+ * drift stream (src/drift-line.ts): NDJSON, one `drift-start`, a
+ * `drift-record` per instance as its read finishes, one `drift-settle`. Unlike
+ * every read above it is not one document, so it does not go through
+ * {@link documentOf} or the read budget's buffered spawn: each stdout line is
+ * decoded and handed on as it arrives, and a line that does not decode stops
+ * the read. It is not in {@link BEHOLD_READS} (chant's conformance suite
+ * lists documents, not streams). The non-streamed drift read is a separate
+ * command beside it.
+ */
+export const DRIFT_STREAM_READ = "drift --stream";
+
+export interface DriftStreamAsk {
+  member: string;
+  read?: string;
+  resource?: string;
+}
+
+/** The argv the streamed drift read runs. `resource` and `read` come after their flag, never as an operand. */
+export function driftStreamArgv(ask: DriftStreamAsk): string[] {
+  return [
+    "workspace", "drift", "--member", ask.member,
+    ...(ask.read ? ["--read", ask.read] : []),
+    ...(ask.resource ? ["--resource", ask.resource] : []),
+    "--stream",
+  ];
+}
+
+/** A transport that hands stdout over line by line. `stderr` is kept for the failure's words. */
+export interface StreamTransport {
+  stream(argv: string[], onLine: (line: string) => void): { done: Promise<{ status: number | null; stderr: string }>; kill(): void };
+}
+
+/** How one streamed read ended. `refused` is the first line that did not decode; the process is killed then. */
+export interface DriftStreamEnd {
+  status: number | null;
+  stderr: string;
+  refused?: string;
+}
+
+/**
+ * Run one streamed drift read. Each decoded line goes to `onLine` the moment
+ * chant prints it. A line that is not a drift line kills the read, since
+ * nothing after it can be trusted to belong to the same stream.
+ */
+export function streamDrift(transport: StreamTransport, ask: DriftStreamAsk, onLine: (line: DriftLine) => void): { done: Promise<DriftStreamEnd>; kill(): void } {
+  const argv = driftStreamArgv(ask);
+  let refused: string | undefined;
+  const run = transport.stream(argv, (text) => {
+    if (refused !== undefined) return;
+    let line: DriftLine;
+    try {
+      line = decodeDriftLine(text);
+    } catch (e) {
+      refused = `chant ${argv.join(" ")} printed a line behold cannot read: ${(e as Error).message}`;
+      run.kill();
+      return;
+    }
+    onLine(line);
+  });
+  return {
+    done: run.done.then((r) => ({ ...r, ...(refused !== undefined ? { refused } : {}) })),
+    kill: () => run.kill(),
+  };
+}
+
+/**
+ * The stream transport over the workspace root's own chant, or over `bin`
+ * when given (`BEHOLD_DRIFT_CHANT`, for a chant built ahead of its release and
+ * for the e2e's fake). Killed by its process group, as a scheduled read is.
+ */
+export function rootStreamTransport(root: string, bin?: string): StreamTransport {
+  return {
+    stream(argv, onLine) {
+      const grouped = process.platform !== "win32";
+      const proc = spawn(bin ?? resolveChant(root).bin, argv, { cwd: root, stdio: ["ignore", "pipe", "pipe"], ...(grouped ? { detached: true } : {}) });
+      const err: Buffer[] = [];
+      proc.stderr.on("data", (d: Buffer) => err.push(d));
+      pipeLines(proc.stdout, onLine);
+      const done = new Promise<{ status: number | null; stderr: string }>((res) => {
+        proc.on("error", (e) => res({ status: 127, stderr: e.message }));
+        proc.on("close", (code) => res({ status: code, stderr: Buffer.concat(err).toString("utf8") }));
+      });
+      const kill = (): void => {
+        try {
+          if (grouped && proc.pid) process.kill(-proc.pid, "SIGTERM");
+          else proc.kill("SIGTERM");
+        } catch {
+          /* already gone */
+        }
+      };
+      return { done, kill };
+    },
+  };
 }

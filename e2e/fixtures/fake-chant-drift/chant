@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# behold#998: a fake chant that answers one command, the streamed drift read
+#   chant workspace drift --member <name> [--read <read>] [--resource <addr>] --stream
+# with a timed NDJSON stream in chant's drift-stream layout (chant#4451,
+# the layout choudoufu's `live-plan -resource` writes): a drift-start naming
+# the resource, a pause of FAKE_DRIFT_STEP_SECS, one drift-record, a
+# drift-settle. The resource named by FAKE_DRIFT_SILENT gets a start and a
+# settle and no record, so behold must turn it into not-observed /
+# not-reached. Anything else it is asked exits 2: behold reaches this binary
+# only through BEHOLD_DRIFT_CHANT, for this one read.
+#
+# `member` on each line is the estate's name, as choudoufu writes it, not the
+# workspace member's, so the e2e also shows behold keys cards by the member it
+# asked about.
+set -euo pipefail
+if [ "${1:-}" != workspace ] || [ "${2:-}" != drift ]; then
+  echo "fake chant (behold#998 e2e): only 'workspace drift --stream' is answered, got: $*" >&2
+  exit 2
+fi
+shift 2
+member="" resource="" stream=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --member) member="$2"; shift 2 ;;
+    --resource) resource="$2"; shift 2 ;;
+    --read) shift 2 ;;
+    --stream) stream=1; shift ;;
+    *) echo "fake chant: unknown argument $1" >&2; exit 2 ;;
+  esac
+done
+[ -n "$stream" ] || { echo "fake chant: only --stream is answered" >&2; exit 2; }
+[ -n "$member" ] && [ -n "$resource" ] || { echo "fake chant: needs --member and --resource" >&2; exit 2; }
+
+STEP="${FAKE_DRIFT_STEP_SECS:-0.6}"
+SILENT="${FAKE_DRIFT_SILENT:-aws_cloudwatch_log_group.team_c_2}"
+DRIFTED="${FAKE_DRIFT_DRIFTED:-aws_iam_policy.team_b}"
+UNCLAIMED="${FAKE_DRIFT_UNCLAIMED:-aws_iam_role.team_c}"
+ESTATE="tlmig-sample-${member}"
+now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+ev='"evidence":{"tool":"choudoufu","version":"v0.31.0-fake","command":"choudoufu live-plan -resource='"$resource"' -drift"}'
+
+printf '{"type":"drift-start","drift":"v1","member":"%s","engine":"choudoufu","read":"plan","resource":"%s","expected":["%s"]}\n' "$ESTATE" "$resource" "$resource"
+sleep "$STEP"
+count=""
+if [ "$resource" = "$SILENT" ]; then
+  count='"counts":{}'
+elif [ "$resource" = "$DRIFTED" ]; then
+  printf '{"type":"drift-record","member":"%s","engine":"choudoufu","address":"%s","node":null,"observedAt":"%s","read":"plan","status":"drifted","attributes":[{"path":"tags"}],"ownership":{"verdict":"owned","by":"marker"},%s}\n' "$ESTATE" "$resource" "$(now)" "$ev"
+  count='"counts":{"drifted":1}'
+elif [ "$resource" = "$UNCLAIMED" ]; then
+  printf '{"type":"drift-record","member":"%s","engine":"choudoufu","address":"%s","node":null,"observedAt":"%s","read":"ownership","status":"unclaimed","ownership":{"verdict":"adoptable","markerOnObject":false},%s}\n' "$ESTATE" "$resource" "$(now)" "$ev"
+  count='"counts":{"unclaimed":1}'
+else
+  printf '{"type":"drift-record","member":"%s","engine":"choudoufu","address":"%s","node":null,"observedAt":"%s","read":"plan","status":"in-sync","ownership":{"verdict":"owned","by":"marker"},%s}\n' "$ESTATE" "$resource" "$(now)" "$ev"
+  count='"counts":{"in-sync":1}'
+fi
+printf '{"type":"drift-settle","drift":"v1","member":"%s","engine":"choudoufu","read":"plan",%s,"reads":{"recordsRead":1,"recordKeys":1,"recordListCalls":0,"sweepCalls":0,"scanTypes":[],"scanListCalls":0}}\n' "$ESTATE" "$count"
