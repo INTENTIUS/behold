@@ -3,8 +3,8 @@
   "schema": 1,
   "pins": [
     {
-      "package": "@intentius/chant-lexicon-terraform",
-      "version": "0.124.52"
+      "package": "@intentius/chant-lexicon-pulumi",
+      "version": "0.124.34"
     }
   ],
   "members": [

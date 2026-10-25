@@ -464,8 +464,9 @@ export function workspaceVia(member: WorkspaceMember, root: string, fallback: Me
  * (stack-export.json) and never runs the program or calls `pulumi`. The nodes
  * are the export's resources, `kind` the Pulumi type token
  * (`aws:s3/bucket:Bucket`), and the edges its `parent` and `dependencies`.
- * chant supplies the kind from the terraform lexicon today and will move it to
- * a pulumi lexicon; behold keys on the kind string only.
+ * The kind comes from @intentius/chant-lexicon-pulumi (chant#4453; it was the
+ * terraform lexicon's before), and the stack root draws no node (chant#4456);
+ * behold keys on the kind string only.
  *
  * There is no fallback. A pulumi directory has no chant.config and no `.tf`,
  * so the member's own `chant graph` cannot read it, and the options the

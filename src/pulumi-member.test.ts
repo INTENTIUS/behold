@@ -5,8 +5,7 @@ import { isMemberKind, memberKindOf } from "./member-kind.ts";
 import { resetMemberIrCache } from "./member-ir.ts";
 import { createApp } from "./server.ts";
 import { localServeOptions } from "./shot-cli.ts";
-import { resolvedVersion, TERRAFORM_LEXICON_PKG } from "./terraform-member.ts";
-import { meetsFloor } from "./floor.ts";
+import { resolvedVersion } from "./terraform-member.ts";
 import {
   CONTRACT_READ_KINDS,
   memberIrFromGraphDocument,
@@ -22,27 +21,29 @@ const REQUIRE_PEERS = process.env.BEHOLD_REQUIRE_PEERS === "1";
 
 // behold#994: a `pulumi` member of a chant workspace, read through chant's
 // `workspace graph --member`, which reads the `pulumi stack export` checked in
-// beside the member's Pulumi.yaml (INTENTIUS/chant#3179, terraform lexicon
-// 0.124.49 and newer). Provenance:
+// beside the member's Pulumi.yaml (INTENTIUS/chant#3179). The kind is
+// supplied by @intentius/chant-lexicon-pulumi since chant#4453 (C3), and the
+// graph has no node for the stack root since chant#4456 (C6). Provenance:
 //  - e2e/fixtures/pulumi-workspace: one member, `app`, whose Pulumi.yaml and
-//    stack-export.json are chant's own lexicons/terraform/src/testdata/
-//    pulumi-member at chant 8cd73461a.
+//    stack-export.json are chant's own testdata/pulumi-member at chant
+//    8cd73461a. The declaration pins the pulumi lexicon at 0.124.34, the
+//    version its package.json carries on chant's integration/pulumi-engine.
 //  - __fixtures__/pulumi-workspace-graph-app.json: `chant workspace graph .
-//    --member app --json` (chant 0.124.52, terraform lexicon 0.124.52 pinned)
-//    in that fixture, unedited.
+//    --member app --json` in that fixture, unedited, by chant from
+//    integration/pulumi-engine at a20de35a1 (it reports 0.124.34), with that
+//    branch's lexicons/pulumi installed beside behold (behold#999).
 const FIXTURE = join(import.meta.dirname, "..", "e2e", "fixtures", "pulumi-workspace");
 const GRAPH = (): Record<string, unknown> =>
   JSON.parse(readFileSync(join(import.meta.dirname, "__fixtures__", "pulumi-workspace-graph-app.json"), "utf8")) as Record<string, unknown>;
 const member: WorkspaceMember = { name: "app", dir: "app", kind: "pulumi", abs: join(FIXTURE, "app"), reason: null, because: null };
 
-/** The export's six resources (the provider left out), as chant names them under the member. */
+/** The export's five resources (the provider and the stack root left out), as chant names them under the member. */
 const RESOURCES = [
   "app/aws:iam/role:Role::web",
   "app/aws:iam/rolePolicy:RolePolicy::webReadsAssets",
   "app/aws:s3/bucket:Bucket::assets",
   "app/my:mod:Web$aws:lambda/function:Function::handler",
   "app/my:mod:Web::web-app",
-  "app/pulumi:pulumi:Stack::app-dev",
 ];
 
 afterAll(() => {
@@ -65,10 +66,12 @@ describe("the pulumi member kind (behold#994)", () => {
     expect(bucket.kind).toBe("aws:s3/bucket:Bucket");
     // behold never invents a colour: the source read carries no status at all.
     expect(ir.nodes.every((n) => n.attrs?._status === undefined)).toBe(true);
-    expect(ir.edges).toHaveLength(8);
+    // Three dependencies and the lambda's parent; a parent that is the stack root draws no edge (chant#4456).
+    expect(ir.edges).toHaveLength(4);
     expect(ir.edges.filter((e) => e.viaAttr === "dependencies")).toHaveLength(3);
+    expect(ir.nodes.every((n) => n.kind !== "pulumi:pulumi:Stack")).toBe(true);
     // chant's report of what it read rides on the member's meta.
-    expect((ir as unknown as { meta?: { pulumiMember?: unknown } }).meta?.pulumiMember).toEqual({ export: "stack-export.json", objects: 6, exported: true });
+    expect((ir as unknown as { meta?: { pulumiMember?: unknown } }).meta?.pulumiMember).toEqual({ export: "stack-export.json", objects: 5, exported: true });
   });
 
   it("has no live read: a live or overlay read is refused before anything is spawned", async () => {
@@ -82,10 +85,14 @@ describe("the pulumi member kind (behold#994)", () => {
 // serves it, through the real chant installed beside behold, which finds the
 // pinned lexicon in behold's own node_modules. Nothing is written under the
 // fixture: chant writes its reader project under the OS temp directory.
-const PULUMI_KIND_LEXICON = "0.124.49";
-const peers = meetsFloor(resolvedVersion(TERRAFORM_LEXICON_PKG), PULUMI_KIND_LEXICON);
+// chant reads the kinds of a pinned package only at the version the pin names,
+// so the gate is that the installed pulumi lexicon is the pinned one, read
+// from the declaration, rather than a floor.
+const PULUMI_LEXICON_PKG = "@intentius/chant-lexicon-pulumi";
+const PINNED = ((JSON.parse(readFileSync(join(FIXTURE, "chant.workspace.json"), "utf8")) as { pins: Array<{ package: string; version: string }> }).pins.find((p) => p.package === PULUMI_LEXICON_PKG) ?? { version: "" }).version;
+const peers = resolvedVersion(PULUMI_LEXICON_PKG) === PINNED;
 const gate = !peers && !REQUIRE_PEERS;
-const why = `needs ${TERRAFORM_LEXICON_PKG} ${PULUMI_KIND_LEXICON} (INTENTIUS/chant#3179) installed beside behold`;
+const why = `needs ${PULUMI_LEXICON_PKG} ${PINNED} (INTENTIUS/chant#4453), the version the fixture pins, installed beside behold`;
 
 interface Drawn {
   error?: string;

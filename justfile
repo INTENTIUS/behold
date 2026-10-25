@@ -71,7 +71,7 @@ e2e:
 
 # behold#994: a pulumi member in a chant workspace (e2e/fixtures/pulumi-workspace,
 # a checked-in stack export) renders as its resources, neutral, not as an
-# unreadable box. No cloud, no Pulumi; needs the terraform lexicon beside behold.
+# unreadable box. No cloud, no Pulumi; needs the pulumi lexicon the fixture pins beside behold.
 e2e-pulumi-workspace:
     bash e2e/pulumi-workspace-e2e.sh
 
