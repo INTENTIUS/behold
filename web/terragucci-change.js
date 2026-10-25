@@ -61,17 +61,27 @@ export function readEdges(answer, progress) {
   const estate = (from, to) => (bin[from] === "choudoufu" && bin[to] === "choudoufu" ? { estate: true } : {});
   if (stage === "pull-request") {
     const run = answer.pull_request.compose && answer.pull_request.compose.wave;
-    return answer.pull_request.reads.map((r) => ({
-      from: r.root,
-      to: r.upstream,
-      data: r.data,
-      outputs: r.outputs,
-      unknown: r.unknown || [],
-      ...(r.why ? { why: r.why } : {}),
-      ...(r.composed && run !== undefined ? { composed: run } : {}),
-      ...estate(r.root, r.upstream),
-      stage,
-    }));
+    // One line per pair: a root that reads another through two data blocks (an estate's outputs, and a second block
+    // for the outputs new in the change) is one read, named by its first block, with every block's unknown outputs.
+    const byPair = new Map();
+    for (const r of answer.pull_request.reads) {
+      const e = {
+        from: r.root,
+        to: r.upstream,
+        data: r.data,
+        outputs: r.outputs,
+        unknown: r.unknown || [],
+        ...(r.why ? { why: r.why } : {}),
+        ...(r.composed && run !== undefined ? { composed: run } : {}),
+        ...estate(r.root, r.upstream),
+        stage,
+      };
+      const key = `${e.from}\u0000${e.to}`;
+      const was = byPair.get(key);
+      if (!was) byPair.set(key, e);
+      else byPair.set(key, { ...was, unknown: [...new Set([...was.unknown, ...e.unknown])] });
+    }
+    return [...byPair.values()];
   }
   if (stage === "apply") {
     const runOf = new Map(progress.reads.filter((r) => r.composed).map((r) => [r.root, r.composed.wave]));

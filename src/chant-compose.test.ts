@@ -63,7 +63,12 @@ describe("the create plan: three stacks planned together", () => {
     expect(planOf(a).roots.map((r: { path: string }) => r.path)).toEqual(["network", "app", "edge"]);
     expect(planOf(a).edges).toEqual([{ from: "network", to: "app" }, { from: "app", to: "edge" }]);
     const edges = readEdges(a, null);
-    expect(edges.map((e: { from: string; to: string; unknown: string[] }) => [e.from, e.to, e.unknown])).toEqual([["app", "network", ["SubnetBId", "SubnetId"]]]);
+    // Every read between stacks, from the plan on: app's of network known after apply, edge's of app known at plan
+    // (this report predates `reads`, so the waves after network and app, whose outputs the plan states, stand in).
+    expect(edges.map((e: { from: string; to: string; unknown: string[] }) => [e.from, e.to, e.unknown])).toEqual([
+      ["app", "network", ["SubnetBId", "SubnetId"]],
+      ["edge", "app", []],
+    ]);
     const m = sceneModel(a, planOf(a), null, { width: 1900, height: 740 });
     expect(m.roots.map((r: { path: string }) => r.path)).toEqual(["network", "app", "edge"]);
   });
@@ -151,6 +156,51 @@ describe("the edit: every value known at plan, three stacks, no round", () => {
   });
   it("draws the three stacks in a chain", () => {
     expect(planOf(plan.answer as never).edges).toEqual([{ from: "network", to: "app" }, { from: "app", to: "edge" }]);
+  });
+  it("draws a line for each read between stacks at the plan, the same ones as after the apply, though every value was known", () => {
+    const pair = (e: { from: string; to: string }) => `${e.from}>${e.to}`;
+    const atPlan = readEdges(plan.answer, null);
+    expect(atPlan.map(pair)).toEqual(["app>network", "edge>app"]);
+    for (const e of atPlan) expect(e.unknown).toEqual([]);
+    expect(readEdges(done.answer, done.progress).map(pair).sort()).toEqual(atPlan.map(pair).sort());
+    // With the components graph the same pairs, from its dependsOn.
+    const g = composedView(stage("edit-plan.json"), undefined, { dependsOn: { app: ["network"], edge: ["app"] } })!;
+    expect(readEdges(g.answer, null).map(pair)).toEqual(["app>network", "edge>app"]);
+  });
+});
+
+describe("a report that names every read (`members[].reads`, chant 0.124.52)", () => {
+  // The create plan with the reads chant now writes: app reads network (SubnetBId unknown), edge reads app and network.
+  const withReads = () => {
+    const doc = json("create-plan.json") as { members: { member: string; reads?: unknown }[] };
+    const reads: Record<string, unknown> = {
+      app: [{ upstream: "network", outputs: ["HttpProxyPort", "SubnetAId", "SubnetBId", "VpcId"], unknown: ["SubnetBId"] }],
+      edge: [{ upstream: "app", outputs: ["ListenerPort"] }, { upstream: "network", outputs: ["SubnetBCidr"] }],
+    };
+    for (const m of doc.members) if (reads[m.member]) m.reads = reads[m.member];
+    return doc;
+  };
+  it("draws each read the report names from the plan on, the unknown ones as known after apply", () => {
+    const v = composedView(composedReportOf(withReads())!, undefined)!;
+    expect(readEdges(v.answer, null).map((e: { from: string; to: string; unknown: string[] }) => [e.from, e.to, e.unknown])).toEqual([
+      ["app", "network", ["SubnetBId", "SubnetId"]],
+      ["edge", "app", []],
+      ["edge", "network", []],
+    ]);
+  });
+  it("draws no line for a dependency the report says nothing is read through", () => {
+    const doc = withReads() as { members: { member: string; reads?: unknown }[] };
+    doc.members.find((m) => m.member === "edge")!.reads = [{ upstream: "app", outputs: ["ListenerPort"] }];
+    const v = composedView(composedReportOf(doc)!, undefined, { dependsOn: { app: ["network"], edge: ["network", "app"] } })!;
+    expect(readEdges(v.answer, null).map((e: { from: string; to: string }) => `${e.from}>${e.to}`)).toEqual(["app>network", "edge>app"]);
+    // The dependency still orders the run.
+    expect((v.answer as { pull_request: { upstreams: Record<string, string[]> } }).pull_request.upstreams.edge).toEqual(["app", "network"]);
+  });
+  it("reads an edit whose every read is known as a composed run", () => {
+    const doc = json("edit-plan.json") as { plannedOutputs?: unknown; members: { member: string; reads?: unknown }[] };
+    delete doc.plannedOutputs;
+    doc.members.find((m) => m.member === "app")!.reads = [{ upstream: "network", outputs: ["HttpProxyPort"] }];
+    expect(composedReportOf(doc)).toBeDefined();
   });
 });
 
