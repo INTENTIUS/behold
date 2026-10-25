@@ -1,0 +1,224 @@
+{
+  "outcome": "dry-run",
+  "member": "prod",
+  "from": "terraform",
+  "to": "choudoufu",
+  "ran": [
+    {
+      "label": "choudoufu live-check",
+      "exitCode": 0
+    },
+    {
+      "label": "choudoufu live-import (report)",
+      "exitCode": 0
+    }
+  ],
+  "adoption": {
+    "estate": "prod",
+    "state": "terraform.tfstate",
+    "entries": [
+      {
+        "address": "aws_vpc.main",
+        "type": "aws_vpc",
+        "status": "VERIFIED",
+        "liveId": "vpc-0a1b2c3d4e5f60718",
+        "detail": "The live object matches the state's recorded attributes.",
+        "claimed": true
+      },
+      {
+        "address": "aws_internet_gateway.main",
+        "type": "aws_internet_gateway",
+        "status": "VERIFIED",
+        "liveId": "igw-0b2c3d4e5f6071829",
+        "detail": "The live object matches the state's recorded attributes.",
+        "claimed": true
+      },
+      {
+        "address": "aws_subnet.public_a",
+        "type": "aws_subnet",
+        "status": "VERIFIED",
+        "liveId": "subnet-01a2b3c4d5e6f7081",
+        "detail": "The live object matches the state's recorded attributes.",
+        "claimed": true
+      },
+      {
+        "address": "aws_subnet.public_b",
+        "type": "aws_subnet",
+        "status": "VERIFIED",
+        "liveId": "subnet-02b3c4d5e6f708192",
+        "detail": "The live object matches the state's recorded attributes.",
+        "claimed": true
+      },
+      {
+        "address": "aws_subnet.private_a",
+        "type": "aws_subnet",
+        "status": "DRIFTED",
+        "liveId": "subnet-03c4d5e6f70819203",
+        "detail": "The live object differs from the state's recorded attributes: map_public_ip_on_launch. Verification does not fix drift; a live-plan after stamping will show it.",
+        "claimed": true
+      },
+      {
+        "address": "aws_route_table.public",
+        "type": "aws_route_table",
+        "status": "VERIFIED",
+        "liveId": "rtb-0d4e5f60718293a4b",
+        "detail": "The live object matches the state's recorded attributes.",
+        "claimed": true
+      },
+      {
+        "address": "aws_route_table_association.public_a",
+        "type": "aws_route_table_association",
+        "status": "UNTAGGABLE",
+        "liveId": "rtbassoc-0e5f60718293a4b5c",
+        "detail": "aws_route_table_association has no tags argument in the provider's schema, so there is nowhere on it to carry an ownership marker. It is migrated as an untaggable type is: its identity is recorded in the estate's record store when one is configured.",
+        "claimed": false
+      },
+      {
+        "address": "aws_route_table_association.public_b",
+        "type": "aws_route_table_association",
+        "status": "UNTAGGABLE",
+        "liveId": "rtbassoc-0f60718293a4b5c6d",
+        "detail": "aws_route_table_association has no tags argument in the provider's schema, so there is nowhere on it to carry an ownership marker. It is migrated as an untaggable type is: its identity is recorded in the estate's record store when one is configured.",
+        "claimed": false
+      },
+      {
+        "address": "aws_security_group.edge",
+        "type": "aws_security_group",
+        "status": "VERIFIED",
+        "liveId": "sg-0a0b0c0d0e0f10111",
+        "detail": "The live object matches the state's recorded attributes.",
+        "claimed": true
+      },
+      {
+        "address": "aws_s3_bucket.artifacts",
+        "type": "aws_s3_bucket",
+        "status": "VERIFIED",
+        "liveId": "waterline-prod-artifacts",
+        "detail": "The live object matches the state's recorded attributes.",
+        "claimed": true
+      },
+      {
+        "address": "aws_s3_bucket_versioning.artifacts",
+        "type": "aws_s3_bucket_versioning",
+        "status": "UNTAGGABLE",
+        "liveId": "waterline-prod-artifacts",
+        "detail": "aws_s3_bucket_versioning has no tags argument in the provider's schema, so there is nowhere on it to carry an ownership marker. It is migrated as an untaggable type is: its identity is recorded in the estate's record store when one is configured.",
+        "claimed": false
+      },
+      {
+        "address": "aws_s3_bucket_public_access_block.artifacts",
+        "type": "aws_s3_bucket_public_access_block",
+        "status": "UNTAGGABLE",
+        "liveId": "waterline-prod-artifacts",
+        "detail": "aws_s3_bucket_public_access_block has no tags argument in the provider's schema, so there is nowhere on it to carry an ownership marker. It is migrated as an untaggable type is: its identity is recorded in the estate's record store when one is configured.",
+        "claimed": false
+      },
+      {
+        "address": "aws_s3_bucket_server_side_encryption_configuration.artifacts",
+        "type": "aws_s3_bucket_server_side_encryption_configuration",
+        "status": "UNTAGGABLE",
+        "liveId": "waterline-prod-artifacts",
+        "detail": "aws_s3_bucket_server_side_encryption_configuration has no tags argument in the provider's schema, so there is nowhere on it to carry an ownership marker. It is migrated as an untaggable type is: its identity is recorded in the estate's record store when one is configured.",
+        "claimed": false
+      },
+      {
+        "address": "module.checkout.aws_iam_role.this",
+        "type": "aws_iam_role",
+        "status": "VERIFIED",
+        "liveId": "waterline-prod-checkout",
+        "detail": "The live object matches the state's recorded attributes.",
+        "claimed": true
+      },
+      {
+        "address": "module.checkout.aws_iam_role_policy.this",
+        "type": "aws_iam_role_policy",
+        "status": "UNTAGGABLE",
+        "liveId": "waterline-prod-checkout:waterline-prod-checkout",
+        "detail": "aws_iam_role_policy has no tags argument in the provider's schema, so there is nowhere on it to carry an ownership marker. It is migrated as an untaggable type is: its identity is recorded in the estate's record store when one is configured.",
+        "claimed": false
+      },
+      {
+        "address": "module.checkout.aws_cloudwatch_log_group.this",
+        "type": "aws_cloudwatch_log_group",
+        "status": "VERIFIED",
+        "liveId": "/waterline-prod/checkout",
+        "detail": "The live object matches the state's recorded attributes.",
+        "claimed": true
+      },
+      {
+        "address": "module.checkout.aws_sqs_queue.work",
+        "type": "aws_sqs_queue",
+        "status": "VERIFIED",
+        "liveId": "https://sqs.us-east-1.amazonaws.com/111122223333/waterline-prod-checkout-work",
+        "detail": "The live object matches the state's recorded attributes.",
+        "claimed": true
+      },
+      {
+        "address": "module.checkout.aws_sqs_queue.dead",
+        "type": "aws_sqs_queue",
+        "status": "VERIFIED",
+        "liveId": "https://sqs.us-east-1.amazonaws.com/111122223333/waterline-prod-checkout-dead",
+        "detail": "The live object matches the state's recorded attributes.",
+        "claimed": true
+      },
+      {
+        "address": "module.checkout.aws_security_group.task",
+        "type": "aws_security_group",
+        "status": "VERIFIED",
+        "liveId": "sg-0c4e19a7d2f3b6e10",
+        "detail": "The live object matches the state's recorded attributes.",
+        "claimed": true
+      },
+      {
+        "address": "module.ledger.aws_iam_role.this",
+        "type": "aws_iam_role",
+        "status": "VERIFIED",
+        "liveId": "waterline-prod-ledger",
+        "detail": "The live object matches the state's recorded attributes.",
+        "claimed": true
+      },
+      {
+        "address": "module.ledger.aws_iam_role_policy.this",
+        "type": "aws_iam_role_policy",
+        "status": "UNTAGGABLE",
+        "liveId": "waterline-prod-ledger:waterline-prod-ledger",
+        "detail": "aws_iam_role_policy has no tags argument in the provider's schema, so there is nowhere on it to carry an ownership marker. It is migrated as an untaggable type is: its identity is recorded in the estate's record store when one is configured.",
+        "claimed": false
+      },
+      {
+        "address": "module.ledger.aws_cloudwatch_log_group.this",
+        "type": "aws_cloudwatch_log_group",
+        "status": "VERIFIED",
+        "liveId": "/waterline-prod/ledger",
+        "detail": "The live object matches the state's recorded attributes.",
+        "claimed": true
+      },
+      {
+        "address": "module.ledger.aws_sqs_queue.work",
+        "type": "aws_sqs_queue",
+        "status": "VERIFIED",
+        "liveId": "https://sqs.us-east-1.amazonaws.com/111122223333/waterline-prod-ledger-work",
+        "detail": "The live object matches the state's recorded attributes.",
+        "claimed": true
+      },
+      {
+        "address": "module.ledger.aws_sqs_queue.dead",
+        "type": "aws_sqs_queue",
+        "status": "MISSING",
+        "liveId": "https://sqs.us-east-1.amazonaws.com/111122223333/waterline-prod-ledger-dead",
+        "detail": "The live system reports that this identity no longer exists.",
+        "claimed": false
+      },
+      {
+        "address": "module.ledger.aws_security_group.task",
+        "type": "aws_security_group",
+        "status": "VERIFIED",
+        "liveId": "sg-0f81b2c3d4e5f6a71",
+        "detail": "The live object matches the state's recorded attributes.",
+        "claimed": true
+      }
+    ],
+    "claimed": 17,
+    "total": 25
+  }
+}

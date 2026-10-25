@@ -25,6 +25,7 @@ import { renderLane } from "./terragucci-lifecycle.js";
 import { renderReleases } from "./releases.js";
 import { renderTrunkLane } from "./trunk-lane.js";
 import { startLocalRuns } from "./local-run.js";
+import { startAdopt } from "./adopt.js";
 import { entriesFor as csEntriesFor, gapLines as csGapLines, inspectHeading as csInspectHeading, nodeMarks as csNodeMarks, offGraph as csOffGraph, overlayHeader as csHeader, overlayLegend as csLegend, PREVIEW_NOTE as CS_PREVIEW_NOTE } from "./change-set-overlay.js";
 import { collisionFilter as coFilter, collisionHeader as coHeader, collisionMarks as coMarks, collisionsFor as coFor, COLLISION_NOTE as CO_NOTE, FILES_NOTE as CO_FILES_NOTE, FILTER_OFF as CO_FILTER_OFF, FILTER_ON as CO_FILTER_ON, gapLines as coGapLines, hideEdge as coHideEdge, itemRow as coItemRow, nodeRow as coNodeRow, sideLines as coSideLines } from "./collision-marks.js";
 import { dimEdge as hmDimEdge, HEALTH_NOTE as HM_NOTE, healthHeader as hmHeader, healthLegendRows as hmLegendRows, healthMarks as hmMarks, healthRows as hmRows, memberLines as hmMemberLines } from "./health-marks.js";
@@ -7328,6 +7329,32 @@ async function initLocalRuns() {
   if (host.classList.contains("active")) start();
 }
 initLocalRuns();
+
+// --- behold#999: adopt a Terraform root into choudoufu ------------------------
+// promote's dry-run report per root and the gated command. Start runs a
+// command, so the tab is drawn only where Local is: a served workspace, never
+// in a public view, an embed, a static export or a guarded repo. Preview draws
+// it with Start disabled (the route refuses it there too).
+async function initAdopt() {
+  if (staticMode || publicMode || embedOpts.embed) return;
+  const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
+  if (!project.workspace || project.publicMode || project.terragucci || project.sqlYodeler) return;
+  const offer = await apiFetch("/api/adopt").then((r) => r.json()).catch(() => ({}));
+  if (!Array.isArray(offer.offers) || !offer.offers.length) return;
+  const host = addPanelTab("adopt", "Adopt", "Adopt a Terraform root into choudoufu with chant workspace promote: the report of what it claims, and the gated command.");
+  if (!host) return;
+  host.id = "tab-adopt";
+  let started = false;
+  const start = () => {
+    if (started) return;
+    started = true;
+    startAdopt(host, { fetchJson: (url, init) => fetch(url, init).then((r) => r.json()), events, toast: showToast });
+  };
+  const tab = document.querySelector('#panel-tabs button[data-tab="adopt"]');
+  if (tab) tab.addEventListener("click", start);
+  if (host.classList.contains("active")) start();
+}
+initAdopt();
 
 // --- #683: feature flags, on or off per environment ---------------------------
 // The Flags tab reads /api/workspace/flags when it is opened: each flag of the

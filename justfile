@@ -69,6 +69,13 @@ example name="terralith-4":
 e2e:
     bash e2e/run.sh
 
+# behold#999: adopt a Terraform root into choudoufu over a real chant and serve,
+# choudoufu replaced by e2e/fixtures/adopt/choudoufu. Asserts the report lists
+# every resource with its fate and that nothing is written before approval.
+# Needs a chant at the adoption report's floor (BEHOLD_E2E_CHANT_PKG to point at one).
+e2e-adopt:
+    bash e2e/adopt-terraform-e2e.sh
+
 # End-to-end (#59, epic #54's definition of done): the unified component view
 # (waves + live status + CI + resources) against a real project — loomster on
 # Floci. Needs loomster checked out and its Floci already up (`just local-up`
