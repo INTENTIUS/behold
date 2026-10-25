@@ -17,10 +17,14 @@
  * estate scene (src/terragucci-overlay.ts `estateSceneOf`) and the card rules (web/kiosk-light.js `cardLines`) are
  * reused unchanged. Nothing here reads a cloud or a forge.
  *
- * What the report does not record, and so is not drawn: a read whose value was known at plan (no `unknownInputs`
- * entry, and `plannedOutputs` does not name the reader), and the real value of an attribute after apply unless the
- * report's change set carries an `after` for it (CloudFormation entries carry property names only). Both read as the
- * kiosk's own fallbacks: no line, and "filled from <stack>".
+ * - `members[].reads` (chant 0.124.52 and newer): every upstream output the member reads, `unknown` naming the ones its
+ *   plan had no value for. A read whose value the plan knew is there too, so each read between stacks is drawn from
+ *   the plan on, the unknown ones as known after apply. A report from an older chant has no `reads`: there a member's
+ *   `unknownInputs`, the components graph's `dependsOn` and the waves after an upstream whose outputs the plan states
+ *   stand in for them, at the plan stage as at the apply.
+ *
+ * What the report does not record: the real value of an attribute after apply unless the report's change set carries
+ * an `after` for it (CloudFormation entries carry property names only). The card says "filled from <stack>" instead.
  */
 
 export const COVERED_WORDS = "one approval covered the re-plan";
@@ -43,12 +47,21 @@ export interface ComposedEntry {
   attributes: ComposedAttribute[];
 }
 
+/** One upstream a member reads (`members[].reads`): the outputs, and the ones its plan had no value for. */
+export interface ComposedRead {
+  upstream: string;
+  outputs: string[];
+  unknown: string[];
+}
+
 export interface ComposedMember {
   member: string;
   component: string;
   status: string;
   counts: Record<string, number>;
   unknownInputs: string[];
+  /** The report's `reads`, or undefined from a chant that writes none. */
+  reads?: ComposedRead[];
   /** The member's change set had a hole: nothing could be previewed. */
   hole: boolean;
   round?: number;
@@ -120,6 +133,13 @@ export function composedReportOf(doc: unknown): ComposedReport | undefined {
       status: typeof m.status === "string" ? m.status : "planned",
       counts: isRecord(m.counts) ? (Object.fromEntries(Object.entries(m.counts).filter(([, n]) => typeof n === "number")) as Record<string, number>) : {},
       unknownInputs: strings(m.unknownInputs),
+      ...(Array.isArray(m.reads)
+        ? {
+            reads: m.reads
+              .filter((r): r is Record<string, unknown> => isRecord(r) && typeof r.upstream === "string" && !!r.upstream)
+              .map((r) => ({ upstream: r.upstream as string, outputs: strings(r.outputs), unknown: strings(r.unknown) })),
+          }
+        : {}),
       hole: holes.has(m.member),
       ...(typeof m.round === "number" ? { round: m.round } : {}),
       ...(typeof m.held === "string" ? { held: m.held } : {}),
@@ -141,7 +161,7 @@ export function composedReportOf(doc: unknown): ComposedReport | undefined {
   // A composed run reads outputs between its stacks: an unknown input, a round, or upstreams whose outputs the plan
   // states (`plannedOutputs`, which an edit that moves only known values still has). A plain fan-out has none.
   const planned = isRecord(doc.plannedOutputs) ? Object.keys(doc.plannedOutputs) : [];
-  if (!members.some((m) => m.unknownInputs.length) && !rounds.length && !planned.length) return undefined;
+  if (!members.some((m) => m.unknownInputs.length || m.reads?.length) && !rounds.length && !planned.length) return undefined;
   const sel = doc.selection;
   const order = isRecord(sel) && Array.isArray(sel.waves) ? sel.waves.flatMap((w) => strings(w)) : [];
   const approval = isRecord(doc.approval) && typeof doc.approval.status === "string" ? doc.approval.status : null;
@@ -209,7 +229,8 @@ export function composedView(plan: ComposedReport | undefined, apply: ComposedRe
   const roots = ordered.map((n) => ({ member: "chant", name: n, path: n }));
   const kindOf = (m: ComposedMember): MemberKind => (m.hole ? "hole" : m.unknownInputs.length ? "previewed" : "plain");
 
-  // The reads between stacks: each unknown input names the stack it reads from and the output.
+  // The reads between stacks. A report with `reads` names each one, known at plan or not; an older one names only the
+  // unknown inputs, each the stack it reads from and the output.
   const planEntries = (plan ?? base).entries;
   const reads: Record<string, unknown>[] = [];
   const upstreams: Record<string, string[]> = {};
@@ -217,38 +238,58 @@ export function composedView(plan: ComposedReport | undefined, apply: ComposedRe
     const later = apply?.members.find((x) => x.member === m.member);
     return [...new Set([...m.unknownInputs, ...(later?.unknownInputs ?? [])])];
   };
+  const readsOf = (m: ComposedMember): ComposedRead[] | undefined => m.reads ?? apply?.members.find((x) => x.member === m.member)?.reads;
+  const readLine = (m: ComposedMember, up: string, unknownOuts: string[]) => {
+    // The properties the preview marked unknown on this member's resources are the reads the cards show.
+    const props = unknownOuts.length ? planEntries.filter((e) => e.member === m.member).flatMap((e) => e.attributes.filter((a) => a.unknown).map((a) => a.path)) : [];
+    reads.push({ root: m.member, upstream: up, data: "stackOutput", outputs: "planned", unknown: [...new Set([...unknownOuts, ...props])], composed: true });
+    (upstreams[m.member] ??= []).push(up);
+  };
   for (const m of memberRows) {
     const byUpstream = new Map<string, string[]>();
-    for (const ref of inputsOf(m)) {
-      const dot = ref.indexOf(".");
-      const up = nameOf(dot < 0 ? ref : ref.slice(0, dot));
-      if (up === m.member) continue;
-      const out = dot < 0 ? "" : ref.slice(dot + 1);
-      byUpstream.set(up, [...(byUpstream.get(up) ?? []), ...(out ? [out] : [])]);
+    const recorded = readsOf(m);
+    if (recorded) {
+      for (const r of recorded) {
+        const up = nameOf(r.upstream);
+        if (up === m.member || !names.includes(up)) continue;
+        byUpstream.set(up, [...(byUpstream.get(up) ?? []), ...r.unknown]);
+      }
+    } else {
+      for (const ref of inputsOf(m)) {
+        const dot = ref.indexOf(".");
+        const up = nameOf(dot < 0 ? ref : ref.slice(0, dot));
+        if (up === m.member) continue;
+        const out = dot < 0 ? "" : ref.slice(dot + 1);
+        byUpstream.set(up, [...(byUpstream.get(up) ?? []), ...(out ? [out] : [])]);
+      }
     }
-    // The properties the preview marked unknown on this member's resources are the reads the cards show.
-    const props = planEntries.filter((e) => e.member === m.member).flatMap((e) => e.attributes.filter((a) => a.unknown).map((a) => a.path));
-    for (const [up, outs] of byUpstream) {
-      reads.push({ root: m.member, upstream: up, data: "stackOutput", outputs: "planned", unknown: [...new Set([...outs, ...props])], composed: true });
-      (upstreams[m.member] ??= []).push(up);
-    }
+    for (const [up, outs] of byUpstream) readLine(m, up, [...new Set(outs)]);
   }
 
+  // A report without `reads` names only the unknown ones. The components graph's `dependsOn` says which other stacks a
+  // member reads, and with no graph to ask, an upstream whose outputs the plan states is read by the next wave's stacks,
+  // which is what the demo's chain is. Each is a read whose value the plan knew: a line from the plan on, as the
+  // unknown ones are.
+  const unrecorded = (m: ComposedMember) => !readsOf(m);
   for (const m of memberRows) {
     for (const dep of opts.dependsOn?.[m.component] ?? opts.dependsOn?.[m.member] ?? []) {
       const up = nameOf(dep);
-      if (up !== m.member && names.includes(up) && !(upstreams[m.member] ?? []).includes(up)) (upstreams[m.member] ??= []).push(up);
+      if (up !== m.member && names.includes(up) && !(upstreams[m.member] ?? []).includes(up)) {
+        if (unrecorded(m)) readLine(m, up, []);
+        else (upstreams[m.member] ??= []).push(up);
+      }
     }
   }
-
-  // No graph to ask, and the report names only the reads it marked unknown: an upstream whose outputs the plan states is
-  // read by the next wave's stacks, which is what the demo's chain is. A graph's `dependsOn` above says so when known.
   if (!opts.dependsOn) {
     const waves = (plan ?? apply)!.waves.map((w) => w.map(nameOf));
     waves.forEach((w, i) => {
       for (const up of w) {
         if (!(plan ?? apply)!.planned.some((p) => nameOf(p) === up)) continue;
-        for (const reader of waves[i + 1] ?? []) if (!(upstreams[reader] ??= []).includes(up)) upstreams[reader]!.push(up);
+        for (const reader of waves[i + 1] ?? []) {
+          const m = memberRows.find((x) => x.member === reader);
+          if (!m || !unrecorded(m) || (upstreams[reader] ?? []).includes(up)) continue;
+          readLine(m, up, []);
+        }
       }
     });
   }

@@ -62,7 +62,13 @@ describe.each(cases)("the lines between estates: $name", ({ fixture, member, che
     // The reads the page draws a line for: each reader and read root is a root the page knows (web/app.js rootOf).
     const known = new Set(a.roots.map((r) => r.path));
     const lines = readEdges(a, null);
-    expect(lines.length).toBeGreaterThanOrEqual(3);
+    // One line per pair: app reads network through two data blocks (its outputs, and subnet_b_id new in the change),
+    // drawn as one read with the unknown output.
+    expect(lines.map((e: { from: string; to: string; unknown: string[] }) => [e.from.slice(prefix.length), e.to.slice(prefix.length), e.unknown])).toEqual([
+      ["app", "network", ["subnet_b_id"]],
+      ["edge", "app", []],
+      ["edge", "network", []],
+    ]);
     for (const e of lines) {
       expect(known.has(e.from)).toBe(true);
       expect(known.has(e.to)).toBe(true);
