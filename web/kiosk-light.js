@@ -7,8 +7,9 @@
 //   behold:ask-hold   a step began: the graph holds still (nothing changes on its own) until a turn replies.
 //   behold:ask-start  detail { ask, step, scenario }  before the reply types; we set
 //                     window.beholdAskTokens = { dependents } so the reply can fill it.
-//   behold:ask-done   same detail, after the reply; we light the graph.
-//   behold:ask-status a step that carries only a status (no prompt): lit like ask-done.
+//   behold:ask-light  same detail, as the reply starts to print; we light the graph.
+//   behold:ask-done   same detail, after the reply; lit here only if ask-light did not already light this beat.
+//   behold:ask-status a step that carries only a status (no prompt), as its busy line shows: lit like ask-light.
 //   behold:ask-clear  a new step with no ask; the lighting goes.
 //
 // Everything is read from what the kiosk already holds: /api/terragucci (the
@@ -451,10 +452,12 @@ export function startKioskLight({ post, getAnswer, getProgress, win = typeof win
     // The graph holds still until this step's reply is done (or its status shows): progress is queued meanwhile.
     post({ type: "behold:hold" });
   };
-  // behold#940: the lit state is drawn the moment the reply is done. When the reads the step lights are not in yet
+  // behold#940: the lit state is drawn the moment the reply starts (it used to wait for the reply to be done). When the reads the step lights are not in yet
   // (the kiosk's own poll is behind the frame's), it asks again soon, never waiting for a poll's turn.
-  const onDone = (e) => {
+  let litAsk = null;
+  const onLight = (e) => {
     const ask = askOf(e);
+    litAsk = ask;
     const wants = !!(ask && Array.isArray(ask.light) && ask.light.length);
     const attempt = (k) => {
       const sel = ask ? selectLight(planOf(getAnswer(), getProgress()), ask) : null;
@@ -469,10 +472,17 @@ export function startKioskLight({ post, getAnswer, getProgress, win = typeof win
     };
     attempt(0);
   };
+  // The reply has printed: already lit as it started, unless that word never came.
+  const onDone = (e) => {
+    const ask = askOf(e);
+    if (ask && ask === litAsk) return;
+    onLight(e);
+  };
   // A step that carries only a status has no reply to wait for: it lights as soon as the pane says so.
-  const onStatus = (e) => onDone(e);
+  const onStatus = (e) => onLight(e);
   const onClear = () => {
     n += 1;
+    litAsk = null;
     win.beholdAskTokens = {};
     send(lightMessage(null, null, n));
   };
@@ -482,6 +492,7 @@ export function startKioskLight({ post, getAnswer, getProgress, win = typeof win
   };
   win.addEventListener("behold:ask-hold", onHold);
   win.addEventListener("behold:ask-start", onStart);
+  win.addEventListener("behold:ask-light", onLight);
   win.addEventListener("behold:ask-done", onDone);
   win.addEventListener("behold:ask-status", onStatus);
   win.addEventListener("behold:ask-clear", onClear);
@@ -489,6 +500,7 @@ export function startKioskLight({ post, getAnswer, getProgress, win = typeof win
   return () => {
     win.removeEventListener("behold:ask-hold", onHold);
     win.removeEventListener("behold:ask-start", onStart);
+    win.removeEventListener("behold:ask-light", onLight);
     win.removeEventListener("behold:ask-done", onDone);
     win.removeEventListener("behold:ask-status", onStatus);
     win.removeEventListener("behold:ask-clear", onClear);

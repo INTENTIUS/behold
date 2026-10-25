@@ -117,6 +117,24 @@ describe("the pane's events (behold#936 and behold#937)", () => {
     expect(sent[1].token).not.toBe(sent[0].token);
   });
 
+  it("lights at ask-light, as the reply starts, and does not light the same beat again at ask-done", () => {
+    const win = fake();
+    const sent = [];
+    startKioskLight({ post: (m) => sent.push(m), getAnswer: () => answer, getProgress: () => null, win });
+    const ask = { prompt: "Show me", light: ["network/terraform_data.subnet"], paths: true, ghost: false };
+    win.dispatchEvent(ev("behold:ask-start", ask));
+    sent.length = 0;
+    win.dispatchEvent(ev("behold:ask-light", ask));
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ type: "behold:light", lit: true });
+    win.dispatchEvent(ev("behold:ask-done", ask));
+    expect(sent).toHaveLength(1);
+    // A beat whose light never came is still lit when its reply is done.
+    const other = { prompt: "And?", light: ["network/terraform_data.subnet"] };
+    win.dispatchEvent(ev("behold:ask-done", other));
+    expect(sent).toHaveLength(2);
+  });
+
   it("holds the graph when a step begins, so a status-only step lets nothing through (turns)", () => {
     const win = fake();
     const sent = [];

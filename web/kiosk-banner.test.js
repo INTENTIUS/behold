@@ -5,8 +5,9 @@ import { VENDORS } from "./kiosk-vendor.js";
 const ALL = ["choudoufu-compose", "terragrunt-choudoufu", "atmos-choudoufu", "chant-compose"];
 
 describe("the demo banner model", () => {
-  it("names the example the same for every demo but chant's, which runs across stacks; the logos say which one is live", () => {
-    for (const t of ALL.filter((x) => x !== "chant-compose")) expect(bannerModel(t).name).toBe("One plan, one apply, across estates");
+  it("names the example the same for every demo but chant's, which runs across stacks, and Atmos's, which applies each component in turn", () => {
+    for (const t of ALL.filter((x) => x !== "chant-compose" && x !== "atmos-choudoufu")) expect(bannerModel(t).name).toBe("One plan, one apply, across estates");
+    expect(bannerModel("atmos-choudoufu").name).toBe("One plan across estates");
     expect(bannerModel("chant-compose").name).toBe("One plan, one apply, across stacks");
   });
   it("links the public example tree", () => {

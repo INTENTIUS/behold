@@ -23,12 +23,20 @@
  * them under the finished reply as a small code block, one line every
  * {@link DIFF_MS}, all at once under reduced motion.
  *
- * Only then does `behold:ask-done` fire, so the graph changes. Nothing
- * happens by magic: the graph holds still (`behold:ask-hold`, then
- * `behold:ask-start`) until the turn that asks for the change has replied. A
- * step that only carries a status releases it after its busy line has shown
- * for {@link BUSY_MIN_MS}, and a step that arrives while the one before is
- * still playing waits in a queue for it to finish.
+ * The graph changes with the words: `behold:ask-light` fires the moment a
+ * beat's reply starts to print (a beat with no reply: once its line is done),
+ * and a status-only step's `behold:ask-status` the moment its busy line shows.
+ * Nothing happens by magic: the graph holds still (`behold:ask-hold`, then
+ * `behold:ask-start`) until then. `behold:ask-done` still fires once the reply
+ * has printed. A step that arrives while the one before is still playing (a
+ * status-only step's busy line shows for at least {@link BUSY_MIN_MS}) waits in
+ * a queue for it to finish.
+ *
+ * Each new line (a typed prompt, a reply, a busy line, the ready light) is
+ * briefly underlined with a sweep ({@link EMPH_MS}; a still underline under
+ * reduced motion) and the lines before it in its turn dim a little, and
+ * `behold:ask-line` fires with `{ kind, step, scenario }` (the tip cards give
+ * way on it).
  *
  * The timeline, the typing and the template filling are pure functions, so
  * they are tested without a page. {@link createAskPane} is the one part that
@@ -36,12 +44,14 @@
  * events (the shared interface with behold#937's lighting):
  *
  * - `behold:ask-hold` with `{ step, scenario }` when a step begins;
- * - `behold:ask-start` before a beat is typed, `behold:ask-done` when its
- *   reply has printed, each with detail `{ ask, step, scenario }`;
- * - `behold:ask-clear` on a step with no ask, once its busy line has shown;
- * - `behold:ask-status` with `{ status, step, scenario }` once a status
- *   line has shown for {@link BUSY_MIN_MS} (a step's `ask.status`, or its
- *   label's first sentence).
+ * - `behold:ask-start` before a beat is typed, `behold:ask-light` when its
+ *   reply starts, `behold:ask-done` when its reply has printed, each with
+ *   detail `{ ask, step, scenario }`;
+ * - `behold:ask-clear` on a step with no ask, as its busy line shows;
+ * - `behold:ask-status` with `{ status, step, scenario }` as a status line
+ *   shows (a step's `ask.status`, or its label's first sentence);
+ * - `behold:ask-line` when a new line starts, `behold:ask-busy` when the busy
+ *   line changes.
  *
  * `{dependents}` is not filled here: behold#937 sets
  * `window.beholdAskTokens = { dependents: <n> }` when it hears ask-start, and
@@ -71,6 +81,8 @@ export const ELLIPSIS_MS = 400;
 /** A reply's diff lines show one by one, this far apart, once the reply has finished typing. */
 export const DIFF_MS = 120;
 export const MARKS = { prompt: ">", action: "✓" };
+/** How long a new line's underline sweep lasts. */
+export const EMPH_MS = 900;
 
 /** A demo's beats in order: `asks` when it has some, else `ask`, else none. A beat is a prompt, an action, a reply or a status (a status alone is valid). */
 export function askBeats(demo) {
@@ -250,6 +262,8 @@ export function playback(beats, elapsedMs, opts = {}) {
       lined,
       busy,
       busySince: starts[i] + t.busyAt,
+      // When this busy line is due to end, from the step's start: its reply, or the next beat; null when the step's end decides.
+      busyUntil: beat.reply && lined ? starts[i] + t.replyAt : i + 1 < beats.length ? starts[i + 1] : null,
       sumSecs,
       replied,
       replyChars,
@@ -299,6 +313,23 @@ export const OPENING_STEPS = ["pull-request", "planned"];
 export const CLOSING_STEP = "applied";
 
 
+/**
+ * The newest line of a view: `{ key, kind, turn, part }`. `turn` is its turn's index in `turns`, `part` the index of
+ * its part (-1: the turn's own prompt or action line), `kind` one of prompt, line, busy, sum, reply, ready. A diff
+ * belongs to the reply above it. The key changes only when a new line starts, not as one types.
+ */
+export function newestLine(turns, ready) {
+  const n = turns.length;
+  if (ready) return { key: `${n}|ready`, kind: "ready", turn: n, part: -1 };
+  if (!n) return null;
+  const last = turns[n - 1];
+  let i = last.parts.length - 1;
+  while (i >= 0 && last.parts[i].k === "diff") i--;
+  if (i >= 0) return { key: `${n}|${i}|${last.parts[i].k}`, kind: last.parts[i].k, turn: n - 1, part: i };
+  if (last.text === "" && !last.mark && !last.typing) return null;
+  return { key: `${n}|-1|${last.mark}`, kind: last.mark === MARKS.prompt ? "prompt" : "line", turn: n - 1, part: -1 };
+}
+
 const STYLE_ID = "k-ask-style";
 /**
  * The pane's own look: the ready light on its top edge, the cursor, the busy
@@ -328,6 +359,12 @@ export const PANE_CSS = `
 #k-ask .ask-busy-text { min-width: 0; overflow-wrap: anywhere; }
 #k-ask .ask-dots { flex: none; display: inline-block; min-width: 3ch; margin-left: -0.5em; }
 #k-ask .ask-timer { flex: none; margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+#k-ask .ask-new { background: linear-gradient(var(--ask-accent), var(--ask-accent)) no-repeat left bottom / 100% 2px; }
+#k-ask .ask-cur > .ask-before { opacity: 0.78; }
+@media (prefers-reduced-motion: no-preference) {
+  #k-ask .ask-new { animation: ask-sweep ${EMPH_MS}ms ease-out both; }
+}
+@keyframes ask-sweep { 0% { background-size: 0% 2px; } 55% { background-size: 100% 2px; } 100% { background-size: 100% 0px; } }
 @keyframes ask-blink { 50% { opacity: 0; } }
 @keyframes ask-glow { 0%, 100% { box-shadow: 0 -2px 10px color-mix(in srgb, var(--ask-accent) 25%, transparent); } 50% { box-shadow: 0 -4px 22px color-mix(in srgb, var(--ask-accent) 70%, transparent); } }
 @media (prefers-reduced-motion: reduce) {
@@ -404,16 +441,20 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
   let sig = "";
   let live = [];
   let released = false;
+  let lit = -1;
+  // The newest line and when it started (its sweep), and the node that carries the sweep now.
+  let emph = null;
+  let emphNode = null;
   let lastView = { turns: [], ready: false, hostReady: false };
 
   const emit = (type, detail) => {
     if (win && typeof win.dispatchEvent === "function" && typeof CustomEvent === "function") win.dispatchEvent(new CustomEvent(type, { detail }));
   };
-  /** `behold:ask-busy` whenever the busy line changes: `{ busy, id, tips, cycle, scenario, step }` (id null when none shows). */
+  /** `behold:ask-busy` whenever the busy line changes: `{ busy, id, tips, until, cycle, scenario, step }` (id null when none shows; `until`: when it is due to end, ms, or null). */
   const setBusy = (id, part) => {
     if (id === busyId) return;
     busyId = id;
-    emit("behold:ask-busy", { busy: id !== null, id, tips: part && part.tips ? part.tips : null, cycle: demo ? demo.cycle : null, scenario: demo ? demo.scenario : null, step: demo ? demo.step : null });
+    emit("behold:ask-busy", { busy: id !== null, id, tips: part && part.tips ? part.tips : null, until: part && Number.isFinite(part.until) ? part.until : null, cycle: demo ? demo.cycle : null, scenario: demo ? demo.scenario : null, step: demo ? demo.step : null });
   };
   const detailOf = (beat) => ({ ask: beat, step: demo.step, scenario: demo.scenario });
   const el = (cls, text) => {
@@ -448,6 +489,10 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
   };
   const refresh = (t) => {
     const r = reduced();
+    if (emphNode && emph && t - emph.at >= EMPH_MS) {
+      if (emphNode.classList && emphNode.classList.remove) emphNode.classList.remove("ask-new");
+      emphNode = null;
+    }
     for (const l of live) {
       l.sp.textContent = spinnerAt(t, r);
       l.dots.textContent = ellipsisAt(t, r);
@@ -490,7 +535,7 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
     for (const f of pb.frames) {
       const beat = beats[f.index];
       const tn = f.lined || beat.note ? { mark: f.mark, text: f.text, note: !!beat.note, typing: f.typing || f.ready, ready: f.ready, parts: [] } : { cont: true, mark: "", text: "", parts: [] };
-      if (f.busy) tn.parts.push({ k: "busy", label: label(beat), since: startedAt + f.busySince, tips: beat.tips, bid: `b${f.index}` });
+      if (f.busy) tn.parts.push({ k: "busy", label: label(beat), since: startedAt + f.busySince, until: f.busyUntil === null ? nextAt() : startedAt + f.busyUntil, tips: beat.tips, bid: `b${f.index}` });
       else if (f.sumSecs !== null) tn.parts.push({ k: "sum", label: label(beat), secs: f.sumSecs });
       if (f.replied) tn.parts.push({ k: "reply", text: (replies[f.index] || "").slice(0, f.replyChars), typing: f.replyTyping });
       if (f.diffShown > 0) tn.parts.push({ k: "diff", lines: diffLines(beat).slice(0, f.diffShown) });
@@ -502,7 +547,7 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
     if (pb.done && tail && !(last && last.busy)) {
       const since = beats.length ? startedAt + pb.end : Math.min(t, elapsedSince());
       busyAt = since - startedAt;
-      const part = { k: "busy", label: busyLabel(tail), since, tips: tailTips, bid: "tail" };
+      const part = { k: "busy", label: busyLabel(tail), since, until: nextAt(), tips: tailTips, bid: "tail" };
       if (turns.length) turns[turns.length - 1].parts.push(part);
       else turns.push({ cont: true, mark: "", text: "", parts: [part] });
     }
@@ -513,6 +558,11 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
     const ready = !typingNext && ((pb.gap && !busyNow) || (pb.done && !busyNow && !closing));
     return { pb, turns, ready, hostReady: ready || typingNext, busyAt: busyAt === null ? (pb.done ? pb.end : null) : busyAt };
   }
+  /** When the driver expects the next step (demo.next.at), in ms, or null. */
+  const nextAt = () => {
+    const at = demo && demo.next && typeof demo.next.at === "string" ? Date.parse(demo.next.at) : NaN;
+    return Number.isFinite(at) ? at : null;
+  };
   const elapsedSince = () => {
     const from = demo && typeof demo.started_at === "string" ? Date.parse(demo.started_at) : NaN;
     return Number.isFinite(from) ? from : startedAt;
@@ -546,36 +596,50 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
       b = build(t);
       pb = b.pb;
     }
-    for (const f of pb.frames) {
-      // The graph lights on this, so it waits for the reply to finish typing.
-      if (f.over && f.index > finished) {
-        finished = f.index;
-        if (!beats[f.index].note) emit("behold:ask-done", detailOf(beats[f.index]));
-      }
-    }
-    // A step with only a status (or no ask at all) lets the graph go once its busy line has shown for BUSY_MIN_MS.
+    // A status-only step (or one with no ask at all) waits for its busy line to have shown BUSY_MIN_MS before the next step plays.
     const due = releaseAt(b);
     const settled = pb.done && (due === null || t - startedAt >= due);
-    if (!released && settled && due !== null) {
-      released = true;
-      if (tail) emit("behold:ask-status", { status: tail, step: demo.step, scenario: demo.scenario });
-      else if (!beats.some((x) => !x.note && (x.prompt || x.action || x.reply))) emit("behold:ask-clear", { step: demo.step, scenario: demo.scenario });
-    }
     // behold#tips: the busy line showing now (a status-only step's, or a turn's wait), for the tip cards (web/kiosk-ask-tips.js).
     const bp = b.turns.flatMap((x) => x.parts).find((p) => p.k === "busy");
     setBusy(bp ? `${key}|${bp.bid}` : null, bp);
     const view = { turns: mergeTurns(transcript, b.turns), ready: b.ready, hostReady: b.hostReady };
     lastView = view;
+    const shownTurns = view.turns.slice(-MAX_TURNS);
+    const newest = newestLine(shownTurns, view.ready);
+    let fresh = false;
+    if (newest && (!emph || emph.key !== newest.key)) {
+      emph = { key: newest.key, kind: newest.kind, at: t };
+      fresh = true;
+    }
     const next = JSON.stringify([view.turns.slice(-(MAX_TURNS)).map((x) => [x.mark, x.text, x.typing, x.ready, x.parts.map((p) => [p.k, p.label, p.secs, p.text, p.typing, p.lines ? p.lines.length : 0])]), view.ready, view.hostReady]);
     if (next !== sig) {
       // Rebuilt only when something changed, so the cursor keeps blinking.
       sig = next;
       live = [];
-      const rows = view.turns.slice(-MAX_TURNS).map((x, i, all) => turnNode(x, i === all.length - 1 ? "ask-cur" : `ask-old ask-old-${Math.min(KEEP, all.length - 1 - i)}`, t));
+      const rows = shownTurns.map((x, i, all) => turnNode(x, i === all.length - 1 ? "ask-cur" : `ask-old ask-old-${Math.min(KEEP, all.length - 1 - i)}`, t));
       if (view.ready) {
         const r = el("ask-entry ask-ready-line");
         r.appendChild(lineNode(MARKS.prompt, ""));
         rows.push(r);
+      }
+      // The newest line: underlined while it is new (the sweep picks up where it was), the lines before it in its turn a little dimmer.
+      emphNode = null;
+      if (newest && emph) {
+        let node = null;
+        if (newest.kind === "ready") node = rows[rows.length - 1];
+        else {
+          const entry = rows[newest.turn];
+          const kids = entry && entry.children ? [...entry.children] : [];
+          const tn = shownTurns[newest.turn];
+          const offset = tn.text !== "" || tn.mark ? 1 : 0;
+          node = kids[newest.part + offset] || null;
+          if (node) for (const k of kids.slice(0, kids.indexOf(node))) addClass(k, "ask-before");
+        }
+        if (node && t - emph.at < EMPH_MS) {
+          addClass(node, "ask-new");
+          if (node.style) node.style.animationDelay = `${-(t - emph.at)}ms`;
+          emphNode = node;
+        }
       }
       host.replaceChildren(...rows);
       if (host.classList && host.classList.toggle) host.classList.toggle("ask-ready", view.hostReady);
@@ -588,12 +652,34 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
         if (peak > 0) host.style.minHeight = `${peak}px`;
       }
     }
+    // What the graph and the tips hear, now that the words are on screen.
+    if (fresh) emit("behold:ask-line", { kind: emph.kind, step: demo ? demo.step : null, scenario: demo ? demo.scenario : null });
+    for (const f of pb.frames) {
+      const beat = beats[f.index];
+      if (beat.note) continue;
+      // The graph lights as the reply starts to print (a beat with no reply: once its line is done).
+      if ((beat.reply ? f.replied : f.over) && f.index > lit) {
+        lit = f.index;
+        emit("behold:ask-light", detailOf(beat));
+      }
+      if (f.over && f.index > finished) {
+        finished = f.index;
+        emit("behold:ask-done", detailOf(beat));
+      }
+    }
+    // A step with only a status (or no ask at all) lights the graph as its busy line shows.
+    const statusShown = b.turns.some((x) => x.parts.some((p) => p.k === "busy" && p.bid === "tail"));
+    if (!released && due !== null && (statusShown || settled)) {
+      released = true;
+      if (tail) emit("behold:ask-status", { status: tail, step: demo.step, scenario: demo.scenario });
+      else if (!beats.some((x) => !x.note && (x.prompt || x.action || x.reply))) emit("behold:ask-clear", { step: demo.step, scenario: demo.scenario });
+    }
     refresh(t);
     if (settled && queue.length) {
       begin(queue.shift());
       return;
     }
-    if (settled && !live.length && timer !== null) {
+    if (settled && !live.length && !emphNode && timer !== null) {
       clearTimer(timer);
       timer = null;
     }
@@ -636,6 +722,7 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
     tail = wanted && !(lastStatus && (lastStatus.prompt || lastStatus.action || lastStatus.reply)) ? wanted : null;
     started = -1;
     finished = -1;
+    lit = -1;
     replies = [];
     sig = "";
     live = [];

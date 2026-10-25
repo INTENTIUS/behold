@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DIFF_MS, diffLines, diffParts, BEAT_GAP_MS, BUSY_MIN_MS, CURSOR_PAUSE_MS, ELLIPSIS_MS, KEEP, REPLY_TYPE_MS, SPINNER, TYPE_MS, askBeats, busyLabel, ellipsisAt, mergeTurns, settleTurns, spinnerAt, askEventHelp, askMode, askShot, beatTiming, createAskPane, elapsedSecs, fillReply, firstSentence, hasAsk, paneHeight, playback, replyValues, statusText, typedChars } from "./kiosk-ask.js";
+import { EMPH_MS, newestLine, DIFF_MS, diffLines, diffParts, BEAT_GAP_MS, BUSY_MIN_MS, CURSOR_PAUSE_MS, ELLIPSIS_MS, KEEP, REPLY_TYPE_MS, SPINNER, TYPE_MS, askBeats, busyLabel, ellipsisAt, mergeTurns, settleTurns, spinnerAt, askEventHelp, askMode, askShot, beatTiming, createAskPane, elapsedSecs, fillReply, firstSentence, hasAsk, paneHeight, playback, replyValues, statusText, typedChars } from "./kiosk-ask.js";
 
 describe("fillReply (behold#936)", () => {
   it("fills the report's tokens", () => {
@@ -159,7 +159,7 @@ describe("askBeats and statusLine (behold#936)", () => {
 describe("createAskPane: a session of turns", () => {
   function fakeDoc() {
     const make = (tag) => {
-      const n = { tag, className: "", textContent: "", children: [], hidden: false, attrs: {}, classes: [], offsetWidth: 0, ownerDocument: null };
+      const n = { tag, className: "", textContent: "", children: [], hidden: false, attrs: {}, classes: [], offsetWidth: 0, ownerDocument: null, style: {} };
       n.classList = { add: (c) => n.classes.push(c), remove: (c) => (n.classes = n.classes.filter((x) => x !== c)), toggle: (c, on) => (on ? (n.classes.includes(c) ? 0 : n.classes.push(c)) : (n.classes = n.classes.filter((x) => x !== c))) };
       n.setAttribute = (k, v) => (n.attrs[k] = v);
       n.append = (...c) => n.children.push(...c);
@@ -175,7 +175,7 @@ describe("createAskPane: a session of turns", () => {
   const flat = (n) => [n.textContent, ...n.children.map(flat)].join("|");
   const T0 = Date.parse("2026-10-24T10:00:00Z");
   const demo = (step, extra = {}) => ({ cycle: 1, scenario: "compose-edit", step, started_at: "2026-10-24T10:00:00Z", next: null, ...extra });
-  const names = (events) => events.map((e) => e[0]).filter((n) => n !== "behold:ask-busy");
+  const names = (events) => events.map((e) => e[0]).filter((n) => n !== "behold:ask-busy" && n !== "behold:ask-line" && n !== "behold:ask-light");
   function make(clock, reduced = false) {
     const events = [];
     const win = { dispatchEvent: (e) => events.push([e.type, e.detail]) };
@@ -274,24 +274,32 @@ describe("createAskPane: a session of turns", () => {
     tick();
     expect(flat(host)).toContain("(1:05)");
   });
-  it("holds the graph at every step, and lets a status-only step go only after its busy line has shown for 1.2 s", () => {
+  it("holds the graph at every step, and lights a status-only step as its busy line shows", () => {
     const clock = { t: T0 };
     const { pane, events, tick } = make(clock);
     pane.setStep(demo("planned", { ask: { action: "approve" } }));
     pane.setStep(demo("merged", { label: "The plan is merged. Applying next." }));
-    expect(names(events)).toContain("behold:ask-hold");
     expect(events.filter((e) => e[0] === "behold:ask-hold")).toHaveLength(2);
-    expect(names(events)).not.toContain("behold:ask-status");
-    expect(names(events)).not.toContain("behold:ask-clear");
-    clock.t += BUSY_MIN_MS - 1;
-    tick();
-    expect(names(events)).not.toContain("behold:ask-status");
-    clock.t += 1;
-    tick();
+    // The busy line is on screen in the same draw: the graph lights with it, not 1.2 s later.
     expect(events.filter((e) => e[0] === "behold:ask-status")).toEqual([["behold:ask-status", { status: "The plan is merged", step: "merged", scenario: "compose-edit" }]]);
+    const at = names(events).indexOf("behold:ask-status");
+    expect(events.findIndex((e) => e[0] === "behold:ask-busy" && e[1].busy)).toBeLessThan(events.findIndex((e) => e[0] === "behold:ask-status"));
+    expect(at).toBeGreaterThan(0);
     clock.t += 5000;
     tick();
     expect(events.filter((e) => e[0] === "behold:ask-status")).toHaveLength(1);
+  });
+  it("still lets a status-only step's busy line show 1.2 s before the next step plays", () => {
+    const clock = { t: T0 };
+    const { pane, host, tick } = make(clock);
+    pane.setStep(demo("planned", { ask: { action: "approve" } }));
+    pane.setStep(demo("merged", { label: "Merged." }));
+    pane.setStep(demo("applying", { label: "Applying." }));
+    expect(flat(host)).toContain("Merged");
+    expect(flat(host)).not.toContain("Applying");
+    clock.t += BUSY_MIN_MS;
+    tick();
+    expect(flat(host)).toContain("Applying");
   });
   it("lets a step with no ask at all clear the graph only after its busy line has shown", () => {
     const clock = { t: T0 };
@@ -301,6 +309,80 @@ describe("createAskPane: a session of turns", () => {
     clock.t += BUSY_MIN_MS;
     tick();
     expect(names(events)).toEqual(["behold:ask-hold", "behold:ask-clear"]);
+  });
+  it("lights the graph as the reply starts to print, in the same draw, and still says when it is done", () => {
+    const clock = { t: T0 };
+    const { pane, host, events, tick } = make(clock);
+    const ask = { prompt: "go", status: "Planning", reply: "All {roots} states.", light: ["network/x"] };
+    pane.setStep(demo("planned", { ask }));
+    const t = beatTiming(ask, { reply: "All 3 states." });
+    clock.t = T0 + t.replyAt - 1;
+    tick();
+    expect(events.map((e) => e[0])).not.toContain("behold:ask-light");
+    clock.t = T0 + t.replyAt;
+    tick();
+    // The reply line is on screen and the light is asked for in the same tick: no lag past the 40 ms draw.
+    expect(host.children[0].children.some((c) => (c.className || "").startsWith("ask-reply"))).toBe(true);
+    expect(events.filter((e) => e[0] === "behold:ask-light")).toEqual([["behold:ask-light", { ask, step: "planned", scenario: "compose-edit" }]]);
+    expect(events.map((e) => e[0])).not.toContain("behold:ask-done");
+    clock.t = T0 + t.end;
+    tick();
+    const order = events.map((e) => e[0]).filter((n) => n === "behold:ask-light" || n === "behold:ask-done");
+    expect(order).toEqual(["behold:ask-light", "behold:ask-done"]);
+  });
+  it("lights a beat with no reply once its line is done", () => {
+    const clock = { t: T0 };
+    const { pane, events } = make(clock);
+    pane.setStep(demo("planned", { ask: { action: "approve", light: ["a/b"] } }));
+    expect(events.map((e) => e[0]).filter((n) => n === "behold:ask-light" || n === "behold:ask-done")).toEqual(["behold:ask-light", "behold:ask-done"]);
+  });
+  it("says when each new line starts (ask-line): prompt, busy, reply, ready", () => {
+    const clock = { t: T0 };
+    const { pane, events, tick } = make(clock);
+    const ask = { prompt: "go", status: "Planning", reply: "ok" };
+    pane.setStep(demo("planned", { ask }));
+    const t = beatTiming(ask, { reply: "ok" });
+    for (const at of [t.cursor + 1, t.busyAt + 1, t.replyAt + 1, t.end + 1, t.end + 2]) {
+      clock.t = T0 + at;
+      tick();
+    }
+    expect(events.filter((e) => e[0] === "behold:ask-line").map((e) => e[1].kind)).toEqual(["prompt", "busy", "reply", "ready"]);
+  });
+  it("underlines the newest line while it is new, dims the lines before it in its turn, and lets go after EMPH_MS", () => {
+    const clock = { t: T0 };
+    const { pane, host, tick } = make(clock);
+    const ask = { prompt: "go", status: "Planning", reply: "a long enough reply to type for a while" };
+    pane.setStep(demo("planned", { ask }));
+    const t = beatTiming(ask, { reply: ask.reply });
+    clock.t = T0 + t.replyAt;
+    tick();
+    clock.t = T0 + t.replyAt + 100;
+    tick();
+    const kids = () => host.children[0].children;
+    const reply = kids().find((c) => (c.className || "").startsWith("ask-reply"));
+    expect(reply.classes).toContain("ask-new");
+    // The sweep picks up where it was when the line is drawn again (a reply redraws on every character).
+    expect(reply.style.animationDelay).toBe("-100ms");
+    expect(kids()[0].classes).toContain("ask-before");
+    clock.t = T0 + t.replyAt + EMPH_MS + 10;
+    tick();
+    const later = kids().find((c) => (c.className || "").startsWith("ask-reply"));
+    expect(later.classes).not.toContain("ask-new");
+  });
+  it("tells the tips when a busy line is due to end: the reply, else the driver's next step", () => {
+    const clock = { t: T0 };
+    const { pane, events, tick } = make(clock);
+    const ask = { prompt: "go", status: "Planning", reply: "ok" };
+    pane.setStep(demo("planned", { ask }));
+    const t = beatTiming(ask, { reply: "ok" });
+    clock.t = T0 + t.busyAt + 1;
+    tick();
+    const until = () => events.filter((e) => e[0] === "behold:ask-busy" && e[1].busy).map((e) => e[1].until);
+    expect(until()).toEqual([T0 + t.replyAt]);
+    clock.t = T0 + t.end + BUSY_MIN_MS;
+    tick();
+    pane.setStep(demo("applying", { ask: { status: "Applying" }, next: { at: "2026-10-24T10:01:00Z" } }));
+    expect(until().at(-1)).toBe(Date.parse("2026-10-24T10:01:00Z"));
   });
   it("makes a step that arrives while another plays wait for it, then plays it in order", () => {
     const clock = { t: T0 };
@@ -492,5 +574,20 @@ describe("diff under a reply", () => {
     timer();
     expect(all(host)).toContain("ask-diff-chg");
     expect(events).toContain("behold:ask-done");
+  });
+});
+
+describe("newestLine", () => {
+  it("names the newest line, a diff belonging to its reply, and only changes its key when a new line starts", () => {
+    const turn = (parts, extra = {}) => ({ mark: ">", text: "go", parts, ...extra });
+    expect(newestLine([], false)).toBe(null);
+    expect(newestLine([turn([])], false)).toMatchObject({ kind: "prompt", part: -1 });
+    expect(newestLine([turn([{ k: "busy" }])], false)).toMatchObject({ kind: "busy", part: 0 });
+    const r1 = newestLine([turn([{ k: "sum" }, { k: "reply", text: "a" }])], false);
+    const r2 = newestLine([turn([{ k: "sum" }, { k: "reply", text: "ab" }, { k: "diff", lines: [] }])], false);
+    expect(r1).toMatchObject({ kind: "reply", part: 1 });
+    expect(r2.key).toBe(r1.key);
+    expect(newestLine([turn([])], true)).toMatchObject({ kind: "ready" });
+    expect(newestLine([turn([], { mark: "✓", text: "approve" })], false).kind).toBe("line");
   });
 });
