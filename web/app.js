@@ -6644,7 +6644,9 @@ function kioskShotBox() {
   // behold#736: a story's stage (fan-out-choudoufu, a chapter-carrying scenario, behold#741) is never held: it keeps
   // the story's own look, its result card, #745's pills and #748's outside mark.
   // Ask mode is never held: the held framing is the union of every target it has seen (the graph before the scene drew included), which leaves the scene off-centre. It is fitted to the scene as drawn, every time.
-  if (whole && !kioskShot.ask && !tgStoryOn() && holdsStage(tgAnswer && !tgAnswer.error ? tgAnswer.binaries : null) && smallStage(whole, pane, held ? held.insets : docked, cardW)) {
+  // Nor while the kiosk says ask mode is on (klAskFlag): a shot between its prompts, or a reset's, frames the scene too,
+  // and never restores a framing this tab's session kept from an earlier graph.
+  if (whole && !kioskShot.ask && !klAskFlag && !tgStoryOn() && holdsStage(tgAnswer && !tgAnswer.error ? tgAnswer.binaries : null) && smallStage(whole, pane, held ? held.insets : docked, cardW)) {
     kioskHeld = heldFrame(kioskHeld, { key: graph, pane, insets: docked, target: whole });
     writeHeld(kioskHeld);
     document.documentElement.classList.add("kiosk-held");

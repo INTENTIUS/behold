@@ -284,6 +284,17 @@ export function dockCorner(area, w, h, lit = []) {
   return null;
 }
 
+/**
+ * The room a tip may dock in, in page pixels: the shown graph frame (`frame`), less what the prompt pane (`ask`) covers
+ * under it and what the side pane (`side`: web/kiosk-side.js, open or folded to its tab) covers at its right. Either
+ * may be null (not shown).
+ */
+export function tipArea(frame, ask = null, side = null) {
+  const bottom = ask ? Math.min(frame.bottom, ask.top) : frame.bottom;
+  const right = side && side.left < frame.right && side.right > frame.left && side.top < bottom && side.bottom > frame.top ? Math.max(frame.left, side.left) : frame.right;
+  return { left: frame.left, top: frame.top, width: Math.max(0, right - frame.left), height: Math.max(0, bottom - frame.top) };
+}
+
 const STYLE_ID = "k-ask-tips-style";
 const STYLE = `
 #k-ask-tips { position: fixed; left: 0; top: 0; width: 0; height: 0; z-index: 50; pointer-events: none; overflow: hidden; }
@@ -331,14 +342,13 @@ export function mountAskTips({ win = window, doc = document, askHost, reduced = 
     const f = doc.getElementById("view");
     return f && f.getClientRects().length > 0 ? f : null;
   };
-  /** The graph's room above the prompt, in page pixels. */
+  /** The graph's room above the prompt and left of the side pane, in page pixels. */
   const area = () => {
     const f = shownFrame();
     if (!f) return null;
-    const r = f.getBoundingClientRect();
-    const a = askHost.getBoundingClientRect();
-    const bottom = askHost.hidden ? r.bottom : Math.min(r.bottom, a.top);
-    return { left: r.left, top: r.top, width: r.width, height: Math.max(0, bottom - r.top), frame: f };
+    const side = [doc.getElementById("k-side"), doc.getElementById("k-side-tab")].find((n) => n && n.getClientRects().length > 0);
+    const room = tipArea(f.getBoundingClientRect(), askHost.hidden ? null : askHost.getBoundingClientRect(), side ? side.getBoundingClientRect() : null);
+    return { ...room, frame: f };
   };
   const litRects = (a) => {
     if (!a || !a.frame || lit.source !== a.frame.contentWindow) return [];
