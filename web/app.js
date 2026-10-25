@@ -4648,7 +4648,27 @@ const klPulsed = { token: null };
 function klRedraw() {
   if (!klCtx || !klMsg || !klCtx.svg.isConnected) return;
   klDraw(klCtx.svg, klMsg, klCtx.drawnAnswer, tgStoryOn() ? tgPacedProgress() : tgProgress, { cardsOf: klCtx.cardsOf, rootBox: klCtx.rootBox, boxHost: klCtx.boxHost, compMode: klCtx.compMode, pulsed: klCtx.pulsed, below: document.documentElement.classList.contains("kiosk-ask") });
+  klTellLit();
 }
+// behold#tips-yield: where the lit cards are on screen (frame pixels), so the kiosk's tip card never covers what the
+// prompt talks about. Told when the lighting is drawn and again whenever the boxes move (a fit, a zoom), only on change.
+let klLitSaid = "";
+function klTellLit() {
+  if (!embedOpts.host || window.parent === window || !document.documentElement.classList.contains("kiosk-ask")) return;
+  const rects = [...document.querySelectorAll('#graph [data-kl="lit"]')]
+    .map((g) => g.getBoundingClientRect())
+    .filter((r) => r.width > 0 && r.height > 0)
+    .map((r) => [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)]);
+  const said = JSON.stringify(rects);
+  if (said === klLitSaid) return;
+  klLitSaid = said;
+  try {
+    window.parent.postMessage({ type: "behold:lit-rects", rects }, embedOpts.host);
+  } catch {
+    /* the parent went away */
+  }
+}
+setInterval(klTellLit, 400);
 // behold#940: the kiosk's word that ask mode is on, which holds between the shots (the frame's class follows it or a shot's `ask`).
 let klAskFlag = false;
 let klAskHeard = false;

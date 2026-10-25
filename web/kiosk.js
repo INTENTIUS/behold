@@ -1868,7 +1868,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
           },
         })
       : null;
-  // The tip cards a busy step shows over the graph (web/kiosk-ask-tips.js); they only listen, the turn order is the pane's.
+  // The tip cards (web/kiosk-ask-tips.js): one per act, docked in a corner of the graph during a long wait, gone the moment the prompt says something new.
   if (askPane && typeof window !== "undefined" && typeof document !== "undefined") mountAskTips({ win: window, doc: document, askHost: watch.ask });
   // The reset between acts is no turn of the story: one "Resetting" modal over the page while it runs (web/kiosk-reset.js).
   const resetModal = askPane && typeof document !== "undefined" && document.body ? mountResetModal(document) : null;

@@ -1,28 +1,30 @@
 /**
- * The prompt demo's tip cards. While a step's busy line shows in ask mode (web/kiosk-ask.js emits
- * `behold:ask-busy`), its tips show as modal cards over the graph, one at a time. The cards are the Tips feature's
- * own (web/event-help-modal.js `openEventModal`, kind "tip"), so the look and the close behaviour (x, Escape) are
- * the same; only the host differs: a box over the graph area, never over the prompt pane.
- *
- * Tips never touch the graph or the turn order: this module only listens.
+ * The prompt demo's tip cards. The terminal (web/kiosk-ask.js) tells the story; a tip is a short aside that shows only
+ * while the terminal has nothing new to say, and gives way the moment it does.
  *
  * The timing is a pure sequencer ({@link createTipSequencer}), tested with fake timers:
- * - one card at a time, the first at once;
- * - a card stays its whole reading time ({@link holdMs}, never under {@link TIP_MIN_MS}), whatever the steps do:
- *   a step that ends or changes never cuts a card short, it only changes which card comes next;
- * - while a step is busy, the next card replaces a read one; the last stays until the busy line ends, then it hides
- *   (the host fades it out within {@link TIP_FADE_MS});
- * - a card with a link pauses its timer while it is hovered or focused ({@link LINK_RESUME_MS} left at least on
- *   leaving), so a reader can click; reduced motion changes nothing about this;
- * - a step with no tips of its own gets the built-in three, in order, one cycle's worth: a card shown is not shown
- *   again in that scenario cycle.
+ * - a tip may show only while a busy line has been running at least {@link TIP_WAIT_MS} (an apply wait), with no
+ *   typing and no reply; the pane says when a busy line starts or ends (`behold:ask-busy`) and when any new line
+ *   starts (`behold:ask-line`: a typed prompt, a reply, a busy line, the ready light);
+ * - any such terminal event takes an open tip down at once, and no tip starts in the {@link TIP_QUIET_MS} after one;
+ * - at most one tip per act (a scenario of a cycle): the step's own first tip, else the act's built-in one
+ *   ({@link actTip});
+ * - a tip stays its reading time ({@link holdMs}) while the wait lasts, then goes; a tip with a link holds still while
+ *   it is hovered or focused ({@link LINK_RESUME_MS} left at least on leaving).
+ *
+ * The card is compact and quiet, docked in a corner of the graph area that no lit box is in (the frame reports where
+ * its lit cards are, `behold:lit-rects`), never over the prompt. When no corner is clear, or on a phone, no tip shows.
  */
 import { modalStyle, openEventModal } from "./event-help-modal.js";
 
-/** A card stays at least this long; a longer one stays its reading time ({@link holdMs}). */
+/** A tip waits for the busy line to have run this long. */
+export const TIP_WAIT_MS = 6_000;
+/** No tip starts this soon after a terminal event. */
+export const TIP_QUIET_MS = 2_000;
+/** A card stays at least this long while the wait lasts; a longer one stays its reading time ({@link holdMs}). */
 export const TIP_MIN_MS = 8_000;
-/** A card whose step ended fades out in this long (under 400 ms). */
-export const TIP_FADE_MS = 300;
+/** A card fades out in this long. */
+export const TIP_FADE_MS = 150;
 /** A card with a link, left after a hover or focus, has at least this long still to show. */
 export const LINK_RESUME_MS = 3_000;
 
@@ -57,17 +59,13 @@ export const DEFAULT_TIPS = [
   { title: "Free, nothing to host", body: "Both are free and open source. There is no server or database to host. Everything runs in CI pipelines.", link: { label: "choudoufu on GitHub", url: "https://github.com/INTENTIUS/choudoufu" } },
   { title: "Inspect", body: "Open Inspect to explore every resource and the plan behind it." },
 ];
-/** The same, on a phone: the last card says this is the short version. */
 /**
  * The Terragrunt and Atmos demos run their own tool's plain workflow with choudoufu as the binary: no terragucci in
- * them. Their built-in cards leave terragucci out, and the free card names choudoufu alone.
+ * them. Each has its own known-after-apply card, since the two apply differently: Terragrunt in one apply, Atmos one
+ * component at a time. Each body was linted alone at strictness 3.
  */
-export const PLAIN_TIPS = [
-  DEFAULT_TIPS[0],
-  DEFAULT_TIPS[2],
-  { title: "Free, nothing to host", body: "choudoufu is free and open source. There is no server or database to host. It runs in the CI pipeline you already have.", link: { label: "choudoufu on GitHub", url: "https://github.com/INTENTIUS/choudoufu" } },
-  DEFAULT_TIPS[4],
-];
+export const TERRAGRUNT_TIP = { title: "Known after apply", body: "Terragrunt plans a unit whose upstream isn't applied yet with mock outputs. With choudoufu, the plan shows the real subnet id as known after apply. One apply fills it in.", link: { label: "Terragrunt's saved plans", url: "https://docs.terragrunt.com/features/stacks/run-queue/#saving-opentofuterraform-plan-output" } };
+export const ATMOS_TIP = { title: "Known after apply", body: "Atmos plans each component against its upstream's last applied outputs, or a mock default. With choudoufu, one plan covers every component. The merge applies each one exactly as reviewed.", link: { label: "Atmos terraform.output", url: "https://atmos.tools/functions/yaml/terraform.output" } };
 
 /**
  * The chant demo runs chant's own pull-request pipeline on three CloudFormation stacks: no terragucci and no choudoufu in
@@ -89,20 +87,30 @@ export const chantScenario = (scenario) => typeof scenario === "string" && /^cha
 /** Whether a scenario belongs to a plain-workflow demo (Terragrunt or Atmos on choudoufu). */
 export const plainScenario = (scenario) => typeof scenario === "string" && /^(terragrunt|atmos)-/.test(scenario);
 
-/** The built-in cards for a scenario, on a phone or not: the last card is Inspect, or on a phone the short-version note. */
-export function defaultTipsFor(scenario, phone = false) {
-  const base = chantScenario(scenario) ? CHANT_TIPS : plainScenario(scenario) ? PLAIN_TIPS : DEFAULT_TIPS;
-  return phone ? [...base.slice(0, -1), PHONE_TIPS[PHONE_TIPS.length - 1]] : base;
+
+/** Whether a scenario is a create act (a new resource whose id is known only after apply). */
+export const createScenario = (scenario) => typeof scenario === "string" && /create/.test(scenario);
+
+/**
+ * The one built-in tip of an act. A create act gets the known-after-apply card (the Terragrunt and Atmos demos their
+ * own); any other act gets the card that says what the tool is (choudoufu's, or chant's "One plan, one note"). The rest of the cards are not shown in the prompt demo: terragucci's, "Free, nothing to host",
+ * "Inspect", and chant's "One approval" and "Parameters, not exports".
+ */
+export function actTip(scenario) {
+  const create = createScenario(scenario);
+  if (chantScenario(scenario)) return create ? CHANT_TIPS[1] : CHANT_TIPS[0];
+  if (create && /^terragrunt-/.test(scenario)) return TERRAGRUNT_TIP;
+  if (create && /^atmos-/.test(scenario)) return ATMOS_TIP;
+  return create ? DEFAULT_TIPS[0] : DEFAULT_TIPS[2];
 }
 
-export const PHONE_TIPS = [
-  ...DEFAULT_TIPS.slice(0, -1),
-  { title: "The full view", body: "This is the short version. A laptop shows the full view and Inspect." },
-];
-/** The phone layout's width (web/kiosk.html, ask mode). */
+/** The act a busy line belongs to: one scenario of one cycle. */
+export const actKey = (d) => (d ? `${d.cycle}|${d.scenario}` : null);
+
+/** The phone layout's width (web/kiosk.html, ask mode): no tips there, the graph and the prompt have the screen. */
 const PHONE = "(max-width: 700px)";
 
-const validTips = (v) =>
+export const validTips = (v) =>
   Array.isArray(v)
     ? v
         .map((t) => (typeof t === "string" ? { body: t } : t))
@@ -115,26 +123,22 @@ const validTips = (v) =>
     : [];
 
 /**
- * `show(tip)` puts a card up (replacing any), `hide()` takes the current one down. `enabled()` is the Tips switch.
- * `busy(detail)` takes a `behold:ask-busy` detail. `dismiss()`: the viewer closed the card; no more for this busy line.
+ * `show(tip)` puts a card up and returns false when there is no room for it (nothing shown; the act keeps its tip for
+ * a later wait). `hide()` takes it down. `enabled()` is the Tips switch. `pick(detail)` is the act's built-in tip.
+ * `busy(detail)` takes a `behold:ask-busy` detail, `line()` a `behold:ask-line`; `dismiss()`: the viewer closed it.
  */
-export function createTipSequencer({ show, hide, enabled = () => true, defaults = DEFAULT_TIPS, minMs = TIP_MIN_MS, setTimer = setTimeout, clearTimer = clearTimeout, now = Date.now }) {
+export function createTipSequencer({ show, hide, enabled = () => true, pick = (d) => actTip(d && d.scenario), waitMs = TIP_WAIT_MS, quietMs = TIP_QUIET_MS, minMs = TIP_MIN_MS, setTimer = setTimeout, clearTimer = clearTimeout, now = Date.now }) {
   let id = null;
+  let detail = null;
+  let since = 0;
+  let quietUntil = -Infinity;
   let timer = null;
   let up = false;
-  // The current card has been up its whole reading time.
-  let read = false;
-  // The card on screen, when its timer is running: when it ends, and what is left while it is paused.
   let current = null;
   let due = 0;
   let paused = null;
-  // Cards waiting for the current one to be read: { tip, builtin, cycle }.
-  let queue = [];
-  // Built-in cards shown so far, by scenario cycle.
-  const given = new Map();
-  // The scenario cycle the busy line belongs to, and the one whose cards the viewer closed: none come back in it.
-  let cycleNow = null;
-  let closedCycle = null;
+  // The acts that have had their tip.
+  const spent = new Set();
   const stop = () => {
     if (timer !== null) clearTimer(timer);
     timer = null;
@@ -143,55 +147,52 @@ export function createTipSequencer({ show, hide, enabled = () => true, defaults 
     stop();
     if (up) hide();
     up = false;
-    read = false;
+    current = null;
     paused = null;
   };
-  const arm = (ms) => {
+  const arm = (ms, f) => {
     due = now() + ms;
     timer = setTimer(() => {
       timer = null;
-      read = true;
-      next();
+      f();
     }, ms);
   };
-  // The next waiting card, or, once the current card is read and nothing waits, down when no step is busy.
-  const next = () => {
-    if (queue.length) {
-      const { tip, builtin, cycle } = queue.shift();
-      show(tip);
-      up = true;
-      read = false;
-      current = tip;
-      paused = null;
-      if (builtin) given.set(cycle, (given.get(cycle) || 0) + 1);
-      arm(holdMs(tip, minMs));
-      return;
-    }
-    if (id === null) down();
+  const eligible = () => id !== null && !up && enabled() && !spent.has(actKey(detail));
+  const fire = () => {
+    if (!eligible() || now() < since + waitMs || now() < quietUntil) return schedule();
+    const tip = validTips(detail.tips)[0] || pick(detail);
+    if (!tip || show(tip) === false) return;
+    up = true;
+    current = tip;
+    spent.add(actKey(detail));
+    arm(holdMs(tip, minMs), down);
+  };
+  function schedule() {
+    if (!eligible() || timer !== null) return;
+    arm(Math.max(0, Math.max(since + waitMs, quietUntil) - now()), fire);
+  }
+  // A new terminal line: the tip gives way at once, and none starts for a while.
+  const event = () => {
+    quietUntil = now() + quietMs;
+    down();
   };
   return {
     busy(d) {
       const step = d && d.busy && d.id ? d.id : null;
       if (step === id) return;
       id = step;
-      // A card on screen is never cut short: a step that ends or changes only changes what comes after it.
-      queue = [];
-      if (id !== null) cycleNow = `${d.cycle}|${d.scenario}`;
-      if (id !== null && enabled() && cycleNow !== closedCycle) {
-        const own = validTips(d.tips);
-        const cycle = cycleNow;
-        const builtins = typeof defaults === "function" ? defaults(d.scenario) : defaults;
-        const list = own.length ? own : builtins.slice(given.get(cycle) || 0);
-        queue = list.map((tip) => ({ tip, builtin: !own.length, cycle }));
-      }
-      if (!up || read) {
-        stop();
-        next();
-      }
+      detail = step === null ? null : d;
+      event();
+      if (id !== null) since = now();
+      schedule();
+    },
+    line() {
+      event();
+      schedule();
     },
     /** The viewer hovers or focuses the card: a card with a link holds still. */
     pause() {
-      if (!up || read || paused !== null || timer === null || !current || !current.link) return;
+      if (!up || paused !== null || timer === null || !current || !current.link) return;
       paused = Math.max(0, due - now());
       stop();
     },
@@ -200,20 +201,17 @@ export function createTipSequencer({ show, hide, enabled = () => true, defaults 
       if (paused === null) return;
       const left = Math.max(paused, LINK_RESUME_MS);
       paused = null;
-      arm(left);
+      arm(left, down);
     },
-    /** The viewer closed the card: no more cards for the rest of this scenario cycle. */
+    /** The viewer closed the card. */
     dismiss() {
       stop();
       paused = null;
       up = false;
-      read = false;
-      queue = [];
-      closedCycle = cycleNow;
+      current = null;
     },
     /** The Tips switch turned off: the card goes. */
     off() {
-      queue = [];
       down();
     },
     current: () => id,
@@ -232,26 +230,53 @@ export function shouldDismiss(target, host) {
   return !(target.closest && target.closest("#k-ask-tips .eh-modal"));
 }
 
+/** Space kept around a lit box (its attribute lines hang under it), and between the card and the area's edges. */
+export const LIT_PAD = 16;
+export const LIT_FOOT = 56;
+export const EDGE = 12;
+
+const hits = (a, b) => a.left < b.left + b.width && b.left < a.left + a.width && a.top < b.top + b.height && b.top < a.top + a.height;
+
+/**
+ * Where the card docks in `area` ({ left, top, width, height }, the graph's room above the prompt) for a card of
+ * `w` by `h`: the first corner (top right, top left, bottom right, bottom left) that touches no lit box (`lit`, page
+ * rects, each padded by {@link LIT_PAD} and {@link LIT_FOOT} below). Null when none is clear or the card does not fit.
+ */
+export function dockCorner(area, w, h, lit = []) {
+  if (!area || w + 2 * EDGE > area.width || h + 2 * EDGE > area.height) return null;
+  const pads = lit.map((r) => ({ left: r.left - LIT_PAD, top: r.top - LIT_PAD, width: r.width + 2 * LIT_PAD, height: r.height + LIT_PAD + LIT_FOOT }));
+  const xs = { r: area.left + area.width - EDGE - w, l: area.left + EDGE };
+  const ys = { t: area.top + EDGE, b: area.top + area.height - EDGE - h };
+  for (const [corner, x, y] of [["top-right", xs.r, ys.t], ["top-left", xs.l, ys.t], ["bottom-right", xs.r, ys.b], ["bottom-left", xs.l, ys.b]]) {
+    const box = { left: x, top: y, width: w, height: h };
+    if (!pads.some((p) => hits(box, p))) return { corner, left: x, top: y };
+  }
+  return null;
+}
+
 const STYLE_ID = "k-ask-tips-style";
 const STYLE = `
-#k-ask-tips { position: fixed; left: 0; right: 0; top: 0; height: 0; z-index: 50; pointer-events: none; overflow: hidden; }
-#k-ask-tips .eh-modal-wrap { position: absolute; inset: 0; z-index: auto; background: transparent; align-items: flex-start; padding: 12px 16px 0; box-sizing: border-box; pointer-events: auto; }
+#k-ask-tips { position: fixed; left: 0; top: 0; width: 0; height: 0; z-index: 50; pointer-events: none; overflow: hidden; }
+#k-ask-tips .eh-modal-wrap { position: absolute; inset: 0; z-index: auto; display: block; background: transparent; pointer-events: auto; }
 #k-ask-tips .eh-modal-wrap.k-tip-out { pointer-events: none; }
-#k-ask-tips .eh-modal-close { min-width: 44px; min-height: 44px; top: 0; right: 0; }
-#k-ask-tips .eh-modal-link { display: inline-block; margin-top: 0.4em; font-size: 0.9em; color: var(--focus, inherit); text-decoration: underline; }
-#k-ask-tips .eh-modal { pointer-events: auto; width: min(32em, 100%); max-height: calc(100% - 12px); font-size: 1em; }
-@media (max-width: 700px) { #k-ask-tips .eh-modal { font-size: 0.9em; padding: 0.7em 1em 0.8em; } #k-ask-tips .eh-modal-title { font-size: 1.15em; margin-bottom: 0.3em; } }
+#k-ask-tips .eh-modal { position: absolute; pointer-events: auto; width: min(19em, calc(100% - 24px)); max-height: calc(100% - 24px); padding: 0.55em 2.4em 0.6em 0.8em; font-size: 0.8em; border: 1px solid var(--rule); border-radius: 8px; box-shadow: none;
+  background: color-mix(in srgb, var(--surface-pane-b, var(--panel)) 92%, transparent); color: var(--muted); }
+#k-ask-tips .eh-modal-tip { --bar: var(--rule); box-shadow: none; background: color-mix(in srgb, var(--surface-pane-b, var(--panel)) 92%, transparent); }
+#k-ask-tips .eh-modal-mode { display: none; }
+#k-ask-tips .eh-modal-title { font-size: 1.05em; margin: 0 0 0.2em; color: var(--fg); }
+#k-ask-tips .eh-modal-line { color: var(--muted); line-height: 1.4; }
+#k-ask-tips .eh-modal-close { min-width: 36px; min-height: 36px; top: 0; right: 0; font-size: 1.1em; }
+#k-ask-tips .eh-modal-link { display: inline-block; margin-top: 0.3em; font-size: 0.95em; color: var(--muted); text-decoration: underline; }
 @media (prefers-reduced-motion: no-preference) {
-  #k-ask-tips .eh-modal-wrap { animation: k-tip-in 0.25s ease-out; transition: opacity ${TIP_FADE_MS}ms linear; }
+  #k-ask-tips .eh-modal-wrap { transition: opacity ${TIP_FADE_MS}ms linear; }
   #k-ask-tips .eh-modal-wrap.k-tip-out { opacity: 0; }
 }
-@keyframes k-tip-in { from { opacity: 0; } to { opacity: 1; } }
 `;
 
 /**
- * Wire the cards to the page: listens for `behold:ask-busy` on `win`, and shows them in a box over the graph (from the
- * top of the page to the top of `askHost`, the prompt pane). The Tips checkbox turns them off where it shows; where
- * the bar is hidden (ask mode, a phone) they are on.
+ * Wire the cards to the page: listens for `behold:ask-busy` and `behold:ask-line` on `win`, and for the frame's
+ * `behold:lit-rects`. The card docks in the graph's room (the shown graph frame, above `askHost`, the prompt pane).
+ * The Tips checkbox turns them off where it shows; where the bar is hidden (ask mode) they are on.
  */
 export function mountAskTips({ win = window, doc = document, askHost, reduced = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches }) {
   if (!askHost || !doc.body) return null;
@@ -268,9 +293,43 @@ export function mountAskTips({ win = window, doc = document, askHost, reduced = 
   doc.body.appendChild(host);
   let card = null;
   let measure = null;
-  const fit = () => {
-    const r = askHost.getBoundingClientRect();
-    host.style.height = `${Math.max(0, Math.round(r.top))}px`;
+  // The lit boxes, in the frame's pixels, from the frame that sent them.
+  let lit = { source: null, rects: [] };
+  const phone = () => typeof win.matchMedia === "function" && win.matchMedia(PHONE).matches;
+  // The graph frame on show is always #view (a frame loading out of sight takes the id when it swaps in).
+  const shownFrame = () => {
+    const f = doc.getElementById("view");
+    return f && f.getClientRects().length > 0 ? f : null;
+  };
+  /** The graph's room above the prompt, in page pixels. */
+  const area = () => {
+    const f = shownFrame();
+    if (!f) return null;
+    const r = f.getBoundingClientRect();
+    const a = askHost.getBoundingClientRect();
+    const bottom = askHost.hidden ? r.bottom : Math.min(r.bottom, a.top);
+    return { left: r.left, top: r.top, width: r.width, height: Math.max(0, bottom - r.top), frame: f };
+  };
+  const litRects = (a) => {
+    if (!a || !a.frame || lit.source !== a.frame.contentWindow) return [];
+    return lit.rects.map(([x, y, w, h]) => ({ left: a.left + x, top: a.top + y, width: w, height: h }));
+  };
+  /** Dock the card; false when no corner is clear. */
+  const place = () => {
+    const box = card && host.querySelector(".eh-modal");
+    const a = area();
+    if (!box || !a) return false;
+    host.style.left = `${Math.round(a.left)}px`;
+    host.style.top = `${Math.round(a.top)}px`;
+    host.style.width = `${Math.round(a.width)}px`;
+    host.style.height = `${Math.round(a.height)}px`;
+    const b = box.getBoundingClientRect();
+    const spot = dockCorner(a, b.width, b.height, litRects(a));
+    if (!spot) return false;
+    box.style.left = `${Math.round(spot.left - a.left)}px`;
+    box.style.top = `${Math.round(spot.top - a.top)}px`;
+    box.dataset.corner = spot.corner;
+    return true;
   };
   const enabled = () => {
     const box = doc.querySelector(".eh-switch input");
@@ -301,12 +360,29 @@ export function mountAskTips({ win = window, doc = document, askHost, reduced = 
     }
     stopMeasure();
   };
+  const hideCard = () => {
+    const c = card;
+    if (!c) return;
+    const wrap = host.querySelector(".eh-modal-wrap");
+    if (reduced() || !wrap) return kill();
+    wrap.classList.add("k-tip-out");
+    card = null;
+    fading.add(c);
+    stopMeasure();
+    win.setTimeout(() => {
+      fading.delete(c);
+      c.api.close();
+    }, TIP_FADE_MS);
+  };
+  // The boxes moved under the card: dock elsewhere, or go.
+  const recheck = () => {
+    if (card && !place()) hideCard();
+  };
   const seq = createTipSequencer({
-    defaults: (scenario) => defaultTipsFor(scenario, typeof win.matchMedia === "function" && win.matchMedia(PHONE).matches),
     enabled,
     show(tip) {
       kill();
-      fit();
+      if (phone()) return false;
       const mine = { api: null };
       mine.api = openEventModal(host, {
         mode: "narrated",
@@ -317,27 +393,20 @@ export function mountAskTips({ win = window, doc = document, askHost, reduced = 
         onClose: (s) => {
           if (card === mine) {
             card = null;
+            stopMeasure();
             if (s.closedBy === "viewer") seq.dismiss();
           }
         },
       });
       card = mine;
-      if (measure === null) measure = win.setInterval(fit, 250);
+      if (!place()) {
+        kill();
+        return false;
+      }
+      if (measure === null) measure = win.setInterval(recheck, 250);
+      return true;
     },
-    hide() {
-      const c = card;
-      if (!c) return;
-      const wrap = host.querySelector(".eh-modal-wrap");
-      if (reduced() || !wrap) return kill();
-      wrap.classList.add("k-tip-out");
-      card = null;
-      fading.add(c);
-      stopMeasure();
-      win.setTimeout(() => {
-        fading.delete(c);
-        c.api.close();
-      }, TIP_FADE_MS);
-    },
+    hide: hideCard,
   });
   // A card with a link holds still while it is hovered or has focus (the sequencer ignores a card without one).
   const onCard = (e) => e.target && e.target.closest && e.target.closest("#k-ask-tips .eh-modal");
@@ -353,6 +422,14 @@ export function mountAskTips({ win = window, doc = document, askHost, reduced = 
     card.api.dismiss();
   }, true);
   win.addEventListener("behold:ask-busy", (e) => seq.busy(e.detail));
+  win.addEventListener("behold:ask-line", () => seq.line());
+  win.addEventListener("message", (e) => {
+    if (!e.data || e.data.type !== "behold:lit-rects" || !Array.isArray(e.data.rects)) return;
+    const f = [...doc.querySelectorAll("iframe")].find((x) => x.contentWindow === e.source);
+    if (!f) return;
+    lit = { source: e.source, rects: e.data.rects.filter((r) => Array.isArray(r) && r.length === 4 && r.every(Number.isFinite)) };
+    recheck();
+  });
   doc.addEventListener("change", (e) => {
     if (e.target && e.target.matches && e.target.matches(".eh-switch input") && !e.target.checked) seq.off();
   });
