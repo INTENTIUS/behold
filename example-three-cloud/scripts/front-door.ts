@@ -149,7 +149,11 @@ class PlanMoved extends Refusal {
 function build(member: "dns" | "gcp"): string {
   const out = join(WORK, member === "gcp" ? "gcp.yaml" : `${member}.json`);
   mkdirSync(WORK, { recursive: true });
-  const r = spawnSync(CHANT, ["build", "src", "-o", out], { cwd: join(ROOT, member), env: childEnv, encoding: "utf8" });
+  // dns lists terraform and pulumi too, for its member-outputs components,
+  // and the terraform lexicon writes the azure root it names into the same
+  // build after the template. Only the aws lexicon's template is wanted.
+  const lexicon = member === "dns" ? ["--lexicon", "aws"] : [];
+  const r = spawnSync(CHANT, ["build", "src", ...lexicon, "-o", out], { cwd: join(ROOT, member), env: childEnv, encoding: "utf8" });
   if (r.status !== 0) throw new Refusal(`chant build failed in ${member}:\n${r.stderr || r.stdout}`);
   return out;
 }
@@ -233,7 +237,7 @@ async function lockAzureEnv(): Promise<void> {
     ARM_SUBSCRIPTION_ID: SUBSCRIPTION,
     ARM_TENANT_ID: TENANT,
     ARM_CLIENT_ID: CLIENT,
-    ARM_CLIENT_SECRET: "floci-az-does-not-check-this",
+    ARM_CLIENT_SECRET: "floci-az-fake-secret",
     ARM_USE_CLI: "false",
     ARM_USE_MSI: "false",
     ARM_USE_OIDC: "false",
