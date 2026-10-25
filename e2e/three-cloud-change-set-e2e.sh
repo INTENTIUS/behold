@@ -28,10 +28,12 @@
 #
 #   4. the change names azure (dns's terraform.roots.azure), so the azure
 #      component and records are both planned;
-#   5. records's step lists azure under its unresolved inputs: its cfn-deploy
-#      member's hole says `inputs from azure`, the report lists
-#      azure.azureEndpoint under its unknownInputs and its reads name it
-#      unknown;
+#   5. records's step lists azure under its unresolved inputs: the report
+#      lists azure.azureEndpoint under its unknownInputs and its reads name it
+#      unknown, and its cfn-deploy part is either a hole that says `inputs
+#      from azure`, or, on a chant that previews a stack with an input still
+#      unknown (chant#4423's covered rounds, chant main), a preview with
+#      entries and no hole;
 #   6. the azure#outputs part has a hole naming azure.azureEndpoint.
 #
 # The example needs a chant with member-outputs (chant#4455) and the pulumi
@@ -57,6 +59,14 @@ TARGET="$WORK/three-cloud"
 CHOUDOUFU="${CHOUDOUFU_BIN:-choudoufu}"
 if ! docker info >/dev/null 2>&1; then echo "skip: Docker is not running"; exit 0; fi
 if ! command -v "$CHOUDOUFU" >/dev/null 2>&1; then echo "skip: ${CHOUDOUFU} is not on PATH (set CHOUDOUFU_BIN to name a build)"; exit 0; fi
+# The azure part is a choudoufu set plan, which needs choudoufu v0.22.0 or
+# newer (chant's MIN_CHOUDOUFU_WAVES_VERSION); a dev build names no release
+# and is let through, as chant lets it through.
+CHOUDOUFU_VERSION=$("$CHOUDOUFU" version 2>/dev/null | sed -n 's/^choudoufu v\([0-9][0-9.]*\).*/\1/p' | head -1)
+if [ -n "$CHOUDOUFU_VERSION" ] && [ "$(printf '%s\n0.22.0\n' "$CHOUDOUFU_VERSION" | sort -V | head -1)" != 0.22.0 ]; then
+  echo "FAIL: $(command -v "$CHOUDOUFU") is choudoufu v$CHOUDOUFU_VERSION, older than v0.22.0, which the azure part's set plan needs; set CHOUDOUFU_BIN to a build of choudoufu main" >&2
+  exit 1
+fi
 
 export FLOCI_CONTAINER=behold-three-cloud-floci FLOCI_AZ_CONTAINER=behold-three-cloud-floci-az FLOCI_GCP_CONTAINER=behold-three-cloud-floci-gcp
 export FLOCI_PORT=4661 FLOCI_AZ_PORT=4662 FLOCI_GCP_PORT=4663
@@ -180,8 +190,10 @@ ok("records's reads name azure's azureEndpoint unknown");
 const part = doc.members.find((m: any) => m.member === "local");
 if (!part) fail("the change set has no part for local (records's cfn-deploy)");
 const hole = (part.holes ?? []).find((h: any) => typeof h.reason === "string" && /inputs from (\S+, )*azure\b/.test(h.reason));
-if (!hole) fail(`records's cfn-deploy part has no hole naming azure among its unresolved inputs (${JSON.stringify(part.holes)})`);
-ok(`records's step lists azure under its unresolved inputs: ${hole.reason}`);
+const previewed = (part.holes ?? []).length === 0 && doc.entries.some((e: any) => e.member === "local");
+if (hole) ok(`records's step lists azure under its unresolved inputs: ${hole.reason}`);
+else if (previewed) ok(`records's cfn-deploy is previewed with azure.azureEndpoint unknown: ${doc.entries.filter((e: any) => e.member === "local").length} entries, no hole`);
+else fail(`records's cfn-deploy part has neither a hole naming azure nor a preview (${JSON.stringify(part.holes)})`);
 
 const outputs = doc.members.find((m: any) => m.member === "azure#outputs");
 if (!outputs) fail("the change set has no azure#outputs part");

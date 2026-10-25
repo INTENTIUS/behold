@@ -68,6 +68,14 @@ LOG="$WORK/behold.log"
 CHOUDOUFU="${CHOUDOUFU_BIN:-choudoufu}"
 if ! docker info >/dev/null 2>&1; then echo "skip: Docker is not running"; exit 0; fi
 if ! command -v "$CHOUDOUFU" >/dev/null 2>&1; then echo "skip: ${CHOUDOUFU} is not on PATH (set CHOUDOUFU_BIN to name a build)"; exit 0; fi
+# The azure part is a choudoufu set plan, which needs choudoufu v0.22.0 or
+# newer (chant's MIN_CHOUDOUFU_WAVES_VERSION); a dev build names no release
+# and is let through, as chant lets it through.
+CHOUDOUFU_VERSION=$("$CHOUDOUFU" version 2>/dev/null | sed -n 's/^choudoufu v\([0-9][0-9.]*\).*/\1/p' | head -1)
+if [ -n "$CHOUDOUFU_VERSION" ] && [ "$(printf '%s\n0.22.0\n' "$CHOUDOUFU_VERSION" | sort -V | head -1)" != 0.22.0 ]; then
+  echo "FAIL: $(command -v "$CHOUDOUFU") is choudoufu v$CHOUDOUFU_VERSION, older than v0.22.0, which the azure part's set plan needs; set CHOUDOUFU_BIN to a build of choudoufu main" >&2
+  exit 1
+fi
 
 export FLOCI_CONTAINER=behold-multi-engine-floci FLOCI_AZ_CONTAINER=behold-multi-engine-floci-az FLOCI_GCP_CONTAINER=behold-multi-engine-floci-gcp
 export FLOCI_PORT=4664 FLOCI_AZ_PORT=4665 FLOCI_GCP_PORT=4666
@@ -158,7 +166,7 @@ node -e '
   const out = {
     FAKE_DRIFT_EDITED_DNS: pick("dns", /^zone$/),
     FAKE_DRIFT_ADDRS_DNS: of("dns").map((n) => addr(n, "dns")).join(" "),
-    FAKE_DRIFT_EDITED_GCP: pick("gcp", /RunService|site/i),
+    FAKE_DRIFT_EDITED_GCP: pick("gcp", /^webService$/),
     FAKE_DRIFT_ADDRS_GCP: of("gcp").map((n) => addr(n, "gcp")).join(" "),
     FAKE_DRIFT_EDITED_AZURE: pick("azure", /^azurerm_container_app\.web$/),
     AZURE_ADDRS: JSON.stringify(of("azure").map((n) => addr(n, "azure"))),
