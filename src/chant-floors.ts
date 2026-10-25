@@ -116,6 +116,11 @@ export const DECISION_POINTS_CHANT_FLOOR = "0.107.0";
  * release that ships it was not cut when this was written: 0.124.52 is the
  * newest published chant, so the floor is the next one. The Adopt tab (#999). */
 export const ADOPTION_REPORT_CHANT_FLOOR = "0.124.53";
+/** The first chant with `chant workspace drift --member <name>`, one member's
+ * drift document read by its own engine (behold#995's chant half, merged on
+ * INTENTIUS/chant integration/choudoufu-engine). Not released when this was
+ * written; 0.124.52 is the newest published chant, so the floor is the next. */
+export const DRIFT_RECORD_CHANT_FLOOR = "0.124.53";
 /** The first chant whose runner keeps a run index at its report URL,
  * `<url>/runs/index.json` (ci-run-index/v1, INTENTIUS/chant#4098,
  * INTENTIUS/chant#4114), which `chant ci runs --json` prints. The kiosk's runs
@@ -247,6 +252,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "a Terraform folder with lint errors", floor: GRAPH_LINT_REPORT_CHANT_FLOOR, adds: "graph.lint: \"report\" draws it, the findings on meta.lint (behold#919)", degraded: "a bare Terraform estate that lint finds errors in is refused, and the refusal says which chant draws it" },
   { read: "org workspace", floor: ORG_SCOPE_CHANT_FLOOR, adds: "repo members that name another repository's workspace, and workspace.repo (chant#3168)", degraded: "an org workspace's repo members are listed with their URL and revision and no members of theirs" },
   { read: "environment executor", floor: EXECUTOR_CHANT_FLOOR, adds: "executor on each workspace graph --composites environment row (chant#4402)", degraded: "no environment is read as deploying through a forge, so Deploy is not routed away from this machine" },
+  { read: "drift record", floor: DRIFT_RECORD_CHANT_FLOOR, adds: "chant workspace drift --member, one member's drift document from the engine that owns it (behold#995)", degraded: "a Terraform member's cards carry no live colour, and chant and choudoufu members colour from their own live reads through the same (status, read) table" },
   { read: "adoption report", floor: ADOPTION_REPORT_CHANT_FLOOR, adds: "workspace promote --json carries live-import's adoption report (behold#999)" },
   { read: "decision points", floor: DECISION_POINTS_CHANT_FLOOR, adds: "a gate that asks a decision point, read with chant workspace points --open (chant#3170)", degraded: "the gate strip draws no open decision points, and says which chant adds them" },
 ];

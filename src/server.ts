@@ -54,7 +54,7 @@ import { mergeClusterRoot, runningK3dClusters } from "./cluster-root.ts";
 import { synthesizeHelmReleases, discoverReleaseUnits } from "./helm-releases.ts";
 import { ghReady, resolveWorkflow, dispatchAndFollow, followRun, joinCiProgress } from "./gh-run.ts";
 import { saveDispatchedRun, readDispatchedRun, concludeDispatchedRun, type DispatchedRun } from "./ci-run-store.ts";
-import { joinComponentStatus, joinTickVerdicts, componentStatusColor } from "./component-status.ts";
+import { joinComponentStatus, joinTickVerdicts, componentLooksDeployed } from "./component-status.ts";
 import { reclassifyOverlay, pruneImports, attachRuntimeContainment, pruneRuntimeChildren } from "./overlay.ts";
 import { addValueMatchEdges } from "./value-match.ts";
 import { addK8sDeclaredEdges } from "./k8s-edges.ts";
@@ -173,7 +173,8 @@ import { pointsFloorRefusal, readOpenPoints } from "./decision-points.ts";
 import { orgFloorRefusal, readOrgRepos } from "./org-workspace.ts";
 import { approverFlags, approverFor, approverView, type ApproverOptions, type ApproverRead } from "./approver.ts";
 import { readWhy, whyRegion, withChain } from "./workspace-why.ts";
-import { floorFor, floorMet, floorRefusal } from "./chant-floors.ts";
+import { DRIFT_RECORD_CHANT_FLOOR, floorFor, floorMet, floorRefusal } from "./chant-floors.ts";
+import { memberBlockGraph } from "./choudoufu-workspace.ts";
 import { allowedHostsFrom, guardRequest } from "./request-guard.ts";
 import { applyMemberPasses, memberKindOf, memberKindSpec, memberPassNote, servesAsEstate, type MemberPassRun } from "./member-kind.ts";
 import { TerraformReadError, terraformMemberWorkspace, terraformReaderState, terraformVia } from "./terraform-member.ts";
@@ -222,6 +223,7 @@ import { sqlYodelerLaneRoute } from "./sql-yodeler-lane.ts";
 import { cachedHealth, invalidateHealth, readHealthOverlay, rememberHealth, type HealthMember } from "./health-overlay.ts";
 import { rootReader, rootStreamTransport } from "./workspace-reader.ts";
 import { runDriftStream } from "./drift-stream.ts";
+import { DRIFT_DEFAULT_KINDS, DRIFT_KINDS, paintWorkspaceDrift } from "./drift-overlay.ts";
 import { PUBLIC_SEARCHES_IN_FLIGHT, SearchAskError, cachedCapabilities, checkAsk, drawnOf, runSearch, searchTarget, type SearchTarget } from "./search.ts";
 import { resolvedVersion } from "./terraform-member.ts";
 import { writeViewQuery } from "../web/view-url.js";
@@ -4020,6 +4022,20 @@ export function createApp(
         const drift = choudoufuPlanDrift(cfg.projectDirs);
         let driftedCards = 0;
         for (const e of drift.byDir.values()) driftedCards += paintPlanDrift(ir, e.drift, e.name);
+        // behold#995: members coloured from chant's drift record, through the one
+        // (status, read) table. On every overlay the members with no live half of
+        // their own (a Terraform root, a Pulumi stack); with `?drift=1` every kind
+        // `workspace drift` reads. Only on a declared workspace whose chant has it.
+        const driftWs = servedWorkspace();
+        const driftRecord =
+          driftWs && meetsFloor(driftWs.chant, DRIFT_RECORD_CHANT_FLOOR)
+            ? await paintWorkspaceDrift(
+                ir,
+                driftWs,
+                { env, plan: planWanted, kinds: new URL(c.req.url).searchParams.get("drift") === "1" ? DRIFT_KINDS : DRIFT_DEFAULT_KINDS },
+                { reader: rootReader(driftWs.root), blockGraph: (m) => memberBlockGraph(m, driftWs.root) },
+              )
+            : undefined;
         const coverNote =
           est.unobserved.length || est.dropped.length
             ? `live observe covered ${est.observed} of ${est.total} projects — ` +
@@ -4164,6 +4180,8 @@ export function createApp(
             // that says `0 drifted` there is a claim behold did not earn.
             // The figure is CARDS marked, which is what the legend counts.
             drift: { ...(drift.read ? { read: true, drifted: driftedCards } : { read: false }), ...(planWanted && planNotes(cfg.projectDirs) ? { note: planNotes(cfg.projectDirs) } : {}) },
+            // behold#995: what each member's drift record painted, and what it could not place.
+            ...(driftRecord ? { driftRecord } : {}),
             ...(note ? { note } : {}),
           },
         });
@@ -4738,7 +4756,7 @@ export function createApp(
     if (!force && flociTargeted) {
       try {
         const rows = await componentStatus(cfg.projectDir, env);
-        const deployed = rows.filter((r) => componentStatusColor(r) !== "neutral").map((r) => r.component);
+        const deployed = rows.filter((r) => componentLooksDeployed(r)).map((r) => r.component);
         const blocked = component === "all" ? deployed : deployed.includes(component) ? [component] : [];
         if (blocked.length) {
           const who = component === "all" ? `${blocked.length} component(s) are` : `"${component}" is`;

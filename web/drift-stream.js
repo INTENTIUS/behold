@@ -36,7 +36,8 @@ export function cardsFor(ir, member, address, node) {
   for (const n of (ir && ir.nodes) || []) {
     if (!n.id || !n.id.startsWith(prefix)) continue;
     const own = n.attrs && n.attrs.address;
-    if ((node && n.id === prefix + node) || n.id === prefix + address || own === address) ids.push(n.id);
+    // chant's workspace drift composes `node` with the member in front (`<member>/<root>/<path>`), as workspace graph does; a bare one is prefixed.
+    if ((node && (n.id === node || n.id === prefix + node)) || n.id === prefix + address || own === address) ids.push(n.id);
   }
   return ids;
 }
@@ -79,6 +80,7 @@ export function applyDriftFrame(ir, frame) {
         run: frame.run,
         ...(frame.reason ? { reason: frame.reason } : {}),
         ...(frame.notReached ? { notReached: true } : {}),
+        ...(frame.unknown ? { unknown: true } : {}),
       };
       if (frame.status === "not-observed") a._unobserved = { reason: frame.reason || "read-failed" };
       else delete a._unobserved;

@@ -14,10 +14,11 @@ import { paintTerraformPlan, terraformPlanReadOf } from "./terraform-plan.ts";
 // with [0] unchanged, [1] updated in place after drift, [2] a planned create:
 // one node per block, `planActions` keyed by instance address, and each change
 // and drift row naming its `instance` (chant's planAttributesFor).
-const PLAN_NOTE = "warning: [terraform] terraform.roots.app: the plan read answered";
 
+// behold#995: which read answered the root is chant's `rootReads` on the IR (chant#4452), not its note.
 function planIr(): GraphIR {
   return {
+    rootReads: { "terraform.roots.app": { depth: "plan" } },
     nodes: [
       {
         id: "app/aws_s3_bucket.logs",
@@ -75,7 +76,7 @@ describe("the instance id rule (#996)", () => {
 describe("a count = 3 resource draws three cards (#996)", () => {
   it("each with its own plan and drift, and the block card rolls them up", () => {
     const ir = sourceIr();
-    paintTerraformPlan(ir, terraformPlanReadOf(planIr(), PLAN_NOTE));
+    paintTerraformPlan(ir, terraformPlanReadOf(planIr()));
     expect(addInstanceCards(ir)).toBe(3);
 
     const cards = ir.nodes.filter((n) => n.attrs.instanceOf === "app/aws_s3_bucket.logs");
@@ -105,7 +106,7 @@ describe("a count = 3 resource draws three cards (#996)", () => {
 
   it("composes: on an estate the ids are <member>/<blockNode>[k]", () => {
     const ir = sourceIr("tf/");
-    paintTerraformPlan(ir, terraformPlanReadOf(planIr(), PLAN_NOTE), "tf");
+    paintTerraformPlan(ir, terraformPlanReadOf(planIr()), "tf");
     addInstanceCards(ir);
     expect(ir.nodes.map((n) => n.id).sort()).toEqual(["tf/app/aws_s3_bucket.logs", ...ids3.map((id) => `tf/${id}`)]);
   });
@@ -115,7 +116,7 @@ describe("a count = 3 resource draws three cards (#996)", () => {
     for (const [i, id] of ids3.entries()) {
       ir.nodes.push({ id, kind: "aws_s3_bucket", lexicon: "terraform", instanceOf: "app/aws_s3_bucket.logs", attrs: { root: "app", address: `aws_s3_bucket.logs[${i}]`, block: "resource" } } as never);
     }
-    paintTerraformPlan(ir, terraformPlanReadOf(planIr(), PLAN_NOTE));
+    paintTerraformPlan(ir, terraformPlanReadOf(planIr()));
     expect(addInstanceCards(ir)).toBe(0);
     expect(ir.nodes).toHaveLength(4);
     expect((ir.nodes.find((n) => n.id === ids3[2])!.attrs._plan as { action: string }).action).toBe("create");

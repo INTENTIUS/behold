@@ -17,7 +17,9 @@
  * types, and nothing that imports it changes. Only what a card needs is
  * checked: the discriminator, the version, member, engine, read and status
  * from their closed lists, and a reason on every `not-observed`. Unknown
- * fields are dropped, as chant's decoder drops them.
+ * fields are dropped, as chant's decoder drops them. One difference, from
+ * behold#995: a status outside chant's list is kept, not refused, so it can be
+ * painted neutral and labelled unknown.
  */
 
 /** The chant commit whose `packages/core/src/drift-record.ts` this file follows. */
@@ -58,7 +60,12 @@ export interface DriftRecord {
   observedAt: string;
   read: DriftRead;
   fellBackFrom?: string;
-  status: DriftStatus;
+  /**
+   * chant's status, or one a newer chant added: behold#995 paints a status it
+   * does not know neutral and labelled unknown (src/drift-tone.ts), so the
+   * decoder keeps it rather than refusing the line.
+   */
+  status: DriftStatus | (string & {});
   unobserved?: DriftUnobserved;
   attributes?: DriftAttribute[];
   ownership?: { verdict: string; ownedBy?: string };
@@ -123,12 +130,12 @@ function record(v: Record<string, unknown>): DriftRecordLine {
   if (!nonEmpty(v.address)) throw new DriftLineError(`${where}: address must be a non-empty string`);
   if (!oneOf(DRIFT_ENGINES, v.engine)) throw new DriftLineError(`${where}: engine ${JSON.stringify(v.engine)}`);
   if (!oneOf(DRIFT_READS, v.read)) throw new DriftLineError(`${where}: read ${JSON.stringify(v.read)}`);
-  if (!oneOf(DRIFT_STATUSES, v.status)) throw new DriftLineError(`${where}: status ${JSON.stringify(v.status)}`);
+  if (!nonEmpty(v.status)) throw new DriftLineError(`${where}: status must be a non-empty string`);
   if (v.node !== null && !nonEmpty(v.node)) throw new DriftLineError(`${where}: node must be a graph id or null`);
   if (!nonEmpty(v.observedAt)) throw new DriftLineError(`${where}: observedAt is missing`);
   if (!isObject(v.evidence) || !nonEmpty(v.evidence.tool)) throw new DriftLineError(`${where}: evidence.tool must be a non-empty string`);
   // chant's state-read rule: a state read never says the account matches.
-  if (v.read === "state" && !["recorded", "pending", "not-observed"].includes(v.status)) {
+  if (v.read === "state" && oneOf(DRIFT_STATUSES, v.status) && !["recorded", "pending", "not-observed"].includes(v.status)) {
     throw new DriftLineError(`${where}: a state read can only be recorded, pending or not-observed, never ${v.status}`);
   }
   let unobserved: DriftUnobserved | undefined;
@@ -185,8 +192,9 @@ export function decodeDriftLine(text: string): DriftLine {
       if (!isObject(v.counts)) throw new DriftLineError(`the drift-settle line for ${h.member} needs counts`);
       const counts: Partial<Record<DriftStatus, number>> = {};
       for (const [s, n] of Object.entries(v.counts)) {
-        if (!oneOf(DRIFT_STATUSES, s) || typeof n !== "number" || !Number.isInteger(n) || n < 0) throw new DriftLineError(`the drift-settle line for ${h.member} has a bad count for ${JSON.stringify(s)}`);
-        counts[s] = n;
+        if (typeof n !== "number" || !Number.isInteger(n) || n < 0) throw new DriftLineError(`the drift-settle line for ${h.member} has a bad count for ${JSON.stringify(s)}`);
+        // A status a newer chant added is counted by it and not here (behold#995).
+        if (oneOf(DRIFT_STATUSES, s)) counts[s] = n;
       }
       const notReached = Array.isArray(v.notReached) ? v.notReached.filter(nonEmpty) : undefined;
       return { type: "drift-settle", drift: DRIFT_VERSION, ...h, counts, ...(nonEmpty(v.at) ? { at: v.at } : {}), ...(notReached ? { notReached } : {}) };

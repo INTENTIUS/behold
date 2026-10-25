@@ -339,6 +339,7 @@ export function planCardRows(plan: unknown): Array<{ label: string; value: strin
   const p = plan as {
     source?: string;
     note?: string;
+    readReason?: string;
     action?: string;
     replacePaths?: string[];
     forcedFrom?: Array<{ path: string; from: string }>;
@@ -348,7 +349,8 @@ export function planCardRows(plan: unknown): Array<{ label: string; value: strin
     driftAction?: string;
   };
   if (p.source !== "plan") {
-    const why = p.note && /no provider credentials/.test(p.note) ? "state, no provider credentials" : p.source === "state" ? "state, the plan failed" : "none, declared only";
+    // behold#995: the cause is chant's `rootReads` reason, never a match on its note.
+    const why = p.readReason === "no-credentials" ? "state, no provider credentials" : p.source === "state" ? "state, the plan failed" : "none, declared only";
     return [
       { label: "plan", value: "not read" },
       { label: "read", value: why },
