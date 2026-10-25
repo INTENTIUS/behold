@@ -307,7 +307,9 @@ export function terraformCardFields(node: { attrs: Record<string, unknown> }): A
   if (typeof a.score === "number" || typeof a.block !== "string") return undefined;
   const reads = typeof a.reads === "string" ? [{ label: "reads", value: a.reads }] : [];
   const root = typeof a.root === "string" ? [{ label: "root", value: a.root }] : [];
-  const fields = [...planCardRows(a._plan), ...reads, ...root];
+  // #996: a counted block is the rollup of its instance cards.
+  const instances = Array.isArray(a._instances) && a._instances.length ? [{ label: "instances", value: String(a._instances.length) }] : [];
+  const fields = [...planCardRows(a._plan), ...instances, ...reads, ...root];
   return fields.length ? fields : [{ label: "block", value: a.block }];
 }
 

@@ -1459,7 +1459,12 @@ or null where chant mapped none), `nodes` (`<member>/<id>` to the strongest
 bucket and the actions on it), `counts`, `unchanged`, `gaps` (members that
 failed to plan or have holes), `gate` (commit, run, `releaseDigest`) and
 `planned` (a release gate's release and environment, chant#4045). An entry
-with no node is kept and listed in the Change set tab, never dropped. The page
+with no node is kept and listed in the Change set tab, never dropped. An entry
+for one instance of a counted block (#996) is put on the instance's node,
+`<blockNode>[k]`, with `block` naming the block, whether chant mapped it to the
+block node (before chant#4454) or the instance node; the block's node carries
+the rollup (`instances`), so its card is outlined when the instance cards are
+not drawn. The page
 (web/change-set-overlay.js) outlines each card in the drift legend's tokens
 (managed for create, foreign for update or replace, degraded for delete or
 forget) with a tag above it, never a fill; it is opened from the "change set"
@@ -2248,6 +2253,17 @@ same facts per card as JSON.
   stays pending with no physical id, and chant carries its plan attributes
   onto the declared node anyway (chant#4372). Its rows read `plan: create`,
   `unknown: N until apply`, `read: plan`.
+- **A `count`/`for_each` block draws a card per instance** (#996,
+  src/instance-cards.ts). The id is the block's node id and the key as
+  Terraform prints it, `app/aws_s3_bucket.logs[0]`, `<member>/` in front on an
+  estate, the same rule chant's graph uses for its instance nodes
+  (INTENTIUS/chant#4454). Until chant emits them, behold derives them from the
+  plan's per-instance rows (`planActions` by instance address, each change and
+  drift row's `instance`), so each card has its own action, changes and drift.
+  An instance node chant draws is kept and only painted. The block card stays
+  as the rollup: chant's aggregate `_plan`, `attrs._instances` and an
+  `instances` row. A key under a module instance (`module.a[0]...[1]`) stays
+  in the rollup. A choudoufu member's roster is per instance already.
 - **choudoufu members read ownership and the plan through chant together**
   (src/choudoufu-chant-read.ts, #924): src/choudoufu-plan.ts is gone, and a
   re-check's `live-plan` is chant's, handed back to behold. See the choudoufu

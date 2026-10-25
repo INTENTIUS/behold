@@ -81,3 +81,25 @@ describe("a node's entries (#681)", () => {
     expect(gapLines({ ...answer, gaps: [{ member: "api", status: "failed", error: "no credentials", holes: [] }] })).toEqual([{ text: "api did not plan: no credentials, so its changes are not drawn", title: "" }]);
   });
 });
+
+// #996: a `count = 3` block's change set. Each instance's entry outlines its
+// own card, `<blockNode>[k]`, and the block card carries the rollup. The
+// entries name the block node, as chant maps them before INTENTIUS/chant#4454
+// (src/instance-cards.test.ts shows the instance-node mapping gives the same).
+describe("instance cards (#996)", () => {
+  const entry = (i, action) => ({ member: "tf", planner: "terraform", address: `aws_s3_bucket.logs[${i}]`, type: "aws_s3_bucket", action, attributes: [], node: "tf/app/aws_s3_bucket.logs" });
+  const doc = { changeSet: { digest: "jcs1-sha256:00", entries: [entry(0, "no-op"), entry(1, "update"), entry(2, "create")], members: [], graph: { member: "tf", at: null } } };
+  const counted = overlayFrom(gate, doc, new Date(0));
+  it("puts each instance's entry on its own card and all of them on the block", () => {
+    const marks = nodeMarks(counted);
+    expect(marks["tf/app/aws_s3_bucket.logs[1]"].tag).toBe("update");
+    expect(marks["tf/app/aws_s3_bucket.logs[2]"].tag).toBe("create");
+    expect(marks["tf/app/aws_s3_bucket.logs"].tag).toBe("create, update");
+    expect(entriesFor(counted, "tf/app/aws_s3_bucket.logs[2]").map((e) => e.head)).toEqual(["create aws_s3_bucket.logs[2]"]);
+    expect(entriesFor(counted, "tf/app/aws_s3_bucket.logs")).toHaveLength(2);
+  });
+  it("counts an instance whose card is not drawn as on the graph when its block is", () => {
+    expect(offGraph(counted, new Set(["tf/app/aws_s3_bucket.logs"])).notDrawn).toEqual([]);
+    expect(offGraph(counted, new Set()).notDrawn).toHaveLength(2);
+  });
+});
