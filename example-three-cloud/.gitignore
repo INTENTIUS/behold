@@ -3,12 +3,3 @@
 export/
 # Each member component's build.
 */dist/
-# The azure estate's provider schemas, record store and state cache, which
-# choudoufu writes beside it, and the set plan documents chant's
-# choudoufuPlanSet writes for it. No trailing slash: the front door's copy
-# links to them, and a link is not a directory to git.
-azure/.terraform
-azure/.terraform.lock.hcl
-azure/.tofu-records
-azure/terraform.tfstate*
-.chant/choudoufu-waves/

@@ -5,47 +5,26 @@ the floci emulators. It is behold's `three-cloud` demo, and its exported page
 asks one question: turn Azure off, and where does traffic go?
 
 ```
-chant.workspace.json        the workspace: dns, aws and gcp (chant), azure (choudoufu)
-chant.config.json           names azure as the terraform lexicon's `azure` root, for its activities
+chant.workspace.json        the workspace: dns, aws, azure, gcp
 dns/src/route53.ts          hosted zone, and a latency entry per cloud (HostnameEntry, AddressEntry)
 dns/ops/front-door.op.ts    the Op that rebuilds the page
 aws/src/site.ts             ECS on Fargate behind a load balancer (FargateAlb)
-azure/main.tf, site.tf      a choudoufu estate: a Container Apps site and its network, through azurerm
+azure/src/site.ts           a Container Apps site and its network (ContainerAppSite, ContainerAppNetwork)
 gcp/src/site.ts             Cloud Run behind a global load balancer (PublicCloudRun, PrivateEgressNetwork)
-*.component.ts              one component per chant member: how it deploys
+*.component.ts              one component per member: how it deploys
                             (aws/ at its root, beside its stacks; the others in src/)
-scripts/emulators-up.sh     boots floci, floci-az (with TLS) and floci-gcp, then `choudoufu init` in azure
-scripts/front-door.ts       the Op's steps: apply, turn Azure off, wait, export; and plan
+scripts/emulators-up.sh     boots floci, floci-az and floci-gcp
+scripts/front-door.ts       the Op's steps: apply, turn Azure off, wait, export
 ```
 
-The composites are the lexicons' own. Each chant member is one component. aws
-deploys with `cfn-deploy`. gcp runs its member's apply from
-`scripts/front-door.ts` (`apply-gcp`) until its lexicon has deploy steps of
-its own (chant#4273). dns runs `apply-dns`, which points each health check at
-the emulator that answers for it.
+The composites are the lexicons' own. Each member is one component. aws
+deploys with `cfn-deploy`. azure and gcp run their member's apply from
+`scripts/front-door.ts` (`apply-azure`, `apply-gcp`) until their lexicons have
+deploy steps of their own (chant#4273). dns runs `apply-dns`, which points
+each health check at the emulator that answers for it.
 
-azure is a choudoufu estate (INTENTIUS/choudoufu#2246), the resources the
-azure lexicon's ContainerAppNetwork and ContainerAppSite declared, written in
-HCL with a `live` block. Its provider block reaches floci-az the way
-choudoufu's own floci-az estates do, every endpoint and credential stated.
-`apply-azure` plans it with the terraform lexicon's `choudoufuPlanSet` and
-applies that set with `choudoufuWaveApply`, under the same floci-az endpoint
-lock. Its records stay in `azure/.tofu-records`.
-
-Each cloud publishes its endpoint as an output (`output()` in aws and gcp, an
-`output` block in azure) and `dns` reads it as a parameter of the same name.
-The front door still hands the azure endpoint to dns itself; feeding a
-choudoufu output into a chant parameter is INTENTIUS/chant#4455.
-
-## One change set
-
-```sh
-npm run change-set     # writes .front-door/change-set.json, applies nothing
-```
-
-That plans the four members into one change-set document under one digest: a
-chant part each for dns, aws and gcp (`chant lifecycle plan local --json`),
-and a choudoufu part for azure (`choudoufuPlanSet`).
+Each cloud publishes its endpoint with `output()` and `dns` reads it as a
+parameter of the same name.
 
 ## Run it
 
@@ -53,9 +32,7 @@ and a choudoufu part for azure (`choudoufuPlanSet`).
 npx @intentius/behold demo three-cloud
 ```
 
-Or by hand, from this directory (needs Docker, and choudoufu on PATH or
-named by CHOUDOUFU_BIN; on a Mac, the floci-az certificate choudoufu's
-`scripts/floci-az-mac-cert.sh` makes, trusted once):
+Or by hand, from this directory (needs Docker):
 
 ```sh
 npm install

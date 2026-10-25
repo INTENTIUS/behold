@@ -670,6 +670,42 @@ pending member becomes a real one only when its own read completes, and the
 live pass a progressive request starts is the same one per member under the
 same budget: a progressive load costs the estate no extra spawn.
 
+### Drift, streamed card by card (#998)
+
+`POST /api/workspace/drift/stream {member, addresses?}` (palette: **"Stream
+drift card by card: <member>"**) runs `chant workspace drift --member <name>
+--stream` at the workspace root and narrates it as `drift` frames on
+`/api/events` (src/drift-stream.ts). The stream is chant's drift record in
+NDJSON (chant#4451): one `drift-start` with the addresses it expects, one
+`drift-record` per instance as its read finishes, one `drift-settle`. Each
+line is decoded in `streamDrift` (src/workspace-reader.ts, checks in
+src/drift-line.ts, written out from chant's decoder at fdce0d963 until a chant
+release exports `@intentius/chant/drift-record`), and each record frame
+repaints only its own card.
+
+- **Per resource on a choudoufu member.** choudoufu's single-resource path
+  (`live-plan -resource`, choudoufu#2245) plans one resource and writes its
+  records when that plan ends, and there is no whole-estate stream. So behold
+  asks once per resource block (`--resource <addr>`, instance keys dropped,
+  data sources left out), one after another, from the card addresses the page
+  sends; the cards change colour resource by resource. Any other member is
+  asked once without `--resource`.
+- **Reading is not a status.** Between a start and its settle, an expected
+  card that has not reported is `data-drift-reading`: dimmed and dashed, its
+  fill and `_status` unchanged. Only a record sets `_status`.
+- **Not reached.** At settle, every expected address no record answered
+  becomes `not-observed` with reason `not-reached` (chant's fold rule), sent
+  as a record frame before the settle frame. A read that fails or prints a
+  line that does not decode is a `failed` frame: its cards stop reading and
+  keep the colour they had. A read that never started stops the run.
+- **Colour** is `toneFor(record)` in src/drift-stream.ts, by status. #995's
+  `(status, read)` table replaces that one function.
+- One run at a time (`409 drift-streaming`); `{stop: true}` stops it.
+  `BEHOLD_DRIFT_CHANT` names the chant the read runs, for a chant built
+  ahead of the release that adds `workspace drift --stream`, and for
+  `just e2e-streamed-drift`'s fake (e2e/fixtures/fake-chant-drift). No floor
+  is registered yet: the release is not known.
+
 ### What a read cost (#420, #421)
 
 `GET /api/doctor` serves `diagnose()`, the same report `behold doctor` prints,
@@ -1617,13 +1653,7 @@ overlay gives that project's nodes.
 
 `example-three-cloud` is a chant workspace (`dns`, `aws`, `azure`, `gcp`) on
 floci, floci-az and floci-gcp; docs/src/content/docs/using/three-cloud.mdx is
-its page. `azure` is a choudoufu estate (`azure/*.tf`, choudoufu#2246), so the
-demo requires choudoufu, `--local` boots no emulator for it (the setup starts
-floci-az, with TLS), and the root's `chant.config.json` names it as the
-terraform lexicon's `azure` root. `scripts/front-door.ts plan --out <file>`
-(`npm run change-set`) composes one change set: chant parts for dns, aws and
-gcp, and azure's choudoufu part from `choudoufuPlanSet`;
-e2e/three-cloud-change-set-e2e.sh asserts it. `behold demo three-cloud` runs `scripts/emulators-up.sh` (the
+its page. `behold demo three-cloud` runs `scripts/emulators-up.sh` (the
 emulators under chant's own container names, with the Docker socket, floci-az
 running Container Apps unmocked), then serves with `--local --env local`.
 `--local` on a workspace boots every chant member's emulators

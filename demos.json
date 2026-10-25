@@ -131,13 +131,12 @@
     },
     {
       "name": "three-cloud",
-      "description": "A website in three clouds behind Route 53: ECS on Fargate, Azure Container Apps and Cloud Run, each answering through a latency record guarded by a health check, as one chant workspace on the floci, floci-az and floci-gcp emulators. The AWS and GCP sites and dns are chant members; the Azure site is a choudoufu estate. Turn Azure off and its record drops out of rotation; dns/ops/front-door.op.ts (or npm run front-door) applies it all, does that, and exports the page, and npm run change-set plans all four members into one change set. Docker, curl and choudoufu (or CHOUDOUFU_BIN) on PATH; pulls three emulator images and the azurerm provider on first run.",
+      "description": "A website in three clouds behind Route 53: ECS on Fargate, Azure Container Apps and Cloud Run, each answering through a latency record guarded by a health check, as one chant workspace on the floci, floci-az and floci-gcp emulators. Turn Azure off and its record drops out of rotation; dns/ops/front-door.op.ts (or npm run front-door) applies it all, does that, and exports the page. Pulls three emulator images on first run.",
       "source": "bundled",
       "dir": "example-three-cloud",
       "requires": [
         "docker",
-        "curl",
-        "choudoufu"
+        "curl"
       ],
       "setup": "bash scripts/emulators-up.sh",
       "serve": {
