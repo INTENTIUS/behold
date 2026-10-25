@@ -196,14 +196,16 @@ describe("the read (#924)", () => {
 
   it("no live-plan document means no live-plan answered: the member is not observed, and chant's note says why", async () => {
     const stderr = "warning: [terraform] terraform.roots.beh924: no read answered (`live-plan -json` failed, so the plan read was not tried)\n";
-    await expect(readChoudoufuThroughChant(member(), recorded("drift", [], { stderr, hand: false, rootRead: null }))).rejects.toThrow(/handed back no live-plan document/);
+    await expect(readChoudoufuThroughChant(member(), recorded("drift", [], { stderr, hand: false, rootRead: null }))).rejects.toThrow(/live-plan -json` failed/);
   });
 
   it("reads which reads answered off the IR's rootReads, never chant's note (behold#995)", () => {
     expect(rootAnswerOf({ rootReads: { [`terraform.roots.${ROOT}`]: BOTH } }, ROOT).answered).toBe("live+plan");
     expect(rootAnswerOf({ rootReads: { [`terraform.roots.${ROOT}`]: { depth: "live+plan", fellBackTo: "live", reason: "plan-failed" } } }, ROOT).answered).toBe("live");
-    // A note that says the plan answered is not read: with no rootReads, live-plan alone answered.
-    expect(rootAnswerOf(JSON.parse(raw("choudoufu-chant-iam-ecr-drift.ir.json")), ROOT).answered).toBe("live");
+    // rootReads wins over a note that says otherwise.
+    expect(rootAnswerOf({ rootReads: { [`terraform.roots.${ROOT}`]: { depth: "live+plan", fellBackTo: "live" } } }, ROOT, raw("choudoufu-chant-iam-ecr-drift.stderr.txt")).answered).toBe("live");
+    // A released chant (0.124.52) puts no rootReads on the IR: its note for the root is read instead.
+    expect(rootAnswerOf(JSON.parse(raw("choudoufu-chant-iam-ecr-drift.ir.json")), ROOT, raw("choudoufu-chant-iam-ecr-drift.stderr.txt")).answered).toBe("live+plan");
     expect(rootAnswerOf(undefined, ROOT).answered).toBe("live");
   });
 

@@ -24,9 +24,10 @@
  * read and the plan read.
  *
  * Which read answered each root comes from the IR's `rootReads`
- * (INTENTIUS/chant#4452), never from chant's note text (behold#995), and
- * every card in a root carries its root's answer. A chant that puts no
- * `rootReads` on the IR reports no root, and its cards carry no answer. A
+ * (INTENTIUS/chant#4452, behold#995), and every card in a root carries its
+ * root's answer. A chant that puts no `rootReads` on the IR (every release up
+ * to 0.124.52) said it only on stderr, one note per root, so for that chant
+ * the notes are parsed instead: the field's presence decides, not a version. A
  * card in a root that fell back is never shown as "no changes": it says the
  * plan was not read and which read answered instead.
  *
@@ -137,6 +138,39 @@ export function rootReadsOf(ir: unknown): Record<string, RootRead> {
   return out;
 }
 
+/** Whether chant put `rootReads` on the IR at all. Its presence, not chant's version, decides which source is read. */
+export function hasRootReads(ir: unknown): boolean {
+  const reads = (ir as { rootReads?: unknown } | null)?.rootReads;
+  return !!reads && typeof reads === "object" && !Array.isArray(reads);
+}
+
+/** chant's per-root note, after the `warning: [terraform] ` prefix. */
+const NOTE = /terraform\.roots\.([^:\s]+): (.*)$/;
+
+/**
+ * The fallback for a chant whose IR carries no `rootReads` (every release up
+ * to 0.124.52, which behold pins): the roots chant named in its notes, and
+ * which read answered each. Read only when {@link hasRootReads} is false.
+ */
+export function parsePlanNotes(stderr: string): PlanRootAnswer[] {
+  const out = new Map<string, PlanRootAnswer>();
+  for (const line of stripAnsi(stderr).split("\n")) {
+    const m = NOTE.exec(line.trim());
+    if (!m) continue;
+    const [, root, rest] = m as unknown as [string, string, string];
+    const answered: PlanAnswer | undefined = rest.startsWith("the plan read answered")
+      ? "plan"
+      : /so the state read answered/.test(rest)
+        ? "state"
+        : rest.startsWith("no read answered")
+          ? "none"
+          : undefined;
+    const reason = answered !== "plan" && /no provider credentials/.test(rest) ? { reason: "no-credentials" } : {};
+    if (answered) out.set(root, { root, answered, ...reason, note: `terraform.roots.${root}: ${rest}` });
+  }
+  return [...out.values()].sort((a, b) => a.root.localeCompare(b.root));
+}
+
 /** The roots chant reported, and which read answered each: `fellBackTo ?? depth`. */
 export function planRootAnswers(ir: unknown): PlanRootAnswer[] {
   const out: PlanRootAnswer[] = [];
@@ -209,9 +243,14 @@ function forcedFromOf(id: string, root: string | undefined, paths: string[], edg
   return out.length ? out : undefined;
 }
 
-/** Turn chant's plan IR, with its `rootReads`, into the read. Pure; exported for testing. */
-export function terraformPlanReadOf(ir: Pick<GraphIR, "nodes"> & Partial<Pick<GraphIR, "edges">>): TerraformPlanRead {
-  const roots = planRootAnswers(ir);
+/**
+ * Turn chant's plan IR into the read. Which read answered each root is the
+ * IR's `rootReads` when chant put it there, and chant's notes on `stderr`
+ * only when it did not (a released chant before chant#4452). Pure; exported
+ * for testing.
+ */
+export function terraformPlanReadOf(ir: Pick<GraphIR, "nodes"> & Partial<Pick<GraphIR, "edges">>, stderr = ""): TerraformPlanRead {
+  const roots = hasRootReads(ir) ? planRootAnswers(ir) : parsePlanNotes(stderr);
   const byRoot = new Map(roots.map((r) => [r.root, r]));
   const cards: Record<string, PlanCardFacts> = {};
   for (const n of ir.nodes) {
@@ -293,7 +332,7 @@ export async function readTerraformPlan(dir: string, deps: PlanReadDeps = {}): P
   } catch {
     return { ok: false, refusal: { error: `chant printed something that is not a graph for ${dir}.`, code: "terraform-plan", remedy: "Check the chant behold runs: `behold doctor`." } };
   }
-  return { ok: true, read: terraformPlanReadOf(ir) };
+  return { ok: true, read: terraformPlanReadOf(ir, res.stderr) };
 }
 
 /**
