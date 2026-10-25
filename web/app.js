@@ -43,7 +43,7 @@ import { auditLines as yrAuditLines, cornerText as yrCorner, datedWords as yrDat
 import { drawLight as klDraw } from "./kiosk-light-frame.js"; // behold#937
 import { badgeWords as klBadge, planOf as klPlanOf } from "./kiosk-light.js"; // behold#940
 import { composedRun } from "./kiosk-light.js";
-import { graphMayShow, keepsSceneInAsk, mayTellDrawn } from "./kiosk-graph-pane.js";
+import { graphMayShow, keepsSceneInAsk, mayTellDrawn, refusalHoldsScene } from "./kiosk-graph-pane.js";
 import { askDeltas, clearScene, drawScene, sceneModel, slotCounts as klSlotCounts } from "./kiosk-estate-scene.js"; // behold#940
 import { cardProgress as tgCardProgress, progressLines as tgProgressLines, progressSection as tgProgressSection, stampProgress as tgStampProgress } from "./terragucci-progress.js";
 import { seconds, whyQuery, whyView } from "./why.js";
@@ -4541,6 +4541,7 @@ async function loadTerragucci({ fresh = false } = {}) {
     .then((r) => r.json())
     .catch((e) => ({ error: String(e), code: "terragucci-report", remedy: "" }));
   tgAnswer = answer;
+  sceneInPlaceOfRefusal();
   klGate();
   // #506: the timeline, whole; the inspect pane filters it by a card's root.
   tgTimeline = await apiFetch(`/api/terragucci/timeline${fresh ? "?fresh=1" : ""}`)
@@ -4569,6 +4570,7 @@ async function refreshTgAnswer() {
     .then((r) => r.json())
     .catch((e) => ({ error: String(e), code: "terragucci-report", remedy: "" }));
   if (!answer.error || !tgAnswer) tgAnswer = answer;
+  sceneInPlaceOfRefusal();
   renderTerragucciPanel();
   markTerragucciCards();
   drawTgReads();
@@ -10911,6 +10913,21 @@ function renderPreconditionError(body) {
   host.appendChild(card);
 }
 
+// A kiosk frame's graph refused its checkout (a precondition: a chant project whose packages the view never
+// installed fails lint). A composed run's scene is drawn from the run's reports in place of the graph's cards
+// (web/kiosk-estate-scene.js), so it needs none of the graph: once the reports hold a scene, the frame draws it on an
+// empty svg instead of the refusal's card. A frame whose reports hold no scene keeps the card.
+let graphRefusal = null;
+const SCENE_ONLY_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600"></svg>';
+function sceneInPlaceOfRefusal() {
+  if (!refusalHoldsScene({ refusal: graphRefusal, bare: embedOpts.bare, answer: tgAnswer })) return false;
+  const note = `the graph is not drawn (${graphRefusal.code}): the run's reports draw the scene`;
+  graphRefusal = null;
+  render({ nodes: [], edges: [], groups: [] }, SCENE_ONLY_SVG, { note, noteShort: note });
+  afterPaint({ nodes: [] });
+  return true;
+}
+
 // Fetch the current view (source graph, or the picked env's live overlay).
 const load = createRefreshQueue(loadOnce);
 async function loadOnce(opts = {}, isCurrent = () => true) {
@@ -11039,6 +11056,8 @@ async function loadOnce(opts = {}, isCurrent = () => true) {
       // tier that needs credentials) gets the calmer entry/error card instead
       // of the generic red error box — see renderPreconditionError().
       if (body.code) {
+        graphRefusal = embedOpts.bare ? body : null;
+        if (sceneInPlaceOfRefusal()) return;
         renderPreconditionError(body);
         meta.textContent = body.code === "tier" ? `tier ${view.tier} unavailable here` : "error";
         renderDial();
@@ -11064,6 +11083,7 @@ async function loadOnce(opts = {}, isCurrent = () => true) {
     pendingMembers = body.meta && body.meta.mode === "progressive" ? [...(body.meta.pending || [])] : [];
     pendingTotal = pendingMembers.length;
     if (view.components) takeTerragucciFacets(body.meta);
+    graphRefusal = null;
     render(body.ir, body.svg, body.meta);
     afterPaint(body.ir);
     if (progressive) replayMemberFrames(frameLoad);

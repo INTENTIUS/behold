@@ -85,3 +85,21 @@ describe("mayTellDrawn", () => {
     expect(mayTellDrawn({ askHeard: true, waitedMs: 0, askOn: false, mayShow: false })).toBe(true);
   });
 });
+
+import { refusalHoldsScene } from "./kiosk-graph-pane.js";
+
+describe("refusalHoldsScene: a composed run's scene needs no graph", () => {
+  const refusal = { code: "lint", error: "dependencies not installed" };
+  const scene = { estateScene: { roots: [{ path: "network", resources: [{ address: "aws_subnet.b" }] }] } };
+  it("draws the scene in a frame whose graph refused the checkout, once the reports hold one", () => {
+    expect(refusalHoldsScene({ refusal, bare: true, answer: scene })).toBe(true);
+  });
+  it("keeps the refusal's card without a scene, outside a frame, or with no refusal", () => {
+    expect(refusalHoldsScene({ refusal, bare: true, answer: { roots: [] } })).toBe(false);
+    expect(refusalHoldsScene({ refusal, bare: true, answer: { estateScene: { roots: [{ path: "a", resources: [] }] } } })).toBe(false);
+    expect(refusalHoldsScene({ refusal, bare: true, answer: { error: "x", ...scene } })).toBe(false);
+    expect(refusalHoldsScene({ refusal, bare: true, answer: null })).toBe(false);
+    expect(refusalHoldsScene({ refusal, bare: false, answer: scene })).toBe(false);
+    expect(refusalHoldsScene({ refusal: null, bare: true, answer: scene })).toBe(false);
+  });
+});
