@@ -26,11 +26,36 @@ The estate is a chant workspace of four members, drawn as four boxes. `dns`, `aw
 
 Each cloud publishes its endpoint as an output (`awsEndpoint` and `gcpEndpoint` with chant's `output()`, `azureEndpoint` as a Terraform output), and `dns` declares a parameter of the same name. That shared name is the edge behold draws from each record's endpoint to the cloud that answers it. Config Connector YAML has no outputs, so `chant build` warns that the gcp member's output is not written; the edge is still drawn, and the Op below reads the load balancer's IP from the emulator and hands it to `dns`.
 
+## How dns reads the Azure endpoint
+
+`dns` reads `azureEndpoint` through chant ([chant#4455](https://github.com/INTENTIUS/chant/issues/4455)). `dns/src/records.component.ts` has two components:
+
+```ts
+export const azure = memberOutputsComponent("azure");
+
+export const records: Component = {
+  name: "records",
+  dependsOn: ["azure"],
+  deploy: [
+    phase("Build", [{ kind: "shell", cmd: "npx tsx ../scripts/front-door.ts build-dns", reason: "..." }]),
+    phase("Apply", [{ kind: "cfn-deploy", stack: "local", template: "dist/dns.json", inputs: { azureEndpoint: stackOutput("azure", "azureEndpoint") } }]),
+  ],
+};
+```
+
+`azure` stands for the workspace member of that name. Its one step, `member-outputs`, reads the estate's outputs through choudoufu and never applies it; the estate applies through its own pipeline. Because the member is kind `choudoufu`, the terraform lexicon is the one that reads it, so `dns/chant.config.ts` lists `terraform` beside `aws`. It also names the estate as its one `terraform.roots` entry, `azure`, so a change under `azure/` names the azure component as a changed unit and brings `dns` into the change with it.
+
+When that change creates or replaces the Container App, its address is known only after azure applies. The pull request's plan of `dns` lists `azure` under its unresolved inputs and `azure.azureEndpoint` under its unknown inputs, and the change set has a hole on `azure#outputs` naming the output. On merge, `dns` waits until azure applied, then is planned again against the address it applied as. A change that leaves `azure/` alone plans `dns` against the address azure has now.
+
+`awsEndpoint` and `gcpEndpoint` still reach `dns` the old way: `build-dns` reads them from what is applied and writes them into the template as parameter defaults, and points each health check at the emulator that answers for it (see below).
+
+`member-outputs` is in chant's `integration/choudoufu-engine` branch and in no chant release yet. The `@intentius/chant` 0.124.52 the demo installs lacks it, so until a release carries it, link chant and its terraform lexicon from a checkout of that branch, as the example's README says.
+
 ## Turning Azure off
 
 The `front-door` Op, in `dns/ops/front-door.op.ts`, rebuilds the whole picture:
 
-1. Apply gcp, azure, aws and dns to the emulators, then wait until the Azure health check reads healthy. The azure estate goes through chant's terraform lexicon: `choudoufuPlanSet` plans it as a one-root set, and `choudoufuWaveApply` applies exactly that set.
+1. Apply gcp, azure, aws and dns to the emulators, then wait until the Azure health check reads healthy. The azure estate goes through chant's terraform lexicon: `choudoufuPlanSet` plans it as a one-root set, and `choudoufuWaveApply` applies exactly that set. dns runs its `azure` and `records` components, so the Azure address it deploys is the one `member-outputs` read.
 2. Deactivate the Azure app's active revision, so its endpoint answers 503.
 3. Wait until `chant lifecycle health` reads the Azure check unhealthy.
 4. Export the page.

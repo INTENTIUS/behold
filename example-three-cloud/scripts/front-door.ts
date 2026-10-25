@@ -10,6 +10,14 @@
  *                                                 with `chant run --components`, in a copy of the
  *                                                 workspace, apply the azure estate after gcp, and wait
  *                                                 until `chant lifecycle health` reads azureCheck healthy
+ *   tsx scripts/front-door.ts pr-plan-dns --base <ref> --out <dir>
+ *                                                 dns's pull-request plan of the change from <ref> to
+ *                                                 HEAD (`chant components pr-plan --member dns`), under
+ *                                                 the floci-az lock; writes pr-plan.json and
+ *                                                 change-set.json to <dir>, applies nothing
+ *   tsx scripts/front-door.ts build-dns           the dns records component's Build step: dns/dist/dns.json,
+ *                                                 its aws and gcp parameters defaulted to what is applied
+ *                                                 and its checks pointed at the emulators
  *   tsx scripts/front-door.ts azure-off           deactivate the Azure app's active revision
  *   tsx scripts/front-door.ts wait                until azureCheck reads unhealthy
  *   tsx scripts/front-door.ts export --out <dir>  behold export, opening on env local at the components zoom
@@ -35,6 +43,14 @@
  * to them. choudoufu is the one on PATH, or CHOUDOUFU_BIN. Every choudoufu
  * call runs under the floci-az endpoint lock choudoufu's own Azure estates
  * use (lockAzureEnv), so nothing it starts can reach a real subscription.
+ *
+ * dns reads azure's azureEndpoint output through chant (INTENTIUS/chant#4455):
+ * dns/src/records.component.ts has an `azure` component whose
+ * `member-outputs` step reads the estate through choudoufu, and its records
+ * step's cfn-deploy takes `stackOutput("azure", "azureEndpoint")` as the
+ * azureEndpoint parameter. So dns's component runs under the same lock
+ * (lockedChildEnv). awsEndpoint and gcpEndpoint are still read here, by
+ * build-dns, from what is applied.
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -254,6 +270,27 @@ export async function plan(out: string): Promise<ChangeSetDocument> {
   return doc;
 }
 
+/**
+ * dns's pull-request plan of the change from `base` to HEAD, as dns's own
+ * pipeline would run it: `chant components pr-plan --member dns` in dns,
+ * with no status posted. A change under azure/ names the azure component
+ * (dns's `terraform.roots.azure`), so records is planned against what
+ * azure's plan says azureEndpoint will be. Under the floci-az lock, since
+ * the azure component's plan runs `choudoufu live-plan-set`. Reads only.
+ */
+export async function prPlanDns(base: string, out: string): Promise<void> {
+  await lockAzureEnv();
+  mkdirSync(resolve(out), { recursive: true });
+  say(`dns: chant components pr-plan --base ${base} --member dns --env ${ENV}`);
+  const r = spawnSync(CHANT, ["components", "pr-plan", "--base", base, "--pr", "1", "--env", ENV, "--member", "dns", "--no-status", "--output", resolve(out)], {
+    cwd: join(ROOT, "dns"),
+    env: lockedChildEnv(),
+    stdio: "inherit",
+  });
+  // The report says what was planned; a member that failed to plan is in it.
+  if (!existsSync(join(resolve(out), "pr-plan.json"))) throw new Refusal(`dns: chant components pr-plan wrote no report (exit ${r.status})`);
+}
+
 // ---------------------------------------------------------------------------
 // Apply
 
@@ -353,9 +390,15 @@ function withProbes(template: string, probes: Record<string, Probe>): void {
   writeFileSync(template, JSON.stringify(doc, null, 2));
 }
 
-async function applyDns(endpoints: Record<string, string>, probes: Record<string, Probe>): Promise<void> {
+/** The dns template, its parameters in `endpoints` defaulted and its checks pointed at `probes`. */
+function dnsTemplate(endpoints: Record<string, string>, probes: Record<string, Probe>): string {
   const params = withDefaults(build("dns"), endpoints);
   withProbes(params, probes);
+  return params;
+}
+
+async function applyDns(endpoints: Record<string, string>, probes: Record<string, Probe>): Promise<void> {
+  const params = dnsTemplate(endpoints, probes);
   // The stack named after the environment, where chant's live read looks for a single-stack project.
   say(`dns: applying ${params} to ${AWS} as stack ${ENV}`);
   await awsApply({ templatePath: params, stackName: ENV, endpoint: AWS, timeoutMs: 180_000 });
@@ -368,7 +411,10 @@ export async function apply(): Promise<void> {
   // which also turns a revision a run before this one left off back on).
   say(`azure: web answers as ${await applyAzure()}`);
   runComponent("aws", "site");
-  runComponent("dns", "records");
+  // dns's azure component reads the estate's outputs through choudoufu, so it
+  // runs under the floci-az lock, and before records, which reads them.
+  await lockAzureEnv();
+  runComponent("dns", "azure,records", lockedChildEnv());
   // Before anything is turned off, the check on Azure has to pass: that is
   // what shows the checkers reach floci-az at all.
   await waitFor("healthy");
@@ -408,15 +454,58 @@ function workspaceCopy(): void {
 /** What choudoufu keeps beside the azure estate, which the copy links to (workspaceCopy). */
 const AZURE_STATE = [".terraform", ".terraform.lock.hcl", ".tofu-records"].map((f) => join("azure", f));
 
-/** One member's component, through chant's own deploy steps, against the emulators. */
-function runComponent(member: string, component: string): void {
+/**
+ * childEnv with this process's environment as lockAzureEnv left it, for a
+ * chant child that starts choudoufu: the variables the lock removed stay
+ * removed, and the ones it set win.
+ */
+function lockedChildEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...childEnv, ...process.env };
+  for (const v of AZURE_SCRUBBED) if (!(v in process.env)) delete env[v];
+  return env;
+}
+
+/** One member's components (a name or a comma list), through chant's own deploy steps, against the emulators. */
+function runComponent(member: string, component: string, env: NodeJS.ProcessEnv = childEnv): void {
   say(`${member}: chant run --components ${component} --env ${ENV}`);
   const r = spawnSync(join(RUN, "node_modules", ".bin", "chant"), ["run", "--components", component, "--env", ENV], {
     cwd: join(RUN, member),
-    env: { ...childEnv, USER: "three-cloud-demo", GIT_AUTHOR_NAME: "three-cloud demo", GIT_AUTHOR_EMAIL: "demo@three-cloud.test", GIT_COMMITTER_NAME: "three-cloud demo", GIT_COMMITTER_EMAIL: "demo@three-cloud.test" },
+    env: { ...env, USER: "three-cloud-demo", GIT_AUTHOR_NAME: "three-cloud demo", GIT_AUTHOR_EMAIL: "demo@three-cloud.test", GIT_COMMITTER_NAME: "three-cloud demo", GIT_COMMITTER_EMAIL: "demo@three-cloud.test" },
     stdio: "inherit",
   });
   if (r.status !== 0) throw new Refusal(`${member}: the ${component} component did not apply (exit ${r.status})`);
+}
+
+/**
+ * The dns records component's Build step: the template its cfn-deploy step
+ * applies, at dns/dist/dns.json. awsEndpoint and gcpEndpoint default to what
+ * the aws and gcp members have applied; azureEndpoint has no default, since
+ * the step passes it from the azure component's outputs. The checks point at
+ * the emulators, as in applyFrontDoor.
+ */
+async function buildDns(): Promise<void> {
+  const out = await stackOutputs("three-cloud-aws");
+  const aws: { endpoint: string } | { refused: string } = out.awsEndpoint ? { endpoint: out.awsEndpoint } : { refused: "the stack has no awsEndpoint output" };
+  if ("refused" in aws) say(`aws: NOT APPLIED, so the aws record has nothing behind it and its check fails: ${aws.refused}`);
+  const gcp = await gcpAddress();
+  const params = dnsTemplate(
+    { awsEndpoint: "endpoint" in aws ? aws.endpoint : "aws.three-cloud.invalid", gcpEndpoint: gcp },
+    {
+      awsCheck: { address: "endpoint" in aws ? containerAddress(CONTAINERS.aws) : "192.0.2.1", port: 80 },
+      azureCheck: { address: containerAddress(CONTAINERS.azure), port: 4577 },
+      gcpCheck: { address: gcp === "192.0.2.1" ? gcp : containerAddress(CONTAINERS.gcp), port: 80 },
+    },
+  );
+  const dist = join(ROOT, "dns", "dist");
+  mkdirSync(dist, { recursive: true });
+  cpSync(params, join(dist, "dns.json"));
+  say(`dns: ${relative(process.cwd(), join(dist, "dns.json")) || "dist/dns.json"} built, azureEndpoint left to the azure component's output`);
+}
+
+/** The gcp load balancer's address, or 192.0.2.1 (RFC 5737) when there is none. */
+async function gcpAddress(): Promise<string> {
+  const addr = (await fetch(`${GCP}/compute/v1/projects/${GCP_PROJECT}/global/addresses/three-cloud-ip`).then((r) => (r.ok ? r.json() : {}), () => ({}))) as { address?: string };
+  return addr.address ?? "192.0.2.1";
 }
 
 /** The dns member, with the three endpoints the other members published. */
@@ -446,14 +535,13 @@ async function applyFrontDoor(gcp: string, azure: string, aws: { endpoint: strin
   say("dns: applied");
 }
 
-/** The dns member alone, reading the three endpoints from what is already applied (its component's step). */
+/** The dns member alone, outside chant, reading the three endpoints from what is already applied. */
 async function applyFrontDoorFromLive(): Promise<void> {
   const out = await stackOutputs("three-cloud-aws");
   const app = await getJson(`${appUrl()}?api-version=2024-03-01`);
   const azure = (app.properties as { configuration?: { ingress?: { fqdn?: string } } } | undefined)?.configuration?.ingress?.fqdn;
   if (!azure) throw new Refusal("azure: the container app web has no ingress fqdn; apply the azure member first");
-  const addr = (await fetch(`${GCP}/compute/v1/projects/${GCP_PROJECT}/global/addresses/three-cloud-ip`).then((r) => (r.ok ? r.json() : {}))) as { address?: string };
-  await applyFrontDoor(addr.address ?? "192.0.2.1", azure, out.awsEndpoint ? { endpoint: out.awsEndpoint } : { refused: "the stack has no awsEndpoint output" });
+  await applyFrontDoor(await gcpAddress(), azure, out.awsEndpoint ? { endpoint: out.awsEndpoint } : { refused: "the stack has no awsEndpoint output" });
 }
 
 // ---------------------------------------------------------------------------
@@ -600,8 +688,16 @@ async function main(argv: string[]): Promise<void> {
     return void (await plan(out));
   }
   if (step === "apply") return apply();
-  // One member at a time, outside chant: apply-dns is the dns component's step, apply-azure the estate's
-  // choudoufu apply; the others apply as before components ran them.
+  // One member at a time, outside chant: apply-azure is the estate's choudoufu apply, apply-dns applies
+  // dns with all three endpoints read here; the others apply as before components ran them. build-dns
+  // is the dns records component's Build step.
+  if (step === "build-dns") return buildDns();
+  if (step === "pr-plan-dns") {
+    const baseAt = rest.indexOf("--base");
+    const base = baseAt >= 0 ? rest[baseAt + 1] : undefined;
+    if (!base || !out) throw new Refusal("pr-plan-dns needs --base <ref> and --out <dir>");
+    return prPlanDns(base, out);
+  }
   if (step === "apply-gcp") return void say(`gcp: the load balancer answers on ${await applyGcp()}`);
   if (step === "apply-azure") return void say(`azure: web answers as ${await applyAzure()}`);
   if (step === "apply-aws") {
@@ -620,7 +716,7 @@ async function main(argv: string[]): Promise<void> {
     }
     return exportPage(out);
   }
-  throw new Refusal("usage: front-door.ts all|plan|apply|apply-gcp|apply-azure|apply-aws|apply-dns|azure-off|wait|export [--out <dir>|<file>]");
+  throw new Refusal("usage: front-door.ts all|plan|apply|apply-gcp|apply-azure|apply-aws|apply-dns|build-dns|pr-plan-dns|azure-off|wait|export [--out <dir>|<file>] [--base <ref>]");
 }
 
 main(process.argv.slice(2)).catch((e: unknown) => {

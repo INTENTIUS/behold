@@ -15,6 +15,28 @@
 #   3. the document's digest verifies (verifyChangeSetDigest), so one gate
 #      over it binds every part.
 #
+# INTENTIUS/chant#4455 (C5): dns reads azure's azureEndpoint through chant
+# (memberOutputsComponent("azure"), stackOutput("azure", "azureEndpoint")).
+# The copy is committed, a change to azure/site.tf committed on top, and
+# `scripts/front-door.ts pr-plan-dns` runs dns's pull-request plan of that
+# change. On a fresh floci-az azure's plan creates the Container App, so
+# azureEndpoint is known only after azure applies. Asserted from pr-plan.json
+# and change-set.json:
+#
+#   4. the change names azure (dns's terraform.roots.azure), so the azure
+#      component and records are both planned;
+#   5. records's step lists azure under its unresolved inputs: its cfn-deploy
+#      member's hole says `inputs from azure`, the report lists
+#      azure.azureEndpoint under its unknownInputs and its reads name it
+#      unknown;
+#   6. the azure#outputs part has a hole naming azure.azureEndpoint.
+#
+# The example needs a chant with member-outputs (chant#4455), which no
+# release has yet: the copy installs the example's pins, so link one, e.g.
+# BEHOLD_E2E_CHANT_LINK="/path/to/chant/packages/core /path/to/chant/lexicons/terraform".
+# dns's components import it, so without one the whole script skips, with
+# the reason.
+#
 # Nothing is applied. Scratch discipline (src/scratch.ts): the containers
 # are behold-three-cloud-floci, -floci-az and -floci-gcp on their own ports,
 # refused if one already exists, removed on exit by those names and no
@@ -48,6 +70,17 @@ echo "→ copy example-three-cloud to $TARGET and install its chant"
 mkdir -p "$TARGET"
 tar -C example-three-cloud --exclude node_modules --exclude .front-door --exclude export --exclude .terraform --exclude .tofu-records -cf - . | tar -C "$TARGET" -xf -
 npm --prefix "$TARGET" install --no-audit --no-fund --silent
+# dns's components import member-outputs, so a chant that has it is linked
+# before anything loads them.
+for dir in ${BEHOLD_E2E_CHANT_LINK:-}; do
+  name=$(node -p "require('$dir/package.json').name")
+  rm -rf "$TARGET/node_modules/$name"
+  ln -s "$dir" "$TARGET/node_modules/$name"
+done
+if [ ! -f "$TARGET/node_modules/@intentius/chant/src/components/verbs/member-outputs.ts" ]; then
+  echo "skip: the copy's chant has no member-outputs (chant#4455), which dns's components import; set BEHOLD_E2E_CHANT_LINK to chant's packages/core and lexicons/terraform from integration/choudoufu-engine"
+  exit 0
+fi
 
 echo "→ boot the emulators under scratch names, choudoufu init in azure"
 bash "$TARGET/scripts/emulators-up.sh"
@@ -89,5 +122,59 @@ if (!verifyChangeSetDigest(doc)) fail(`the document digest ${doc.digest} does no
 ok(`one digest over all four parts: ${doc.digest}`);
 TS
 ( cd "$TARGET" && ./node_modules/.bin/tsx check-change-set.mts "$WORK/change-set.json" )
+
+echo "→ commit the copy, then a change to azure/ on top of it"
+git -C "$TARGET" init -q -b main
+echo node_modules/ >> "$TARGET/.git/info/exclude"
+git -C "$TARGET" -c user.name=e2e -c user.email=e2e@three-cloud.test add -A
+git -C "$TARGET" -c user.name=e2e -c user.email=e2e@three-cloud.test commit -q -m base
+BASE=$(git -C "$TARGET" rev-parse HEAD)
+printf '\n# chant#4455 e2e: a change to the azure estate\n' >> "$TARGET/azure/site.tf"
+git -C "$TARGET" -c user.name=e2e -c user.email=e2e@three-cloud.test commit -q -am "azure: a change"
+
+echo "→ build dns's template, then plan dns's pull request"
+( cd "$TARGET/dns" && ../node_modules/.bin/tsx ../scripts/front-door.ts build-dns )
+( cd "$TARGET" && ./node_modules/.bin/tsx scripts/front-door.ts pr-plan-dns --base "$BASE" --out "$WORK/pr" ) | tee "$WORK/pr-plan.log"
+
+echo "→ read dns's pull-request plan"
+cat > "$TARGET/check-dns-pr-plan.mts" <<'TS'
+import { readFileSync } from "node:fs";
+
+const dir = process.argv[2]!;
+const report = JSON.parse(readFileSync(`${dir}/pr-plan.json`, "utf8"));
+const doc = JSON.parse(readFileSync(`${dir}/change-set.json`, "utf8"));
+const fail = (m: string): never => {
+  console.error(`FAIL: ${m}`);
+  console.error(JSON.stringify(report.members, null, 2).slice(0, 2000));
+  console.error(JSON.stringify(doc.members, null, 2).slice(0, 2000));
+  process.exit(1);
+};
+const ok = (m: string) => console.log(`  ✓ ${m}`);
+
+const components = new Set(report.members.map((m: any) => m.component));
+if (!components.has("azure") || !components.has("records")) fail(`planned components are ${[...components].join(", ")}, not azure and records`);
+ok("the change to azure/ planned the azure component and records");
+
+const records = report.members.filter((m: any) => m.component === "records");
+const deploy = records.find((m: any) => m.member === "local");
+if (!deploy) fail("records has no member local (its cfn-deploy step's stack)");
+if (!(deploy.unknownInputs ?? []).includes("azure.azureEndpoint")) fail(`records's unknownInputs are ${JSON.stringify(deploy.unknownInputs)}, without azure.azureEndpoint`);
+ok("records lists azure.azureEndpoint under its unknownInputs");
+const read = (deploy.reads ?? []).find((r: any) => r.upstream === "azure");
+if (!read || !(read.unknown ?? []).includes("azureEndpoint")) fail(`records's reads of azure are ${JSON.stringify(read)}, without azureEndpoint unknown`);
+ok("records's reads name azure's azureEndpoint unknown");
+
+const part = doc.members.find((m: any) => m.member === "local");
+if (!part) fail("the change set has no part for local (records's cfn-deploy)");
+const hole = (part.holes ?? []).find((h: any) => typeof h.reason === "string" && /inputs from (\S+, )*azure\b/.test(h.reason));
+if (!hole) fail(`records's cfn-deploy part has no hole naming azure among its unresolved inputs (${JSON.stringify(part.holes)})`);
+ok(`records's step lists azure under its unresolved inputs: ${hole.reason}`);
+
+const outputs = doc.members.find((m: any) => m.member === "azure#outputs");
+if (!outputs) fail("the change set has no azure#outputs part");
+if (!(outputs.holes ?? []).some((h: any) => h.address === "azure.azureEndpoint")) fail(`azure#outputs has no hole on azure.azureEndpoint (${JSON.stringify(outputs.holes)})`);
+ok("azure#outputs has a hole on azure.azureEndpoint");
+TS
+( cd "$TARGET" && ./node_modules/.bin/tsx check-dns-pr-plan.mts "$WORK/pr" )
 
 echo "three-cloud change-set e2e: all green"

@@ -72,6 +72,19 @@ describe("the bundled estates' workspace declarations", () => {
     expect(readFileSync(join(REPO, "example-three-cloud", "azure", "main.tf"), "utf8")).toMatch(/\n  live \{\n    estate = "three-cloud-azure"/);
   });
 
+  // chant#4455: dns reads azure's azureEndpoint through chant, from a
+  // member-outputs component named after the member, and names the estate as
+  // its terraform root so a change under azure/ brings dns into the change.
+  it("example-three-cloud's dns reads azureEndpoint from the azure member's outputs", () => {
+    const records = readFileSync(join(REPO, "example-three-cloud", "dns", "src", "records.component.ts"), "utf8");
+    expect(records).toContain(`export const azure = memberOutputsComponent("azure");`);
+    expect(records).toContain(`dependsOn: ["azure"]`);
+    expect(records).toContain(`inputs: { azureEndpoint: stackOutput("azure", "azureEndpoint") }`);
+    const config = readFileSync(join(REPO, "example-three-cloud", "dns", "chant.config.ts"), "utf8");
+    expect(config).toContain(`lexicons: ["aws", "terraform"]`);
+    expect(config).toContain(`roots: { azure: { dir: "../azure" } }`);
+  });
+
   const installed = installedVersion(TERRAFORM_LEXICON, REPO);
   it.skipIf(!installed && !REQUIRE_PEERS)("pins the terraform lexicon at the version installed beside behold", () => {
     for (const example of ["example-terraform-estate", "example-choudoufu-estate"]) {
