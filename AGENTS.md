@@ -99,8 +99,11 @@ integration branch is stamped at it (`npm pack` with the versions stamped,
 `npm install --no-save`), so it meets every floor. scripts/chant-release.ts
 writes the files the switch decides (src/chant-release-sync.ts lists them):
 the exact terraform and pulumi lexicon pins of example-terraform-estate,
-example-choudoufu-estate and e2e/fixtures/pulumi-workspace, which are
-`version` in both modes since chant enforces an exact pin; the three-cloud
+example-choudoufu-estate and e2e/fixtures/pulumi-workspace, which name the
+published chant (`PUBLISHED_CHANT`) while unreleased so a plain `npm ci`
+meets them, and `version` after, moving with the floors (behold#1015; a demo
+copy, src/pulumi-member.test.ts and the pulumi e2e scripts re-pin their copy
+at the installed lexicon, so a local build serves them too); the three-cloud
 workspace's pins (by path while unreleased, by package and version after) and
 its package.json; behold's own chant ranges (the published chant while
 unreleased, the release after); and src/chant-drift-record.ts, which

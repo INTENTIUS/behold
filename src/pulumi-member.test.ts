@@ -1,8 +1,9 @@
 import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DRIFT_RECORD_CHANT_FLOOR } from "./chant-floors.ts";
+import { linkDemoPins } from "./demo-pins.ts";
 import { meetsFloor } from "./floor.ts";
 import { isMemberKind, memberKindOf } from "./member-kind.ts";
 import { resetMemberIrCache } from "./member-ir.ts";
@@ -30,9 +31,9 @@ const REQUIRE_PEERS = process.env.BEHOLD_REQUIRE_PEERS === "1";
 // graph has no node for the stack root since chant#4456 (C6). Provenance:
 //  - e2e/fixtures/pulumi-workspace: one member, `app`, whose Pulumi.yaml and
 //    stack-export.json are chant's own testdata/pulumi-member at chant
-//    8cd73461a. The declaration pins the pulumi lexicon at CHANT_RELEASE's
-//    version (src/chant-release.ts, behold#1005), the version a local build
-//    of chant is stamped at; it was 0.124.34 when the graph below was recorded.
+//    8cd73461a. The declaration pins the pulumi lexicon at the published chant
+//    while CHANT_RELEASE is unreleased (src/chant-release.ts, behold#1015);
+//    it was 0.124.34 when the graph below was recorded.
 //  - __fixtures__/pulumi-workspace-graph-app.json: `chant workspace graph .
 //    --member app --json` in that fixture, unedited, by chant from
 //    integration/pulumi-engine at a20de35a1 (it reports 0.124.34), with that
@@ -86,18 +87,23 @@ describe("the pulumi member kind (behold#994)", () => {
   });
 });
 
-// The e2e: the fixture served the way `behold serve e2e/fixtures/pulumi-workspace`
-// serves it, through the real chant installed beside behold, which finds the
-// pinned lexicon in behold's own node_modules. Nothing is written under the
-// fixture: chant writes its reader project under the OS temp directory.
-// chant reads the kinds of a pinned package only at the version the pin names,
-// so the gate is that the installed pulumi lexicon is the pinned one, read
-// from the declaration, rather than a floor.
+// The e2e: the fixture served the way `behold serve <workspace>` serves it,
+// through the real chant installed beside behold. chant reads the kinds of a
+// pinned package only at the version the pin names, and the fixture pins the
+// published chant (behold#1015), which has no pulumi lexicon; the one beside
+// behold is a local build of chant stamped at CHANT_RELEASE. So the test
+// serves a copy of the fixture under the OS temp directory, re-pinned at the
+// installed lexicon and linked to it the way a demo copy is (src/demo-pins.ts),
+// and the gate is that a pulumi lexicon is installed at all. Nothing is
+// written under the fixture.
 const PULUMI_LEXICON_PKG = "@intentius/chant-lexicon-pulumi";
-const PINNED = ((JSON.parse(readFileSync(join(FIXTURE, "chant.workspace.json"), "utf8")) as { pins: Array<{ package: string; version: string }> }).pins.find((p) => p.package === PULUMI_LEXICON_PKG) ?? { version: "" }).version;
-const peers = resolvedVersion(PULUMI_LEXICON_PKG) === PINNED;
-const gate = !peers && !REQUIRE_PEERS;
-const why = `needs ${PULUMI_LEXICON_PKG} ${PINNED} (INTENTIUS/chant#4453), the version the fixture pins, installed beside behold`;
+const INSTALLED = resolvedVersion(PULUMI_LEXICON_PKG);
+const gate = !INSTALLED && !REQUIRE_PEERS;
+const why = `needs ${PULUMI_LEXICON_PKG} (INTENTIUS/chant#4453) installed beside behold, a local build of chant until CHANT_RELEASE is released`;
+const COPY = gate ? "" : mkdtempSync(join(tmpdir(), "behold-pulumi-workspace-"));
+afterAll(() => {
+  if (COPY) rmSync(COPY, { recursive: true, force: true });
+});
 
 interface Drawn {
   error?: string;
@@ -109,7 +115,14 @@ describe("a pulumi member in a chant workspace renders, through the real chant (
   let app: ReturnType<typeof createApp> | undefined;
   const ready = gate
     ? Promise.resolve()
-    : localServeOptions(FIXTURE).then((cfg) => {
+    : Promise.resolve()
+        .then(() => {
+          cpSync(FIXTURE, COPY, { recursive: true });
+          const pins = linkDemoPins(COPY);
+          if (!pins.ok) throw new Error(`${pins.error} ${pins.remedy}`);
+          return localServeOptions(COPY);
+        })
+        .then((cfg) => {
         resetMemberIrCache();
         app = createApp(cfg);
       });

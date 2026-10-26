@@ -32,9 +32,14 @@ type Pin = { package?: string; version?: string; path?: string };
 const json = (text: string): Json => JSON.parse(text) as Json;
 const stringify = (v: unknown): string => `${JSON.stringify(v, null, 2)}\n`;
 
+/** The chant a dependency or an exact pin names: the release once it is out, the newest published chant until then. */
+export function chantVersion(r: ChantRelease): string {
+  return r.released ? r.version : PUBLISHED_CHANT;
+}
+
 /** The range a dependency on chant is given: the release once it is out, the newest published chant until then. */
 export function chantRange(r: ChantRelease): string {
-  return `^${r.released ? r.version : PUBLISHED_CHANT}`;
+  return `^${chantVersion(r)}`;
 }
 
 function setDeps(deps: Json | undefined, names: readonly string[], range: string): Json {
@@ -76,11 +81,14 @@ const EDITS: { file: string; edit: Edit }[] = [
       return { ...d, dependencies: sorted };
     },
   },
-  // Exact pins, which chant enforces against the installed lexicon: at the
-  // release's number in both modes, the number a local build is stamped at.
-  { file: "example-terraform-estate/chant.workspace.json", edit: (d, r) => ({ ...d, pins: pinAt(d.pins as Pin[], TERRAFORM, r.version) }) },
-  { file: "example-choudoufu-estate/chant.workspace.json", edit: (d, r) => ({ ...d, pins: pinAt(d.pins as Pin[], TERRAFORM, r.version) }) },
-  { file: "e2e/fixtures/pulumi-workspace/chant.workspace.json", edit: (d, r) => ({ ...d, pins: pinAt(d.pins as Pin[], PULUMI, r.version) }) },
+  // Exact pins, which chant enforces against the installed lexicon (behold#1015):
+  // the published chant while unreleased, so a plain `npm ci` meets them, and
+  // the release once it is out, when they move with the floors. A demo copy
+  // and the e2e scripts re-pin a copy at whatever lexicon is installed
+  // (src/demo-pins.ts), so a local build stamped at the release still serves.
+  { file: "example-terraform-estate/chant.workspace.json", edit: (d, r) => ({ ...d, pins: pinAt(d.pins as Pin[], TERRAFORM, chantVersion(r)) }) },
+  { file: "example-choudoufu-estate/chant.workspace.json", edit: (d, r) => ({ ...d, pins: pinAt(d.pins as Pin[], TERRAFORM, chantVersion(r)) }) },
+  { file: "e2e/fixtures/pulumi-workspace/chant.workspace.json", edit: (d, r) => ({ ...d, pins: pinAt(d.pins as Pin[], PULUMI, chantVersion(r)) }) },
   // behold's own chant dependencies.
   {
     file: "package.json",

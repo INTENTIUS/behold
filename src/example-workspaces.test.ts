@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CHANT_RELEASE } from "./chant-release.ts";
+import { CHANT_RELEASE, PUBLISHED_CHANT } from "./chant-release.ts";
 import { discoverTerraformRoots } from "./terraform-member.ts";
 import { installedVersion, TERRAFORM_LEXICON } from "./workspace-convert.ts";
 
@@ -11,9 +11,10 @@ const REQUIRE_PEERS = process.env.BEHOLD_REQUIRE_PEERS === "1";
 
 // #464: the bundled estates declare themselves as chant workspaces, written by
 // `behold doctor --fix`. Pinned here: the declarations still say what behold's
-// own discovery sees, and the lexicon pin is the version installed beside
-// behold, which is where chant looks for it from an example in this checkout
-// (a pin chant can't find fails `chant workspace check` with WSP002).
+// own discovery sees, and the lexicon pin is the version a plain `npm ci`
+// installs beside behold, which is where chant looks for it from an example in
+// this checkout (a pin chant can't find fails `chant workspace check` with
+// WSP002).
 const REPO = join(import.meta.dirname, "..");
 
 interface Declaration {
@@ -108,11 +109,19 @@ describe("the bundled estates' workspace declarations", () => {
     expect(config).toContain(`roots: { azure: { dir: "../azure" } }`);
   });
 
+  // behold#1015: the pin names the chant a plain `npm ci` installs, the
+  // published one while CHANT_RELEASE is unreleased. A local build of chant
+  // stamped at CHANT_RELEASE.version is the other lexicon that may sit beside
+  // behold then; `behold demo` re-pins its copy at whichever is installed
+  // (src/demo-pins.ts), so both serve.
   const installed = installedVersion(TERRAFORM_LEXICON, REPO);
-  it.skipIf(!installed && !REQUIRE_PEERS)("pins the terraform lexicon at the version installed beside behold", () => {
+  it.skipIf(!installed && !REQUIRE_PEERS)("pins the terraform lexicon at the chant npm installs beside behold", () => {
+    const want = CHANT_RELEASE.released ? CHANT_RELEASE.version : PUBLISHED_CHANT;
     for (const example of ["example-terraform-estate", "example-choudoufu-estate"]) {
       const pin = declaration(example).pins?.find((p) => p.package === TERRAFORM_LEXICON);
-      expect(pin?.version, example).toBe(installed);
+      expect(pin?.version, example).toBe(want);
     }
+    const served = CHANT_RELEASE.released ? [CHANT_RELEASE.version] : [PUBLISHED_CHANT, CHANT_RELEASE.version];
+    expect(served, `the terraform lexicon installed beside behold is ${installed}`).toContain(installed);
   });
 });

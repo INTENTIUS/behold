@@ -19,26 +19,45 @@
 #
 # Nothing reaches a cloud: the refresh runs against PULUMI_BACKEND_URL set to
 # an empty local directory below, never Pulumi Cloud or a backend this machine
-# is logged in to. Nothing is written under the fixture (chant writes its
-# reader project under the OS temp directory).
-# Needs @intentius/chant-lexicon-pulumi beside behold at the version the
-# fixture's chant.workspace.json pins (chant#4453 moved the kind there, and
-# chant reads a pinned package's kinds only at the pinned version).
+# is logged in to. Nothing is written under the fixture: it is served from a
+# copy under the OS temp directory, and chant writes its reader project there
+# too.
+# Needs a local build of chant (the pulumi lexicon is on no release yet):
+# @intentius/chant-lexicon-pulumi beside behold, or BEHOLD_E2E_PULUMI_LEXICON.
+# chant#4453 moved the kind there, and chant reads a pinned package's kinds
+# only at the pinned version. The fixture pins the published chant while
+# behold's CHANT_RELEASE is unreleased (behold#1015), so the copy is linked to
+# the installed lexicon and re-pinned at its version, the way `behold demo`
+# treats a demo copy (src/demo-pins.ts).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 PORT="${BEHOLD_E2E_PORT:-4697}"
 FIXTURE="e2e/fixtures/pulumi-workspace"
+LEX_PKG="${BEHOLD_E2E_PULUMI_LEXICON:-$PWD/node_modules/@intentius/chant-lexicon-pulumi}"
 LOG="${TMPDIR:-/tmp}/behold-pulumi-e2e.log"
-PULUMI_BACKEND_DIR="$(mktemp -d "${TMPDIR:-/tmp}/behold-pulumi-backend.XXXXXX")"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/behold-pulumi-e2e.XXXXXX")"
+WS="$WORK/pulumi-workspace"
+PULUMI_BACKEND_DIR="$WORK/backend"
+mkdir -p "$PULUMI_BACKEND_DIR"
 export PULUMI_BACKEND_URL="file://$PULUMI_BACKEND_DIR" PULUMI_SKIP_UPDATE_CHECK=true
+trap 'rm -rf "$WORK"' EXIT
+
+[ -f "$LEX_PKG/package.json" ] || { echo "x no pulumi lexicon at $LEX_PKG: install a local build of chant beside behold or set BEHOLD_E2E_PULUMI_LEXICON"; exit 1; }
+
+echo "-> copy $FIXTURE to $WS, pinned at the installed pulumi lexicon"
+cp -R "$FIXTURE" "$WS"
+mkdir -p "$WS/node_modules/@intentius"
+ln -s "$LEX_PKG" "$WS/node_modules/@intentius/chant-lexicon-pulumi"
+LEX_VERSION="$(node -p "require('$LEX_PKG/package.json').version")"
+node -e 'const f=process.argv[1],v=process.argv[2],d=JSON.parse(require("fs").readFileSync(f,"utf8"));for(const p of d.pins||[])if(p.package==="@intentius/chant-lexicon-pulumi")p.version=v;require("fs").writeFileSync(f,JSON.stringify(d,null,2)+"\n")' "$WS/chant.workspace.json" "$LEX_VERSION"
 
 echo "-> build behold"
 npm run build --silent
 
-echo "-> serve $FIXTURE on :$PORT"
-node ./bin/behold.js serve "$FIXTURE" --port "$PORT" >"$LOG" 2>&1 &
+echo "-> serve $WS on :$PORT"
+node ./bin/behold.js serve "$WS" --port "$PORT" >"$LOG" 2>&1 &
 PID=$!
-trap 'kill "$PID" 2>/dev/null || true; rm -rf "$PULUMI_BACKEND_DIR"' EXIT
+trap 'kill "$PID" 2>/dev/null || true; rm -rf "$WORK"' EXIT
 
 ready=""
 for _ in $(seq 1 45); do
