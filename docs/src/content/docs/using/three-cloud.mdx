@@ -59,7 +59,7 @@ When a change to `azure/` creates or replaces the Container App, its address is 
 
 The `front-door` Op, in `dns/ops/front-door.op.ts`, rebuilds the whole picture:
 
-1. Apply gcp, azure, aws and dns to the emulators, then wait until the Azure health check reads healthy. The azure estate goes through chant's terraform lexicon: `choudoufuPlanSet` plans it as a one-root set, and `choudoufuWaveApply` applies exactly that set. The aws program goes through plunge: `plunge up` on the stack `local`, then `plunge stack export` into `aws/stack-export.json`, the export chant draws the member's graph from. dns runs its `azure`, `aws` and `records` components, so the Azure and AWS addresses it deploys are the ones `member-outputs` read.
+1. Apply gcp, azure, aws and dns to the emulators, then wait until the Azure health check reads healthy. The azure estate goes through chant's terraform lexicon: `choudoufuPlanSet`, run as an Op activity, plans it as a one-root set, and `choudoufuWaveApply` applies exactly that set. The aws program goes through plunge: `plunge up` on the stack `local`, then `plunge stack export` into `aws/stack-export.json`, the export chant draws the member's graph from. dns runs its `azure`, `aws` and `records` components, so the Azure and AWS addresses it deploys are the ones `member-outputs` read.
 2. Deactivate the Azure app's active revision, so its endpoint answers 503.
 3. Wait until `chant lifecycle health` reads the Azure check unhealthy.
 4. Export the page.

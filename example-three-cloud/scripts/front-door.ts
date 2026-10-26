@@ -5,7 +5,7 @@
  *   tsx scripts/front-door.ts all --out <dir>     apply, azure-off, wait and export, in order
  *   tsx scripts/front-door.ts plan --out <file>   one change set over the four members, a part per engine:
  *                                                 `chant lifecycle plan` for dns and gcp, chant's
- *                                                 choudoufuPlanSet for the azure estate and `plunge
+ *                                                 choudoufuPlanSet Op activity for the azure estate and `plunge
  *                                                 preview` (pulumiPreviewPart) for the aws program,
  *                                                 composed under one digest
  *   tsx scripts/front-door.ts apply [--change-set <file>]
@@ -48,8 +48,9 @@
  * The azure member is a choudoufu estate (azure/*.tf, INTENTIUS/choudoufu#2246).
  * It is planned and applied here in the workspace itself, through the
  * terraform lexicon's activities and the root's chant.config.json, which
- * names it as the lexicon's `azure` root: choudoufuPlanSet runs `choudoufu
- * live-plan-set` over it, and choudoufuWaveApply applies exactly that set.
+ * names it as the lexicon's `azure` root: choudoufuPlanSet, run as an Op
+ * activity (planAzureSet), runs `choudoufu live-plan-set` over it, and
+ * choudoufuWaveApply applies exactly that set.
  * Its record store and provider schemas stay in azure/, and the copy links
  * to them. choudoufu is the one on PATH, or CHOUDOUFU_BIN. Every choudoufu
  * call runs under the floci-az endpoint lock choudoufu's own Azure estates
@@ -83,9 +84,10 @@ import { composeChangeSet, lifecyclePlanPart, verifyChangeSetDigest, type Change
 import { PLAN_MOVED_EXIT_CODE } from "@intentius/chant/components/capability";
 import { planCoveredBy } from "@intentius/chant/components/pr-run";
 import type { ChangeSet as LifecycleChangeSet } from "@intentius/chant/lifecycle/change-set";
+import type { OpConfig } from "@intentius/chant/op";
 import { awsApply } from "@intentius/chant-lexicon-aws/op/activities";
 import { gcpApply } from "@intentius/chant-lexicon-gcp/op/activities";
-import { choudoufuPlanSet, choudoufuWaveApply, terraformOutputs } from "@intentius/chant-lexicon-terraform/op/activities/terraform";
+import { choudoufuPlanSet, choudoufuWaveApply, terraformOutputs, type ChoudoufuPlanSetResult } from "@intentius/chant-lexicon-terraform/op/activities/terraform";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -151,6 +153,47 @@ const childEnv: NodeJS.ProcessEnv = {
 const say = (line: string): void => void process.stdout.write(`front-door: ${line}\n`);
 
 class Refusal extends Error {}
+
+/**
+ * The azure estate's set plan, planned through chant's choudoufuPlanSet Op
+ * activity (chant#4483, behold#1017): a one-step Op, run in this process with
+ * runOpLocally over the activities `loadActivities(["terraform"])` resolves,
+ * so the plan goes through the same activity, contract and step record an Op
+ * file's step would. The step's result is read off the activity as it
+ * returns, because a step record carries no output.
+ *
+ * Published chant 0.124.52's terraform lexicon contributes no
+ * choudoufuPlanSet activity, so with that chant (what `npm ci` here installs
+ * while behold's CHANT_RELEASE is unreleased) the same function is called
+ * directly, as before. Both answer the same ChoudoufuPlanSetResult.
+ */
+async function planAzureSet(): Promise<ChoudoufuPlanSetResult> {
+  const { activity, loadActivities, runOpLocally } = await import("@intentius/chant/op");
+  const activities = await loadActivities(["terraform"]);
+  const planSet = activities.get("choudoufuPlanSet");
+  if (!planSet) {
+    say("azure: this chant's terraform lexicon has no choudoufuPlanSet Op activity (chant#4483), so the plan set is called directly");
+    return choudoufuPlanSet(AZURE_ROOT);
+  }
+  let planned: ChoudoufuPlanSetResult | undefined;
+  activities.set("choudoufuPlanSet", async (args, signal) => {
+    planned = (await planSet(args, signal)) as ChoudoufuPlanSetResult;
+    return planned;
+  });
+  const op: OpConfig = {
+    name: "front-door-azure-plan",
+    overview: "Plan the azure estate as a one-root choudoufu set (live-plan-set), writing nothing to floci-az",
+    phases: [{ name: "Plan azure", steps: [activity("choudoufuPlanSet", { ...AZURE_ROOT }, { profile: "longInfra", id: "azure" })] }],
+  };
+  const profiles: Parameters<typeof runOpLocally>[2] = { longInfra: { timeout: "15m", retry: { maximumAttempts: 1 } } };
+  try {
+    await runOpLocally(op, activities, profiles);
+  } catch (e) {
+    throw new Refusal(`azure: the choudoufuPlanSet step failed: ${(e as Error).message}`);
+  }
+  if (!planned) throw new Refusal("azure: the choudoufuPlanSet step ran but returned no set plan");
+  return planned;
+}
 
 /** A refusal because a part's plan is not the approved one: chant's planMoved exit code. */
 class PlanMoved extends Refusal {
@@ -409,7 +452,7 @@ export async function plan(out: string): Promise<ChangeSetDocument> {
   }
   await lockAzureEnv();
   say(`azure: choudoufu live-plan-set over the azure estate, on floci-az at ${AZURE_HOST}`);
-  parts.push((await choudoufuPlanSet(AZURE_ROOT)).changeSet);
+  parts.push((await planAzureSet()).changeSet);
   awsStack();
   say(`aws: plunge preview --json --stack ${ENV}, on floci at ${AWS}`);
   const { previewPulumiMember } = await pulumiRun();
@@ -580,7 +623,7 @@ async function applyGcp(): Promise<string> {
 async function applyAzure(): Promise<string> {
   await lockAzureEnv();
   say(`azure: choudoufu live-plan-set over the azure estate, on floci-az at ${AZURE_HOST}`);
-  const set = await choudoufuPlanSet(AZURE_ROOT);
+  const set = await planAzureSet();
   say(`azure: ${set.changed ? "applying" : "no changes in"} set ${set.setDigest} with live-wave-apply`);
   const applied = await choudoufuWaveApply({ ...AZURE_ROOT, planSetFile: set.planSetFile, setDigest: set.setDigest });
   if (!applied.landed) throw new Refusal(`azure: ${applied.message}`);
