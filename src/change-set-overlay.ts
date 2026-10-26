@@ -24,7 +24,7 @@
  */
 import { floorFor, floorMet, floorRefusal } from "./chant-floors.ts";
 import type { GraphIR } from "@intentius/chant";
-import { instanceOfNode } from "./instance-cards.ts";
+import { instanceOfNode, scopedInstanceNodeId } from "./instance-cards.ts";
 import { cardIdFor, choudoufuCardAliases, type CardAliases } from "./drift-overlay.ts";
 import { memberBlockGraph } from "./choudoufu-workspace.ts";
 import type { Workspace } from "./workspace.ts";
@@ -141,6 +141,20 @@ export function showRefusal(doc: WorkspaceDocument, digest: string, member: stri
   return undefined;
 }
 
+/**
+ * An entry for an instance under an expanded module call (chant#4486):
+ * chant names the instance node (`estate/module.app[0]/aws_eip.pool[1]`) and
+ * the block node as `instanceOf`. A chant before that rule named the block
+ * and no `instanceOf`; the instance id then comes from the same rule, so a
+ * change set stored before chant#4486 and one stored after outline the same
+ * cards (src/instance-cards.ts draws them from the plan either way).
+ */
+function scopedInstanceOf(node: string, address: string, instanceOf: string | null | undefined): { instance: string; block: string } | undefined {
+  if (instanceOf && instanceOf !== node) return scopedInstanceNodeId(instanceOf, address) === node ? { instance: node, block: instanceOf } : undefined;
+  const instance = scopedInstanceNodeId(node, address);
+  return instance ? { instance, block: node } : undefined;
+}
+
 /** The overlay of one gate's change set: the document `change-set show` printed, keyed by graph node. Pure. */
 export function overlayFrom(gate: Omit<WorkspaceGate, "dir">, doc: WorkspaceDocument, at: Date, aliases?: CardAliases): ChangeSetOverlay {
   const cs = isRecord(doc.changeSet) ? doc.changeSet : {};
@@ -162,7 +176,7 @@ export function overlayFrom(gate: Omit<WorkspaceGate, "dir">, doc: WorkspaceDocu
     const chantNode = str(e.node);
     const aliased = aliases && chantNode ? cardIdFor(aliases, chantNode, e.address) ?? (str(e.instanceOf) ? cardIdFor(aliases, str(e.instanceOf)!, e.address) : undefined) : undefined;
     const node = aliased ?? chantNode;
-    const inst = node && !aliases ? instanceOfNode(node, e.address) : undefined;
+    const inst = node && !aliases ? instanceOfNode(node, e.address) ?? scopedInstanceOf(node, e.address, str(e.instanceOf)) : undefined;
     entries.push({
       member: String(e.member ?? ""),
       address: e.address,
