@@ -197,8 +197,22 @@ export function promoteReportOf(run: TransportRun, shown: string): WorkspaceDocu
   return doc;
 }
 
+/**
+ * behold#1010: the Op run ledger, `chant ledger runs --where <filter>... --json`
+ * (ledger.schema.json, chant#4363), run at the workspace root. A contract 1
+ * document outside `chant workspace` that chant's conformance suite does not
+ * list; its floor is in src/chant-floors.ts (`LEDGER_ROOT_MEMBER_CHANT_FLOOR`)
+ * and src/member-local-applies.ts reads it.
+ */
+export const LEDGER_RUNS_READ = "ledger runs";
+
+/** The argv the ledger read runs: `ledger runs --where <w>... --json`. */
+export function ledgerRunsArgv(where: readonly string[]): string[] {
+  return [...LEDGER_RUNS_READ.split(" "), ...where.flatMap((w) => ["--where", w]), "--json"];
+}
+
 /** The reads named outside `chant workspace`, for a refusal's wording. */
-const OUTSIDE_WORKSPACE: readonly string[] = [...TRUNK_READS, CHANGE_SET_READ, CI_RUNS_READ];
+const OUTSIDE_WORKSPACE: readonly string[] = [...TRUNK_READS, CHANGE_SET_READ, CI_RUNS_READ, LEDGER_RUNS_READ];
 
 export interface WorkspaceReader {
   /** Run one contract command with `args`, and return the document chant printed, unchanged. */
@@ -226,6 +240,8 @@ export interface WorkspaceReader {
   readCapabilities(form: "workspace" | "project", dir?: string): Promise<WorkspaceDocument>;
   /** behold#999: promote's read-only report for `member` with the state file `state` (absolute), as chant printed it. */
   readPromoteReport(member: string, state: string): Promise<WorkspaceDocument>;
+  /** behold#1010: the Op run ledger's runs matching every `where` filter, as chant printed them. A refused filter exits 1 and still prints the document, which is returned. */
+  readLedgerRuns(where: string[]): Promise<WorkspaceDocument>;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -402,6 +418,10 @@ export function workspaceReader(chant: ChantTransport): WorkspaceReader {
     async readPromoteReport(member, state) {
       const argv = promoteReportArgv(member, state);
       return promoteReportOf(await chant.run(argv), `chant ${argv.join(" ")}`);
+    },
+    async readLedgerRuns(where) {
+      const argv = ledgerRunsArgv(where);
+      return documentOf(await chant.run(argv), `chant ${argv.join(" ")}`, "ledger-runs", LEDGER_RUNS_READ);
     },
   };
 }

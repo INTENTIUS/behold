@@ -14,7 +14,8 @@
  * Everything that names that release reads this constant:
  *
  *  - the floors in src/chant-floors.ts (`ADOPTION_REPORT_CHANT_FLOOR`,
- *    `DRIFT_RECORD_CHANT_FLOOR`, `DRIFT_STREAM_CHANT_FLOOR`);
+ *    `DRIFT_RECORD_CHANT_FLOOR`, `DRIFT_STREAM_CHANT_FLOOR`,
+ *    `LEDGER_ROOT_MEMBER_CHANT_FLOOR`);
  *  - the pins and dependencies scripts/chant-release.ts writes: the
  *    three-cloud workspace's lexicon pins and package.json, the exact
  *    terraform lexicon pins of example-terraform-estate and
@@ -22,17 +23,21 @@
  *    pin, behold's own chant dependencies, and src/chant-drift-record.ts,
  *    which loads `@intentius/chant/drift-record`.
  *
- * The exact pins and the floors are `version` in both modes, so they move
- * together: chant enforces an exact pin, and a local build stamped at
- * `version` meets them and every floor. What `released` changes is how
- * behold gets that chant. While it is false, the dependency ranges stay at
- * the newest published chant so a plain `npm ci` resolves, the three-cloud
+ * The floors are `version` in both modes, so a local build stamped at
+ * `version` meets every one. What `released` changes is how behold gets that
+ * chant. While it is false, the dependency ranges and the exact lexicon pins
+ * name the newest published chant ({@link PUBLISHED_CHANT}), so a plain
+ * `npm ci` resolves and meets the pins (behold#1015); a demo copy and the e2e
+ * scripts re-pin their copy at the lexicon installed beside behold, so a
+ * local build still serves them. Flipping the switch moves the pins to
+ * `version`, together with the floors. Also while it is false, the three-cloud
  * workspace pins its lexicons by path, the pulumi lexicon is no dependency
  * of anything (it is not on npm), and the drift module is feature-detected
  * at run time with behold's own copy as the fallback (src/drift-line.ts).
- * Once it is true, every range names the release, the three-cloud workspace
- * pins both lexicons by package and version and depends on them, and the
- * drift module is a static import that the bundle carries.
+ * Once it is true, every range and exact pin names the release, the
+ * three-cloud workspace pins both lexicons by package and version and
+ * depends on them, and the drift module is a static import that the bundle
+ * carries.
  *
  * To flip it after the release is published: set `released: true` (and
  * `version` to the release's number if it is not this one) on the line

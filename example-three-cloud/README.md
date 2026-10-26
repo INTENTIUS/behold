@@ -50,9 +50,11 @@ azure is a choudoufu estate (INTENTIUS/choudoufu#2246), the resources the
 azure lexicon's ContainerAppNetwork and ContainerAppSite declared, written in
 HCL with a `live` block. Its provider block reaches floci-az the way
 choudoufu's own floci-az estates do, every endpoint and credential stated.
-`apply-azure` plans it with the terraform lexicon's `choudoufuPlanSet` and
-applies that set with `choudoufuWaveApply`, under the same floci-az endpoint
-lock. Its records stay in `azure/.tofu-records`.
+`apply-azure` plans it with the terraform lexicon's `choudoufuPlanSet`, run
+as a step of a one-step Op (chant#4483), and applies that set with
+`choudoufuWaveApply`, under the same floci-az endpoint lock. Published chant
+0.124.52 has no such Op activity, so with it the script calls the same
+function directly. Its records stay in `azure/.tofu-records`.
 
 Each cloud publishes its endpoint as an output (`output()` in aws and gcp, an
 `output` block in azure) and `dns` reads it as a parameter of the same name.
@@ -84,7 +86,8 @@ source. In a checkout of chant main (`CHANT` below):
 cd "$CHANT" && npm ci && scripts/ci-lexicon-artifacts.sh --steps generate,bundle
 # Stamp the packages' versions, uncommitted, at the coming release: behold's
 # CHANT_RELEASE (src/chant-release.ts), which is chant's NEXT_RELEASE. 0.124.53
-# meets every ^0.124.52 here and every floor and exact pin in behold.
+# meets every ^0.124.52 here and every floor in behold. behold's exact pins
+# name 0.124.52 until that release (behold#1015); its demos re-pin their copy.
 for pj in packages/*/package.json lexicons/*/package.json; do
   node -e 'const f=process.argv[1];const p=require(f);if(!String(p.name).startsWith("@intentius/"))process.exit(0);p.version="0.124.53";require("fs").writeFileSync(f,JSON.stringify(p,null,2)+"\n")' "$PWD/$pj"
 done
@@ -115,7 +118,7 @@ npm run change-set     # writes .front-door/change-set.json, applies nothing
 That plans the four members into one change-set document under one digest,
 a part per member in its engine's terms: a chant part each for dns and gcp
 (`chant lifecycle plan local --json`), a choudoufu part for azure
-(`choudoufuPlanSet`), and a pulumi part for aws (`plunge preview --json`, read
+(the `choudoufuPlanSet` Op activity), and a pulumi part for aws (`plunge preview --json`, read
 by the pulumi lexicon's `pulumiPreviewPart`).
 
 ```sh

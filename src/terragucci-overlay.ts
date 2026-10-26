@@ -16,7 +16,7 @@
  * flags is not painted "live". The SPA draws a mark as a corner glyph and an
  * age ("drift found 06:04, 4h ago"), never as a fill.
  */
-import type { ReportAttribute, RootRun, TerragucciRead, WaitingWave } from "./terragucci-reports.ts";
+import type { EstateApply, ReportAttribute, RootRun, TerragucciRead, WaitingWave } from "./terragucci-reports.ts";
 
 type Node = { id: string; attrs?: Record<string, unknown> };
 
@@ -110,6 +110,12 @@ export interface EstateRootScene extends CheckoutRoot {
 
 export interface EstateScene {
   roots: EstateRootScene[];
+  /**
+   * behold#1012: the reads between estates, from the tf-apply report, when the scene was drawn from an apply report
+   * with no tf-plan report beside it (no `pull_request` to carry them). They draw box-to-box, root to root: a report
+   * maps no output to the resource that produced it.
+   */
+  reads?: EstateApply["reads"];
 }
 
 export interface TerragucciMarks {
@@ -246,7 +252,9 @@ export function joinTerragucci(read: TerragucciRead, nodes: readonly Node[], roo
     }
     out.push(marks);
   }
-  const estate = read.pull_request?.compose?.estate === true;
+  // behold#1012: a composed run drawn from its tf-apply report alone names its estates and reads there.
+  const fromApply = read.pull_request?.compose?.estate === true ? undefined : read.estate_apply;
+  const estate = read.pull_request?.compose?.estate === true || fromApply?.compose.estate === true;
   // behold#965: an estate the run names that the checkout does not list as a root (a Terragrunt unit holding every estate as
   // a module, whose report roots are `estates/app`) is a root of the answer too: the reads between estates name it by the
   // report's path, and the page finds its box and cards by the roots it is told.
@@ -257,7 +265,8 @@ export function joinTerragucci(read: TerragucciRead, nodes: readonly Node[], roo
     for (const [slot, run] of [["drift", runs.drift], ["plan", runs.plan], ["apply", runs.apply]] as const) if (run) marks[slot] = verdict(run);
     out.push(marks);
   }
-  const estateScene = estate ? estateSceneOf(read, [...roots, ...extra], applied) : undefined;
+  const scene = estate ? estateSceneOf(read, [...roots, ...extra], applied) : undefined;
+  const estateScene = scene && fromApply ? { ...scene, reads: fromApply.reads } : scene;
   return {
     cards,
     roots: out,
@@ -273,7 +282,8 @@ export function joinTerragucci(read: TerragucciRead, nodes: readonly Node[], roo
  * named by the last segment of the report's path (`estates/app` is `app`).
  */
 export function extraEstateRoots(read: TerragucciRead, roots: readonly CheckoutRoot[]): CheckoutRoot[] {
-  const named = [...(read.pull_request?.compose?.roots ?? []), ...Object.keys(read.roots)];
+  const compose = read.pull_request?.compose?.estate === true ? read.pull_request.compose : (read.estate_apply?.compose ?? read.pull_request?.compose);
+  const named = [...(compose?.roots ?? []), ...Object.keys(read.roots)];
   const member = roots[0]?.member ?? "estate";
   return [...new Set(named)]
     .filter((p) => !roots.some((r) => r.path === p) && read.roots[p])

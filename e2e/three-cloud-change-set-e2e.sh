@@ -3,7 +3,8 @@
 # Azure site planned by choudoufu. The bundled example is copied out, its
 # emulators booted under scratch names, and `scripts/front-door.ts plan`
 # composes one change set over the four members: `chant lifecycle plan` for
-# dns and gcp, chant's choudoufuPlanSet (`choudoufu live-plan-set`) for the
+# dns and gcp, chant's choudoufuPlanSet (`choudoufu live-plan-set`), run as
+# an Op activity when the copy's chant has it (behold#1017), for the
 # azure estate, and `plunge preview` for the aws program (behold#1000; plunge
 # is the fake in e2e/fixtures/multi-engine-demo/bin, which answers from
 # hand-written fixtures and never applies). Asserted from the document the
@@ -55,6 +56,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 WORK="${BEHOLD_E2E_WORK:-$(mktemp -d "${TMPDIR:-/tmp}/behold-three-cloud-e2e.XXXXXX")}"
 TARGET="$WORK/three-cloud"
+# behold#1013: any pulumi or plunge this run starts, through behold or chant,
+# uses an empty file backend under $WORK and skips the update check, never the
+# machine's login or Pulumi Cloud.
+mkdir -p "$WORK/pulumi-backend"
+export PULUMI_BACKEND_URL="file://$WORK/pulumi-backend" PULUMI_SKIP_UPDATE_CHECK=true
 
 CHOUDOUFU="${CHOUDOUFU_BIN:-choudoufu}"
 if ! docker info >/dev/null 2>&1; then echo "skip: Docker is not running"; exit 0; fi
@@ -108,6 +114,12 @@ bash "$TARGET/scripts/emulators-up.sh"
 
 echo "→ plan the four members into one change set"
 ( cd "$TARGET" && ./node_modules/.bin/tsx scripts/front-door.ts plan --out "$WORK/change-set.json" ) | tee "$WORK/plan.log"
+# behold#1017: a chant whose terraform lexicon has the choudoufuPlanSet Op
+# activity (chant#4483) plans azure through it, never through the fallback.
+if grep -q choudoufuPlanSetContract "$TARGET/node_modules/@intentius/chant-lexicon-terraform/src/op/activity-contracts.ts" 2>/dev/null; then
+  if grep -q "has no choudoufuPlanSet Op activity" "$WORK/plan.log"; then echo "FAIL: azure was planned by the fallback although the copy's chant has the Op activity" >&2; exit 1; fi
+  echo "  ✓ azure was planned through the choudoufuPlanSet Op activity"
+fi
 
 echo "→ read the change set"
 # The check runs inside the copy, so it imports the chant the copy installed.

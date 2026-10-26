@@ -92,15 +92,18 @@ contract (`src/workspace-reader.ts`), never chant's library.
 
 A read whose chant is merged and not released takes its floor from
 `CHANT_RELEASE` in src/chant-release.ts, `{ version, released }`, which names
-that release: `ADOPTION_REPORT_CHANT_FLOOR`, `DRIFT_RECORD_CHANT_FLOOR` and
-`DRIFT_STREAM_CHANT_FLOOR` are its `version`. `version` is chant's own
+that release: `ADOPTION_REPORT_CHANT_FLOOR`, `DRIFT_RECORD_CHANT_FLOOR`,
+`DRIFT_STREAM_CHANT_FLOOR` and `LEDGER_ROOT_MEMBER_CHANT_FLOOR` are its `version`. `version` is chant's own
 `NEXT_RELEASE` (INTENTIUS/chant#4480), and a local build of chant's
 integration branch is stamped at it (`npm pack` with the versions stamped,
 `npm install --no-save`), so it meets every floor. scripts/chant-release.ts
 writes the files the switch decides (src/chant-release-sync.ts lists them):
 the exact terraform and pulumi lexicon pins of example-terraform-estate,
-example-choudoufu-estate and e2e/fixtures/pulumi-workspace, which are
-`version` in both modes since chant enforces an exact pin; the three-cloud
+example-choudoufu-estate and e2e/fixtures/pulumi-workspace, which name the
+published chant (`PUBLISHED_CHANT`) while unreleased so a plain `npm ci`
+meets them, and `version` after, moving with the floors (behold#1015; a demo
+copy, src/pulumi-member.test.ts and the pulumi e2e scripts re-pin their copy
+at the installed lexicon, so a local build serves them too); the three-cloud
 workspace's pins (by path while unreleased, by package and version after) and
 its package.json; behold's own chant ranges (the published chant while
 unreleased, the release after); and src/chant-drift-record.ts, which
@@ -170,6 +173,19 @@ workspace's, when that did not pass. A card the index names nothing of says
 `no runs recorded`, or `no run index read` when behold has no report URL;
 behold never makes one up. The members are read through the same
 `ciRunIndexOf` as the runs pane.
+
+The same card lists the member's local applies (behold#1010,
+src/member-local-applies.ts): the TerraformApplyOp runs that applied a root
+in the member's directory, from `chant ledger runs --where
+root_member=<member> --json` at the served workspace's root (chant#4482,
+chant#4500), as `_localApplies` (newest first, at most five) and `local`, the
+newest that passed. The read is sent only to a chant at
+`LEDGER_ROOT_MEMBER_CHANT_FLOOR`, and a `runs` table whose `columns` lack
+`root_member` reads as "this chant does not say", so the card keeps the run
+index alone. A null `root_member` is unknown (chant#4508): such a run is on
+no card, the declaring member's included, and the picture's note counts it
+as an apply of an unknown root with its `labels.TerraformRoot`, read with
+`--where labels.Apply=true`.
 
 ## Adopting a Pulumi stack into plunge (behold#999)
 
@@ -2066,16 +2082,25 @@ changing it, the working rules that used to live in a handoff note and now
 live here, with the enforceable ones enforced.
 
 - **Branches and merges.** Work on a branch off `main` (an isolated worktree
-  when more than one agent is active). `main` is protected by a ruleset: every
-  change arrives as a PR, and the `check` job in `ci.yml` must be green before
-  it merges. A check that has merely settled is not a pass — read the lines.
-  The repository admin role can bypass the ruleset (`bypass_mode: always`,
-  behold#1006, as chant and choudoufu have): an admin may push a tested
-  integration branch's merge to `main` directly. Everyone else goes through a
-  PR and the green check.
+  when more than one agent is active). `main` is protected by ruleset
+  22042490, which requires a PR and a green `check` job in `ci.yml` of
+  everyone but the repository admin role. That role bypasses it
+  (`bypass_mode: always`, behold#1006, as chant and choudoufu have), so an
+  admin may push a tested integration branch's merge to `main` directly;
+  every other change arrives as a PR and merges once the check is green. A
+  check that has merely settled is not a pass — read the lines. The
+  ruleset's name still reads "every change is a PR with a green ci check";
+  renaming it is a settings change for the maintainer (behold#1018).
   No `gh pr merge --auto`; merge one PR at a time, in order, and rebase the
   next onto what landed.
-- **The local gate** is `just check` (tsc, tests, build). Every vitest run
+- **The local gate** is `just check` (tsc, tests, build). The tests never read
+  the caller's environment (behold#1013): src/test-env.ts, vitest's setup
+  file, removes CHOUDOUFU_BIN, PLUNGE_BIN and the other variables behold
+  reads to pick a binary or a service, and vitest.config.ts points
+  PULUMI_BACKEND_URL at an empty `file://` directory made for the run, with
+  PULUMI_SKIP_UPDATE_CHECK=true, so no pulumi or plunge a test starts sees
+  the machine's login. A test that needs one of them sets it and puts back
+  what was there. Every vitest run
   also writes `.vitest-last.json` (the json reporter, PR #351), and `just
   test` keeps the reporter's full output in `vitest.log`, both gitignored —
   because #334's one-shot first-run failures kept losing the failing file's

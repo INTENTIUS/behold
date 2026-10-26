@@ -1613,13 +1613,39 @@ function inspect(node) {
     } else if (typeof node.attrs.runs === "string") {
       runs("", node.attrs.runs === "no run index read" ? "behold was given no run index (--ci-report-url), so it has no run of this member to show." : `${node.attrs.runs}: chant's run index names no apply of this member.`);
     }
+    // behold#1010: the TerraformApplyOp runs on a machine that applied this
+    // member's root, from chant's Op run ledger (`chant ledger runs --where
+    // root_member=<member>`), newest first. A run whose root chant does not
+    // know is on no card.
+    const localApplies = node.attrs._localApplies;
+    if (Array.isArray(localApplies)) {
+      const local = section("local applies");
+      if (!localApplies.length) local("", "chant's Op run ledger names no run that applied this member's root.");
+      for (const r of localApplies) {
+        const when = r.ended || r.started || "";
+        const words = `${r.status}${r.gitSha ? ` at ${r.gitSha.slice(0, 12)}` : ""}${when ? `, ${when}` : ""}`;
+        const label = r.root || r.op || r.runId;
+        if (r.url) {
+          const a = document.createElement("a");
+          a.href = r.url;
+          a.textContent = words;
+          a.target = "_blank";
+          a.rel = "noreferrer noopener";
+          a.title = `${r.url}, the address the run record itself carries. behold never invents this link.`;
+          local(label, a);
+        } else {
+          local(label, words);
+        }
+        local("", `run ${r.runId} of ${r.op || "an Op"}${r.declaredBy ? ` declared in ${r.declaredBy}` : ""}${r.env ? `, env ${r.env}` : ""}.`);
+      }
+    }
   }
 
   // Declared attributes — the source-of-truth values / cross-resource refs.
   // The `release` chip is the card's abbreviation of the section above, not a
   // declared value, so it stays out of this list when the section rendered.
   const memberRuns = node.lexicon === "member-runs";
-  const attrKeys = Object.keys(node.attrs || {}).filter((k) => !k.startsWith("_") && !((k === "release" || k === "since") && release) && !(memberRuns && (k === "apply" || k === "since" || k === "runs")));
+  const attrKeys = Object.keys(node.attrs || {}).filter((k) => !k.startsWith("_") && !((k === "release" || k === "since") && release) && !(memberRuns && (k === "apply" || k === "since" || k === "runs" || k === "local")));
   if (attrKeys.length) {
     const decl = section("declared");
     // #393 item 10: a choudoufu card that can be adopted leads with the write

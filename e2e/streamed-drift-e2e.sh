@@ -2,7 +2,8 @@
 # behold#998: streamed drift, end to end in the choudoufu-estate demo.
 #
 # The demo is set up as `behold demo choudoufu-estate` sets it up (a scratch
-# floci, choudoufu init, the monolith applied) and served with
+# floci, choudoufu init, the monolith applied) and served, from the copy's
+# chant.workspace.json root, as the declared workspace (behold#1014), with
 # BEHOLD_DRIFT_CHANT pointing at a fake chant
 # (e2e/fixtures/fake-chant-drift/chant). behold reaches that binary for the
 # streamed drift read only; every other read is the demo's own chant. The fake
@@ -10,6 +11,9 @@
 # with a pause of FAKE_DRIFT_STEP_SECS before its record, and stays silent for
 # one resource.
 #
+#   0. the workspace — /api/project names the declared workspace and its
+#                   monolith member, which is what the palette row "Stream
+#                   drift card by card: monolith" and the route need.
 #   1. the route  — POST /api/workspace/drift/stream answers 400 for a member
 #                   the workspace does not declare, 202 for the monolith, and
 #                   409 for a second start while that run goes.
@@ -68,6 +72,12 @@ if [ -z "$ready" ]; then echo "behold never answered on :$PORT" >&2; tail -40 "$
 fail() { echo "FAIL: $1" >&2; exit 1; }
 post() { curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$PORT/api/workspace/drift/stream" -H 'content-type: application/json' -d "$1"; }
 
+echo "→ 0. the declared workspace"
+P=$(curl -sf "http://localhost:$PORT/api/project")
+printf '%s' "$P" | jq -e '.workspace.members | map(.name) | index("monolith")' >/dev/null \
+  && echo "  ✓ behold serves the declared workspace, monolith among its members" \
+  || fail "behold is not serving the declared workspace (the drift route would answer 404 no-workspace): $(printf '%s' "$P" | jq -c '.workspace')"
+
 echo "→ 1. the route"
 code=$(post '{"member":"no-such-member"}')
 [ "$code" = 400 ] && echo "  ✓ an unknown member is refused (400)" || fail "an unknown member answered $code"
@@ -80,8 +90,13 @@ curl -sN "http://localhost:$PORT/api/events" | while IFS= read -r line; do
 done >"$FRAMES" &
 CURL_PID=$!
 sleep 1
-G=$(curl -sf "http://localhost:$PORT/api/graph")
+# An estate stacks alike cards by default (#877): the monolith's 21 cards draw
+# as five `<kind> ×<n>` stacks, whose addresses are no resource address, so a
+# start naming them asks about nothing and ends at once. The e2e reads, and in
+# step 3 opens, the unstacked view (`alike=0`), where each card is drawn.
+G=$(curl -sf "http://localhost:$PORT/api/graph?alike=0")
 ADDRS=$(printf '%s' "$G" | jq -c '[.ir.nodes[] | select(.id | startswith("monolith/")) | (.attrs.address // (.id | ltrimstr("monolith/")))]')
+[ "$(printf '%s' "$ADDRS" | jq length)" = 21 ] || fail "the unstacked graph does not draw the monolith's 21 cards: $ADDRS"
 code=$(post "{\"member\":\"monolith\",\"addresses\":$ADDRS}")
 [ "$code" = 202 ] && echo "  ✓ the stream starts (202)" || fail "the start answered $code"
 code=$(post '{"member":"monolith"}')
@@ -117,6 +132,6 @@ node -e '
 kill "$CURL_PID" 2>/dev/null || true; CURL_PID=""
 
 echo "→ 3. the page"
-node e2e/streamed-drift.mjs "http://localhost:$PORT/" "$FAKE_DRIFT_SILENT" "$FAKE_DRIFT_DRIFTED" "$FAKE_DRIFT_UNCLAIMED" "$FAKE_DRIFT_STEP_SECS"
+node e2e/streamed-drift.mjs "http://localhost:$PORT/?alike=0" "$FAKE_DRIFT_SILENT" "$FAKE_DRIFT_DRIFTED" "$FAKE_DRIFT_UNCLAIMED" "$FAKE_DRIFT_STEP_SECS"
 
 echo "streamed drift e2e: all green"

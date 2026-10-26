@@ -169,7 +169,8 @@ registerPack({
 
 // #997: a member chant records no component release for (choudoufu,
 // terraform) is one card leading with its engine and its last apply, from the
-// run index, or the words saying the index holds none.
+// run index, or the words saying the index holds none. behold#1010 adds its
+// last local apply from chant's Op run ledger.
 registerPack({
   lexicon: MEMBER_RUNS_LEXICON,
   iconFor: () => undefined,
@@ -181,6 +182,8 @@ registerPack({
       ...(str("apply") ? [{ label: "last apply", value: str("apply")! }] : []),
       ...(str("since") ? [{ label: "since", value: str("since")! }] : []),
       ...(str("runs") ? [{ label: "runs", value: str("runs")! }] : []),
+      // behold#1010: the newest local TerraformApplyOp run of the member's root that passed, from chant's Op run ledger.
+      ...(str("local") ? [{ label: "local apply", value: str("local")! }] : []),
     ];
   },
 });

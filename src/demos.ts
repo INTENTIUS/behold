@@ -50,6 +50,13 @@ export interface DemoServe {
   /** #211: serve these subdirectories of the target as a composed estate
    * (`serve a b c…`) instead of the target itself. First is the primary. */
   dirs?: string[];
+  /** behold#1014: `behold demo <name>` serves the copy's root, where its
+   * chant.workspace.json sits, the way `behold serve <root>` does, so the
+   * workspace routes and the palette rows that need a declared workspace
+   * (streamed drift, behold#998) are there. `dirs` stays the composed view a
+   * running server's demo switch lands on, because a switch never serves a
+   * declared workspace (switchServedProject in server.ts). */
+  workspace?: boolean;
   /** #254: serve the carve walkthrough instead of a project graph. */
   carve?: DemoCarve;
   /** Serve the terralith walkthrough (`/terralith`) over the copy's snapshots. */
@@ -148,6 +155,7 @@ function validEntry(e: unknown): e is DemoEntry {
   if (!d.serve || typeof d.serve !== "object") return false;
   // behold#999: a directory inside the copy, never outside it.
   if (d.serve.adoptRecorded !== undefined && (typeof d.serve.adoptRecorded !== "string" || !d.serve.adoptRecorded || isAbsolute(d.serve.adoptRecorded) || d.serve.adoptRecorded.split(/[\\/]/).includes(".."))) return false;
+  if (d.serve.workspace !== undefined && typeof d.serve.workspace !== "boolean") return false;
   if (d.serve.dirs !== undefined && (!Array.isArray(d.serve.dirs) || d.serve.dirs.some((x) => typeof x !== "string") || !d.serve.dirs.length)) return false;
   // #372: a spawn environment is a flat string map or nothing.
   if (
@@ -271,7 +279,7 @@ export interface DemoLoadOptions {
   log?: (line: string) => void;
 }
 
-export type DemoLoadResult = { ok: true; serveDirs: string[] } | { ok: false; error: string };
+export type DemoLoadResult = { ok: true; serveDirs: string[]; workspaceRoot?: string } | { ok: false; error: string };
 
 /** Copy/clone → npm install → setup: everything between "a catalog entry" and
  * "a directory that can be served". Shared by `behold demo <name>` (cli.ts)
@@ -364,7 +372,9 @@ export async function loadDemo(entry: DemoEntry, opts: DemoLoadOptions): Promise
   }
   // #211: an estate demo serves several member projects composed; the first
   // listed is the primary, same as `behold serve a b c…`.
-  return { ok: true, serveDirs: entry.serve.dirs?.length ? entry.serve.dirs.map((d) => join(work, d)) : [work] };
+  const serveDirs = entry.serve.dirs?.length ? entry.serve.dirs.map((d) => join(work, d)) : [work];
+  // behold#1014: the declared workspace's root, for the terminal's serve.
+  return entry.serve.workspace ? { ok: true, serveDirs, workspaceRoot: work } : { ok: true, serveDirs };
 }
 
 /** One child process, output inherited (git/npm/setup narrate themselves into

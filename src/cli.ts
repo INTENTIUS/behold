@@ -921,7 +921,10 @@ async function runDemo(rest: string[]): Promise<void> {
     process.exit(2);
   }
   process.stdout.write(`behold demo ${entry.name} → serving. Blue = declared; Deploy turns it green.\n`);
-  const serveArgs = ["serve", ...loaded.serveDirs, "--port", String(port)];
+  // behold#1014: a workspace demo is served from its declaration's root, so
+  // the server holds the declared workspace (its drift stream, its palette
+  // rows); every other demo serves its dirs composed.
+  const serveArgs = ["serve", ...(loaded.workspaceRoot ? [loaded.workspaceRoot] : loaded.serveDirs), "--port", String(port)];
   if (entry.serve.local) serveArgs.push("--local");
   if (entry.serve.env) serveArgs.push("--env", entry.serve.env);
   // behold#999: a demo's recorded adoption reports, in the copy.

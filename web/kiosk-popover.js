@@ -59,8 +59,11 @@ export function valueWords(v, max = 40) {
   return s.length > max ? `${s.slice(0, max - 3)}...` : s;
 }
 
-/** The instance part of an address beyond its block (`[0]`, `["a"]`), or "". */
+/** The instance part of an address beyond its block (`[0]`, `["a"]`), or "". An address
+ * under an expanded module call (`module.app[0].aws_eip.pool[1]`, chant#4486) gives "",
+ * so the line shows the whole address: `[1]` alone would not say which module instance. */
 function instanceKey(address) {
+  if (/\]\./.test(address || "")) return "";
   const m = /(\[[^\]]*\])$/.exec(address || "");
   return m ? m[1] : "";
 }
