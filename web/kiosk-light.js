@@ -240,6 +240,29 @@ export function applyOf(root, progress) {
 }
 
 /**
+ * The run view, or in its place what the apply reports of its commit say. A pipeline that writes reports and no run
+ * view (choudoufu's Terragrunt and Atmos examples, whose workflows write chant-report's tf-plan and tf-apply only)
+ * leaves the read of the act's merge commit `present: false`, and its cards would say "known after apply" past the
+ * apply. Each root whose apply report is of that commit is then one apply's part, applied or failed as the report says,
+ * and the view is marked `reported`. A run view that is there, or a report of another commit, changes nothing.
+ */
+export function reportedRunView(progress, answer) {
+  if (!progress || progress.error || !progress.run || progress.run.present !== false) return progress;
+  const commit = typeof progress.run.commit === "string" ? progress.run.commit : "";
+  if (commit.length < 7 || !answer || answer.error || !Array.isArray(answer.roots)) return progress;
+  const same = (c) => typeof c === "string" && c.length >= 7 && (c.startsWith(commit) || commit.startsWith(c));
+  const states = [];
+  for (const r of answer.roots) {
+    const a = r && r.apply;
+    if (!a || a.approval === "waiting" || !a.run || !same(a.run.commit)) continue;
+    if (a.status === "failed") states.push({ number: 1, state: "failed", roots: [r.path], reported: true });
+    else if (a.applied) states.push({ number: 1, state: "applied", roots: [r.path], changed: a.changes > 0 ? [r.path] : [], reported: true });
+  }
+  if (!states.length) return progress;
+  return { ...progress, run: { ...progress.run, present: true, reported: true }, states: [...(Array.isArray(progress.states) ? progress.states : []), ...states] };
+}
+
+/**
  * The words on a root's badge in ask mode: no wave (a viewer has no use for one), and the step's own word. Follows the
  * run view's outcome for the root when it has one, so the badge and the state label under the box agree.
  * `st` is the root's state from rootStates; null when it has nothing to say.
