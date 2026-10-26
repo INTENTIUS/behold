@@ -25,56 +25,87 @@ import {
 import type { Workspace } from "./workspace.ts";
 
 // behold#999, the Pulumi half, read from plunge's JSON view (behold#1007).
-// The fixtures in __fixtures__/plunge-adopt-968b54748d are `plunge stack adopt
-// --json` documents in the v1 shape plunge prints at 968b54748d
-// (integration/engine-ship, INTENTIUS/plunge#17): pkg/backend/plunge/adoptview.go
-// `NewAdoptView`, documented in docs/plunge/ADOPT.md. The reasons are plunge's
-// own strings at that commit (pkg/backend/plunge/adopt.go `classify`,
-// inject.go `CreateOnlyTagsError`).
+// The fixtures in __fixtures__/plunge-adopt-30806be26b are `plunge stack adopt
+// --json` documents recorded from plunge 30806be26b (integration/engine-ship,
+// v0.1.0-dev.0) on the plunge corpus's aws-ts stack on floci (INTENTIUS/chant#4475,
+// see the README there). unknown-fate.json is the one written by hand: no plunge
+// prints a fate behold does not know.
 const HERE = dirname(fileURLToPath(import.meta.url));
-const fixture = (name: string): string => readFileSync(join(HERE, "__fixtures__", "plunge-adopt-968b54748d", `${name}.json`), "utf8");
+const fixture = (name: string): string => readFileSync(join(HERE, "__fixtures__", "plunge-adopt-30806be26b", `${name}.json`), "utf8");
 const CLASSIFIED = fixture("would-adopt");
+const ADOPTED = fixture("adopted");
 const ALREADY = fixture("already-adopted");
 const REFUSED = fixture("refused");
 const UNKNOWN_FATE = fixture("unknown-fate");
+const REC = (type: string, name: string) => `urn:pulumi:floci::corpus-aws-ts::${type}::${name}`;
+const RECORDED = {
+  sg: REC("aws:ec2/securityGroup:SecurityGroup", "app-sg"),
+  policy: REC("aws:s3/bucketPolicy:BucketPolicy", "site-bucket-policy"),
+  assets: REC("corpus:index:Site$aws:s3/bucket:Bucket", "docs-assets"),
+};
 const URNS = {
-  ap: "urn:pulumi:dev::app::aws-native:s3:AccessPoint::ap",
   bucket: "urn:pulumi:dev::app::aws:s3/bucket:Bucket::assets",
   fn: "urn:pulumi:dev::app::my:mod:Web$aws:lambda/function:Function::handler",
-  dep: "urn:pulumi:dev::app::kubernetes:apps/v1:Deployment::api",
   svc: "urn:pulumi:dev::app::aws-native:apprunner:Service::svc",
 };
+const CHECKPOINT = "8a7bd33dc8dfcb2e3a7f476d999c18af484faa71ff89b1d6ba220258e514f6a6";
 
 describe("reading plunge stack adopt --json (behold#999, behold#1007)", () => {
   it("lists every resource plunge classed, with its fate, and wrote nothing", () => {
     const c = parsePlungeAdopt(CLASSIFIED, "");
     expect(c.outcome).toBe("classified");
-    expect(c.stack).toBe("organization/app/dev");
-    expect(c.digest).toBe("0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9");
-    expect(c.entries.map((e) => e.urn)).toEqual([URNS.ap, URNS.bucket, URNS.dep, URNS.fn]);
-    expect(c.entries.map((e) => e.ownership)).toEqual(["record", "pending", "marker", "pending"]);
+    // plunge prints the stack as it was named on the command line.
+    expect(c.stack).toBe("floci");
+    expect(c.digest).toBe(CHECKPOINT);
+    expect(c.entries).toHaveLength(14);
+    expect(c.entries.map((e) => e.urn)).toEqual([...c.entries.map((e) => e.urn)].sort());
+    // Classification loads no provider schema, so every AWS resource is classed at the first run.
+    expect(new Set(c.entries.map((e) => e.ownership))).toEqual(new Set(["pending"]));
     expect(c.entries.every((e) => e.fate === "claimed" && e.why.length > 0)).toBe(true);
-    // An empty ID still reads, the type is plunge's, and plunge's reason is kept verbatim.
-    const ap = c.entries.find((e) => e.urn === URNS.ap)!;
-    expect(ap.id).toBe("");
-    expect(ap.type).toBe("aws-native:s3:AccessPoint");
-    expect(ap.detail).toBe("AWS::S3::AccessPoint has no tags property");
-    expect(c.entries.find((e) => e.urn === URNS.dep)).toMatchObject({ marked: true, detail: "" });
+    // The type and the ID are plunge's, and plunge's reason is kept verbatim.
+    const sg = c.entries.find((e) => e.urn === RECORDED.sg)!;
+    expect(sg).toMatchObject({ type: "aws:ec2/securityGroup:SecurityGroup", id: "sg-68951e51c2f001baa", marked: false });
+    expect(sg.detail).toBe("classed at the first run, from the provider's schema");
+    // An untaggable resource and a component's child read the same way.
+    expect(c.entries.find((e) => e.urn === RECORDED.policy)).toMatchObject({ ownership: "pending", id: "rec-ts-site" });
+    expect(c.entries.find((e) => e.urn === RECORDED.assets)).toMatchObject({ ownership: "pending", id: "rec-ts-docs-assets" });
     expect(c.refused).toEqual([]);
     expect(c.said).toBe("");
   });
 
-  it("names every reason plunge refused for, with its code and the resource it names", () => {
+  it("reads the record and marker fates and an empty ID", () => {
+    // Derived from the recorded classification: the fates plunge gives an untaggable and a marked resource.
+    const doc = JSON.parse(CLASSIFIED) as { resources: Record<string, unknown>[] };
+    doc.resources[0] = { ...doc.resources[0], fate: "record", id: "", reason: "AWS::S3::AccessPoint has no tags property" };
+    doc.resources[1] = { ...doc.resources[1], fate: "marker", marked: true, reason: undefined };
+    const c = parsePlungeAdopt(JSON.stringify(doc), "");
+    expect(c.entries[0]).toMatchObject({ ownership: "record", id: "", detail: "AWS::S3::AccessPoint has no tags property" });
+    expect(c.entries[1]).toMatchObject({ ownership: "marker", marked: true, detail: "" });
+  });
+
+  it("names the reason plunge refused for, with its code; a refusal of the whole stack names no URN", () => {
     const c = parsePlungeAdopt(REFUSED, "");
     expect(c.outcome).toBe("refused");
-    expect(c.refused.map((r) => r.code)).toEqual(["pending-operations", "create-only-tags", "foreign-records"]);
-    expect(c.refused[0]!.reason).toMatch(/pending creating operation/);
-    expect(c.refused[0]!.urn).toBe(URNS.bucket);
-    expect(c.refused[1]!.urn).toBe(URNS.svc);
-    // A refusal of the whole stack names no URN.
-    expect(c.refused[2]!.urn).toBeNull();
-    // The classification plunge refused from is still listed.
-    expect(c.entries.map((e) => e.urn)).toEqual([URNS.svc]);
+    expect(c.refused.map((r) => r.code)).toEqual(["adopted-from-another-checkpoint"]);
+    expect(c.refused[0]!.reason).toMatch(/already adopted from another checkpoint/);
+    expect(c.refused[0]!.urn).toBeNull();
+    // The classification plunge refused from is still listed: the refreshed checkpoint, one resource fewer.
+    expect(c.entries).toHaveLength(13);
+  });
+
+  it("names every reason when plunge gives several, each with the resource it names", () => {
+    const doc = JSON.parse(REFUSED) as { refusals: unknown[] };
+    doc.refusals = [
+      { code: "pending-operations", urn: URNS.bucket, reason: "the checkpoint has a pending creating operation on " + URNS.bucket },
+      { code: "create-only-tags", urn: URNS.svc, reason: "AWS::AppRunner::Service tags can only be set at create" },
+      { code: "foreign-records", reason: "the stack already has plunge records that are not this checkpoint's" },
+    ];
+    const c = parsePlungeAdopt(JSON.stringify(doc), "");
+    expect(c.refused.map((r) => [r.code, r.urn])).toEqual([
+      ["pending-operations", URNS.bucket],
+      ["create-only-tags", URNS.svc],
+      ["foreign-records", null],
+    ]);
   });
 
   it("keeps a refusal code behold does not know as a refusal", () => {
@@ -89,10 +120,9 @@ describe("reading plunge stack adopt --json (behold#999, behold#1007)", () => {
   it("says already adopted, each resource with the class its adoption record holds", () => {
     const c = parsePlungeAdopt(ALREADY, "");
     expect(c.outcome).toBe("already-adopted");
-    expect(c.entries.map((e) => [e.urn, e.ownership, e.fate])).toEqual([
-      [URNS.bucket, "pending", "claimed"],
-      [URNS.dep, "marker", "claimed"],
-    ]);
+    expect(c.digest).toBe(CHECKPOINT);
+    expect(c.entries).toHaveLength(14);
+    expect(c.entries.every((e) => e.ownership === "pending" && e.fate === "claimed")).toBe(true);
   });
 
   it("an ownership it does not know is unknown, not dropped", () => {
@@ -103,9 +133,9 @@ describe("reading plunge stack adopt --json (behold#999, behold#1007)", () => {
   });
 
   it("reads an adopted status as written", () => {
-    const doc = JSON.parse(CLASSIFIED) as { status: string };
-    doc.status = "adopted";
-    expect(parsePlungeAdopt(JSON.stringify(doc), "").outcome).toBe("written");
+    const c = parsePlungeAdopt(ADOPTED, "");
+    expect(c.outcome).toBe("written");
+    expect(c.entries).toHaveLength(14);
   });
 
   // Written red first, against the text parser this replaced: a plunge built before 968b54748d answers --json with cobra's unknown flag.
@@ -264,8 +294,8 @@ describe("the adoption routes for a pulumi member (behold#999)", () => {
     const { status, body } = await s.get("/api/adopt/report?member=app");
     expect(status).toBe(200);
     expect(body.outcome).toBe("classified");
-    expect(body.report.total).toBe(4);
-    expect(body.report.byOwnership).toEqual({ pending: 2, marker: 1, record: 1 });
+    expect(body.report.total).toBe(14);
+    expect(body.report.byOwnership).toEqual({ pending: 14 });
     expect(body.confirm).toMatch(/plunge stack adopt --stack dev --yes$/);
     expect(s.spawned).toHaveLength(1);
     expect(s.spawned[0]!.args).toContain("--json");
@@ -279,8 +309,8 @@ describe("the adoption routes for a pulumi member (behold#999)", () => {
     const s = served({ stdout: REFUSED, exit: 1 });
     const { body } = await s.get("/api/adopt/report?member=app");
     expect(body.outcome).toBe("refused");
-    expect(body.refused).toHaveLength(3);
-    expect(body.refused[1]).toMatchObject({ code: "create-only-tags", urn: URNS.svc });
+    expect(body.refused).toHaveLength(1);
+    expect(body.refused[0]).toMatchObject({ code: "adopted-from-another-checkpoint" });
     expect(body.confirm).toBeUndefined();
   });
 

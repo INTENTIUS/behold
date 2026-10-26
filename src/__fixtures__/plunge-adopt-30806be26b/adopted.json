@@ -1,0 +1,124 @@
+{
+  "adopt": "v1",
+  "stack": "floci",
+  "status": "adopted",
+  "checkpoint": {
+    "source": "the DIY checkpoint at file:///srv/rec-4475/state-adopt",
+    "digest": "8a7bd33dc8dfcb2e3a7f476d999c18af484faa71ff89b1d6ba220258e514f6a6"
+  },
+  "resources": [
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:ec2/securityGroup:SecurityGroup::app-sg",
+      "type": "aws:ec2/securityGroup:SecurityGroup",
+      "id": "sg-68951e51c2f001baa",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:ec2/vpc:Vpc::main",
+      "type": "aws:ec2/vpc:Vpc",
+      "id": "vpc-05097b38",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:iam/role:Role::app-role",
+      "type": "aws:iam/role:Role",
+      "id": "rec-ts-app",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:s3/bucket:Bucket::site-bucket",
+      "type": "aws:s3/bucket:Bucket",
+      "id": "rec-ts-site",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:s3/bucketPolicy:BucketPolicy::site-bucket-policy",
+      "type": "aws:s3/bucketPolicy:BucketPolicy",
+      "id": "rec-ts-site",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:sns/topic:Topic::alerts-west",
+      "type": "aws:sns/topic:Topic",
+      "id": "arn:aws:sns:us-west-2:000000000000:rec-ts-alerts-west",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:sqs/queue:Queue::events",
+      "type": "aws:sqs/queue:Queue",
+      "id": "https://sqs.us-east-1.amazonaws.com/000000000000/events-787f4fa",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:sqs/queue:Queue::worker-0",
+      "type": "aws:sqs/queue:Queue",
+      "id": "https://sqs.us-east-1.amazonaws.com/000000000000/worker-0-8f65751",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:sqs/queue:Queue::worker-1",
+      "type": "aws:sqs/queue:Queue",
+      "id": "https://sqs.us-east-1.amazonaws.com/000000000000/worker-1-ef44137",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:sqs/queue:Queue::worker-2",
+      "type": "aws:sqs/queue:Queue",
+      "id": "https://sqs.us-east-1.amazonaws.com/000000000000/worker-2-b6daa97",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:ssm/parameter:Parameter::db-password",
+      "type": "aws:ssm/parameter:Parameter",
+      "id": "/rec-ts/db-password",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:ssm/parameter:Parameter::vpc-id",
+      "type": "aws:ssm/parameter:Parameter",
+      "id": "/rec-ts/vpc/vpc-05097b38",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::corpus:index:Site$aws:s3/bucket:Bucket::docs-assets",
+      "type": "aws:s3/bucket:Bucket",
+      "id": "rec-ts-docs-assets",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::corpus:index:Site$aws:sns/topic:Topic::docs-notify",
+      "type": "aws:sns/topic:Topic",
+      "id": "arn:aws:sns:us-east-1:000000000000:docs-notify-019c2a9",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    }
+  ],
+  "refusals": []
+}
