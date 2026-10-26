@@ -2,8 +2,8 @@
 # behold#999, the Pulumi half: "adopt this stack", end to end over a real
 # chant and a real behold serve, with plunge replaced by
 # e2e/fixtures/adopt-pulumi/plunge (no cloud, no Pulumi engine; it answers
-# plunge stack adopt in plunge's text, with plunge's gate, and logs every
-# call). behold is started with PULUMI_SKIP_CONFIRMATIONS=true in its
+# plunge stack adopt --json with plunge's v1 document, with plunge's gate, and
+# logs every call). behold is started with PULUMI_SKIP_CONFIRMATIONS=true in its
 # environment, which would confirm an adoption if it reached plunge.
 #
 #   1. the offer   GET /api/adopt: the stock stack `app` (Pulumi.yaml names a
@@ -82,6 +82,7 @@ no_write() {
         if (l.argv.some(a=>a==="-y"||a.startsWith("--yes"))) { console.error("✗ plunge was asked to confirm:", l.argv.join(" ")); process.exit(1); }
         if (l.skip!==null) { console.error("✗ plunge saw PULUMI_SKIP_CONFIRMATIONS=" + l.skip); process.exit(1); }
         if (!l.argv.includes("--non-interactive")) { console.error("✗ plunge was run interactively:", l.argv.join(" ")); process.exit(1); }
+        if (!l.argv.includes("--json")) { console.error("✗ plunge was not asked for its JSON view:", l.argv.join(" ")); process.exit(1); }
       }' "$LOG" || fail "$1: the stand-in's log"
   fi
 }

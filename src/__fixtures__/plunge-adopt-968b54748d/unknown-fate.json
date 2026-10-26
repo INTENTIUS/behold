@@ -1,0 +1,20 @@
+{
+  "adopt": "v1",
+  "stack": "organization/app/dev",
+  "status": "would-adopt",
+  "checkpoint": {
+    "source": "the DIY checkpoint at file:///var/lib/pulumi/app",
+    "digest": "0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9"
+  },
+  "resources": [
+    {
+      "urn": "urn:pulumi:dev::app::aws:s3/bucket:Bucket::assets",
+      "type": "aws:s3/bucket:Bucket",
+      "id": "assets-1",
+      "fate": "borrowed",
+      "marked": false,
+      "reason": "a fate this behold was written before"
+    }
+  ],
+  "refusals": []
+}
