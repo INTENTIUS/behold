@@ -85,10 +85,24 @@ import { planCoveredBy } from "@intentius/chant/components/pr-run";
 import type { ChangeSet as LifecycleChangeSet } from "@intentius/chant/lifecycle/change-set";
 import { awsApply } from "@intentius/chant-lexicon-aws/op/activities";
 import { gcpApply } from "@intentius/chant-lexicon-gcp/op/activities";
-import { previewPulumiMember } from "@intentius/chant-lexicon-pulumi/run";
 import { choudoufuPlanSet, choudoufuWaveApply, terraformOutputs } from "@intentius/chant-lexicon-terraform/op/activities/terraform";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+/**
+ * The pulumi lexicon, loaded by the aws plan alone (behold#1005). It is on no
+ * chant release on npm yet, so this directory's package.json does not list it
+ * until behold's CHANT_RELEASE (src/chant-release.ts) is released, and `npm ci`
+ * here does not install it. Loading it here, not at the top, lets every other
+ * subcommand (apply-azure among them) run without it.
+ */
+async function pulumiRun(): Promise<typeof import("@intentius/chant-lexicon-pulumi/run")> {
+  try {
+    return await import("@intentius/chant-lexicon-pulumi/run");
+  } catch (e) {
+    throw new Error(`the aws part needs @intentius/chant-lexicon-pulumi, which is not installed here: install the local chant build (README, "A local chant build"). ${(e as Error).message}`);
+  }
+}
 const WORK = join(ROOT, ".front-door");
 const CHANT = join(ROOT, "node_modules", ".bin", "chant");
 /** The copy the components run in, and the bare repository it pushes its release records to. */
@@ -398,6 +412,7 @@ export async function plan(out: string): Promise<ChangeSetDocument> {
   parts.push((await choudoufuPlanSet(AZURE_ROOT)).changeSet);
   awsStack();
   say(`aws: plunge preview --json --stack ${ENV}, on floci at ${AWS}`);
+  const { previewPulumiMember } = await pulumiRun();
   parts.push(await previewPulumiMember({ member: "aws", dir: AWS_DIR, stack: ENV }));
   const chant = (JSON.parse(readFileSync(join(ROOT, "node_modules", "@intentius", "chant", "package.json"), "utf8")) as { version?: string }).version;
   const doc = composeChangeSet(parts, chant ? { chant } : {});
