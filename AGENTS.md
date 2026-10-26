@@ -92,8 +92,8 @@ contract (`src/workspace-reader.ts`), never chant's library.
 
 A read whose chant is merged and not released takes its floor from
 `CHANT_RELEASE` in src/chant-release.ts, `{ version, released }`, which names
-that release: `ADOPTION_REPORT_CHANT_FLOOR`, `DRIFT_RECORD_CHANT_FLOOR` and
-`DRIFT_STREAM_CHANT_FLOOR` are its `version`. `version` is chant's own
+that release: `ADOPTION_REPORT_CHANT_FLOOR`, `DRIFT_RECORD_CHANT_FLOOR`,
+`DRIFT_STREAM_CHANT_FLOOR` and `LEDGER_ROOT_MEMBER_CHANT_FLOOR` are its `version`. `version` is chant's own
 `NEXT_RELEASE` (INTENTIUS/chant#4480), and a local build of chant's
 integration branch is stamped at it (`npm pack` with the versions stamped,
 `npm install --no-save`), so it meets every floor. scripts/chant-release.ts
@@ -173,6 +173,19 @@ workspace's, when that did not pass. A card the index names nothing of says
 `no runs recorded`, or `no run index read` when behold has no report URL;
 behold never makes one up. The members are read through the same
 `ciRunIndexOf` as the runs pane.
+
+The same card lists the member's local applies (behold#1010,
+src/member-local-applies.ts): the TerraformApplyOp runs that applied a root
+in the member's directory, from `chant ledger runs --where
+root_member=<member> --json` at the served workspace's root (chant#4482,
+chant#4500), as `_localApplies` (newest first, at most five) and `local`, the
+newest that passed. The read is sent only to a chant at
+`LEDGER_ROOT_MEMBER_CHANT_FLOOR`, and a `runs` table whose `columns` lack
+`root_member` reads as "this chant does not say", so the card keeps the run
+index alone. A null `root_member` is unknown (chant#4508): such a run is on
+no card, the declaring member's included, and the picture's note counts it
+as an apply of an unknown root with its `labels.TerraformRoot`, read with
+`--where labels.Apply=true`.
 
 ## Adopting a Pulumi stack into plunge (behold#999)
 

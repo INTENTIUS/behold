@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ADOPTION_REPORT_CHANT_FLOOR, DRIFT_RECORD_CHANT_FLOOR, DRIFT_STREAM_CHANT_FLOOR } from "./chant-floors.ts";
+import { ADOPTION_REPORT_CHANT_FLOOR, DRIFT_RECORD_CHANT_FLOOR, DRIFT_STREAM_CHANT_FLOOR, LEDGER_ROOT_MEMBER_CHANT_FLOOR } from "./chant-floors.ts";
 import { CHANT_RELEASE, PUBLISHED_CHANT } from "./chant-release.ts";
 import { chantRange, chantReleaseFiles, chantVersion, driftModuleSource } from "./chant-release-sync.ts";
 
@@ -17,7 +17,7 @@ describe("CHANT_RELEASE (behold#1005)", () => {
   });
 
   it("the unreleased floors are its version, the version a local build is stamped at", () => {
-    expect([ADOPTION_REPORT_CHANT_FLOOR, DRIFT_RECORD_CHANT_FLOOR, DRIFT_STREAM_CHANT_FLOOR]).toEqual([CHANT_RELEASE.version, CHANT_RELEASE.version, CHANT_RELEASE.version]);
+    expect([ADOPTION_REPORT_CHANT_FLOOR, DRIFT_RECORD_CHANT_FLOOR, DRIFT_STREAM_CHANT_FLOOR, LEDGER_ROOT_MEMBER_CHANT_FLOOR]).toEqual([CHANT_RELEASE.version, CHANT_RELEASE.version, CHANT_RELEASE.version, CHANT_RELEASE.version]);
   });
 
   // behold#1015: an exact pin names the chant a plain `npm ci` installs, so
