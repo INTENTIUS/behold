@@ -173,12 +173,13 @@ import { pointsFloorRefusal, readOpenPoints } from "./decision-points.ts";
 import { orgFloorRefusal, readOrgRepos } from "./org-workspace.ts";
 import { approverFlags, approverFor, approverView, type ApproverOptions, type ApproverRead } from "./approver.ts";
 import { readWhy, whyRegion, withChain } from "./workspace-why.ts";
-import { DRIFT_RECORD_CHANT_FLOOR, floorFor, floorMet, floorRefusal } from "./chant-floors.ts";
+import { DRIFT_RECORD_CHANT_FLOOR, floorFor, floorMet, floorRefusal, LEDGER_ROOT_MEMBER_CHANT_FLOOR } from "./chant-floors.ts";
 import { memberBlockGraph } from "./choudoufu-workspace.ts";
 import { allowedHostsFrom, guardRequest } from "./request-guard.ts";
 import { applyMemberPasses, memberKindOf, memberKindSpec, memberPassNote, servesAsEstate, type MemberPassRun } from "./member-kind.ts";
 import { TerraformReadError, terraformMemberWorkspace, terraformReaderState, terraformVia } from "./terraform-member.ts";
 import { addInstanceCards } from "./instance-cards.ts";
+import { APPLY_RUNS_WHERE, ledgerRunsOf, memberLocalApplies, rootMemberWhere, unknownRootApplies, unknownRootNote, withLocalApplies, type LocalApply } from "./member-local-applies.ts";
 import { paintTerraformPlan, readTerraformPlan, terraformPlanNote, type MemberPlanAnswer, type PlanReadDeps, type TerraformPlanRead } from "./terraform-plan.ts";
 import { normalizeTerraformNodes } from "./terraform-lens.ts";
 import { invalidateMember, memberIr, memberIrCacheStats, memberSourceStamp } from "./member-ir.ts";
@@ -3396,13 +3397,19 @@ export function createApp(
         // since that did not pass from the run index instead.
         const { ir: released, released: count } = await withReleases(picture.ir, estateMembers(cfg.projectDirs!), env ?? undefined);
         const runs = await runIndexEntries();
-        const { ir: applied, applied: applies } = withMemberApplies(withRunsSince(released, runs).ir, runs, !!ciRuns);
+        const { ir: indexed, applied: applies } = withMemberApplies(withRunsSince(released, runs).ir, runs, !!ciRuns);
+        // behold#1010: each member card's local applies, from chant's Op run
+        // ledger, on a served workspace whose chant names root_member.
+        const local = await memberLocalApplyReads(servedWorkspace(), estateMembers(cfg.projectDirs!).filter((m) => m.kind !== "chant").map((m) => m.name));
+        const { ir: applied, applied: localApplies } = withLocalApplies(indexed, local.byMember);
         picture.ir = applied;
         const note =
           [
             estateComponentsNote(picture, picture.ir.nodes.length),
             count ? `${count} of ${picture.ir.nodes.length} components have a release${env ? ` in ${env}` : ""}` : undefined,
             applies ? `${applies} ${applies === 1 ? "member has" : "members have"} an apply in the run index` : undefined,
+            localApplies ? `${localApplies} ${localApplies === 1 ? "member has" : "members have"} a local apply in the ledger` : undefined,
+            local.note,
           ]
             .filter(Boolean)
             .join(" · ") || undefined;
@@ -5101,4 +5108,31 @@ function simplifiedEstateNesting(byContainer: Record<string, string[]>, ir: Grap
   const members = memberPrefixes(ir.nodes);
   if (members.size < 2) return byContainer;
   return simplifyNesting(byContainer, members, new Set(Object.values(namespaceBoxes ?? {})));
+}
+
+/**
+ * behold#1010: the local applies of each named member, read from the served
+ * workspace's Op run ledger: one `chant ledger runs --where root_member=<m>`
+ * per member, and one `--where labels.Apply=true` for the runs whose root
+ * member is unknown (chant#4508), which go in the note and on no card. Reads
+ * nothing when no workspace is served or its chant is below
+ * LEDGER_ROOT_MEMBER_CHANT_FLOOR, and leaves a member out when its read fails
+ * or the chant's rows carry no root_member, so its card shows the run index
+ * alone.
+ */
+async function memberLocalApplyReads(ws: Workspace | undefined, members: ReadonlyArray<string | undefined>): Promise<{ byMember: Map<string, LocalApply[]>; note?: string }> {
+  const byMember = new Map<string, LocalApply[]>();
+  const named = members.filter((m): m is string => !!m);
+  if (!ws || !named.length || !meetsFloor(ws.chant, LEDGER_ROOT_MEMBER_CHANT_FLOOR)) return { byMember };
+  const reader = rootReader(ws.root);
+  await Promise.all(
+    named.map(async (m) => {
+      const answer = await reader.readLedgerRuns([rootMemberWhere(m)]).then(ledgerRunsOf, () => undefined);
+      if (answer?.supported) byMember.set(m, memberLocalApplies(answer, m));
+    }),
+  );
+  if (!byMember.size) return { byMember };
+  const unknown = await reader.readLedgerRuns([APPLY_RUNS_WHERE]).then(ledgerRunsOf, () => undefined);
+  const note = unknown ? unknownRootNote(unknownRootApplies(unknown)) : undefined;
+  return { byMember, ...(note ? { note } : {}) };
 }

@@ -14,7 +14,8 @@
  * Everything that names that release reads this constant:
  *
  *  - the floors in src/chant-floors.ts (`ADOPTION_REPORT_CHANT_FLOOR`,
- *    `DRIFT_RECORD_CHANT_FLOOR`, `DRIFT_STREAM_CHANT_FLOOR`);
+ *    `DRIFT_RECORD_CHANT_FLOOR`, `DRIFT_STREAM_CHANT_FLOOR`,
+ *    `LEDGER_ROOT_MEMBER_CHANT_FLOOR`);
  *  - the pins and dependencies scripts/chant-release.ts writes: the
  *    three-cloud workspace's lexicon pins and package.json, the exact
  *    terraform lexicon pins of example-terraform-estate and

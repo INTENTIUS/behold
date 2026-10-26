@@ -133,6 +133,13 @@ export const DRIFT_RECORD_CHANT_FLOOR: string = CHANT_RELEASE.version;
  * after one spawn, so `POST /api/workspace/drift/stream` refuses below it and
  * spawns nothing. Its release (INTENTIUS/chant#4473) is CHANT_RELEASE. */
 export const DRIFT_STREAM_CHANT_FLOOR: string = CHANT_RELEASE.version;
+/** The first chant whose `chant ledger runs --json` names `root_member` on
+ * each run, the member whose directory holds the root a TerraformApplyOp
+ * applied (INTENTIUS/chant#4482, a contract field by chant#4500; chant's own
+ * floor is `LEDGER_ROOT_MEMBER_FLOOR`, NEXT_RELEASE today). An older chant
+ * refuses `--where root_member=...`, so below it the member run card reads
+ * no local applies (behold#1010). Its release is CHANT_RELEASE. */
+export const LEDGER_ROOT_MEMBER_CHANT_FLOOR: string = CHANT_RELEASE.version;
 /** The first chant whose runner keeps a run index at its report URL,
  * `<url>/runs/index.json` (ci-run-index/v1, INTENTIUS/chant#4098,
  * INTENTIUS/chant#4114), which `chant ci runs --json` prints. The kiosk's runs
@@ -267,6 +274,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "drift record", floor: DRIFT_RECORD_CHANT_FLOOR, adds: "chant workspace drift --member, one member's drift document from the engine that owns it (behold#995)", degraded: "a Terraform member's cards carry no live colour, and chant and choudoufu members colour from their own live reads through the same (status, read) table" },
   { read: "streamed drift", floor: DRIFT_STREAM_CHANT_FLOOR, adds: "chant workspace drift --member --stream, the drift stream as each read finishes (behold#998, chant#4451)" },
   { read: "adoption report", floor: ADOPTION_REPORT_CHANT_FLOOR, adds: "workspace promote --json carries live-import's adoption report (behold#999)" },
+  { read: "local applies per member", floor: LEDGER_ROOT_MEMBER_CHANT_FLOOR, adds: "chant ledger runs --where root_member=<member>, the TerraformApplyOp runs that applied a member's root (chant#4482, chant#4500, behold#1010)", degraded: "a choudoufu or terraform member's run card shows its applies from the CI run index only" },
   { read: "decision points", floor: DECISION_POINTS_CHANT_FLOOR, adds: "a gate that asks a decision point, read with chant workspace points --open (chant#3170)", degraded: "the gate strip draws no open decision points, and says which chant adds them" },
 ];
 
