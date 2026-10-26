@@ -82,9 +82,11 @@ source. In a checkout of chant main (`CHANT` below):
 
 ```sh
 cd "$CHANT" && npm ci && scripts/ci-lexicon-artifacts.sh --steps generate,bundle
-# Stamp the packages' versions, uncommitted (0.124.52 meets every ^0.124.52 here).
+# Stamp the packages' versions, uncommitted, at the coming release: behold's
+# CHANT_RELEASE (src/chant-release.ts), which is chant's NEXT_RELEASE. 0.124.53
+# meets every ^0.124.52 here and every floor and exact pin in behold.
 for pj in packages/*/package.json lexicons/*/package.json; do
-  node -e 'const f=process.argv[1];const p=require(f);if(!String(p.name).startsWith("@intentius/"))process.exit(0);p.version="0.124.52";require("fs").writeFileSync(f,JSON.stringify(p,null,2)+"\n")' "$PWD/$pj"
+  node -e 'const f=process.argv[1];const p=require(f);if(!String(p.name).startsWith("@intentius/"))process.exit(0);p.version="0.124.53";require("fs").writeFileSync(f,JSON.stringify(p,null,2)+"\n")' "$PWD/$pj"
 done
 mkdir -p /tmp/chant-local && npm pack -w packages/core -w lexicons/terraform -w lexicons/pulumi --pack-destination /tmp/chant-local
 git checkout -- '*package.json'
@@ -98,7 +100,11 @@ so the pin reads whichever build is installed there and sets no version a
 local build can't meet. `npm run front-door` and `npm run change-set` need
 the local build too, since they run dns's components and the pulumi part.
 A later plain `npm install` here puts the npm release back, so run the
-`--no-save` install again after one.
+`--no-save` install again after one. scripts/front-door.ts loads the pulumi
+lexicon only for the aws plan, so the other subcommands (`apply-azure` among
+them) run after a plain `npm ci`. Once that chant release is published,
+behold's `CHANT_RELEASE` flips (src/chant-release.ts) and this directory pins
+and depends on both lexicons by version instead.
 
 ## One change set
 

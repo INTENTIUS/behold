@@ -222,7 +222,7 @@ import { COLLISION_READ, collisionsFloorRefusal, readCollisions } from "./collis
 import { sqlYodelerLaneRoute } from "./sql-yodeler-lane.ts";
 import { cachedHealth, invalidateHealth, readHealthOverlay, rememberHealth, type HealthMember } from "./health-overlay.ts";
 import { rootReader, rootStreamTransport } from "./workspace-reader.ts";
-import { runDriftStream } from "./drift-stream.ts";
+import { driftStreamRoutes } from "./drift-stream.ts";
 import { DRIFT_DEFAULT_KINDS, DRIFT_KINDS, paintWorkspaceDrift } from "./drift-overlay.ts";
 import { PUBLIC_SEARCHES_IN_FLIGHT, SearchAskError, cachedCapabilities, checkAsk, drawnOf, runSearch, searchTarget, type SearchTarget } from "./search.ts";
 import { resolvedVersion } from "./terraform-member.ts";
@@ -1847,43 +1847,12 @@ export function createApp(
   // request guard. The page sends its member's card addresses; the server
   // keeps only resource addresses from them, and they go to chant after
   // `--resource`, never as an operand.
-  let driftRun: { id: number; member: string; stop: AbortController } | null = null;
-  let driftRuns = 0;
-  app.post("/api/workspace/drift/stream", async (c) => {
-    const ws = servedWorkspace();
-    if (!ws) return c.json({ error: "behold isn't serving a declared chant workspace, so there is no member to stream drift for.", code: "no-workspace" }, 404);
-    if (!(c.req.header("content-type") ?? "").includes("application/json")) return c.json({ error: "send application/json", code: "bad-drift" }, 415);
-    const text = await c.req.text().catch(() => "");
-    if (text.length > MAX_BODY_BYTES * 4) return c.json({ error: `a drift stream body is capped at ${MAX_BODY_BYTES * 4} bytes`, code: "too-large" }, 413);
-    let body: { member?: unknown; addresses?: unknown; stop?: unknown };
-    try {
-      body = JSON.parse(text || "null") ?? {};
-    } catch {
-      return c.json({ error: "body must be JSON", code: "bad-drift" }, 400);
-    }
-    if (body.stop === true) {
-      if (driftRun) driftRun.stop.abort();
-      return c.json({ stopped: driftRun ? driftRun.id : null });
-    }
-    const member = ws.members.find((m) => m.name === body.member);
-    if (!member || member.reason) return c.json({ error: member ? `${member.name} can't be read: ${member.because ?? member.reason}` : `${String(body.member)} isn't a member of ${ws.name}.`, code: "drift-member" }, 400);
-    if (driftRun) return c.json({ error: `drift is already streaming for ${driftRun.member} (run ${driftRun.id}).`, code: "drift-streaming", run: driftRun.id }, 409);
-    const addresses = Array.isArray(body.addresses) ? body.addresses.filter((a): a is string => typeof a === "string") : [];
-    const run = { id: ++driftRuns, member: member.name, stop: new AbortController() };
-    driftRun = run;
-    void runDriftStream({
-      run: run.id,
-      member,
-      addresses,
-      transport: rootStreamTransport(ws.root, process.env.BEHOLD_DRIFT_CHANT || undefined),
-      emit: (frame) => broadcaster.emit("drift", JSON.stringify(frame)),
-      signal: run.stop.signal,
-    })
-      .catch((e) => broadcaster.emit("drift", JSON.stringify({ run: run.id, kind: "failed", member: member.name, error: (e as Error).message })))
-      .finally(() => {
-        if (driftRun === run) driftRun = null;
-      });
-    return c.json({ run: run.id, member: member.name, kind: member.kind }, 202);
+  // behold#1005: below DRIFT_STREAM_CHANT_FLOOR the start is refused and nothing is spawned.
+  driftStreamRoutes(app, {
+    workspace: servedWorkspace,
+    transport: (root) => rootStreamTransport(root, process.env.BEHOLD_DRIFT_CHANT || undefined),
+    ...(process.env.BEHOLD_DRIFT_CHANT ? { chantBin: process.env.BEHOLD_DRIFT_CHANT } : {}),
+    emit: (frame) => broadcaster.emit("drift", JSON.stringify(frame)),
   });
 
   // #477: approve one workspace gate, by key. The member's directory, env and
