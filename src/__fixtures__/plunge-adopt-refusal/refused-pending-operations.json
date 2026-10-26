@@ -1,0 +1,167 @@
+{
+  "adopt": "v1",
+  "stack": "floci",
+  "status": "refused",
+  "checkpoint": {
+    "source": "the DIY checkpoint at file:///Users/alex/Documents/checkouts/intentius/engine-wt/rec-r2/state-1007",
+    "digest": "8681bbc8d9a3b969ff9e1756b08e1efbd41cf28313128452238170c0a6c84e7a"
+  },
+  "resources": [
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:ec2/securityGroup:SecurityGroup::app-sg",
+      "type": "aws:ec2/securityGroup:SecurityGroup",
+      "id": "sg-aa99c05e22d8f453e",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:ec2/vpc:Vpc::main",
+      "type": "aws:ec2/vpc:Vpc",
+      "id": "vpc-1b6a8567",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:iam/role:Role::app-role",
+      "type": "aws:iam/role:Role",
+      "id": "rec-r2-1007-app",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:s3/bucket:Bucket::site-bucket",
+      "type": "aws:s3/bucket:Bucket",
+      "id": "rec-r2-1007-site",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:s3/bucketPolicy:BucketPolicy::site-bucket-policy",
+      "type": "aws:s3/bucketPolicy:BucketPolicy",
+      "id": "rec-r2-1007-site",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:sns/topic:Topic::alerts-west",
+      "type": "aws:sns/topic:Topic",
+      "id": "arn:aws:sns:us-west-2:000000000000:rec-r2-1007-alerts-west",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:sqs/queue:Queue::events",
+      "type": "aws:sqs/queue:Queue",
+      "id": "https://sqs.us-east-1.amazonaws.com/000000000000/events-006ac50",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:sqs/queue:Queue::worker-0",
+      "type": "aws:sqs/queue:Queue",
+      "id": "https://sqs.us-east-1.amazonaws.com/000000000000/worker-0-890c2a0",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:sqs/queue:Queue::worker-1",
+      "type": "aws:sqs/queue:Queue",
+      "id": "https://sqs.us-east-1.amazonaws.com/000000000000/worker-1-88a8dab",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:sqs/queue:Queue::worker-2",
+      "type": "aws:sqs/queue:Queue",
+      "id": "https://sqs.us-east-1.amazonaws.com/000000000000/worker-2-6585ea6",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:ssm/parameter:Parameter::db-password",
+      "type": "aws:ssm/parameter:Parameter",
+      "id": "/rec-r2-1007/db-password",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema",
+      "refusals": [
+        {
+          "code": "pending-operations",
+          "urn": "urn:pulumi:floci::corpus-aws-ts::aws:ssm/parameter:Parameter::db-password",
+          "reason": "the checkpoint has a pending updating operation on urn:pulumi:floci::corpus-aws-ts::aws:ssm/parameter:Parameter::db-password, which stock Pulumi must settle first (`pulumi refresh` or `pulumi stack export`/`import` after checking the cloud)"
+        }
+      ]
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:ssm/parameter:Parameter::vpc-id",
+      "type": "aws:ssm/parameter:Parameter",
+      "id": "/rec-r2-1007/vpc/vpc-1b6a8567",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::corpus:index:Site$aws:s3/bucket:Bucket::docs-assets",
+      "type": "aws:s3/bucket:Bucket",
+      "id": "rec-r2-1007-docs-assets",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    },
+    {
+      "urn": "urn:pulumi:floci::corpus-aws-ts::corpus:index:Site$aws:sns/topic:Topic::docs-notify",
+      "type": "aws:sns/topic:Topic",
+      "id": "arn:aws:sns:us-east-1:000000000000:docs-notify-249456d",
+      "fate": "pending",
+      "marked": false,
+      "reason": "classed at the first run, from the provider's schema"
+    }
+  ],
+  "refusals": [
+    {
+      "code": "pending-operations",
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:ssm/parameter:Parameter::db-password",
+      "reason": "the checkpoint has a pending updating operation on urn:pulumi:floci::corpus-aws-ts::aws:ssm/parameter:Parameter::db-password, which stock Pulumi must settle first (`pulumi refresh` or `pulumi stack export`/`import` after checking the cloud)"
+    },
+    {
+      "code": "pending-operations",
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:sqs/queue:Queue::worker-5",
+      "reason": "the checkpoint has a pending creating operation on urn:pulumi:floci::corpus-aws-ts::aws:sqs/queue:Queue::worker-5, which stock Pulumi must settle first (`pulumi refresh` or `pulumi stack export`/`import` after checking the cloud)"
+    },
+    {
+      "code": "pending-operations",
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:sqs/queue:Queue::worker-7",
+      "reason": "the checkpoint has a pending creating operation on urn:pulumi:floci::corpus-aws-ts::aws:sqs/queue:Queue::worker-7, which stock Pulumi must settle first (`pulumi refresh` or `pulumi stack export`/`import` after checking the cloud)"
+    },
+    {
+      "code": "pending-operations",
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:sqs/queue:Queue::worker-4",
+      "reason": "the checkpoint has a pending creating operation on urn:pulumi:floci::corpus-aws-ts::aws:sqs/queue:Queue::worker-4, which stock Pulumi must settle first (`pulumi refresh` or `pulumi stack export`/`import` after checking the cloud)"
+    },
+    {
+      "code": "pending-operations",
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:sqs/queue:Queue::worker-9",
+      "reason": "the checkpoint has a pending creating operation on urn:pulumi:floci::corpus-aws-ts::aws:sqs/queue:Queue::worker-9, which stock Pulumi must settle first (`pulumi refresh` or `pulumi stack export`/`import` after checking the cloud)"
+    },
+    {
+      "code": "pending-operations",
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:sqs/queue:Queue::worker-8",
+      "reason": "the checkpoint has a pending creating operation on urn:pulumi:floci::corpus-aws-ts::aws:sqs/queue:Queue::worker-8, which stock Pulumi must settle first (`pulumi refresh` or `pulumi stack export`/`import` after checking the cloud)"
+    },
+    {
+      "code": "pending-operations",
+      "urn": "urn:pulumi:floci::corpus-aws-ts::aws:sqs/queue:Queue::worker-3",
+      "reason": "the checkpoint has a pending creating operation on urn:pulumi:floci::corpus-aws-ts::aws:sqs/queue:Queue::worker-3, which stock Pulumi must settle first (`pulumi refresh` or `pulumi stack export`/`import` after checking the cloud)"
+    }
+  ]
+}
