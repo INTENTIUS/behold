@@ -529,6 +529,13 @@ export interface WaitingWave {
   from: "estate" | "index";
 }
 
+/** behold#1012: what a composed estate run's tf-apply report says of its estates when no tf-plan report of it is read. */
+export interface EstateApply {
+  compose: ReportCompose;
+  reads: (ReportRead & { root: string })[];
+  report: string;
+}
+
 /**
  * The pull request stage (#568): the newest tf-plan report that planned a
  * pull request, as it planned it. terragucci's run view starts at the merge,
@@ -667,6 +674,12 @@ export interface TerragucciRead {
   binaries?: Record<string, string>;
   /** #568: the newest pull request's plan, when the index holds one. */
   pull_request?: PullRequestPlan;
+  /**
+   * behold#1012: a composed choudoufu run (minor 48, `compose.estate`) read from its newest tf-apply report, when no
+   * tf-plan report of one is read (`pull_request` is absent or not an estate run). The estates it names and the reads
+   * between them, so the apply report alone draws the estate scene and its root-to-root edges.
+   */
+  estate_apply?: EstateApply;
   /**
    * terragucci's estate page for this project, when the source has one: the counts it shows, as it shows them.
    * `behind` when the index holds a run of the project finished after the page was generated: the counts are
@@ -873,6 +886,17 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
   const prDoc = prRow ? await report(prRow) : undefined;
   if (prRow && prDoc) pullRequest = pullRequestPlan(prDoc, under(prRow.path, "report.html"));
 
+  // behold#1012: with no tf-plan of a composed estate run, the newest tf-apply report of one names its estates and reads.
+  let estateApply: EstateApply | undefined;
+  if (pullRequest?.compose?.estate !== true) {
+    for (const row of rows.filter((r) => r.stage === "tf-apply").slice(0, MAX_RUNS_PER_STAGE)) {
+      const doc = await report(row);
+      if (doc?.compose?.estate !== true) continue;
+      estateApply = { compose: doc.compose, reads: readsOf(doc), report: under(row.path, "report.html") };
+      break;
+    }
+  }
+
   // The estate page lives at the top of the prefix; a project directory has none.
   const estateDoc = await readDoc<Estate>(source, "estate.json", "estate", v);
   const estateProject = estateDoc?.projects.find((p) => p.project === project);
@@ -980,6 +1004,7 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
     roots,
     waiting,
     ...(pullRequest ? { pull_request: pullRequest } : {}),
+    ...(estateApply ? { estate_apply: estateApply } : {}),
     ...(Object.values(facts).some((f) => f.binary) ? { binaries: Object.fromEntries(Object.entries(facts).filter(([, f]) => f.binary).map(([p, f]) => [p, f.binary!])) } : {}),
     ...(estateDoc && estateProject
       ? {
@@ -1000,6 +1025,21 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
   };
 }
 
+/** Every root's `reads[]` of one report, each with the root that reads. Pure. */
+function readsOf(doc: Report): (ReportRead & { root: string })[] {
+  return doc.roots.flatMap((r) =>
+    (r.reads ?? []).map((x) => ({
+      root: r.path,
+      upstream: x.upstream,
+      data: x.data,
+      outputs: x.outputs,
+      ...(x.unknown?.length ? { unknown: [...x.unknown] } : {}),
+      ...(x.why ? { why: x.why } : {}),
+      ...(x.composed ? { composed: true } : {}),
+    })),
+  );
+}
+
 /** The pull request stage of one tf-plan report (#568). Pure. */
 export function pullRequestPlan(doc: Report, report: string): PullRequestPlan {
   return {
@@ -1011,17 +1051,7 @@ export function pullRequestPlan(doc: Report, report: string): PullRequestPlan {
       ...(doc.run.job_url ? { job_url: doc.run.job_url } : {}),
       report,
     },
-    reads: doc.roots.flatMap((r) =>
-      (r.reads ?? []).map((x) => ({
-        root: r.path,
-        upstream: x.upstream,
-        data: x.data,
-        outputs: x.outputs,
-        ...(x.unknown?.length ? { unknown: [...x.unknown] } : {}),
-        ...(x.why ? { why: x.why } : {}),
-        ...(x.composed ? { composed: true } : {}),
-      })),
-    ),
+    reads: readsOf(doc),
     roots: doc.roots.map((r) => r.path),
     waves: doc.waves.map((w) => ({
       number: w.number,

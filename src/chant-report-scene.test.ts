@@ -31,23 +31,26 @@ function write(dir: string, path: string, body: unknown): void {
   mkdirSync(dirname(join(dir, path)), { recursive: true });
   writeFileSync(join(dir, path), JSON.stringify(body));
 }
-/** A report bucket holding the tf-plan report, and the tf-apply report after it when `applied`. */
-function bucket(applied: boolean): string {
+/** A report bucket holding the tf-plan report, and the tf-apply report after it when `applied`; with `applyOnly`, the tf-apply report alone. */
+function bucket(applied: boolean, applyOnly = false): string {
   const d = mkdtempSync(join(tmpdir(), "behold-chant-report-"));
   made.push(d);
-  const rows: Record<string, unknown>[] = [{ project: PROJECT, commit: COMMIT, stage: "tf-plan", finished: "2026-10-25T10:00:00Z", path: "p/plan", pull_request: "1" }];
-  write(d, "p/plan/report.json", doc("tf-plan/report.json"));
-  if (applied) {
+  const rows: Record<string, unknown>[] = [];
+  if (!applyOnly) {
+    rows.push({ project: PROJECT, commit: COMMIT, stage: "tf-plan", finished: "2026-10-25T10:00:00Z", path: "p/plan", pull_request: "1" });
+    write(d, "p/plan/report.json", doc("tf-plan/report.json"));
+  }
+  if (applied || applyOnly) {
     write(d, "p/apply/report.json", doc("tf-apply/report.json"));
     rows.push({ project: PROJECT, commit: COMMIT, stage: "tf-apply", wave: 1, finished: "2026-10-25T10:05:00Z", path: "p/apply", approval: "not-requested", applied: "2026-10-25T10:05:00Z" });
   }
   write(d, "index.json", { schema: INDEX_SCHEMA, reports: rows });
   return d;
 }
-async function answerOf(applied: boolean) {
-  const read = await readTerragucci(terragucciSource(bucket(applied)), { roots: ROOTS.map((r) => r.path) });
+async function answerOf(applied: boolean, applyOnly = false) {
+  const read = await readTerragucci(terragucciSource(bucket(applied, applyOnly)), { roots: ROOTS.map((r) => r.path) });
   const marks = joinTerragucci(read, [], ROOTS);
-  return { ...marks, roots: marks.roots.map((r) => ({ member: r.member, name: r.name, path: r.path })), pull_request: read.pull_request };
+  return { ...marks, roots: marks.roots.map((r) => ({ member: r.member, name: r.name, path: r.path })), pull_request: read.pull_request, marks: marks.roots, read };
 }
 const progressApplied = { states: [{ number: 1, state: "applied", roots: ROOTS.map((r) => r.path), composed: { members: ROOTS.map((r) => ({ root: r.path, apply: "applied", state: "written" })) } }], reads: [] };
 
@@ -113,5 +116,62 @@ describe("chant#4439's report.json through the estate scene (behold#1008)", () =
     const p = await answerOf(false);
     const pid = cardLines(planOf(p)).find((l: { cardId: string; path: string }) => l.cardId === SUBNET && l.path === "id");
     expect(lineState(pid, p, null).text).toBe("id: known after apply");
+  });
+
+  // behold#1012 (ruled: an apply report with no plan report draws its scene; edges from reads[] stay box-to-box; no chant
+  // change). The bucket holds tf-apply/report.json and nothing else, so every mark below comes from the apply report: the
+  // tf-plan stage case above feeds both reports, and its tf-apply marks came from the plan (the audit correction on
+  // behold#1008).
+  describe("tf-apply alone, with no tf-plan report beside it", () => {
+    it("reads no pull request, and takes the estates and their reads from the apply report", async () => {
+      const a = await answerOf(true, true);
+      expect(a.pull_request).toBeUndefined();
+      expect(a.read.reports).toBe(1);
+      expect(a.read.estate_apply!.compose).toMatchObject({ estate: true, roots: ["estates/app", "estates/edge", "estates/network"] });
+      expect(a.read.estate_apply!.report).toBe("p/apply/report.html");
+    });
+
+    it("draws three member boxes, network on top, each card applied", async () => {
+      const a = await answerOf(true, true);
+      const m = sceneModel(a, planOf(a), null, OPEN);
+      expect(m.roots.map((r: { path: string }) => r.path)).toEqual(["estates/network", "estates/app", "estates/edge"]);
+      expect(m.roots.map((r: { cards: { id: string }[] }) => r.cards.map((c) => c.id))).toEqual([
+        ["demo/network/aws_subnet.new", "demo/network/aws_vpc.main"],
+        ["demo/app/aws_security_group.sg"],
+        ["demo/edge/aws_route_table.rt"],
+      ]);
+      const resources = a.estateScene!.roots.flatMap((r) => r.resources);
+      expect(resources).toHaveLength(4);
+      expect(resources.every((x) => x.state === "applied")).toBe(true);
+    });
+
+    it("draws the reads network to app and app to edge box to box, root to root, and no card-to-card line", async () => {
+      const a = await answerOf(true, true);
+      expect(a.estateScene!.reads!.map((r) => [r.upstream, r.root, r.unknown])).toEqual([
+        ["estates/network", "estates/app", ["subnet_id"]],
+        ["estates/app", "estates/edge", ["sg"]],
+      ]);
+      const plan = planOf(a);
+      expect(plan.edges).toEqual([
+        { from: "estates/network", to: "estates/app" },
+        { from: "estates/app", to: "estates/edge" },
+      ]);
+      expect(plan.reaches.size).toBe(0);
+      expect(sceneModel(a, plan, null, OPEN).edges).toEqual([]);
+    });
+
+    it("puts the tf-apply mark on each root, and network's subnet id is the value the apply wrote", async () => {
+      const a = await answerOf(true, true);
+      for (const r of a.marks) {
+        expect(r.plan, r.path).toBeUndefined();
+        expect(r.apply, r.path).toMatchObject({ run: { stage: "tf-apply", commit: COMMIT, finished: "2026-10-25T10:05:00Z" } });
+      }
+      expect(a.applied[SUBNET]!.run.stage).toBe("tf-apply");
+      expect(a.applied[SUBNET]!.values.find((v) => v.path === "id")).toMatchObject({ path: "id", after: "subnet-0a1b" });
+      // The apply report states the id, so no card says it is known after apply.
+      const plan = planOf(a);
+      expect(unknownSlots(plan).filter((s: { root: string; address: string }) => s.root === "estates/network" && s.address === "aws_subnet.new")).toEqual([]);
+      expect(cardLines(plan).filter((l: { cardId: string; kind: string }) => l.cardId === SUBNET && l.kind === "unknown")).toEqual([]);
+    });
   });
 });
