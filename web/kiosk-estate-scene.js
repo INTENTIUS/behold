@@ -71,7 +71,9 @@ export function askDeltas({ roots, nodes, boxes, extras = {}, edges = [], open }
  */
 export function sceneModel(answer, plan, progress, open) {
   const kinds = memberKinds(answer);
-  const isHole = (r) => r.hole === true || (kinds.get(r.path) || {}).kind === "hole";
+  // Kinds come from answer.chant alone: without it (a composed choudoufu run) a root's `hole` flag is ignored and
+  // nothing is marked, so the run draws as it did before behold#1008.
+  const isHole = (r) => kinds.size > 0 && (r.hole === true || (kinds.get(r.path) || {}).kind === "hole");
   const scene = answer && answer.estateScene && Array.isArray(answer.estateScene.roots) ? answer.estateScene.roots.filter((r) => (r.resources && r.resources.length) || (r.path && r.name && isHole(r))) : [];
   if (!scene.length) return null;
   const extras = slotCounts(plan);

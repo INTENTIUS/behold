@@ -1,6 +1,9 @@
 import { describe, it, expect, afterAll } from "vitest";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DRIFT_RECORD_CHANT_FLOOR } from "./chant-floors.ts";
+import { meetsFloor } from "./floor.ts";
 import { isMemberKind, memberKindOf } from "./member-kind.ts";
 import { resetMemberIrCache } from "./member-ir.ts";
 import { createApp } from "./server.ts";
@@ -12,6 +15,7 @@ import {
   PULUMI_NO_LIVE_READ,
   pulumiWorkspaceVia,
   setServedWorkspace,
+  servedWorkspace,
   type WorkspaceMember,
 } from "./workspace.ts";
 
@@ -125,17 +129,40 @@ describe("a pulumi member in a chant workspace renders, through the real chant (
     for (const n of body.ir.nodes) expect([undefined, "neutral"]).toContain(n.attrs?._status);
   });
 
-  it.skipIf(gate)(`the overlay draws the same cards neutral, saying chant has no live read for the kind (${why})`, { timeout: 120_000 }, async () => {
+  // behold#995: on a chant at DRIFT_RECORD_CHANT_FLOOR the overlay paints a pulumi member from
+  // `chant workspace drift --member app`, which runs `pulumi refresh --preview-only` once per
+  // resource in the export. The fixture selects no stack, so every record is not-observed with
+  // pulumi's reason. The backend is pointed at an empty local directory so that refresh can never
+  // reach Pulumi Cloud or a backend the machine is logged in to. On an older chant there is no
+  // drift read, and the card says behold's own words for why nothing was observed.
+  it.skipIf(gate)(`the overlay draws the same cards neutral, each saying why nothing was observed (${why})`, { timeout: 120_000 }, async () => {
     await ready;
-    const res = await app!.request("http://localhost/api/overlay?env=dev");
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as Drawn;
-    expect(body.error).toBeUndefined();
-    const cards = body.ir.nodes.filter((n) => n.id.startsWith("app/"));
-    expect(cards.map((n) => n.id).sort()).toEqual(RESOURCES.map((id) => `app/${id}`));
-    for (const n of cards) {
-      expect(n.attrs._status).toBe("neutral");
-      expect(n.attrs._unobserved).toBe(PULUMI_NO_LIVE_READ);
+    const backend = mkdtempSync(join(tmpdir(), "behold-pulumi-backend-"));
+    const was = { url: process.env.PULUMI_BACKEND_URL, check: process.env.PULUMI_SKIP_UPDATE_CHECK };
+    process.env.PULUMI_BACKEND_URL = `file://${backend}`;
+    process.env.PULUMI_SKIP_UPDATE_CHECK = "true";
+    try {
+      const res = await app!.request("http://localhost/api/overlay?env=dev");
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as Drawn;
+      expect(body.error).toBeUndefined();
+      const cards = body.ir.nodes.filter((n) => n.id.startsWith("app/"));
+      expect(cards.map((n) => n.id).sort()).toEqual(RESOURCES.map((id) => `app/${id}`));
+      const record = meetsFloor(servedWorkspace()?.chant, DRIFT_RECORD_CHANT_FLOOR);
+      for (const n of cards) {
+        expect(n.attrs._status).toBe("neutral");
+        if (record) {
+          expect((n.attrs._drift as { status?: string } | undefined)?.status).toBe("not-observed");
+          expect(n.attrs._unobserved).toEqual(expect.any(String));
+          expect(n.attrs._unobserved).not.toBe("");
+        } else expect(n.attrs._unobserved).toBe(PULUMI_NO_LIVE_READ);
+      }
+    } finally {
+      for (const [k, v] of [["PULUMI_BACKEND_URL", was.url], ["PULUMI_SKIP_UPDATE_CHECK", was.check]] as const) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+      rmSync(backend, { recursive: true, force: true });
     }
   });
 });
