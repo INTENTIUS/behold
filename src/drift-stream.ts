@@ -30,7 +30,11 @@
  *
  * One run at a time, server-wide: a second start while one runs is refused.
  */
-import type { WorkspaceMember } from "./workspace.ts";
+import type { Hono } from "hono";
+import { resolveChant } from "./chant.ts";
+import { floorFor, floorMet, floorRefusal } from "./chant-floors.ts";
+import { MAX_BODY_BYTES } from "./layout.ts";
+import type { Workspace, WorkspaceMember } from "./workspace.ts";
 import { notReachedRecord, type DriftLine, type DriftRecord, type DriftStartLine } from "./drift-line.ts";
 import { streamDrift, type DriftStreamAsk, type StreamTransport } from "./workspace-reader.ts";
 
@@ -159,4 +163,88 @@ export async function runDriftStream(o: DriftRunOptions): Promise<void> {
     }
   }
   o.emit({ run: o.run, kind: "end", member: name });
+}
+
+/**
+ * behold#1005: the refusal a start gets when the project's chant is older
+ * than {@link DRIFT_STREAM_CHANT_FLOOR} (src/chant-floors.ts), or undefined.
+ * An unknown version meets it, as every floor.
+ */
+export function driftStreamFloorRefusal(version: string | undefined): { error: string; code: string; remedy: string } | undefined {
+  const f = floorFor("streamed drift");
+  return floorMet(f, version) ? undefined : floorRefusal(f, version);
+}
+
+export interface DriftStreamRouteOptions {
+  workspace: () => Workspace | undefined;
+  /** The stream transport over the workspace root's chant. */
+  transport: (root: string) => StreamTransport;
+  emit: (frame: DriftFrame) => void;
+  /** The project's chant version. Default: the root's own chant (`resolveChant`). */
+  chantVersion?: (root: string) => string | undefined;
+  /**
+   * The chant the stream runs instead of the root's (`BEHOLD_DRIFT_CHANT`: a
+   * chant built ahead of its release, or the e2e's fake). The root's version
+   * says nothing about it, so the floor is not checked against it.
+   */
+  chantBin?: string;
+}
+
+/**
+ * behold#998: streamed drift. `POST /api/workspace/drift/stream` starts one
+ * run of `chant workspace drift --member <name> --stream` (per resource on a
+ * choudoufu member) and narrates it as `drift` frames on /api/events. It
+ * reads and writes nothing, but it reaches the account, so it is a POST with
+ * a JSON body like every other started command, refused under --public by
+ * the request guard. The page sends its member's card addresses; the server
+ * keeps only resource addresses from them, and they go to chant after
+ * `--resource`, never as an operand. behold#1005: on a chant below
+ * DRIFT_STREAM_CHANT_FLOOR the start answers 409 with the floor's refusal and
+ * spawns nothing.
+ */
+export function driftStreamRoutes(app: Hono, opts: DriftStreamRouteOptions): void {
+  const versionOf = opts.chantVersion ?? ((root: string) => resolveChant(root).version);
+  let driftRun: { id: number; member: string; stop: AbortController } | null = null;
+  let driftRuns = 0;
+  app.post("/api/workspace/drift/stream", async (c) => {
+    const ws = opts.workspace();
+    if (!ws) return c.json({ error: "behold isn't serving a declared chant workspace, so there is no member to stream drift for.", code: "no-workspace" }, 404);
+    if (!(c.req.header("content-type") ?? "").includes("application/json")) return c.json({ error: "send application/json", code: "bad-drift" }, 415);
+    const text = await c.req.text().catch(() => "");
+    if (text.length > MAX_BODY_BYTES * 4) return c.json({ error: `a drift stream body is capped at ${MAX_BODY_BYTES * 4} bytes`, code: "too-large" }, 413);
+    let body: { member?: unknown; addresses?: unknown; stop?: unknown };
+    try {
+      body = JSON.parse(text || "null") ?? {};
+    } catch {
+      return c.json({ error: "body must be JSON", code: "bad-drift" }, 400);
+    }
+    if (body.stop === true) {
+      if (driftRun) driftRun.stop.abort();
+      return c.json({ stopped: driftRun ? driftRun.id : null });
+    }
+    const member = ws.members.find((m) => m.name === body.member);
+    if (!member || member.reason) return c.json({ error: member ? `${member.name} can't be read: ${member.because ?? member.reason}` : `${String(body.member)} isn't a member of ${ws.name}.`, code: "drift-member" }, 400);
+    if (opts.chantBin === undefined) {
+      const version = versionOf(ws.root);
+      const tooOld = driftStreamFloorRefusal(version);
+      if (tooOld) return c.json({ ...tooOld, chant: version ?? null }, 409);
+    }
+    if (driftRun) return c.json({ error: `drift is already streaming for ${driftRun.member} (run ${driftRun.id}).`, code: "drift-streaming", run: driftRun.id }, 409);
+    const addresses = Array.isArray(body.addresses) ? body.addresses.filter((a): a is string => typeof a === "string") : [];
+    const run = { id: ++driftRuns, member: member.name, stop: new AbortController() };
+    driftRun = run;
+    void runDriftStream({
+      run: run.id,
+      member,
+      addresses,
+      transport: opts.transport(ws.root),
+      emit: opts.emit,
+      signal: run.stop.signal,
+    })
+      .catch((e) => opts.emit({ run: run.id, kind: "failed", member: member.name, error: (e as Error).message }))
+      .finally(() => {
+        if (driftRun === run) driftRun = null;
+      });
+    return c.json({ run: run.id, member: member.name, kind: member.kind }, 202);
+  });
 }

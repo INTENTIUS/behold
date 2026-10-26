@@ -17,10 +17,17 @@
  *    a new entry shows up there without further work.
  *
  * New reads go through the read contract (src/workspace-reader.ts), never
- * through chant's library. Pure: imports only src/floor.ts, so any module may
- * import it.
+ * through chant's library. Pure: imports only src/floor.ts and
+ * src/chant-release.ts, so any module may import it.
+ *
+ * A read whose chant is not released yet takes its floor from
+ * `CHANT_RELEASE.version` (src/chant-release.ts, behold#1005), the number of
+ * the release that will carry it, which a local build of chant is stamped
+ * at. When the release is cut under another number, the one edit there moves
+ * every such floor.
  */
 import { meetsFloor } from "./floor.ts";
+import { CHANT_RELEASE } from "./chant-release.ts";
 
 /** The first chant whose `graph` takes `--traffic` (chant#2377). An older one
  * rejects an unknown flag outright (chant#1127), so the flag is never sent
@@ -113,14 +120,19 @@ export const DECISION_POINTS_CHANT_FLOOR = "0.107.0";
 /** The first chant whose `workspace promote --json` carries `adoption`, choudoufu
  * live-import's report with one entry per resource and its status
  * (INTENTIUS/chant integration/choudoufu-engine, merged for behold#999). The
- * release that ships it was not cut when this was written: 0.124.52 is the
- * newest published chant, so the floor is the next one. The Adopt tab (#999). */
-export const ADOPTION_REPORT_CHANT_FLOOR = "0.124.53";
+ * release that ships it (INTENTIUS/chant#4473) is CHANT_RELEASE. The Adopt tab (#999). */
+export const ADOPTION_REPORT_CHANT_FLOOR: string = CHANT_RELEASE.version;
 /** The first chant with `chant workspace drift --member <name>`, one member's
  * drift document read by its own engine (behold#995's chant half, merged on
- * INTENTIUS/chant integration/choudoufu-engine). Not released when this was
- * written; 0.124.52 is the newest published chant, so the floor is the next. */
-export const DRIFT_RECORD_CHANT_FLOOR = "0.124.53";
+ * INTENTIUS/chant integration/choudoufu-engine). Its release (INTENTIUS/chant#4473)
+ * is CHANT_RELEASE. */
+export const DRIFT_RECORD_CHANT_FLOOR: string = CHANT_RELEASE.version;
+/** The first chant with `chant workspace drift --member <name> --stream`, the
+ * drift stream printed line by line as each read finishes (behold#998,
+ * INTENTIUS/chant#4451). A chant without it fails the read with its own words
+ * after one spawn, so `POST /api/workspace/drift/stream` refuses below it and
+ * spawns nothing. Its release (INTENTIUS/chant#4473) is CHANT_RELEASE. */
+export const DRIFT_STREAM_CHANT_FLOOR: string = CHANT_RELEASE.version;
 /** The first chant whose runner keeps a run index at its report URL,
  * `<url>/runs/index.json` (ci-run-index/v1, INTENTIUS/chant#4098,
  * INTENTIUS/chant#4114), which `chant ci runs --json` prints. The kiosk's runs
@@ -253,6 +265,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "org workspace", floor: ORG_SCOPE_CHANT_FLOOR, adds: "repo members that name another repository's workspace, and workspace.repo (chant#3168)", degraded: "an org workspace's repo members are listed with their URL and revision and no members of theirs" },
   { read: "environment executor", floor: EXECUTOR_CHANT_FLOOR, adds: "executor on each workspace graph --composites environment row (chant#4402)", degraded: "no environment is read as deploying through a forge, so Deploy is not routed away from this machine" },
   { read: "drift record", floor: DRIFT_RECORD_CHANT_FLOOR, adds: "chant workspace drift --member, one member's drift document from the engine that owns it (behold#995)", degraded: "a Terraform member's cards carry no live colour, and chant and choudoufu members colour from their own live reads through the same (status, read) table" },
+  { read: "streamed drift", floor: DRIFT_STREAM_CHANT_FLOOR, adds: "chant workspace drift --member --stream, the drift stream as each read finishes (behold#998, chant#4451)" },
   { read: "adoption report", floor: ADOPTION_REPORT_CHANT_FLOOR, adds: "workspace promote --json carries live-import's adoption report (behold#999)" },
   { read: "decision points", floor: DECISION_POINTS_CHANT_FLOOR, adds: "a gate that asks a decision point, read with chant workspace points --open (chant#3170)", degraded: "the gate strip draws no open decision points, and says which chant adds them" },
 ];

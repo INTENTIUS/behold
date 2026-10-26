@@ -9,18 +9,28 @@
  * -resource` writes (INTENTIUS/choudoufu#2245), and `chant workspace drift
  * --member <name> --stream` prints it.
  *
- * The types and the checks below follow chant's `decodeDriftLine`,
+ * behold#1005: when the chant beside behold ships the module
+ * (src/chant-drift-record.ts, which follows CHANT_RELEASE in
+ * src/chant-release.ts), {@link decodeDriftLine} decodes with chant's own
+ * `decodeDriftLine`, so chant's checks decide which lines are read and its
+ * words are the refusal. Its line is then narrowed to the fields below, so a
+ * card gets the same shape whichever decoder ran. One difference, from
+ * behold#995: a status outside chant's list is kept, not refused, so it can
+ * be painted neutral and labelled unknown. chant refuses such a record, so
+ * behold's own checks read that line, and a settle line's count of such a
+ * status is dropped before chant reads it.
+ *
+ * Without chant's module (the published chant behold depends on has none,
+ * and the bundled CLI under plain node does not load chant's source), the
+ * checks below are the decoder. They follow chant's `decodeDriftLine`,
  * `driftRecord` and `foldDriftLines` at chant commit
- * {@link DRIFT_RECORD_SOURCE}. They are written out here because the chant
- * behold depends on (0.124.52) does not export the module yet; when a chant
- * release does, this file becomes a re-export of `decodeDriftLine` and the
- * types, and nothing that imports it changes. Only what a card needs is
- * checked: the discriminator, the version, member, engine, read and status
- * from their closed lists, and a reason on every `not-observed`. Unknown
- * fields are dropped, as chant's decoder drops them. One difference, from
- * behold#995: a status outside chant's list is kept, not refused, so it can be
- * painted neutral and labelled unknown.
+ * {@link DRIFT_RECORD_SOURCE}. Only what a card needs is checked: the
+ * discriminator, the version, member, engine, read and status from their
+ * closed lists, and a reason on every `not-observed`. Unknown fields are
+ * dropped, as chant's decoder drops them.
  */
+import { chantDriftModule } from "./chant-drift-record.ts";
+
 
 /** The chant commit whose `packages/core/src/drift-record.ts` this file follows. */
 export const DRIFT_RECORD_SOURCE = "INTENTIUS/chant@fdce0d963 (integration/choudoufu-engine)";
@@ -165,8 +175,42 @@ function record(v: Record<string, unknown>): DriftRecordLine {
   };
 }
 
-/** Read one line of the stream, checking it. Throws {@link DriftLineError}. */
+/** Which decoder {@link decodeDriftLine} uses: chant's module when it is here, else behold's own checks. */
+export const DRIFT_DECODER: "chant" | "behold" = chantDriftModule ? "chant" : "behold";
+
+/**
+ * Read one line of the stream, checking it. Throws {@link DriftLineError}.
+ * With chant's module, chant decodes the line and behold narrows chant's
+ * result; a record whose status chant does not list is read by behold's own
+ * checks (behold#995).
+ */
 export function decodeDriftLine(text: string): DriftLine {
+  const chant = chantDriftModule;
+  if (!chant) return decodeOwn(text);
+  let v: unknown;
+  try {
+    v = JSON.parse(text);
+  } catch {
+    return decodeOwn(text);
+  }
+  if (!isObject(v)) return decodeOwn(text);
+  const known = (s: unknown) => chant.DRIFT_STATUSES.includes(s as string);
+  if (v.type === "drift-record" && typeof v.status === "string" && !known(v.status)) return decodeOwn(text);
+  let input = text;
+  if (v.type === "drift-settle" && isObject(v.counts) && Object.keys(v.counts).some((s) => !known(s))) {
+    input = JSON.stringify({ ...v, counts: Object.fromEntries(Object.entries(v.counts).filter(([s]) => known(s))) });
+  }
+  let line: unknown;
+  try {
+    line = chant.decodeDriftLine(input);
+  } catch (err) {
+    throw new DriftLineError((err as Error).message);
+  }
+  return decodeOwn(JSON.stringify(line));
+}
+
+/** behold's own checks: the decoder without chant's module, and the narrowing after it. */
+function decodeOwn(text: string): DriftLine {
   let v: unknown;
   try {
     v = JSON.parse(text);

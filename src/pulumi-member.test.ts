@@ -26,8 +26,9 @@ const REQUIRE_PEERS = process.env.BEHOLD_REQUIRE_PEERS === "1";
 // graph has no node for the stack root since chant#4456 (C6). Provenance:
 //  - e2e/fixtures/pulumi-workspace: one member, `app`, whose Pulumi.yaml and
 //    stack-export.json are chant's own testdata/pulumi-member at chant
-//    8cd73461a. The declaration pins the pulumi lexicon at 0.124.34, the
-//    version its package.json carries on chant's integration/pulumi-engine.
+//    8cd73461a. The declaration pins the pulumi lexicon at CHANT_RELEASE's
+//    version (src/chant-release.ts, behold#1005), the version a local build
+//    of chant is stamped at; it was 0.124.34 when the graph below was recorded.
 //  - __fixtures__/pulumi-workspace-graph-app.json: `chant workspace graph .
 //    --member app --json` in that fixture, unedited, by chant from
 //    integration/pulumi-engine at a20de35a1 (it reports 0.124.34), with that

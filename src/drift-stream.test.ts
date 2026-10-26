@@ -2,9 +2,11 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { decodeDriftLine } from "./drift-line.ts";
-import { resourceBlocks, runDriftStream, toneFor, type DriftFrame } from "./drift-stream.ts";
+import { Hono } from "hono";
+import { CHANT_FLOORS, DRIFT_STREAM_CHANT_FLOOR, floorFor } from "./chant-floors.ts";
+import { driftStreamRoutes, resourceBlocks, runDriftStream, toneFor, type DriftFrame } from "./drift-stream.ts";
 import { driftStreamArgv, type StreamTransport } from "./workspace-reader.ts";
-import type { WorkspaceMember } from "./workspace.ts";
+import type { Workspace, WorkspaceMember } from "./workspace.ts";
 
 const member = (kind: string): WorkspaceMember => ({ name: "team-a", dir: "team-a", kind, abs: "/x/team-a", reason: null, because: null });
 
@@ -99,5 +101,46 @@ describe("runDriftStream", () => {
     await runDriftStream({ run: 3, member: member("chant"), transport: t, emit: (f) => frames.push(f) });
     expect(frames.map((f) => f.kind)).toEqual(["begin", "start", "failed", "end"]);
     expect(frames[2]).toMatchObject({ kind: "failed", error: expect.stringMatching(/cannot read/) });
+  });
+});
+
+// behold#1005: the streamed read has its own floor, DRIFT_STREAM_CHANT_FLOOR.
+// Below it the start is refused with the floor's words before anything runs.
+describe("the streamed drift start's chant floor (behold#1005)", () => {
+  const ws: Workspace = { name: "w", root: "/x", file: "chant.workspace.json", chant: "", members: [member("chant")] };
+  function served(version: string | undefined, chantBin?: string) {
+    const t = transport({ "*": [] });
+    const frames: DriftFrame[] = [];
+    const app = new Hono();
+    driftStreamRoutes(app, { workspace: () => ws, transport: () => t, emit: (f) => frames.push(f), chantVersion: () => version, ...(chantBin ? { chantBin } : {}) });
+    const post = (body: unknown) => app.request("/api/workspace/drift/stream", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    return { t, frames, post };
+  }
+
+  it("is registered, and doctor lists it", () => {
+    expect(CHANT_FLOORS).toContainEqual(floorFor("streamed drift"));
+    expect(floorFor("streamed drift").floor).toBe(DRIFT_STREAM_CHANT_FLOOR);
+  });
+
+  it("answers a chant below it with the floor refusal and spawns nothing", async () => {
+    const s = served("0.124.52");
+    const r = await s.post({ member: "team-a" });
+    expect(r.status).toBe(409);
+    expect(await r.json()).toMatchObject({ code: "chant-too-old", chant: "0.124.52", error: expect.stringContaining(DRIFT_STREAM_CHANT_FLOOR) });
+    expect(s.t.asked).toEqual([]);
+    expect(s.frames).toEqual([]);
+  });
+
+  it("starts the read on a chant at the floor", async () => {
+    const s = served(DRIFT_STREAM_CHANT_FLOOR);
+    const r = await s.post({ member: "team-a" });
+    expect(r.status).toBe(202);
+    await new Promise((res) => setTimeout(res, 0));
+    expect(s.t.asked).toEqual([driftStreamArgv({ member: "team-a" })]);
+  });
+
+  it("does not hold BEHOLD_DRIFT_CHANT's chant to the root's version", async () => {
+    const s = served("0.124.52", "/fake/chant");
+    expect((await s.post({ member: "team-a" })).status).toBe(202);
   });
 });
