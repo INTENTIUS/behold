@@ -2069,13 +2069,15 @@ changing it, the working rules that used to live in a handoff note and now
 live here, with the enforceable ones enforced.
 
 - **Branches and merges.** Work on a branch off `main` (an isolated worktree
-  when more than one agent is active). `main` is protected by a ruleset: every
-  change arrives as a PR, and the `check` job in `ci.yml` must be green before
-  it merges. A check that has merely settled is not a pass — read the lines.
-  The repository admin role can bypass the ruleset (`bypass_mode: always`,
-  behold#1006, as chant and choudoufu have): an admin may push a tested
-  integration branch's merge to `main` directly. Everyone else goes through a
-  PR and the green check.
+  when more than one agent is active). `main` is protected by ruleset
+  22042490, which requires a PR and a green `check` job in `ci.yml` of
+  everyone but the repository admin role. That role bypasses it
+  (`bypass_mode: always`, behold#1006, as chant and choudoufu have), so an
+  admin may push a tested integration branch's merge to `main` directly;
+  every other change arrives as a PR and merges once the check is green. A
+  check that has merely settled is not a pass — read the lines. The
+  ruleset's name still reads "every change is a PR with a green ci check";
+  renaming it is a settings change for the maintainer (behold#1018).
   No `gh pr merge --auto`; merge one PR at a time, in order, and rebase the
   next onto what landed.
 - **The local gate** is `just check` (tsc, tests, build). Every vitest run
