@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // behold#999's e2e stand-in for choudoufu: no cloud, no provider, no state
 // read. It logs every invocation to $ADOPT_STUB_LOG (one JSON argv per line),
-// passes live-check, and for live-import without -approve prints the
+// answers init (chant#4461), passes live-check, and for live-import without -approve prints the
 // ratification report in the text choudoufu's human view prints
 // (internal/command/views/live_import.go), rendered from the recorded report
 // in $ADOPT_STUB_REPORT (example-terraform-estate/recorded/adoption/<root>.json).
@@ -12,6 +12,14 @@ import { appendFileSync, readFileSync } from "node:fs";
 const argv = process.argv.slice(2);
 if (process.env.ADOPT_STUB_LOG) appendFileSync(process.env.ADOPT_STUB_LOG, JSON.stringify({ argv, cwd: process.cwd() }) + "\n");
 const flag = (name) => (argv.find((a) => a.startsWith(`-${name}=`)) || "").slice(name.length + 2);
+// chant#4461: promote stages each root in a fresh git worktree and runs
+// `choudoufu init -input=false -backend=false -no-color` there before
+// live-check, so the report's provider reads have plugins. The stand-in reads
+// no provider, so it installs nothing and answers as init does on success.
+if (argv[0] === "init") {
+  console.log("\nOpenTofu has been successfully initialized!");
+  process.exit(0);
+}
 if (argv[0] === "live-check") {
   console.log("live-check: ok");
   process.exit(0);
