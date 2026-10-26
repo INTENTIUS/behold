@@ -41,7 +41,7 @@ import { TOOLS, orderTools } from "./tool-mark.js";
 import { STATE_WORDS as tgStateWords, changeSection as tgChangeSection, readCardIds as tgReadCardIds, readEdges as tgReadEdges, readLabel as tgReadLabel, readLine as tgReadLine, readTag as tgReadTag, rootStates as tgRootStates, viewCaption as tgViewCaption, pinnedAnswer as tgPinnedAnswer, pinnedCaption as tgPinnedCaption, pinsCommit as tgPinsCommit, pinWaits as tgPinWaits } from "./terragucci-change.js";
 import { auditLines as yrAuditLines, cornerText as yrCorner, datedWords as yrDated, environmentLines as yrEnvLines, joinMarks as yrJoin, legend as yrLegend, markLine as yrMarkLine } from "./yodel-report.js";
 import { drawLight as klDraw } from "./kiosk-light-frame.js"; // behold#937
-import { badgeWords as klBadge, planOf as klPlanOf } from "./kiosk-light.js"; // behold#940
+import { badgeWords as klBadge, planOf as klPlanOf, reportedRunView as klReported } from "./kiosk-light.js"; // behold#940
 import { composedRun } from "./kiosk-light.js";
 import { graphMayShow, keepsSceneInAsk, mayTellDrawn, refusalHoldsScene } from "./kiosk-graph-pane.js";
 import { askDeltas, clearScene, drawScene, sceneModel, slotCounts as klSlotCounts, waitingModel } from "./kiosk-estate-scene.js"; // behold#940
@@ -4647,7 +4647,7 @@ let klCtx = null;
 const klPulsed = { token: null };
 function klRedraw() {
   if (!klCtx || !klMsg || !klCtx.svg.isConnected) return;
-  klDraw(klCtx.svg, klMsg, klCtx.drawnAnswer, tgStoryOn() ? tgPacedProgress() : tgProgress, { cardsOf: klCtx.cardsOf, rootBox: klCtx.rootBox, boxHost: klCtx.boxHost, compMode: klCtx.compMode, pulsed: klCtx.pulsed, below: document.documentElement.classList.contains("kiosk-ask") });
+  klDraw(klCtx.svg, klMsg, klCtx.drawnAnswer, klProgress(), { cardsOf: klCtx.cardsOf, rootBox: klCtx.rootBox, boxHost: klCtx.boxHost, compMode: klCtx.compMode, pulsed: klCtx.pulsed, below: document.documentElement.classList.contains("kiosk-ask") });
   klTellLit();
 }
 // behold#tips-yield: where the lit cards are on screen (frame pixels), so the kiosk's tip card never covers what the
@@ -4721,7 +4721,7 @@ function klArrange(svg) {
     }
     return;
   }
-  const progress = tgStoryOn() ? tgPacedProgress() : tgProgress;
+  const progress = klProgress();
   const plan = klPlanOf(answer, progress);
   const open = klRoom();
   // The pin hides the plan for now (a pull request being planned, the reset): the estates' boxes, each waiting for
@@ -4964,7 +4964,7 @@ function drawTgReads() {
     // Filled when something happened or waits on the root; an outline when nothing has yet.
     const solid = st.state !== "outside" && st.state !== "not-started" && st.state !== "unchanged";
     // behold#940: in ask mode the badge says the step's own word, with no wave.
-    const askWords = embedOpts.bare && document.documentElement.classList.contains("kiosk-ask") ? klBadge(st, r.path, tgStoryOn() ? tgPacedProgress() : tgProgress) : null;
+    const askWords = embedOpts.bare && document.documentElement.classList.contains("kiosk-ask") ? klBadge(st, r.path, klProgress()) : null;
     const badgeText = askWords || st.words;
     const badge = pill(mark, local.x + local.width - 16, tabY, badgeText, { stroke: tone, fill: solid ? tone : "var(--panel)", color: solid ? "var(--bg)" : "var(--fg)", size: 14, weight: 700, anchor: "end", cls: st.state === "applying" ? "pin-pulse" : "" });
     badge.g.appendChild(make("title", {}, [badgeText, ...st.facts].join("\n") + "\n(from terragucci's reports, not live)"));
@@ -8263,6 +8263,10 @@ function tgStoryRemember(marks) {
 // behold#741: the run view's waves at the pace chant's are played (web/terragucci-live-pace.js), while the story is on.
 const tgPacer = createProgressPacer();
 let tgPaceTimer = null;
+/** Ask mode's run view: the paced one in a story, and a reporting-only pipeline's apply reports where its commit has none. */
+function klProgress() {
+  return klReported(tgStoryOn() ? tgPacedProgress() : tgProgress, tgAnswerDrawn());
+}
 function tgPacedProgress() {
   const p = tgPacer.progress(tgProgress);
   if (tgPacer.pending && !tgPaceTimer) {

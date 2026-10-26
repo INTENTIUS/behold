@@ -1,0 +1,21 @@
+{
+ "source": "s3://demo-reports/demo",
+ "kind": "s3",
+ "project": "forgejo:3000/terragucci-admin/demo-terragrunt-choudoufu",
+ "validation": {
+  "by": "structural"
+ },
+ "files": "/api/terragucci/file?key=",
+ "run": {
+  "commit": "4b80d08fb9558addeda8a51681c4a2988d2bf428",
+  "key": "forgejo:3000/terragucci-admin/demo-terragrunt-choudoufu/runs/4b80d08fb9558addeda8a51681c4a2988d2bf428/run.json",
+  "present": false
+ },
+ "absent": "s3://demo-reports/demo has no forgejo:3000/terragucci-admin/demo-terragrunt-choudoufu/runs/4b80d08fb9558addeda8a51681c4a2988d2bf428/run.json: terragucci writes the run view when reports.bucket is set, and a wave's progress per resource only for a choudoufu wave (terragucci 0.4.7 and newer). This says nothing about whether the apply moved.",
+ "states": [],
+ "reads": [],
+ "waves": [],
+ "cards": {},
+ "unmatched": [],
+ "watching": false
+}
