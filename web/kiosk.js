@@ -41,7 +41,7 @@ import { mountResetModal, resetShown } from "./kiosk-reset.js";
 import { graphFolds, graphPending } from "./kiosk-graph-pane.js";
 import { askEventHelp, askMode, askShot, createAskPane, hasAsk, replyValues } from "./kiosk-ask.js";
 import { STATE_WORDS, outcomesOf, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
-import { startKioskLight } from "./kiosk-light.js"; // behold#937
+import { reportedRunView, startKioskLight } from "./kiosk-light.js"; // behold#937
 import { SIDE_PHONE, detailsModel, keepSide, renderSide, actRunView, runTrace, sideApplied, sideState, sideStep, sideStored } from "./kiosk-side.js";
 
 /** The scenarios terragucci#1014 numbers. An id not here is shown by the title demo.json carries. */
@@ -1898,7 +1898,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const d = at && sideMerges.has(at.cycle) ? { ...at, commit: sideMerges.get(at.cycle) } : at;
     const runs = runsApi && runsApi.index && runsApi.index.doc ? runsApi.index.doc.runs : [];
     // The run view is the apply's: only this act's own, from its merge on (the kiosk's read can be the last merge's).
-    const progress = actRunView(d, s.progress);
+    // A pipeline that writes no run view (Terragrunt's and Atmos's on choudoufu) has the act's apply reports instead.
+    const progress = actRunView(d, reportedRunView(s.progress, s.answer));
     const trace = runTrace(runs, d, { answer: s.answer, progress, now: now().getTime() });
     const details = detailsModel(s.answer, progress, s.sideAsk);
     renderSide(watch.side, { trace, details }, { traces: (host) => drawWaveTraces(host, s), onFold: () => setSide(false) });
