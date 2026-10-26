@@ -13,14 +13,29 @@
 // its `_status` and gains `_driftReading`, which the page draws dimmed and
 // dashed, never filled. Only a record changes `_status`.
 
-/** The addresses of a member's cards, for the start request. */
+/**
+ * The addresses of a member's cards, for the start request. A stack card
+ * (`attrs._stackOf`, src/stack-lens.ts, an estate's default zoom) is titled
+ * `<kind> ×<n>`, which is no address: the cards it holds are asked about
+ * instead, each by its id inside the member.
+ */
 export function memberAddresses(ir, member) {
   const prefix = member + "/";
   const out = [];
+  const add = (a) => {
+    if (a && !out.includes(a)) out.push(a);
+  };
   for (const n of (ir && ir.nodes) || []) {
     if (!n.id || !n.id.startsWith(prefix)) continue;
-    const a = n.attrs && typeof n.attrs.address === "string" ? n.attrs.address : n.id.slice(prefix.length);
-    if (a && !out.includes(a)) out.push(a);
+    const held = n.attrs && n.attrs._stackOf;
+    if (Array.isArray(held)) {
+      for (const m of held) {
+        const id = typeof m === "string" ? m : m && typeof m.id === "string" ? m.id : "";
+        if (id.startsWith(prefix)) add(id.slice(prefix.length));
+      }
+      continue;
+    }
+    add(n.attrs && typeof n.attrs.address === "string" ? n.attrs.address : n.id.slice(prefix.length));
   }
   return out;
 }
