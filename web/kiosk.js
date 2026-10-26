@@ -14,6 +14,7 @@
 // Nothing here is all-or-nothing, and nothing says so.
 
 import { linkState, linkWords, noteBack, noteRead, readFailed, shareLink } from "./kiosk-link.js";
+import { KIND_ROWS } from "./member-kind.js";
 import { CHANT_PANEL_STEPS, chantApprovalModel, chantResultModel } from "./chant-pr-marks.js";
 import { createLivePacer } from "./chant-live-pace.js";
 import { applyJobs, cycleTrack, drawTrack, failureAt, seekMs, trackModel, waitingSpec } from "./kiosk-track.js";
@@ -704,6 +705,8 @@ export function readingRows(view, tool = null) {
     { mark: "card", words: "Card: one of its resources." },
     ...arrows,
     { mark: "marks", words: "Marks: the tools each job runs, in the jobs pane." },
+    // behold#1008: chant's composed run tells a stack no preview was made of from a previewed one (web/member-kind.js).
+    ...(tool === "chant-compose" ? KIND_ROWS.map((r) => ({ ...r })) : []),
   ];
 }
 
