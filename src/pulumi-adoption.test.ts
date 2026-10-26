@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -107,6 +107,37 @@ describe("reading plunge stack adopt --json (behold#999, behold#1007)", () => {
       ["foreign-records", null],
     ]);
   });
+
+  // behold#1007 (audit correction, 2026-10-26): a per-resource refusal read from
+  // a recording, not written by hand. The file is the stdout of a real
+  // `plunge stack adopt --json` on scratch floci, recorded at epic-ready; see
+  // __fixtures__/plunge-adopt-refusal/README.md for exactly how. Until that file
+  // exists this test is skipped, and its title says so.
+  const PER_RESOURCE = join(HERE, "__fixtures__", "plunge-adopt-refusal", "refused-pending-operations.json");
+  it.skipIf(!existsSync(PER_RESOURCE))(
+    `reads a recorded per-resource refusal, each naming the URN plunge gave it${existsSync(PER_RESOURCE) ? "" : " (skipped: plunge-adopt-refusal/refused-pending-operations.json is not recorded yet)"}`,
+    () => {
+      const raw = readFileSync(PER_RESOURCE, "utf8");
+      const doc = JSON.parse(raw) as { adopt: string; status: string; refusals: { code: string; urn?: string; reason: string }[] };
+      // The recording is plunge's own document: v1, refused, and every pending-operations refusal names a resource.
+      expect(doc.adopt).toBe("v1");
+      expect(doc.status).toBe("refused");
+      const pending = doc.refusals.filter((r) => r.code === "pending-operations");
+      expect(pending.length).toBeGreaterThan(0);
+      const c = parsePlungeAdopt(raw, "");
+      expect(c.outcome).toBe("refused");
+      // behold keeps each refusal in plunge's order, with plunge's code, reason and URN.
+      expect(c.refused).toEqual(doc.refusals.map((r) => ({ code: r.code, reason: r.reason, urn: r.urn ?? null })));
+      const named = c.refused.filter((r) => r.code === "pending-operations");
+      for (const r of named) {
+        expect(r.urn).toMatch(/^urn:pulumi:[^:]+::[^:]+::/);
+        expect(urnParts(r.urn!).type).not.toBe("");
+        expect(r.reason.length).toBeGreaterThan(0);
+      }
+      // Nothing was written, and behold says so.
+      expect(pulumiOutcomeWords(c, "confirm")).toMatch(/before writing anything/);
+    },
+  );
 
   it("keeps a refusal code behold does not know as a refusal", () => {
     const doc = JSON.parse(REFUSED) as { refusals: unknown[] };
