@@ -31,4 +31,12 @@ and `PULUMI_SKIP_UPDATE_CHECK=true`, never a real cloud or the machine's default
 
 ## Recorded
 
-(not yet)
+Recorded on 2026-10-26 for epic:engine-ship round 2: plunge v0.1.0-dev.0 (pulumi-compatible v3.272.0), built
+from INTENTIUS/plunge `integration/engine-ship` at d7653de7f5, against a stock pulumi v3.272.0 stack of
+`tests/plunge-corpus/aws-ts` from the same plunge commit (stack `floci`, `corpus:prefix` set to `rec-r2-1007`),
+deployed to pinned floci (`ghcr.io/lex00/floci@sha256:5ec92ae8046445d62c0009590dd09f04560886e5a5ef31248cb3fcc09b2961ec`)
+with `PULUMI_BACKEND_URL=file://<scratch>/state-1007`. The second stock `pulumi up` raised `corpus:workerCount`
+from 3 to 10 and was killed with SIGKILL as soon as the checkpoint showed a pending operation, which left seven:
+`updating` on `db-password` and `creating` on worker-3, -4, -5, -7, -8 and -9. Then
+`plunge stack adopt --json --stack floci` with `PULUMI_BACKEND_URL=plunge+file://<scratch>/state-1007` exited 1,
+wrote nothing, and printed this file. The checkpoint path in `checkpoint.source` is the recorder's real scratch path.
