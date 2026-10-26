@@ -90,8 +90,13 @@ curl -sN "http://localhost:$PORT/api/events" | while IFS= read -r line; do
 done >"$FRAMES" &
 CURL_PID=$!
 sleep 1
-G=$(curl -sf "http://localhost:$PORT/api/graph")
+# An estate stacks alike cards by default (#877): the monolith's 21 cards draw
+# as five `<kind> ×<n>` stacks, whose addresses are no resource address, so a
+# start naming them asks about nothing and ends at once. The e2e reads, and in
+# step 3 opens, the unstacked view (`alike=0`), where each card is drawn.
+G=$(curl -sf "http://localhost:$PORT/api/graph?alike=0")
 ADDRS=$(printf '%s' "$G" | jq -c '[.ir.nodes[] | select(.id | startswith("monolith/")) | (.attrs.address // (.id | ltrimstr("monolith/")))]')
+[ "$(printf '%s' "$ADDRS" | jq length)" = 21 ] || fail "the unstacked graph does not draw the monolith's 21 cards: $ADDRS"
 code=$(post "{\"member\":\"monolith\",\"addresses\":$ADDRS}")
 [ "$code" = 202 ] && echo "  ✓ the stream starts (202)" || fail "the start answered $code"
 code=$(post '{"member":"monolith"}')
@@ -127,6 +132,6 @@ node -e '
 kill "$CURL_PID" 2>/dev/null || true; CURL_PID=""
 
 echo "→ 3. the page"
-node e2e/streamed-drift.mjs "http://localhost:$PORT/" "$FAKE_DRIFT_SILENT" "$FAKE_DRIFT_DRIFTED" "$FAKE_DRIFT_UNCLAIMED" "$FAKE_DRIFT_STEP_SECS"
+node e2e/streamed-drift.mjs "http://localhost:$PORT/?alike=0" "$FAKE_DRIFT_SILENT" "$FAKE_DRIFT_DRIFTED" "$FAKE_DRIFT_UNCLAIMED" "$FAKE_DRIFT_STEP_SECS"
 
 echo "streamed drift e2e: all green"
