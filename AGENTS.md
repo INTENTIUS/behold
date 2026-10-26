@@ -2069,6 +2069,10 @@ live here, with the enforceable ones enforced.
   when more than one agent is active). `main` is protected by a ruleset: every
   change arrives as a PR, and the `check` job in `ci.yml` must be green before
   it merges. A check that has merely settled is not a pass — read the lines.
+  The repository admin role can bypass the ruleset (`bypass_mode: always`,
+  behold#1006, as chant and choudoufu have): an admin may push a tested
+  integration branch's merge to `main` directly. Everyone else goes through a
+  PR and the green check.
   No `gh pr merge --auto`; merge one PR at a time, in order, and rebase the
   next onto what landed.
 - **The local gate** is `just check` (tsc, tests, build). Every vitest run
