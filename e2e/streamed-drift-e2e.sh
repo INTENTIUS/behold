@@ -2,7 +2,8 @@
 # behold#998: streamed drift, end to end in the choudoufu-estate demo.
 #
 # The demo is set up as `behold demo choudoufu-estate` sets it up (a scratch
-# floci, choudoufu init, the monolith applied) and served with
+# floci, choudoufu init, the monolith applied) and served, from the copy's
+# chant.workspace.json root, as the declared workspace (behold#1014), with
 # BEHOLD_DRIFT_CHANT pointing at a fake chant
 # (e2e/fixtures/fake-chant-drift/chant). behold reaches that binary for the
 # streamed drift read only; every other read is the demo's own chant. The fake
@@ -10,6 +11,9 @@
 # with a pause of FAKE_DRIFT_STEP_SECS before its record, and stays silent for
 # one resource.
 #
+#   0. the workspace — /api/project names the declared workspace and its
+#                   monolith member, which is what the palette row "Stream
+#                   drift card by card: monolith" and the route need.
 #   1. the route  — POST /api/workspace/drift/stream answers 400 for a member
 #                   the workspace does not declare, 202 for the monolith, and
 #                   409 for a second start while that run goes.
@@ -67,6 +71,12 @@ if [ -z "$ready" ]; then echo "behold never answered on :$PORT" >&2; tail -40 "$
 
 fail() { echo "FAIL: $1" >&2; exit 1; }
 post() { curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$PORT/api/workspace/drift/stream" -H 'content-type: application/json' -d "$1"; }
+
+echo "→ 0. the declared workspace"
+P=$(curl -sf "http://localhost:$PORT/api/project")
+printf '%s' "$P" | jq -e '.workspace.members | map(.name) | index("monolith")' >/dev/null \
+  && echo "  ✓ behold serves the declared workspace, monolith among its members" \
+  || fail "behold is not serving the declared workspace (the drift route would answer 404 no-workspace): $(printf '%s' "$P" | jq -c '.workspace')"
 
 echo "→ 1. the route"
 code=$(post '{"member":"no-such-member"}')

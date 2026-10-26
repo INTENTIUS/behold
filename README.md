@@ -51,7 +51,8 @@ There's a whole catalog, and `behold demo --list` names the rest (`behold demo
 k8s` stands the same loop up on a throwaway k3d cluster: runtime Pods, field
 ownership; `behold demo argo-estate` needs nothing at all, being a three-project
 Argo CD estate, declared only, so it runs where Docker doesn't; `behold demo
-choudoufu-estate` is four tag-owned OpenTofu estates served composed, where a
+choudoufu-estate` is four tag-owned OpenTofu estates served as one declared
+workspace, where a
 card's colour is **ownership** (bound, unowned, pending) rather than "nothing
 changed": a resource whose attributes drifted out of band still carries its
 markers and is still green, so attribute drift is a separate read you ask for

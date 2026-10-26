@@ -157,6 +157,13 @@ describe("loadDemoRegistry — malformed input degrades, never throws", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it("behold#1014: a serve.workspace that is not a boolean drops the entry", () => {
+    const entry = (workspace: unknown, name: string) => ({ name, description: "d", source: "bundled", dir: "x", requires: [], serve: { workspace } });
+    const dir = tmpRoot(JSON.stringify({ demos: [entry(true, "yes"), entry("yes", "string"), entry(1, "number"), entry(undefined, "none")] }));
+    expect(loadDemoRegistry(dir).map((e) => e.name)).toEqual(["yes", "none"]);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it("a spawnEnv that is not a string map drops the entry; a well-formed one is carried", () => {
     const entry = (spawnEnv: unknown, name: string) => ({ name, description: "d", source: "bundled", dir: "x", requires: [], serve: { env: "live", spawnEnv } });
     const dir = tmpRoot(
@@ -170,7 +177,9 @@ describe("loadDemoRegistry — malformed input degrades, never throws", () => {
     rmSync(dir, { recursive: true, force: true });
     const shipped = loadDemoRegistry(REPO).find((e) => e.name === "choudoufu-estate")!;
     expect(shipped.requires).toEqual(["docker", "choudoufu"]);
-    expect(shipped.serve).toMatchObject({ env: "live", dirs: ["monolith", "team-a", "team-b", "team-c"], spawnEnv: { AWS_ENDPOINT_URL: "http://127.0.0.1:4650" } });
+    // behold#1014: the terminal serves the declared workspace (the drift stream needs it); dirs is the panel switch's view.
+    expect(shipped.serve).toMatchObject({ env: "live", workspace: true, dirs: ["monolith", "team-a", "team-b", "team-c"], spawnEnv: { AWS_ENDPOINT_URL: "http://127.0.0.1:4650" } });
+    expect(existsSync(join(REPO, shipped.dir!, "chant.workspace.json"))).toBe(true);
     for (const d of shipped.serve.dirs!) expect(existsSync(join(REPO, shipped.dir!, d, "main.tf")), d).toBe(true);
   });
 
@@ -317,6 +326,15 @@ describe("loadDemo — the copy/install/setup the CLI and the route share (#268)
     const target = join(scratch("behold-demos-target-"), "sample");
     const res = await loadDemo(bundledEntry({ serve: { dirs: ["control-plane", "app-a"] } }), { pkgRoot, target });
     expect(res.ok && res.serveDirs).toEqual([join(target, "control-plane"), join(target, "app-a")]);
+  });
+
+  it("behold#1014: a workspace entry hands the terminal its root and keeps its dirs for the panel's switch", async () => {
+    const pkgRoot = pkgRootWithExample();
+    const target = join(scratch("behold-demos-target-"), "sample");
+    const res = await loadDemo(bundledEntry({ serve: { workspace: true, dirs: ["control-plane", "app-a"] } }), { pkgRoot, target });
+    expect(res).toEqual({ ok: true, serveDirs: [join(target, "control-plane"), join(target, "app-a")], workspaceRoot: target });
+    const plain = await loadDemo(bundledEntry({ serve: { dirs: ["control-plane"] } }), { pkgRoot, target });
+    expect(plain.ok && "workspaceRoot" in plain).toBe(false);
   });
 
   it("a missing bundled dir is an error, not a throw and not a process exit", async () => {
