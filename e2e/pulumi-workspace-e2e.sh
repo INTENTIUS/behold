@@ -9,11 +9,18 @@
 #     stack root, chant#4456), edged by parent and dependencies, and no
 #     UnreadableMember box;
 #   - no card carries a colour other than neutral;
-#   - /api/overlay draws the same cards neutral, each saying chant has no
-#     live read for a pulumi member.
+#   - /api/overlay draws the same cards neutral, each saying why nothing was
+#     observed. On a chant at behold's drift-record floor (behold#995) the
+#     overlay paints the member from `chant workspace drift`, which runs
+#     `pulumi refresh --preview-only` per resource; the fixture selects no
+#     stack, so each record is not-observed with pulumi's reason, and
+#     `meta.driftRecord` lists the member. On an older chant there is no drift
+#     read and each card says chant has no live read for a pulumi member.
 #
-# Nothing runs Pulumi, nothing reaches a cloud, and nothing is written under
-# the fixture (chant writes its reader project under the OS temp directory).
+# Nothing reaches a cloud: the refresh runs against PULUMI_BACKEND_URL set to
+# an empty local directory below, never Pulumi Cloud or a backend this machine
+# is logged in to. Nothing is written under the fixture (chant writes its
+# reader project under the OS temp directory).
 # Needs @intentius/chant-lexicon-pulumi beside behold at the version the
 # fixture's chant.workspace.json pins (chant#4453 moved the kind there, and
 # chant reads a pinned package's kinds only at the pinned version).
@@ -22,6 +29,8 @@ cd "$(dirname "$0")/.."
 PORT="${BEHOLD_E2E_PORT:-4697}"
 FIXTURE="e2e/fixtures/pulumi-workspace"
 LOG="${TMPDIR:-/tmp}/behold-pulumi-e2e.log"
+PULUMI_BACKEND_DIR="$(mktemp -d "${TMPDIR:-/tmp}/behold-pulumi-backend.XXXXXX")"
+export PULUMI_BACKEND_URL="file://$PULUMI_BACKEND_DIR" PULUMI_SKIP_UPDATE_CHECK=true
 
 echo "-> build behold"
 npm run build --silent
@@ -29,7 +38,7 @@ npm run build --silent
 echo "-> serve $FIXTURE on :$PORT"
 node ./bin/behold.js serve "$FIXTURE" --port "$PORT" >"$LOG" 2>&1 &
 PID=$!
-trap 'kill "$PID" 2>/dev/null || true' EXIT
+trap 'kill "$PID" 2>/dev/null || true; rm -rf "$PULUMI_BACKEND_DIR"' EXIT
 
 ready=""
 for _ in $(seq 1 45); do
@@ -62,8 +71,13 @@ check() {
       const coloured = nodes.filter(n => n.attrs && n.attrs._status !== undefined && n.attrs._status !== "neutral");
       if (coloured.length) fail(coloured.length + " cards carry a colour behold has no source for");
       if (mode === "overlay") {
-        const said = nodes.filter(n => n.attrs?._status !== "neutral" || !/no live read/.test(n.attrs?._unobserved ?? ""));
-        if (said.length) fail(said.length + " cards are not neutral with the no-live-read reason");
+        const record = (j.meta?.driftRecord ?? []).some(m => m.member === "app");
+        const cards = nodes.filter(n => n.id.startsWith("app/"));
+        const said = record
+          ? cards.filter(n => n.attrs?._status !== "neutral" || n.attrs?._drift?.status !== "not-observed" || !(n.attrs?._unobserved ?? ""))
+          : cards.filter(n => n.attrs?._status !== "neutral" || !/no live read/.test(n.attrs?._unobserved ?? ""));
+        if (said.length) fail(said.length + " cards are not neutral with " + (record ? "the drift record not-observed reason" : "the no-live-read reason"));
+        console.log("  overlay read: " + (record ? "the drift record from chant, " + JSON.stringify(cards[0].attrs._unobserved) : "no drift read, the no-live-read words"));
       }
       console.log("  " + mode + " ok: " + ids.length + " cards, " + j.ir.edges.length + " edges");
     });
