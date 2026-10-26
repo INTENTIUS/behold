@@ -134,6 +134,13 @@ export function planOf(answer, progress = null) {
     }
     for (const [root, ups] of Object.entries(pr.upstreams || {})) for (const u of ups || []) edge(u, root);
     for (const res of (pr.blast && pr.blast.resources) || []) out.reaches.set(lightKey(res.root, res.address), res.reaches || []);
+  } else if (answer.estateScene && Array.isArray(answer.estateScene.reads)) {
+    // behold#1012: a composed run drawn from its tf-apply report alone carries the reads on its scene. Root to root:
+    // the report maps no output to the resource that produced it, so they stay box-to-box.
+    for (const r of answer.estateScene.reads) {
+      edge(r.upstream, r.root);
+      out.reads.push(r);
+    }
   }
   if (progress && Array.isArray(progress.reads)) for (const r of progress.reads) for (const u of r.reads || []) edge(u, r.root);
   // A composed run's members come in the order it applies them. When no read names an order, each reads the one before.
