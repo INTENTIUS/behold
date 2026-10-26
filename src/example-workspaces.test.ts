@@ -96,8 +96,8 @@ describe("the bundled estates' workspace declarations", () => {
 
   // chant#4455: dns reads azure's azureEndpoint and aws's awsEndpoint through
   // chant, from a member-outputs component named after each member, and
-  // names the estate as its terraform root so a change under azure/ brings
-  // dns into the change. It lists pulumi for the aws member's outputs.
+  // names the estate as its terraform root, signalOnly, so a change under
+  // azure/ brings dns into the change. It lists pulumi for the aws member's outputs.
   it("example-three-cloud's dns reads azureEndpoint and awsEndpoint from the members' outputs", () => {
     const records = readFileSync(join(REPO, "example-three-cloud", "dns", "src", "records.component.ts"), "utf8");
     expect(records).toContain(`export const azure = memberOutputsComponent("azure");`);
@@ -106,7 +106,11 @@ describe("the bundled estates' workspace declarations", () => {
     expect(records).toContain(`inputs: { azureEndpoint: stackOutput("azure", "azureEndpoint"), awsEndpoint: stackOutput("aws", "awsEndpoint") }`);
     const config = readFileSync(join(REPO, "example-three-cloud", "dns", "chant.config.ts"), "utf8");
     expect(config).toContain(`lexicons: ["aws", "terraform", "pulumi"]`);
-    expect(config).toContain(`roots: { azure: { dir: "../azure" } }`);
+    // behold#1016: the azure root is marked signalOnly (chant#4484), and the
+    // key is dropped when the installed terraform lexicon predates it.
+    expect(config).toContain(`roots: { azure: AZURE_ROOT }`);
+    expect(config).toContain(`{ dir: "../azure", signalOnly: true }`);
+    expect(config).toContain(`if (!terraformRootSchema.safeParse(AZURE_ROOT).success) delete AZURE_ROOT.signalOnly;`);
   });
 
   // behold#1015: the pin names the chant a plain `npm ci` installs, the
