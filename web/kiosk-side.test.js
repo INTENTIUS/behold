@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { reportedRunView } from "./kiosk-light.js";
 import { SIDE_STORE, actRunView, applyParts, jobKind, detailsModel, jobTone, keepSide, runTrace, sideApplied, sideState, sideStep, sideStored } from "./kiosk-side.js";
 
 // The three-root estate of behold#937 (src/__fixtures__/terragucci-demo-ask), built as web/kiosk-light.test.js builds it.
@@ -215,5 +216,34 @@ describe("an act before its own apply says nothing applied", () => {
     expect(d.estates.map((e) => e.words)).toEqual(expect.arrayContaining(["applied \u00b7 records written"]));
     expect(actRunView(demo, { ...leaked, run: { ...leaked.run, present: false } })).toBeNull();
     expect(actRunView(demo, { ...leaked, run: undefined })).toBeNull();
+  });
+});
+
+describe("a pipeline that writes reports and no run view (Terragrunt on choudoufu)", () => {
+  // The live demo's Terragrunt act II, read after its apply: the reports are in, and its merge commit has no run.json.
+  const answer = read("answer-terragrunt-applied.json");
+  const none = read("progress-no-run-view.json");
+  const demo = { cycle: 4450, step: "applied", commit: "4b80d08fb9558addeda8a51681c4a2988d2bf428" };
+  const ask = { light: ["network/aws_subnet.subnet_b", "app/aws_network_interface.worker"], paths: true };
+  const texts = (d) => d.items.flatMap((i) => i.lines.map((l) => l.text));
+
+  it("fills the cards from the act's apply reports once they are in", () => {
+    expect(actRunView(demo, none)).toBeNull();
+    const view = actRunView(demo, reportedRunView(none, answer));
+    expect(view && view.run.reported).toBe(true);
+    const d = detailsModel(answer, view, ask);
+    expect(texts(d).join("\n")).not.toMatch(/known after apply/);
+    expect(texts(d)).toContain("id: eni-23d149dc22983274b");
+    expect(d.estates.map((e) => e.words)).toEqual(expect.arrayContaining(["applied \u00b7 records written"]));
+  });
+
+  it("keeps to plan-time facts while the reports are of another commit, and leaves a run view that is there alone", () => {
+    const other = { ...none, run: { ...none.run, commit: "bbe939d348bb135e6a5902f6a395e08194e5070e" } };
+    expect(reportedRunView(other, answer)).toBe(other);
+    expect(actRunView({ ...demo, commit: other.run.commit }, reportedRunView(other, answer))).toBeNull();
+    const waiting = { ...answer, roots: answer.roots.map((r) => ({ ...r, apply: { ...r.apply, approval: "waiting" } })) };
+    expect(reportedRunView(none, waiting)).toBe(none);
+    const there = { ...none, run: { ...none.run, present: true } };
+    expect(reportedRunView(there, answer)).toBe(there);
   });
 });
