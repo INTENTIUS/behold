@@ -34,7 +34,7 @@ import type { GraphIR } from "@intentius/chant";
 import { decomposeAddress } from "./choudoufu-refs.ts";
 import { decodeDriftLine, type DriftRecord } from "./drift-line.ts";
 import { toneFor } from "./drift-tone.ts";
-import { instanceParentOf } from "./instance-cards.ts";
+import { instanceBlockIdOf, instanceParentOf } from "./instance-cards.ts";
 import type { Workspace, WorkspaceMember } from "./workspace.ts";
 import { driftArgs, WorkspaceReadError, type WorkspaceReader } from "./workspace-reader.ts";
 
@@ -93,15 +93,19 @@ const TRAILING_KEY = /\[(?:\d+|"(?:[^"\\]|\\.)*")\]$/;
 /**
  * The alias table for a choudoufu member, from chant's graph of it (the
  * member's own IR, ids `<root>/<block path>`, as src/choudoufu-workspace.ts
- * `memberBlockGraph` reads it). A C4 instance node maps to its block's path.
+ * `memberBlockGraph` reads it). A C4 instance node maps to its block's path,
+ * a module-keyed one (`<root>/module.app[0]/aws_x.y[1]`) included.
  */
 export function choudoufuCardAliases(member: string, blocks: Pick<GraphIR, "nodes">): CardAliases {
   const root = rootOf(blocks);
   const out = new Map<string, string>();
   for (const n of blocks.nodes) {
     let id = n.id;
+    // An instance node maps to its block's path. Under an expanded module
+    // call (chant#4486) the id carries the module key too, so the block comes
+    // from the id rule, else from `instanceOf`.
     const parent = instanceParentOf(n);
-    if (parent) id = id.replace(TRAILING_KEY, "");
+    if (parent) id = instanceBlockIdOf(n) ?? (parent || id.replace(TRAILING_KEY, ""));
     const path = root && id.startsWith(`${root}/`) ? id.slice(root.length + 1) : id;
     out.set(`${member}/${n.id}`, path.replace(/~\d+$/, ""));
   }
