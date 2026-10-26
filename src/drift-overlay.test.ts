@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 import type { GraphIR } from "@intentius/chant";
 import { cardIdFor, choudoufuCardAliases, driftDocumentOf, DRIFT_DEFAULT_KINDS, DRIFT_KINDS, paintDrift, paintWorkspaceDrift } from "./drift-overlay.ts";
+import { DRIFT_RECORD_CHANT_FLOOR } from "./chant-floors.ts";
 import { workspaceReader } from "./workspace-reader.ts";
 import type { WorkspaceMember } from "./workspace.ts";
 
@@ -29,7 +30,7 @@ const doc = (member: string, records: unknown[], error?: { code: string; message
   $schema: "https://intentius.io/chant/schemas/workspace/drift/v1/drift.schema.json",
   drift: "v1",
   contract: 1,
-  chant: "0.124.53",
+  chant: DRIFT_RECORD_CHANT_FLOOR,
   member,
   records,
   counts: {},

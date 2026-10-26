@@ -2,8 +2,10 @@
 // behold#999's e2e stand-in for plunge: no cloud, no provider, no Pulumi
 // engine. It logs every invocation to $ADOPT_STUB_LOG (one JSON line: argv,
 // cwd, the backend URL and PULUMI_SKIP_CONFIRMATIONS as it saw them) and
-// answers only `plunge stack adopt`, in the text plunge prints
-// (pkg/cmd/pulumi/stack/stack_adopt.go printAdoption) and with plunge's gate:
+// answers only `plunge stack adopt`. With --json it prints plunge's v1
+// document (plunge docs/plunge/ADOPT.md, pkg/backend/plunge/adoptview.go at
+// 968b54748d, INTENTIUS/plunge#17), which is all behold reads; without it, the
+// person's confirm line, a short line of text. It keeps plunge's gate:
 // the checkpoint is the member's stack-export.json, every custom resource but
 // a provider is classed (aws:* pending, kubernetes:* marker, the rest record),
 // and nothing is written unless --yes is passed or PULUMI_SKIP_CONFIRMATIONS
@@ -41,22 +43,27 @@ const rows = (deployment.resources || [])
   .filter((r) => r.custom && !String(r.type).startsWith("pulumi:providers:"))
   .map((r) => {
     const t = String(r.type);
-    const [own, reason] = t.startsWith("aws:") ? ["pending", "classed at the first run, from the provider's schema"] : t.startsWith("kubernetes:") ? ["marker", ""] : ["record", "the type has no tags"];
-    return `  ${r.urn}  ${r.id || ""}  ownership: ${own}${reason ? ` (${reason})` : ""}`;
+    const [fate, reason] = t.startsWith("aws:") ? ["pending", "classed at the first run, from the provider's schema"] : t.startsWith("kubernetes:") ? ["marker", ""] : ["record", "the type has no tags"];
+    return { urn: r.urn, type: t, id: r.id || "", fate, marked: false, ...(reason ? { reason } : {}) };
   })
-  .sort();
+  .sort((a, b) => (a.urn < b.urn ? -1 : a.urn > b.urn ? 1 : 0));
+const json = argv.includes("--json") || argv.includes("-j");
+const source = `the DIY checkpoint at ${backend.slice("plunge+".length)}`;
+const view = (status, resources) => JSON.stringify({ adopt: "v1", stack: `organization/${project}/${stack}`, status, checkpoint: { source, digest }, resources, refusals: [] }, null, 2);
 if (existsSync(record)) {
-  console.log(`${stack} was already adopted from this checkpoint (digest ${digest}); nothing was written.`);
-  for (const l of rows) console.log(l);
+  if (json) console.log(view("already-adopted", rows.map((r) => ({ ...r, fate: "already-adopted", adoptedAs: r.fate }))));
+  else console.log(`${stack} was already adopted from this checkpoint (digest ${digest}); nothing was written.`);
   process.exit(0);
 }
-console.log(`Adopting ${stack} (checkpoint digest ${digest}):`);
-for (const l of rows) console.log(l);
 if (!yes) {
+  if (json) {
+    console.log(view("would-adopt", rows));
+    process.exit(0);
+  }
   console.error("error: non-interactive mode requires --yes flag");
   process.exit(255);
 }
 mkdirSync(dir, { recursive: true });
 writeFileSync(record, JSON.stringify({ format: "plunge-adoption/v1", source: "stub", checkpointDigest: digest, resources: rows.length }) + "\n");
-console.log(`Adopted ${stack}: ${rows.length} resources recorded (checkpoint digest ${digest}).`);
-for (const l of rows) console.log(l);
+if (json) console.log(view("adopted", rows));
+else console.log(`Adopted ${stack}: ${rows.length} resources recorded (checkpoint digest ${digest}).`);

@@ -240,3 +240,9 @@ e2e-workbench:
 # chant builds from its source.
 demo-host-check:
     cd deploy/demo-host/chant && npm ci && npm run check
+
+# behold#1005: write the pins, ranges and drift module that follow
+# CHANT_RELEASE (src/chant-release.ts); `just chant-release --check` lists
+# what disagrees and writes nothing.
+chant-release *args:
+    npx tsx scripts/chant-release.ts {{args}}

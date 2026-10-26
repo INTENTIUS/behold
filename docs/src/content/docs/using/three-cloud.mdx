@@ -53,7 +53,7 @@ When a change to `azure/` creates or replaces the Container App, its address is 
 
 `gcpEndpoint` still reaches `dns` the old way: `build-dns` reads it from what is applied and writes it into the template as a parameter default, and points each health check at the emulator that answers for it (see below).
 
-`member-outputs` and the pulumi lexicon (`@intentius/chant-lexicon-pulumi`) are on chant's main branch and in no chant release yet. The `@intentius/chant` 0.124.52 the demo installs lacks both, so until a release carries them, link chant's `packages/core`, `lexicons/terraform` and `lexicons/pulumi` from a checkout of chant main, built, as the example's README says. That local build is version 0.124.34. The workspace pins both lexicons by path (`node_modules/@intentius/chant-lexicon-terraform` and `-pulumi`), so the pin reads whichever build is installed there.
+`member-outputs` and the pulumi lexicon (`@intentius/chant-lexicon-pulumi`) are on chant's main branch and in no chant release yet. The `@intentius/chant` 0.124.52 the demo installs lacks both, so until a release carries them, install chant's `packages/core`, `lexicons/terraform` and `lexicons/pulumi` from a checkout of chant main as `npm pack` tarballs with their versions stamped at the coming release (0.124.53, behold's `CHANT_RELEASE`), as the example's README says. A symlink to chant's source runs it from source with no `dist/`, which is not what a release gives you. The workspace pins both lexicons by path (`node_modules/@intentius/chant-lexicon-terraform` and `-pulumi`), so the pin reads whichever build is installed there. Once the release is published they are pinned by version.
 
 ## Turning Azure off
 

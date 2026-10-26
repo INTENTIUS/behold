@@ -75,16 +75,36 @@ The `azure` and `aws` components need a chant with `member-outputs`
 (chant#4455), and the aws member needs `@intentius/chant-lexicon-pulumi`
 (chant#4453). Both are on chant's main branch and in no release yet;
 0.124.52, which this directory installs, has neither, and the pulumi lexicon
-is not published at all. Until a release carries them, link chant main's
-own build: in a checkout of chant main, `npm ci`, then `npm run build` in
-`lexicons/terraform` and `lexicons/pulumi`, then `npm link` in
-`packages/core`, `lexicons/terraform` and `lexicons/pulumi`, and here, after
-`npm install`, `npm link @intentius/chant @intentius/chant-lexicon-terraform
-@intentius/chant-lexicon-pulumi`. That build is version 0.124.34. The
-workspace pins both lexicons by path (`node_modules/@intentius/...`), so the
-pin reads whichever build is installed there and sets no version a local
-build can't meet. `npm run front-door` and `npm run change-set` need the
-link too, since they run dns's components and the pulumi part.
+is not published at all. Until a release carries them, install a local
+build of chant, packed the way a release packs it. A symlink to chant's
+source is not the same thing: it has no `dist/` and runs `bin/chant` from
+source. In a checkout of chant main (`CHANT` below):
+
+```sh
+cd "$CHANT" && npm ci && scripts/ci-lexicon-artifacts.sh --steps generate,bundle
+# Stamp the packages' versions, uncommitted, at the coming release: behold's
+# CHANT_RELEASE (src/chant-release.ts), which is chant's NEXT_RELEASE. 0.124.53
+# meets every ^0.124.52 here and every floor and exact pin in behold.
+for pj in packages/*/package.json lexicons/*/package.json; do
+  node -e 'const f=process.argv[1];const p=require(f);if(!String(p.name).startsWith("@intentius/"))process.exit(0);p.version="0.124.53";require("fs").writeFileSync(f,JSON.stringify(p,null,2)+"\n")' "$PWD/$pj"
+done
+mkdir -p /tmp/chant-local && npm pack -w packages/core -w lexicons/terraform -w lexicons/pulumi --pack-destination /tmp/chant-local
+git checkout -- '*package.json'
+# Here:
+npm install && npm install --no-save /tmp/chant-local/*.tgz
+```
+
+Each `npm pack` runs that package's own prepack, which is the build a release
+ships. The workspace pins both lexicons by path (`node_modules/@intentius/...`),
+so the pin reads whichever build is installed there and sets no version a
+local build can't meet. `npm run front-door` and `npm run change-set` need
+the local build too, since they run dns's components and the pulumi part.
+A later plain `npm install` here puts the npm release back, so run the
+`--no-save` install again after one. scripts/front-door.ts loads the pulumi
+lexicon only for the aws plan, so the other subcommands (`apply-azure` among
+them) run after a plain `npm ci`. Once that chant release is published,
+behold's `CHANT_RELEASE` flips (src/chant-release.ts) and this directory pins
+and depends on both lexicons by version instead.
 
 ## One change set
 

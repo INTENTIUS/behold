@@ -88,6 +88,29 @@ spawning the read. A new read adds its constant and entry in the issue that
 adds the read, once the chant release is known, and reads through the read
 contract (`src/workspace-reader.ts`), never chant's library.
 
+### The coming chant release (behold#1005)
+
+A read whose chant is merged and not released takes its floor from
+`CHANT_RELEASE` in src/chant-release.ts, `{ version, released }`, which names
+that release: `ADOPTION_REPORT_CHANT_FLOOR`, `DRIFT_RECORD_CHANT_FLOOR` and
+`DRIFT_STREAM_CHANT_FLOOR` are its `version`. `version` is chant's own
+`NEXT_RELEASE` (INTENTIUS/chant#4480), and a local build of chant's
+integration branch is stamped at it (`npm pack` with the versions stamped,
+`npm install --no-save`), so it meets every floor. scripts/chant-release.ts
+writes the files the switch decides (src/chant-release-sync.ts lists them):
+the exact terraform and pulumi lexicon pins of example-terraform-estate,
+example-choudoufu-estate and e2e/fixtures/pulumi-workspace, which are
+`version` in both modes since chant enforces an exact pin; the three-cloud
+workspace's pins (by path while unreleased, by package and version after) and
+its package.json; behold's own chant ranges (the published chant while
+unreleased, the release after); and src/chant-drift-record.ts, which
+feature-detects `@intentius/chant/drift-record` at run time while unreleased
+and imports it statically after. src/chant-release.test.ts holds them to the
+switch. To flip it once the release is published: set `released: true` on the
+`CHANT_RELEASE` line (and `version`, if the release has another number), run
+`npx tsx scripts/chant-release.ts`, then `npm install` here and in
+example-three-cloud.
+
 ## A pipeline's numbers, from Prometheus (behold#571)
 
 `behold serve --prometheus <url>` (or `BEHOLD_PROMETHEUS_URL`) adds `GET
@@ -159,14 +182,15 @@ and `pulumi stack import`) and what it does not (plunge's refusals, bridged
 types classed at the first run, record-only ownership for untaggable types).
 
 - `GET /api/adopt/report?member=<name>[&stack=<name>]` runs `plunge stack
-  adopt --stack <s> --non-interactive` in the member's directory, with
+  adopt --stack <s> --json --non-interactive` in the member's directory, with
   `PULUMI_BACKEND_URL=plunge+<backend.url from Pulumi.yaml>`, no stdin and no
-  `--yes`. That is plunge's read-only stage: it lists every resource with
-  its ownership (marker, record, pending) and refuses with "non-interactive
-  mode requires --yes flag", having written nothing. Each resource gets its
-  fate and why. When plunge refuses the adoption (pending operations, a
-  provider hiding the markers, an aws-native create-only-tag type), each
-  reason is listed, with the URN it names.
+  `--yes`. That is plunge's read-only stage, as one v1 JSON document
+  (INTENTIUS/plunge#17, plunge docs/plunge/ADOPT.md): every resource with its
+  fate (marker, record, pending, already-adopted), having written nothing.
+  Each resource gets its fate and why. When plunge refuses the adoption
+  (pending operations, a provider hiding the markers, an aws-native
+  create-only-tag type, foreign records), each refusal is listed with its
+  code and the URN it names. behold reads the JSON view only (behold#1007).
 - `POST /api/adopt/start` `{member, stack?}` runs the same classification
   through the runner's `track` and answers the confirm command, `cd <dir> &&
   PULUMI_BACKEND_URL=<url> plunge stack adopt --stack <s> --yes`. A person
@@ -180,8 +204,9 @@ types classed at the first run, record-only ownership for untaggable types).
   `plunge+` one is already plunge's. No URL, or a Pulumi Cloud URL, gets no
   start, and the offer says why. The stack is read off the checked-in
   `stack-export.json` URNs unless the request names one.
-- A plunge without `stack adopt` is detected from its answer (outcome
-  `no-adopt`), not from a version.
+- A plunge without the `stack adopt --json` view is detected from its answer
+  (outcome `no-view`), not from a version, and refused with words naming
+  plunge 968b54748d, the commit that adds the view.
 - The table is keyed on member kind (`ADOPTERS`, src/adoption.ts), the same
   names the Terraform half uses on integration/choudoufu-engine.
   `/api/adopt*` is refused in a public view, and the start goes through the
@@ -223,8 +248,9 @@ own credentials would. Cached-step marks wait on chant#4015.
 
 A `terraform` member of a declared workspace is offered adoption into
 choudoufu, the engine tier, through chant's `chant workspace promote <member>
---state <file>` (src/adoption.ts, floor `ADOPTION_REPORT_CHANT_FLOOR`, set to
-0.124.53 until the chant release carrying the report is cut). The panel's
+--state <file>` (src/adoption.ts, floor `ADOPTION_REPORT_CHANT_FLOOR`, which
+is `CHANT_RELEASE.version` in src/chant-release.ts until the chant release
+carrying the report is cut; see "The coming chant release" below). The panel's
 **Adopt** tab (web/adopt.js) shows, per member, what the engine tier gives
 and what it does not, the command, and promote's report.
 
@@ -787,10 +813,13 @@ drift card by card: <member>"**) runs `chant workspace drift --member <name>
 `/api/events` (src/drift-stream.ts). The stream is chant's drift record in
 NDJSON (chant#4451): one `drift-start` with the addresses it expects, one
 `drift-record` per instance as its read finishes, one `drift-settle`. Each
-line is decoded in `streamDrift` (src/workspace-reader.ts, checks in
-src/drift-line.ts, written out from chant's decoder at fdce0d963 until a chant
-release exports `@intentius/chant/drift-record`), and each record frame
-repaints only its own card.
+line is decoded in `streamDrift` (src/workspace-reader.ts) by
+src/drift-line.ts, which uses chant's own `decodeDriftLine` from
+`@intentius/chant/drift-record` when the chant beside behold ships it
+(src/chant-drift-record.ts, behold#1005) and its copy of chant's checks at
+fdce0d963 otherwise, and each record frame repaints only its own card. The
+start is refused below `DRIFT_STREAM_CHANT_FLOOR` (409, the floor's refusal,
+nothing spawned), unless `BEHOLD_DRIFT_CHANT` names the chant to run.
 
 - **Per resource on a choudoufu member.** choudoufu's single-resource path
   (`live-plan -resource`, choudoufu#2245) plans one resource and writes its
@@ -813,8 +842,9 @@ repaints only its own card.
 - One run at a time (`409 drift-streaming`); `{stop: true}` stops it.
   `BEHOLD_DRIFT_CHANT` names the chant the read runs, for a chant built
   ahead of the release that adds `workspace drift --stream`, and for
-  `just e2e-streamed-drift`'s fake (e2e/fixtures/fake-chant-drift). No floor
-  is registered yet: the release is not known.
+  `just e2e-streamed-drift`'s fake (e2e/fixtures/fake-chant-drift); the
+  floor, `DRIFT_STREAM_CHANT_FLOOR`, is checked only against the root's own
+  chant, so it does not apply then.
 
 ### Colour from the drift record (#995)
 
@@ -838,7 +868,7 @@ colour.
   member and paints `_status`, `_drift: {status, read, label, reason?,
   engineCode?, fellBackFrom?, unknown?}` and `_unobserved` on each card.
   `/api/overlay` on a declared workspace whose chant meets
-  `DRIFT_RECORD_CHANT_FLOOR` (0.124.53, the release not cut yet) does this on
+  `DRIFT_RECORD_CHANT_FLOOR` (`CHANT_RELEASE.version`, the release not cut yet) does this on
   every read for the members with no live half of their own (`terraform`,
   `pulumi`), and with `?drift=1` for `chant` and `choudoufu` members too, at
   the cost of a second live read. `meta.driftRecord` lists each member's
@@ -1841,10 +1871,12 @@ are `stackOutput("azure", "azureEndpoint")` and `stackOutput("aws",
 "awsEndpoint")`, and dns lists `terraform` (with `terraform.roots.azure` at
 `../azure`, which is the change signal) and `pulumi`. No chant release has
 `member-outputs` or the pulumi lexicon yet (0.124.52 lacks both), so the
-demo needs chant main's core and lexicons linked (the local build is
-0.124.34), and the workspace pins both lexicons by path so a pin never asks
-for a version the local build lacks; behold's own code does not import them,
-so there is no floor. The e2e's second half runs
+demo needs a local build of chant's core and lexicons, stamped at
+`CHANT_RELEASE.version` (src/chant-release.ts), and while that release is not
+cut the workspace pins both lexicons by path so a pin never asks for a
+version the local build lacks; behold's own code does not import them, so
+there is no floor. scripts/front-door.ts loads the pulumi lexicon only for
+the aws plan, so `npm ci` in the example runs every other subcommand. The e2e's second half runs
 `chant components pr-plan --member dns` over a change to azure/ and asserts
 dns's records step names azure under its unresolved inputs. `behold demo three-cloud` runs `scripts/emulators-up.sh` (the
 emulators under chant's own container names, with the Docker socket, floci-az

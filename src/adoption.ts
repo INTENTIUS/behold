@@ -477,7 +477,7 @@ export function adoptionRoutes(app: Hono, opts: AdoptionOptions): void {
         prec.endedAt = now().toISOString();
         io.line(String(pulumiRunOf(prec).words));
         opts.broadcaster.emit("adopt-run", id);
-        // Without --yes plunge exits non-zero once it has listed everything: that is its gate holding, not a failure.
+        // Without --yes plunge classifies and writes nothing: that is its gate holding, not a failure.
         return classification.outcome === "classified" || classification.outcome === "already-adopted" ? 0 : code || 1;
       });
       if (!started) return c.json({ error: `busy: ${opts.runner.running} is running`, code: "busy" }, 409);

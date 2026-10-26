@@ -11,6 +11,7 @@
 
 import { askLayout, orderRoots } from "./kiosk-ask-layout.js";
 import { applyOf, cardLines, cardTitle } from "./kiosk-light.js";
+import { HOLE_WORDS, KIND_TAGS, memberKinds } from "./member-kind.js";
 
 /** What hangs under a card for each unknown value it carries (web/kiosk-light-frame.js drawSlots). */
 export const SLOT_ROW = 26;
@@ -63,30 +64,46 @@ export function askDeltas({ roots, nodes, boxes, extras = {}, edges = [], open }
 /**
  * A composed choudoufu run's scene: each estate's box and cards from `answer.estateScene`, laid out for `open`, and
  * an edge for each reach the blast radius names. Null when the answer holds no scene.
+ *
+ * behold#1008: a composed chant run says what each member is (`answer.chant.members`, web/member-kind.js). Each root
+ * then carries `kind` (hole, previewed or plain), and a hole with nothing previewed keeps its box with one empty slot
+ * (`hole`: where its cards would be, and why there are none).
  */
 export function sceneModel(answer, plan, progress, open) {
-  const scene = answer && answer.estateScene && Array.isArray(answer.estateScene.roots) ? answer.estateScene.roots.filter((r) => r.resources && r.resources.length) : [];
+  const kinds = memberKinds(answer);
+  // Kinds come from answer.chant alone: without it (a composed choudoufu run) a root's `hole` flag is ignored and
+  // nothing is marked, so the run draws as it did before behold#1008.
+  const isHole = (r) => kinds.size > 0 && (r.hole === true || (kinds.get(r.path) || {}).kind === "hole");
+  const scene = answer && answer.estateScene && Array.isArray(answer.estateScene.roots) ? answer.estateScene.roots.filter((r) => (r.resources && r.resources.length) || (r.path && r.name && isHole(r))) : [];
   if (!scene.length) return null;
   const extras = slotCounts(plan);
   const ordered = upstreamFirst(scene, plan.edges);
+  const holeSlot = (r) => `${r.member}/${r.name}/~hole`;
+  const resourcesOf = (r) => r.resources || [];
   const input = ordered.map((r) => ({
     id: r.path,
-    cards: r.resources.map((res) => {
-      const id = `${r.member}/${r.name}/${res.address}`;
-      return { id, w: CARD_W, h: CARD_H + (extras[id] ? extras[id] * SLOT_ROW + 10 : 0) };
-    }),
+    cards: resourcesOf(r).length
+      ? r.resources.map((res) => {
+          const id = `${r.member}/${r.name}/${res.address}`;
+          return { id, w: CARD_W, h: CARD_H + (extras[id] ? extras[id] * SLOT_ROW + 10 : 0) };
+        })
+      : [{ id: holeSlot(r), w: CARD_W, h: CARD_H }],
   }));
   const layout = askLayout(input, open);
   const roots = ordered.map((r) => {
     const box = layout.boxes[r.path];
     const outcome = applyOf(r.path, progress);
     const done = outcome ? outcome.apply === "applied" || outcome.apply === "no-changes" : null;
+    const known = kinds.get(r.path);
+    const kind = isHole(r) ? "hole" : known ? known.kind : null;
     return {
       path: r.path,
       name: r.name,
       member: r.member,
       ...box,
-      cards: r.resources.map((res) => {
+      ...(kind ? { kind } : {}),
+      ...(!resourcesOf(r).length ? { hole: { ...layout.cards[holeSlot(r)], words: HOLE_WORDS, reasons: known ? known.reasons : [] } } : {}),
+      cards: resourcesOf(r).map((res) => {
         const id = `${r.member}/${r.name}/${res.address}`;
         const at = layout.cards[id];
         const { name, type } = cardTitle(res.address);
@@ -194,10 +211,30 @@ export function drawScene(svg, model) {
     scene.appendChild(g);
   }
   for (const r of model.roots) {
-    const g = make("g", { "data-layout-box": `box:${r.name}` });
-    g.appendChild(make("rect", { "data-group-id": r.name, x: r.x, y: r.y, width: r.w, height: r.h, rx: 16, fill: "var(--panel, var(--bg))", "fill-opacity": 0.6, stroke: "var(--frame-neutral, var(--neutral))", "stroke-width": 1.5 }));
+    // behold#1008: a hole's box is dashed in the degraded tone; a hole's and a previewed member's carry a tag saying so.
+    const g = make("g", { "data-layout-box": `box:${r.name}`, ...(r.kind ? { "data-member-kind": r.kind } : {}) });
+    const hole = r.kind === "hole";
+    g.appendChild(make("rect", { "data-group-id": r.name, x: r.x, y: r.y, width: r.w, height: r.h, rx: 16, fill: "var(--panel, var(--bg))", "fill-opacity": 0.6, stroke: hole ? "var(--frame-degraded, var(--degraded))" : "var(--frame-neutral, var(--neutral))", "stroke-width": hole ? 2 : 1.5, ...(hole ? { "stroke-dasharray": "10 6" } : {}) }));
     g.appendChild(make("text", { x: r.x + 18, y: r.y + 26, "font-size": 20, "font-weight": 700, "letter-spacing": ".5", fill: "var(--muted)" }, r.name));
+    const tag = r.kind && KIND_TAGS[r.kind];
+    if (tag) {
+      const color = hole ? "var(--frame-degraded, var(--degraded))" : "var(--frame-pending, var(--pending))";
+      const w = tag.length * 8.5 + 20;
+      const mark = make("g", { "data-kl-kind-mark": r.kind });
+      mark.appendChild(make("rect", { x: r.x + r.w - w - 14, y: r.y + 9, width: w, height: 24, rx: 12, fill: "none", stroke: color, "stroke-width": 1.5 }));
+      mark.appendChild(make("text", { x: r.x + r.w - w / 2 - 14, y: r.y + 26, "text-anchor": "middle", "font-size": 14, "font-weight": 600, fill: color }, tag));
+      g.appendChild(mark);
+    }
     scene.appendChild(g);
+    if (r.hole) {
+      // Where the hole's cards would be: no data-node-id, as the waiting slot has none.
+      const h = r.hole;
+      const slot = make("g", { "data-kl-hole": r.name });
+      slot.appendChild(make("rect", { x: h.x, y: h.y, width: h.w, height: h.h, rx: 12, fill: "none", stroke: "var(--frame-degraded, var(--degraded))", "stroke-width": 1.5, "stroke-dasharray": "6 5" }));
+      slot.appendChild(make("text", { x: h.x + h.w / 2, y: h.y + h.h / 2 + 5, "text-anchor": "middle", "font-size": 15, fill: "var(--muted)" }, h.words));
+      if (h.reasons && h.reasons.length) slot.appendChild(make("title", {}, h.reasons.join("\n")));
+      scene.appendChild(slot);
+    }
     if (r.waiting) {
       // No data-node-id: the lighting and the reads look for cards, and this is where they will be, not one of them.
       const w = r.waiting;
