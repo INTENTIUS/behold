@@ -64,6 +64,8 @@ export interface ComposedMember {
   reads?: ComposedRead[];
   /** The member's change set had a hole: nothing could be previewed. */
   hole: boolean;
+  /** behold#1008: each hole's `reason`, as the change set gives it. */
+  holeReasons?: string[];
   round?: number;
   held?: string;
 }
@@ -119,10 +121,14 @@ function entriesOf(changeSet: unknown): ComposedEntry[] {
  */
 export function composedReportOf(doc: unknown): ComposedReport | undefined {
   if (!isRecord(doc) || (doc.stage !== "plan" && doc.stage !== "apply") || !Array.isArray(doc.members)) return undefined;
-  const holes = new Set<string>();
+  const holes = new Map<string, string[]>();
   const cs = doc.changeSet;
   if (isRecord(cs) && Array.isArray(cs.members)) {
-    for (const m of cs.members) if (isRecord(m) && typeof m.member === "string" && Array.isArray(m.holes) && m.holes.length) holes.add(m.member);
+    for (const m of cs.members) {
+      if (isRecord(m) && typeof m.member === "string" && Array.isArray(m.holes) && m.holes.length) {
+        holes.set(m.member, m.holes.filter((h): h is Record<string, unknown> => isRecord(h) && typeof h.reason === "string" && !!h.reason).map((h) => h.reason as string));
+      }
+    }
   }
   const members: ComposedMember[] = [];
   for (const m of doc.members) {
@@ -141,6 +147,7 @@ export function composedReportOf(doc: unknown): ComposedReport | undefined {
           }
         : {}),
       hole: holes.has(m.member),
+      ...(holes.get(m.member)?.length ? { holeReasons: holes.get(m.member) } : {}),
       ...(typeof m.round === "number" ? { round: m.round } : {}),
       ...(typeof m.held === "string" ? { held: m.held } : {}),
     });
@@ -207,7 +214,7 @@ export interface ComposedView {
   answer: Record<string, unknown>;
   progress: Record<string, unknown> | null;
   /** Each member: a previewed one (entries, inputs marked unknown), a hole (nothing previewed), or neither. */
-  members: { member: string; kind: MemberKind; unknownInputs: string[] }[];
+  members: { member: string; kind: MemberKind; unknownInputs: string[]; reasons?: string[] }[];
   /** The rounds after the first: which members were planned again, and whether the first approval covered them. */
   rounds: { round: number; members: string[]; covered: boolean; words: string; digest?: string; filledInputs?: string[]; reason?: string }[];
 }
@@ -301,7 +308,8 @@ export function composedView(plan: ComposedReport | undefined, apply: ComposedRe
   };
 
   const applied: Record<string, { values: Record<string, unknown>[]; run: Record<string, unknown> }> = {};
-  const scene: { member: string; name: string; path: string; resources: Record<string, unknown>[] }[] = [];
+  const scene: { member: string; name: string; path: string; resources: Record<string, unknown>[]; hole?: true }[] = [];
+  const holeMembers = new Set(memberRows.filter((m) => m.hole).map((m) => m.member));
   for (const root of roots) {
     const done = appliedMembers.has(root.path);
     const previewed = planEntries.filter((e) => e.member === root.path);
@@ -319,7 +327,8 @@ export function composedView(plan: ComposedReport | undefined, apply: ComposedRe
         if (values.length) (applied[`${root.member}/${root.name}/${e.address}`] ??= { values: [], run: { stage: "tf-apply", finished: opts.applyAt ?? EPOCH, commit: apply?.head ?? "", report: "" } }).values.push(...values);
       }
     }
-    if (resources.length) scene.push({ ...root, resources });
+    // behold#1008: a hole keeps its box with nothing previewed in it, so the scene says which stack no preview was made of.
+    if (resources.length || holeMembers.has(root.path)) scene.push({ ...root, resources, ...(holeMembers.has(root.path) ? { hole: true as const } : {}) });
   }
   // The real values: an output of an applied stack that a reader's unknown input names. The resource it came from gets
   // its id (the output `SubnetBId` is `subnetB`'s), and the reader's attribute the preview marked unknown gets the value.
@@ -364,7 +373,7 @@ export function composedView(plan: ComposedReport | undefined, apply: ComposedRe
     compose: { roots: [...ordered].sort(), max: ordered.length, wave: 1, estate: true },
     upstreams,
   };
-  const kinds = memberRows.map((m) => ({ member: m.member, kind: kindOf(m), unknownInputs: m.unknownInputs }));
+  const kinds = memberRows.map((m) => ({ member: m.member, kind: kindOf(m), unknownInputs: m.unknownInputs, ...(m.holeReasons ? { reasons: m.holeReasons } : {}) }));
   const answer: Record<string, unknown> = {
     cards: {},
     roots,
