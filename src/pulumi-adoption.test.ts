@@ -1,6 +1,7 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import { ADOPTERS, ADOPTION_WAITS, adopterFor, adoptionRoutes } from "./adoption.ts";
@@ -11,9 +12,11 @@ import {
   assertClassificationOnly,
   confirmCommandLine,
   parsePlungeAdopt,
+  PLUNGE_ADOPT_JSON_COMMIT,
   plungeBackendFor,
   plungeClassifyArgv,
   plungeEnv,
+  pulumiOutcomeWords,
   pulumiPlanFor,
   stackFor,
   urnParts,
@@ -21,70 +24,115 @@ import {
 } from "./pulumi-adoption.ts";
 import type { Workspace } from "./workspace.ts";
 
-// behold#999, the Pulumi half. plunge's text is what
-// pkg/cmd/pulumi/stack/stack_adopt.go `printAdoption` prints, and its refusal
-// what pkg/backend/plunge/adopt.go `AdoptRefusedError` says, at plunge
-// integration/pulumi-engine 3ea6673405.
+// behold#999, the Pulumi half, read from plunge's JSON view (behold#1007).
+// The fixtures in __fixtures__/plunge-adopt-968b54748d are `plunge stack adopt
+// --json` documents in the v1 shape plunge prints at 968b54748d
+// (integration/engine-ship, INTENTIUS/plunge#17): pkg/backend/plunge/adoptview.go
+// `NewAdoptView`, documented in docs/plunge/ADOPT.md. The reasons are plunge's
+// own strings at that commit (pkg/backend/plunge/adopt.go `classify`,
+// inject.go `CreateOnlyTagsError`).
+const HERE = dirname(fileURLToPath(import.meta.url));
+const fixture = (name: string): string => readFileSync(join(HERE, "__fixtures__", "plunge-adopt-968b54748d", `${name}.json`), "utf8");
+const CLASSIFIED = fixture("would-adopt");
+const ALREADY = fixture("already-adopted");
+const REFUSED = fixture("refused");
+const UNKNOWN_FATE = fixture("unknown-fate");
 const URNS = {
+  ap: "urn:pulumi:dev::app::aws-native:s3:AccessPoint::ap",
   bucket: "urn:pulumi:dev::app::aws:s3/bucket:Bucket::assets",
-  role: "urn:pulumi:dev::app::aws:iam/role:Role::web",
   fn: "urn:pulumi:dev::app::my:mod:Web$aws:lambda/function:Function::handler",
   dep: "urn:pulumi:dev::app::kubernetes:apps/v1:Deployment::api",
   svc: "urn:pulumi:dev::app::aws-native:apprunner:Service::svc",
 };
-const CLASSIFIED = [
-  "Adopting dev (checkpoint digest 0a1b2c):",
-  `  ${URNS.bucket}  assets-1  ownership: pending (classed at the first run, from the provider's schema)`,
-  `  ${URNS.dep}  default/api  ownership: marker`,
-  `  ${URNS.role}    ownership: record (the type has no tags)`,
-  `  ${URNS.fn}  fn  ownership: pending (classed at the first run, from the provider's schema)`,
-  "",
-].join("\n");
-const UNCONFIRMED = "error: non-interactive mode requires --yes flag\n";
-const REFUSED = [
-  "error: plunge: refusing to adopt dev; nothing was written:",
-  "  - the checkpoint has pending operations, which stock Pulumi must settle first (`pulumi refresh` or `pulumi stack export`/`import` after checking the cloud): urn:pulumi:dev::app::aws:s3/bucket:Bucket::assets (creating)",
-  `  - plunge: refusing to mark ${URNS.svc}: aws-native:apprunner:Service's "tags" can only be set when the resource is created, so adding the ownership marker would replace the live resource, and plunge never replaces a resource to mark it. Leave this stack on stock Pulumi, or remove the resource from the stack before adopting`,
-  "",
-].join("\n");
 
-describe("reading plunge stack adopt (behold#999)", () => {
-  it("lists every resource plunge classed, with its fate, and treats the missing --yes as the gate holding", () => {
-    const c = parsePlungeAdopt(CLASSIFIED, UNCONFIRMED);
+describe("reading plunge stack adopt --json (behold#999, behold#1007)", () => {
+  it("lists every resource plunge classed, with its fate, and wrote nothing", () => {
+    const c = parsePlungeAdopt(CLASSIFIED, "");
     expect(c.outcome).toBe("classified");
-    expect(c.stack).toBe("dev");
-    expect(c.digest).toBe("0a1b2c");
-    expect(c.entries.map((e) => e.urn)).toEqual([URNS.bucket, URNS.dep, URNS.role, URNS.fn]);
-    expect(c.entries.map((e) => e.ownership)).toEqual(["pending", "marker", "record", "pending"]);
+    expect(c.stack).toBe("organization/app/dev");
+    expect(c.digest).toBe("0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9");
+    expect(c.entries.map((e) => e.urn)).toEqual([URNS.ap, URNS.bucket, URNS.dep, URNS.fn]);
+    expect(c.entries.map((e) => e.ownership)).toEqual(["record", "pending", "marker", "pending"]);
     expect(c.entries.every((e) => e.fate === "claimed" && e.why.length > 0)).toBe(true);
-    // An empty ID still reads, and plunge's reason is kept verbatim.
-    const role = c.entries.find((e) => e.urn === URNS.role)!;
-    expect(role.id).toBe("");
-    expect(role.detail).toBe("the type has no tags");
+    // An empty ID still reads, the type is plunge's, and plunge's reason is kept verbatim.
+    const ap = c.entries.find((e) => e.urn === URNS.ap)!;
+    expect(ap.id).toBe("");
+    expect(ap.type).toBe("aws-native:s3:AccessPoint");
+    expect(ap.detail).toBe("AWS::S3::AccessPoint has no tags property");
+    expect(c.entries.find((e) => e.urn === URNS.dep)).toMatchObject({ marked: true, detail: "" });
+    expect(c.refused).toEqual([]);
     expect(c.said).toBe("");
   });
 
-  it("names every reason plunge refused for, and the resource it names", () => {
-    const c = parsePlungeAdopt("", REFUSED);
+  it("names every reason plunge refused for, with its code and the resource it names", () => {
+    const c = parsePlungeAdopt(REFUSED, "");
     expect(c.outcome).toBe("refused");
-    expect(c.entries).toEqual([]);
-    expect(c.refused).toHaveLength(2);
-    expect(c.refused[0]!.reason).toMatch(/pending operations/);
+    expect(c.refused.map((r) => r.code)).toEqual(["pending-operations", "create-only-tags", "foreign-records"]);
+    expect(c.refused[0]!.reason).toMatch(/pending creating operation/);
     expect(c.refused[0]!.urn).toBe(URNS.bucket);
     expect(c.refused[1]!.urn).toBe(URNS.svc);
+    // A refusal of the whole stack names no URN.
+    expect(c.refused[2]!.urn).toBeNull();
+    // The classification plunge refused from is still listed.
+    expect(c.entries.map((e) => e.urn)).toEqual([URNS.svc]);
   });
 
-  it("says already adopted, and an ownership it does not know is unknown, not dropped", () => {
-    const again = parsePlungeAdopt(`dev was already adopted from this checkpoint (digest 0a1b2c); nothing was written.\n  ${URNS.bucket}  assets-1  ownership: marker\n`, "");
-    expect(again.outcome).toBe("already-adopted");
-    expect(again.entries).toHaveLength(1);
-    const odd = parsePlungeAdopt(`Adopting dev (checkpoint digest 0a):\n  ${URNS.bucket}  assets-1  ownership: borrowed\n`, UNCONFIRMED);
-    expect(odd.entries[0]!.fate).toBe("unknown");
+  it("keeps a refusal code behold does not know as a refusal", () => {
+    const doc = JSON.parse(REFUSED) as { refusals: unknown[] };
+    doc.refusals = [{ code: "a-new-code", reason: "a reason from a newer plunge" }, { code: "no-reason-given" }];
+    const c = parsePlungeAdopt(JSON.stringify(doc), "");
+    expect(c.outcome).toBe("refused");
+    expect(c.refused[0]).toEqual({ code: "a-new-code", reason: "a reason from a newer plunge", urn: null });
+    expect(c.refused[1]!.reason).toMatch(/no-reason-given, which behold cannot explain/);
   });
 
-  it("detects a plunge without stack adopt from its answer, not a version", () => {
-    expect(parsePlungeAdopt("", 'error: unknown command "adopt" for "plunge stack"\n').outcome).toBe("no-adopt");
-    expect(parsePlungeAdopt("", "error: no stack named 'dev' found\n").outcome).toBe("failed");
+  it("says already adopted, each resource with the class its adoption record holds", () => {
+    const c = parsePlungeAdopt(ALREADY, "");
+    expect(c.outcome).toBe("already-adopted");
+    expect(c.entries.map((e) => [e.urn, e.ownership, e.fate])).toEqual([
+      [URNS.bucket, "pending", "claimed"],
+      [URNS.dep, "marker", "claimed"],
+    ]);
+  });
+
+  it("an ownership it does not know is unknown, not dropped", () => {
+    const c = parsePlungeAdopt(UNKNOWN_FATE, "");
+    expect(c.outcome).toBe("classified");
+    expect(c.entries).toHaveLength(1);
+    expect(c.entries[0]).toMatchObject({ ownership: "borrowed", fate: "unknown", detail: "a fate this behold was written before" });
+  });
+
+  it("reads an adopted status as written", () => {
+    const doc = JSON.parse(CLASSIFIED) as { status: string };
+    doc.status = "adopted";
+    expect(parsePlungeAdopt(JSON.stringify(doc), "").outcome).toBe("written");
+  });
+
+  // Written red first, against the text parser this replaced: a plunge built before 968b54748d answers --json with cobra's unknown flag.
+  it("refuses a plunge without the --json view in behold's words, naming the plunge commit that adds it", () => {
+    for (const said of ["Error: unknown flag: --json\n", 'error: unknown command "adopt" for "plunge stack"\n']) {
+      const c = parsePlungeAdopt("", said);
+      expect(c.outcome).toBe("no-view");
+      const words = pulumiOutcomeWords(c, "confirm");
+      expect(words).toMatch(/no `plunge stack adopt --json` view/);
+      expect(words).toContain(PLUNGE_ADOPT_JSON_COMMIT);
+      expect(words).toContain("968b54748d");
+    }
+    // The old text table is not read: a plunge that printed it has no view.
+    const text = "Adopting dev (checkpoint digest 0a1b2c):\n  urn:pulumi:dev::app::aws:s3/bucket:Bucket::assets  assets-1  ownership: pending\n";
+    expect(parsePlungeAdopt(text, "Error: unknown flag: --json\n").entries).toEqual([]);
+  });
+
+  it("an error with no document is a failure in plunge's words, and a version it does not read is unreadable", () => {
+    const failed = parsePlungeAdopt("", "error: no stack named 'dev' found\n");
+    expect(failed.outcome).toBe("failed");
+    expect(failed.said).toBe("error: no stack named 'dev' found");
+    const doc = JSON.parse(CLASSIFIED) as { adopt: string };
+    doc.adopt = "v2";
+    const v2 = parsePlungeAdopt(JSON.stringify(doc), "");
+    expect(v2.outcome).toBe("unreadable");
+    expect(v2.entries).toEqual([]);
+    expect(pulumiOutcomeWords(v2, "confirm")).toMatch(/v2; behold reads v1/);
   });
 
   it("reads a URN's type and name, a parent's type left off", () => {
@@ -93,6 +141,10 @@ describe("reading plunge stack adopt (behold#999)", () => {
 });
 
 describe("what behold runs, and what it never runs", () => {
+  it("asks plunge for its JSON view", () => {
+    expect(plungeClassifyArgv("dev")).toEqual(["stack", "adopt", "--stack", "dev", "--json", "--non-interactive", "--color", "never"]);
+  });
+
   it("classifies only: never --yes, -y or --file, always non-interactive", () => {
     const argv = plungeClassifyArgv("dev");
     expect(() => assertClassificationOnly(argv)).not.toThrow();
@@ -148,7 +200,7 @@ function workspace(): { ws: Workspace; root: string } {
   return { root, ws: { name: "w", root, file: "chant.workspace.json", chant: "0.124.34", members: [m("app", "pulumi"), m("loose", "pulumi"), m("net", "terraform"), m("web", "chant")] } };
 }
 
-function served({ preview = false, stdout = CLASSIFIED, stderr = UNCONFIRMED, exit = 255 }: { preview?: boolean; stdout?: string; stderr?: string; exit?: number } = {}) {
+function served({ preview = false, stdout = CLASSIFIED, stderr = "", exit = 0 }: { preview?: boolean; stdout?: string; stderr?: string; exit?: number } = {}) {
   const { ws, root } = workspace();
   const broadcaster = new Broadcaster();
   const runner = new OpRunner({ projectDir: root, broadcaster, onDone: () => {} });
@@ -216,6 +268,7 @@ describe("the adoption routes for a pulumi member (behold#999)", () => {
     expect(body.report.byOwnership).toEqual({ pending: 2, marker: 1, record: 1 });
     expect(body.confirm).toMatch(/plunge stack adopt --stack dev --yes$/);
     expect(s.spawned).toHaveLength(1);
+    expect(s.spawned[0]!.args).toContain("--json");
     expect(s.spawned[0]!.args).not.toContain("--yes");
     expect(s.spawned[0]!.cwd).toBe(join(s.root, "app"));
     expect(s.spawned[0]!.env.PULUMI_SKIP_CONFIRMATIONS).toBeUndefined();
@@ -223,10 +276,19 @@ describe("the adoption routes for a pulumi member (behold#999)", () => {
   });
 
   it("a refused adoption lists each reason and offers no confirm", async () => {
-    const s = served({ stdout: "", stderr: REFUSED });
+    const s = served({ stdout: REFUSED, exit: 1 });
     const { body } = await s.get("/api/adopt/report?member=app");
     expect(body.outcome).toBe("refused");
-    expect(body.refused).toHaveLength(2);
+    expect(body.refused).toHaveLength(3);
+    expect(body.refused[1]).toMatchObject({ code: "create-only-tags", urn: URNS.svc });
+    expect(body.confirm).toBeUndefined();
+  });
+
+  it("a plunge without the view gets behold's words naming the commit, and no confirm", async () => {
+    const s = served({ stdout: "", stderr: "Error: unknown flag: --json\n", exit: 255 });
+    const { body } = await s.get("/api/adopt/report?member=app");
+    expect(body.outcome).toBe("no-view");
+    expect(body.words).toContain("968b54748d");
     expect(body.confirm).toBeUndefined();
   });
 

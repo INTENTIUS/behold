@@ -1,0 +1,41 @@
+{
+  "adopt": "v1",
+  "stack": "organization/app/dev",
+  "status": "refused",
+  "checkpoint": {
+    "source": "the DIY checkpoint at file:///var/lib/pulumi/app",
+    "digest": "0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9"
+  },
+  "resources": [
+    {
+      "urn": "urn:pulumi:dev::app::aws-native:apprunner:Service::svc",
+      "type": "aws-native:apprunner:Service",
+      "id": "arn:aws:apprunner:us-east-1:000000000000:service/svc/1",
+      "fate": "marker",
+      "marked": false,
+      "refusals": [
+        {
+          "code": "create-only-tags",
+          "urn": "urn:pulumi:dev::app::aws-native:apprunner:Service::svc",
+          "reason": "plunge: refusing to mark urn:pulumi:dev::app::aws-native:apprunner:Service::svc: aws-native:apprunner:Service's \"tags\" can only be set when the resource is created, so adding the ownership marker would replace the live resource, and plunge never replaces a resource to mark it. Leave this stack on stock Pulumi, or remove the resource from the stack before adopting"
+        }
+      ]
+    }
+  ],
+  "refusals": [
+    {
+      "code": "pending-operations",
+      "urn": "urn:pulumi:dev::app::aws:s3/bucket:Bucket::assets",
+      "reason": "the checkpoint has a pending creating operation on urn:pulumi:dev::app::aws:s3/bucket:Bucket::assets, which stock Pulumi must settle first (`pulumi refresh` or `pulumi stack export`/`import` after checking the cloud)"
+    },
+    {
+      "code": "create-only-tags",
+      "urn": "urn:pulumi:dev::app::aws-native:apprunner:Service::svc",
+      "reason": "plunge: refusing to mark urn:pulumi:dev::app::aws-native:apprunner:Service::svc: aws-native:apprunner:Service's \"tags\" can only be set when the resource is created, so adding the ownership marker would replace the live resource, and plunge never replaces a resource to mark it. Leave this stack on stock Pulumi, or remove the resource from the stack before adopting"
+    },
+    {
+      "code": "foreign-records",
+      "reason": "the stack already has plunge records that are not this checkpoint's; adopt only a stack plunge has never run against"
+    }
+  ]
+}

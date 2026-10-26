@@ -159,14 +159,15 @@ and `pulumi stack import`) and what it does not (plunge's refusals, bridged
 types classed at the first run, record-only ownership for untaggable types).
 
 - `GET /api/adopt/report?member=<name>[&stack=<name>]` runs `plunge stack
-  adopt --stack <s> --non-interactive` in the member's directory, with
+  adopt --stack <s> --json --non-interactive` in the member's directory, with
   `PULUMI_BACKEND_URL=plunge+<backend.url from Pulumi.yaml>`, no stdin and no
-  `--yes`. That is plunge's read-only stage: it lists every resource with
-  its ownership (marker, record, pending) and refuses with "non-interactive
-  mode requires --yes flag", having written nothing. Each resource gets its
-  fate and why. When plunge refuses the adoption (pending operations, a
-  provider hiding the markers, an aws-native create-only-tag type), each
-  reason is listed, with the URN it names.
+  `--yes`. That is plunge's read-only stage, as one v1 JSON document
+  (INTENTIUS/plunge#17, plunge docs/plunge/ADOPT.md): every resource with its
+  fate (marker, record, pending, already-adopted), having written nothing.
+  Each resource gets its fate and why. When plunge refuses the adoption
+  (pending operations, a provider hiding the markers, an aws-native
+  create-only-tag type, foreign records), each refusal is listed with its
+  code and the URN it names. behold reads the JSON view only (behold#1007).
 - `POST /api/adopt/start` `{member, stack?}` runs the same classification
   through the runner's `track` and answers the confirm command, `cd <dir> &&
   PULUMI_BACKEND_URL=<url> plunge stack adopt --stack <s> --yes`. A person
@@ -180,8 +181,9 @@ types classed at the first run, record-only ownership for untaggable types).
   `plunge+` one is already plunge's. No URL, or a Pulumi Cloud URL, gets no
   start, and the offer says why. The stack is read off the checked-in
   `stack-export.json` URNs unless the request names one.
-- A plunge without `stack adopt` is detected from its answer (outcome
-  `no-adopt`), not from a version.
+- A plunge without the `stack adopt --json` view is detected from its answer
+  (outcome `no-view`), not from a version, and refused with words naming
+  plunge 968b54748d, the commit that adds the view.
 - The table is keyed on member kind (`ADOPTERS`, src/adoption.ts), the same
   names the Terraform half uses on integration/choudoufu-engine.
   `/api/adopt*` is refused in a public view, and the start goes through the

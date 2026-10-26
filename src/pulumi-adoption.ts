@@ -7,11 +7,13 @@
  * pkg/backend/plunge/adopt.go).
  *
  * `plunge stack adopt` gates itself. It classifies every resource of the
- * stock checkpoint first, prints each with the ownership plunge would give it,
- * and writes nothing until it is confirmed: `--yes`, or a person typing the
- * stack's name at its prompt. Without either it refuses with "non-interactive
- * mode requires --yes flag", and nothing has been written. That read-only
- * stage is the only thing behold runs:
+ * stock checkpoint first and writes nothing until it is confirmed: `--yes`,
+ * or a person typing the stack's name at its prompt. behold runs only that
+ * read-only stage, as `plunge stack adopt --json` (INTENTIUS/plunge#17,
+ * plunge docs/plunge/ADOPT.md): one v1 document on stdout with the stack, the
+ * checkpoint digest, the status, every resource with its fate and reason, and
+ * each refusal with its code and URN. `--json` without `--yes` never prompts
+ * and writes nothing. behold reads that document only:
  *
  * - `GET /api/adopt/report` runs it and gives each resource its fate. A
  *   refusal (pending operations, a provider whose ignoreTags or defaultTags
@@ -43,8 +45,9 @@
  * names.
  *
  * The plunge binary is the one on PATH (the name chant's lexicon runs,
- * `defaultPlungeRunner`). One without `stack adopt` is detected from its
- * answer, not from a version: a plunge built from any branch with P-L4 works.
+ * `defaultPlungeRunner`). One without the JSON view is detected from its
+ * answer (cobra's unknown flag), not from a version, and refused with words
+ * naming the plunge commit that adds the view ({@link PLUNGE_ADOPT_JSON_COMMIT}).
  */
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -140,9 +143,9 @@ export function stackFor(member: WorkspaceMember, ask?: string): { ok: true; sta
   return { ok: false, error: `behold cannot tell which stack ${member.name} is: it has no ${PULUMI_EXPORT_FILE} to read one from. Name it (stack=<name>).` };
 }
 
-/** The argv behold runs: the classification, never confirmed. */
+/** The argv behold runs: the classification as plunge's JSON view, never confirmed. */
 export function plungeClassifyArgv(stack: string): string[] {
-  return ["stack", "adopt", "--stack", stack, "--non-interactive", "--color", "never"];
+  return ["stack", "adopt", "--stack", stack, "--json", "--non-interactive", "--color", "never"];
 }
 
 /**
@@ -208,30 +211,36 @@ export interface PulumiAdoptionRow {
   why: string;
   /** plunge's own reason, verbatim. */
   detail: string;
+  /** The checkpoint's inputs already carry this stack's markers. */
+  marked: boolean;
 }
 
 export interface PulumiRefusal {
+  /** plunge's refusal code (docs/plunge/ADOPT.md); one behold does not know is still a refusal. */
+  code: string;
   reason: string;
   /** The resource or provider the reason names, when it names one. */
   urn: string | null;
 }
 
-/** What `plunge stack adopt` said, without `--yes`. */
+/** What `plunge stack adopt --json` said, without `--yes`. */
 export interface PulumiClassification {
   /**
    * `classified`: plunge listed every resource and wrote nothing, waiting on
    * the confirm. `already-adopted`: the stack was adopted from this
    * checkpoint; nothing was written. `refused`: plunge refused before writing
    * anything. `written`: plunge says it wrote records, which behold never
-   * asks for (shown as said). `no-adopt`: this plunge has no `stack adopt`.
-   * `failed`: anything else, plunge's words below.
+   * asks for (shown as said). `no-view`: this plunge has no
+   * `stack adopt --json` (built before {@link PLUNGE_ADOPT_JSON_COMMIT}).
+   * `unreadable`: a document version behold does not read. `failed`:
+   * anything else, plunge's words below.
    */
-  outcome: "classified" | "already-adopted" | "refused" | "written" | "no-adopt" | "failed";
+  outcome: "classified" | "already-adopted" | "refused" | "written" | "no-view" | "unreadable" | "failed";
   stack: string | null;
   digest: string | null;
   entries: PulumiAdoptionRow[];
   refused: PulumiRefusal[];
-  /** The last lines plunge printed on stderr, when the outcome needs them. */
+  /** The last lines plunge printed on stderr, or behold's words for a document it cannot read, when the outcome needs them. */
   said: string;
 }
 
@@ -243,71 +252,96 @@ export function urnParts(urn: string): { type: string; name: string } {
   return { type: qualified.slice(qualified.lastIndexOf("$") + 1), name: parts.slice(3).join("::") };
 }
 
-const ROW = /^ {2}(urn:\S.*?) {2}(.*?) {2}ownership: (\S+)(?: \((.*)\))?$/;
-const CLASSIFIED = /^Adopting (.+) \(checkpoint digest ([0-9a-f]+)\):$/;
-const ALREADY = /^(.+) was already adopted from this checkpoint \(digest ([0-9a-f]+)\); nothing was written\.$/;
-const WRITTEN = /^Adopted (.+): \d+ resources recorded \(checkpoint digest ([0-9a-f]+)\)\.$/;
-const REFUSING = /refusing to adopt (.+?); nothing was written:/;
-const UNCONFIRMED = /non-interactive mode requires --yes|was not confirmed/;
-const NO_ADOPT = /unknown command "adopt"|unknown flag: --non-interactive|accepts no arg|unknown shorthand flag/;
+/** The plunge commit that adds `plunge stack adopt --json` (INTENTIUS/plunge#17), on plunge's integration/engine-ship. */
+export const PLUNGE_ADOPT_JSON_COMMIT = "968b54748d";
+/** The `adopt` version of plunge's document (plunge docs/plunge/ADOPT.md) behold reads. */
+export const PLUNGE_ADOPT_VIEW = "v1";
 
-/** Read plunge's text: stdout's table and stderr's refusal. Pure. */
+// What a plunge built before the view answers to --json (cobra's unknown flag), or before stack adopt at all.
+const NO_VIEW = /unknown flag: --json|unknown shorthand flag: 'j'|unknown command "adopt"/;
+// plunge's own refusal of the whole stack is a document; its other errors are plain stderr.
+const STATUS: Readonly<Record<string, PulumiClassification["outcome"]>> = {
+  "would-adopt": "classified",
+  "already-adopted": "already-adopted",
+  adopted: "written",
+  refused: "refused",
+};
+
+/** The one JSON document plunge prints on stdout, or undefined. */
+function adoptDocument(stdout: string): Record<string, unknown> | undefined {
+  const text = stdout.trim();
+  if (!text.startsWith("{")) return undefined;
+  try {
+    const doc = JSON.parse(text) as unknown;
+    return isRecord(doc) ? doc : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function refusalOf(v: unknown): PulumiRefusal | undefined {
+  if (!isRecord(v)) return undefined;
+  const code = str(v.code) ? v.code : "";
+  const reason = str(v.reason) ? v.reason : `plunge refused with code ${code || "(none)"}, which behold cannot explain`;
+  return { code, reason, urn: str(v.urn) ? v.urn : null };
+}
+
+function rowOf(v: unknown): PulumiAdoptionRow | undefined {
+  if (!isRecord(v) || !str(v.urn)) return undefined;
+  const urn = v.urn;
+  const fate = str(v.fate) ? v.fate : "";
+  // An already-adopted resource carries the class its adoption record holds.
+  const ownership = fate === "already-adopted" && str(v.adoptedAs) ? v.adoptedAs : fate;
+  const known = Object.prototype.hasOwnProperty.call(PULUMI_FATES, ownership) ? PULUMI_FATES[ownership as PulumiOwnership] : undefined;
+  const parts = urnParts(urn);
+  return {
+    urn,
+    type: str(v.type) ? v.type : parts.type,
+    name: parts.name,
+    id: typeof v.id === "string" ? v.id : "",
+    ownership,
+    fate: known ? known.fate : "unknown",
+    why: known ? known.why : `plunge gave an ownership behold does not know (${ownership || "none"}); its reason is beside it`,
+    detail: str(v.reason) ? v.reason : "",
+    marked: v.marked === true,
+  };
+}
+
+/**
+ * Read `plunge stack adopt --json`: one v1 document on stdout (plunge
+ * docs/plunge/ADOPT.md). stderr is read only when there is no document: a
+ * plunge without the view, or an error that is not an adoption outcome. Pure.
+ */
 export function parsePlungeAdopt(stdout: string, stderr: string): PulumiClassification {
-  const out = stripAnsi(stdout).split(/\r?\n/);
-  const err = stripAnsi(stderr);
-  let outcome: PulumiClassification["outcome"] | undefined;
-  let stack: string | null = null;
-  let digest: string | null = null;
+  const err = stripAnsi(stderr).trim();
+  const tail = err.split("\n").slice(-6).join("\n");
+  const none: PulumiClassification = { outcome: "failed", stack: null, digest: null, entries: [], refused: [], said: tail };
+  const doc = adoptDocument(stripAnsi(stdout));
+  if (!doc) return NO_VIEW.test(err) ? { ...none, outcome: "no-view" } : none;
+  if (doc.adopt !== PLUNGE_ADOPT_VIEW) {
+    return { ...none, outcome: "unreadable", said: `plunge answered an adopt document of version ${str(doc.adopt) ? doc.adopt : "(none)"}; behold reads ${PLUNGE_ADOPT_VIEW}` };
+  }
+  const status = str(doc.status) ? doc.status : "";
+  const outcome = Object.prototype.hasOwnProperty.call(STATUS, status) ? STATUS[status]! : "failed";
+  const checkpoint = isRecord(doc.checkpoint) ? doc.checkpoint : {};
   const entries: PulumiAdoptionRow[] = [];
-  for (const line of out) {
-    let m: RegExpExecArray | null;
-    if ((m = ALREADY.exec(line))) {
-      outcome = "already-adopted";
-      stack = m[1]!;
-      digest = m[2]!;
-    } else if ((m = WRITTEN.exec(line))) {
-      outcome = "written";
-      stack = m[1]!;
-      digest = m[2]!;
-    } else if ((m = CLASSIFIED.exec(line))) {
-      if (outcome !== "written") outcome = "classified";
-      stack ??= m[1]!;
-      digest ??= m[2]!;
-    } else if ((m = ROW.exec(line))) {
-      const urn = m[1]!;
-      if (entries.some((e) => e.urn === urn)) continue; // a confirmed run prints the table twice
-      const ownership = m[3]!;
-      const known = Object.prototype.hasOwnProperty.call(PULUMI_FATES, ownership) ? PULUMI_FATES[ownership as PulumiOwnership] : undefined;
-      entries.push({
-        urn,
-        ...urnParts(urn),
-        id: m[2]!,
-        ownership,
-        fate: known ? known.fate : "unknown",
-        why: known ? known.why : `plunge gave an ownership behold does not know (${ownership}); its reason is beside it`,
-        detail: m[4] ?? "",
-      });
-    }
+  for (const r of Array.isArray(doc.resources) ? doc.resources : []) {
+    const row = rowOf(r);
+    if (row) entries.push(row);
   }
   const refused: PulumiRefusal[] = [];
-  const refusing = REFUSING.exec(err);
-  if (refusing) {
-    stack ??= refusing[1]!;
-    for (const line of err.slice(refusing.index).split(/\r?\n/).slice(1)) {
-      const r = /^\s*- (.+)$/.exec(line);
-      if (!r) {
-        if (refused.length && line.trim()) break;
-        continue;
-      }
-      const urn = /\burn:pulumi:\S+/.exec(r[1]!);
-      refused.push({ reason: r[1]!, urn: urn ? urn[0].replace(/[:.,;)]+$/, "") : null });
-    }
-    outcome = "refused";
+  for (const r of Array.isArray(doc.refusals) ? doc.refusals : []) {
+    const f = refusalOf(r);
+    if (f) refused.push(f);
   }
-  if (!outcome) outcome = NO_ADOPT.test(err) ? "no-adopt" : "failed";
-  // Classified with no unconfirmed refusal on stderr is still classified: what plunge printed is all behold reads.
-  const said = outcome === "classified" && UNCONFIRMED.test(err) ? "" : err.trim().split("\n").slice(-6).join("\n");
-  return { outcome, stack, digest, entries, refused, said };
+  return {
+    outcome,
+    stack: str(doc.stack) ? doc.stack : null,
+    digest: str(checkpoint.digest) ? checkpoint.digest : null,
+    entries,
+    refused,
+    said: outcome === "failed" ? `plunge answered an adopt status behold does not know (${status || "none"})` : "",
+  };
 }
 
 /** The report a page draws: counts by ownership, and every row. */
@@ -328,8 +362,10 @@ export function pulumiOutcomeWords(c: PulumiClassification, confirm: string): st
       return "plunge refused the adoption before writing anything, for each reason below. Nothing is offered to confirm until they are settled.";
     case "written":
       return "plunge says it wrote the records. behold never confirms an adoption, so a person did.";
-    case "no-adopt":
-      return `This plunge has no stack adopt (plunge P-L4, INTENTIUS/plunge#7). Install a plunge that has it.${c.said ? ` plunge said: ${c.said}` : ""}`;
+    case "no-view":
+      return `This plunge has no \`plunge stack adopt --json\` view, the only answer behold reads. Build plunge from ${PLUNGE_ADOPT_JSON_COMMIT} (INTENTIUS/plunge#17, on integration/engine-ship) or later.${c.said ? ` plunge said: ${c.said}` : ""}`;
+    case "unreadable":
+      return `behold cannot read plunge's answer: ${c.said}.`;
     default:
       return `plunge did not classify the stack${c.said ? `: ${c.said}` : "."}`;
   }
