@@ -105,6 +105,16 @@ copy and sets the copy's pin to that version (#484). It says so as it loads:
 your own declared workspace is different: install the pinned lexicon in its
 root, the way `chant workspace check` asks.
 
+The pin in `chant.workspace.json` names the chant on npm (0.124.52), the one a
+plain `npm ci` installs beside behold, until the chant release behold waits on
+is out (`CHANT_RELEASE` in src/chant-release.ts, behold#1015). Drawing the
+estate and the recorded Adopt reports below need nothing newer. Running
+promote's dry run on a real root with a `terraform.tfstate`, and the drift
+record overlay, need chant 0.124.53, which is a local build of chant until it
+is released: the tarballs "A local chant build" in example-three-cloud/README.md
+packs, installed in behold's checkout with `npm install --no-save`. The demo
+copy is re-pinned at whichever lexicon is installed, so it serves on either.
+
 ## Adopting a root into choudoufu (#999)
 
 The panel's **Adopt** tab offers each root adoption into choudoufu, the engine

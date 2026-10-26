@@ -84,7 +84,8 @@ source. In a checkout of chant main (`CHANT` below):
 cd "$CHANT" && npm ci && scripts/ci-lexicon-artifacts.sh --steps generate,bundle
 # Stamp the packages' versions, uncommitted, at the coming release: behold's
 # CHANT_RELEASE (src/chant-release.ts), which is chant's NEXT_RELEASE. 0.124.53
-# meets every ^0.124.52 here and every floor and exact pin in behold.
+# meets every ^0.124.52 here and every floor in behold. behold's exact pins
+# name 0.124.52 until that release (behold#1015); its demos re-pin their copy.
 for pj in packages/*/package.json lexicons/*/package.json; do
   node -e 'const f=process.argv[1];const p=require(f);if(!String(p.name).startsWith("@intentius/"))process.exit(0);p.version="0.124.53";require("fs").writeFileSync(f,JSON.stringify(p,null,2)+"\n")' "$PWD/$pj"
 done
