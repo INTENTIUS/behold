@@ -37,6 +37,11 @@ STUBS="$HERE/e2e/fixtures/adopt-pulumi"
 CHANT_PKG="${BEHOLD_E2E_CHANT_PKG:-$HERE/node_modules/@intentius/chant}"
 LEX_PKG="${BEHOLD_E2E_PULUMI_LEXICON:-$HERE/node_modules/@intentius/chant-lexicon-pulumi}"
 RECORD="$STATE/.plunge/stacks/app/dev/adoption"
+# behold#1013: any pulumi or plunge this run starts, through behold or chant,
+# uses an empty file backend under $WORK and skips the update check, never the
+# machine's login or Pulumi Cloud.
+mkdir -p "$WORK/pulumi-backend"
+export PULUMI_BACKEND_URL="file://$WORK/pulumi-backend" PULUMI_SKIP_UPDATE_CHECK=true
 fail() { echo "✗ $*"; [ -f "$WORK/serve.log" ] && sed -n '1,40p' "$WORK/serve.log"; [ -f "$LOG" ] && cat "$LOG"; exit 1; }
 
 [ -f "$LEX_PKG/workspace-kinds.json" ] || fail "no pulumi lexicon at $LEX_PKG: set BEHOLD_E2E_PULUMI_LEXICON to chant's lexicons/pulumi"

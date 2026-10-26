@@ -55,6 +55,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 WORK="${BEHOLD_E2E_WORK:-$(mktemp -d "${TMPDIR:-/tmp}/behold-three-cloud-e2e.XXXXXX")}"
 TARGET="$WORK/three-cloud"
+# behold#1013: any pulumi or plunge this run starts, through behold or chant,
+# uses an empty file backend under $WORK and skips the update check, never the
+# machine's login or Pulumi Cloud.
+mkdir -p "$WORK/pulumi-backend"
+export PULUMI_BACKEND_URL="file://$WORK/pulumi-backend" PULUMI_SKIP_UPDATE_CHECK=true
 
 CHOUDOUFU="${CHOUDOUFU_BIN:-choudoufu}"
 if ! docker info >/dev/null 2>&1; then echo "skip: Docker is not running"; exit 0; fi

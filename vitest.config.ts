@@ -25,6 +25,15 @@ export default defineConfig({
     // counting as a flake.
     testTimeout: 20_000,
     // #469: the hand layout is a per-user cache; tests never touch the real one.
-    env: { BEHOLD_CACHE_DIR: mkdtempSync(join(tmpdir(), "behold-test-cache-")) },
+    // behold#1013: a pulumi or plunge any test spawns (directly, or through
+    // chant) uses an empty file backend made for this run, never the
+    // machine's login, and skips the update check. src/test-env.ts removes
+    // the ambient variables (CHOUDOUFU_BIN and the rest) before each file.
+    env: {
+      BEHOLD_CACHE_DIR: mkdtempSync(join(tmpdir(), "behold-test-cache-")),
+      PULUMI_BACKEND_URL: `file://${mkdtempSync(join(tmpdir(), "behold-test-pulumi-backend-"))}`,
+      PULUMI_SKIP_UPDATE_CHECK: "true",
+    },
+    setupFiles: ["src/test-env.ts"],
   },
 });

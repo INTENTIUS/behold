@@ -62,6 +62,11 @@ REPO="$PWD"
 PORT="${BEHOLD_E2E_PORT:-4699}"
 WORK="${BEHOLD_E2E_WORK:-$(mktemp -d "${TMPDIR:-/tmp}/behold-multi-engine-e2e.XXXXXX")}"
 TARGET="$WORK/three-cloud"
+# behold#1013: any pulumi or plunge this run starts, through behold or chant,
+# uses an empty file backend under $WORK and skips the update check, never the
+# machine's login or Pulumi Cloud.
+mkdir -p "$WORK/pulumi-backend"
+export PULUMI_BACKEND_URL="file://$WORK/pulumi-backend" PULUMI_SKIP_UPDATE_CHECK=true
 FIX="$REPO/e2e/fixtures/multi-engine-demo"
 LOG="$WORK/behold.log"
 

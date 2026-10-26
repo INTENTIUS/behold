@@ -2080,7 +2080,14 @@ live here, with the enforceable ones enforced.
   renaming it is a settings change for the maintainer (behold#1018).
   No `gh pr merge --auto`; merge one PR at a time, in order, and rebase the
   next onto what landed.
-- **The local gate** is `just check` (tsc, tests, build). Every vitest run
+- **The local gate** is `just check` (tsc, tests, build). The tests never read
+  the caller's environment (behold#1013): src/test-env.ts, vitest's setup
+  file, removes CHOUDOUFU_BIN, PLUNGE_BIN and the other variables behold
+  reads to pick a binary or a service, and vitest.config.ts points
+  PULUMI_BACKEND_URL at an empty `file://` directory made for the run, with
+  PULUMI_SKIP_UPDATE_CHECK=true, so no pulumi or plunge a test starts sees
+  the machine's login. A test that needs one of them sets it and puts back
+  what was there. Every vitest run
   also writes `.vitest-last.json` (the json reporter, PR #351), and `just
   test` keeps the reporter's full output in `vitest.log`, both gitignored —
   because #334's one-shot first-run failures kept losing the failing file's
