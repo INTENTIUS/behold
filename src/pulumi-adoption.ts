@@ -252,7 +252,7 @@ export function urnParts(urn: string): { type: string; name: string } {
   return { type: qualified.slice(qualified.lastIndexOf("$") + 1), name: parts.slice(3).join("::") };
 }
 
-/** The plunge commit that adds `plunge stack adopt --json` (INTENTIUS/plunge#17), on plunge's integration/engine-ship. */
+/** The first plunge commit with `plunge stack adopt --json` (INTENTIUS/plunge#17); it is on plunge main. */
 export const PLUNGE_ADOPT_JSON_COMMIT = "968b54748d";
 /** The `adopt` version of plunge's document (plunge docs/plunge/ADOPT.md) behold reads. */
 export const PLUNGE_ADOPT_VIEW = "v1";
