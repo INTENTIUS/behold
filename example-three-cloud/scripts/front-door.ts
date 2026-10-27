@@ -92,17 +92,16 @@ import { choudoufuPlanSet, choudoufuWaveApply, terraformOutputs, type ChoudoufuP
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
- * The pulumi lexicon, loaded by the aws plan alone (behold#1005). It is on no
- * chant release on npm yet, so this directory's package.json does not list it
- * until behold's CHANT_RELEASE (src/chant-release.ts) is released, and `npm ci`
- * here does not install it. Loading it here, not at the top, lets every other
- * subcommand (apply-azure among them) run without it.
+ * The pulumi lexicon, loaded by the aws plan alone (behold#1005). This
+ * directory depends on it (chant 0.124.54), and loading it here, not at the
+ * top, still lets every other subcommand (apply-azure among them) run in an
+ * install that lacks it.
  */
 async function pulumiRun(): Promise<typeof import("@intentius/chant-lexicon-pulumi/run")> {
   try {
     return await import("@intentius/chant-lexicon-pulumi/run");
   } catch (e) {
-    throw new Error(`the aws part needs @intentius/chant-lexicon-pulumi, which is not installed here: install the local chant build (README, "A local chant build"). ${(e as Error).message}`);
+    throw new Error(`the aws part needs @intentius/chant-lexicon-pulumi, which is not installed here: run \`npm ci\` in example-three-cloud (README, "Which chant"). ${(e as Error).message}`);
   }
 }
 const WORK = join(ROOT, ".front-door");
@@ -162,10 +161,9 @@ class Refusal extends Error {}
  * file's step would. The step's result is read off the activity as it
  * returns, because a step record carries no output.
  *
- * Published chant 0.124.52's terraform lexicon contributes no
- * choudoufuPlanSet activity, so with that chant (what `npm ci` here installs
- * while behold's CHANT_RELEASE is unreleased) the same function is called
- * directly, as before. Both answer the same ChoudoufuPlanSetResult.
+ * A terraform lexicon older than the activity (0.124.52 and before)
+ * contributes no choudoufuPlanSet activity, so with that chant the same
+ * function is called directly, as before. Both answer the same ChoudoufuPlanSetResult.
  */
 async function planAzureSet(): Promise<ChoudoufuPlanSetResult> {
   const { activity, loadActivities, runOpLocally } = await import("@intentius/chant/op");

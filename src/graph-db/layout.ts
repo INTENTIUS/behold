@@ -224,11 +224,11 @@ export function checkDrift(o: { dir?: string; chantDir?: string | null } = {}): 
   return { problems, skipped, chant: { dir: chantDir, schema: chantSchema } };
 }
 
-// The row types and behold's copies of chant's types (./types.ts), checked
-// against the vendored layout by the compiler: `tsc --noEmit` fails when the
-// generated layout has a column a row type lacks (or the other way), or an
-// enum a type copy spells differently. TODO(behold#1031, behold#1005): the
-// type copies go once chant exports the types; the row checks stay.
+// The row types and chant's own types (re-exported by ./types.ts since
+// behold#1005), checked against the vendored layout by the compiler:
+// `tsc --noEmit` fails when the generated layout has a column a row type
+// lacks (or the other way), or an enum chant's type spells differently from
+// the vendored schema.
 type Table<N extends string> = Extract<(typeof GRAPH_LAYOUT.tables)[number], { name: N }>;
 type Column<N extends string> = Table<N>["columns"][number]["name"];
 type Enum<K extends keyof typeof GRAPH_LAYOUT.enums> = (typeof GRAPH_LAYOUT.enums)[K][number];

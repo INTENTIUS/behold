@@ -9,8 +9,8 @@ import { terraformRootSchema } from "@intentius/chant-lexicon-terraform/config";
 //
 // The azure root is the azure member's, not dns's, so it is marked
 // signalOnly (chant#4484): change detection still counts it, and chant
-// neither builds it nor reads it live as dns's own. Published chant 0.124.52
-// predates the key, and its strict root schema refuses it, so the key is
+// neither builds it nor reads it live as dns's own. chant 0.124.52 and older
+// predate the key, and their strict root schema refuses it, so the key is
 // dropped below when the installed terraform lexicon's root schema does not
 // take it. With that chant, dns draws the azure root as its own, as it did
 // before the key existed. The key is written as a literal so chant's static

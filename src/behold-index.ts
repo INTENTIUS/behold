@@ -27,20 +27,18 @@
  * chant's, in packages/core/src/lifecycle/cloud-index.ts and
  * packages/core/src/cloud-lister/.
  *
- * No published chant has `runCloudIndex` (src/chant-release.ts says
- * `released: false`), so it is found at run time under a specifier the type
- * checker and the bundler leave alone, as src/chant-drift-record.ts does.
- * When the chant beside behold lacks it, `behold index` says which chant it
- * needs and exits 2 before anything is listed. There is no behold copy to
- * fall back to.
- *
- * TODO(chant#4532, behold#1005): once src/chant-release.ts says
- * `released: true`, import `runCloudIndex` statically and drop the fallback.
+ * chant 0.124.54 has `runCloudIndex` (src/chant-release.ts, behold#1005),
+ * and it is still found at run time under a specifier the type checker and
+ * the bundler leave alone. A static import would pull chant's CLI plugin
+ * loader, and through it the TypeScript compiler, into dist/cli.js (the
+ * bundle went from 3 MB to 13 MB when tried for behold#1005). When the chant
+ * beside behold lacks it, or cannot be loaded (the bundled CLI under plain
+ * node does not load chant's TypeScript source from node_modules), `behold
+ * index` says which chant it needs and exits 2 before anything is listed.
+ * There is no behold copy to fall back to.
  *
  * The maintainer's emulator run (behold#1026 done-when 1; never run by an
- * agent), against the pinned floci on 4566 with a scratch data dir and a
- * local build of chant's integration/consolidation-graph installed beside
- * behold:
+ * agent), against the pinned floci on 4566 with a scratch data dir:
  *
  *     env -u AWS_PROFILE -u AWS_SESSION_TOKEN \
  *       AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test \
@@ -81,8 +79,7 @@ export async function chantCloudIndex(): Promise<RunCloudIndex | undefined> {
 export function needsChantMessage(): string {
   return (
     `behold index needs chant ${CHANT_RELEASE.version} or newer (the release with chant#4532's runCloudIndex, ${CHANT_CLOUD_INDEX}), ` +
-    `and the chant beside behold lacks it. src/chant-release.ts says ${CHANT_RELEASE.version} is released: ${CHANT_RELEASE.released}; ` +
-    `until it is, install a local build of chant's integration/consolidation-graph beside behold. Nothing was listed and nothing was written.\n`
+    `and the chant beside behold lacks it or could not be loaded. Install chant ${CHANT_RELEASE.version} or newer beside behold and run behold under tsx (\`npx tsx src/cli.ts index ...\`). Nothing was listed and nothing was written.\n`
   );
 }
 

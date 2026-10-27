@@ -88,31 +88,36 @@ spawning the read. A new read adds its constant and entry in the issue that
 adds the read, once the chant release is known, and reads through the read
 contract (`src/workspace-reader.ts`), never chant's library.
 
-### The coming chant release (behold#1005)
+### The chant release behold follows (behold#1005)
 
-A read whose chant is merged and not released takes its floor from
-`CHANT_RELEASE` in src/chant-release.ts, `{ version, released }`, which names
-that release: `ADOPTION_REPORT_CHANT_FLOOR`, `DRIFT_RECORD_CHANT_FLOOR`,
-`DRIFT_STREAM_CHANT_FLOOR` and `LEDGER_ROOT_MEMBER_CHANT_FLOOR` are its `version`. `version` is chant's own
-`NEXT_RELEASE` (INTENTIUS/chant#4480), and a local build of chant's
-integration branch is stamped at it (`npm pack` with the versions stamped,
-`npm install --no-save`), so it meets every floor. scripts/chant-release.ts
+`CHANT_RELEASE` in src/chant-release.ts, `{ version, released }`, names the
+chant release behold's newest reads need. It says `{ version: "0.124.54",
+released: true }`: chant 0.124.54 is on npm, the first release with the
+drift record and its stream, the adoption report, `member-outputs` and
+`@intentius/chant-lexicon-pulumi`. `ADOPTION_REPORT_CHANT_FLOOR`,
+`DRIFT_RECORD_CHANT_FLOOR`, `DRIFT_STREAM_CHANT_FLOOR` and
+`LEDGER_ROOT_MEMBER_CHANT_FLOOR` are its `version`, which is chant's
+`NEXT_RELEASE` (INTENTIUS/chant#4480) at the cut. scripts/chant-release.ts
 writes the files the switch decides (src/chant-release-sync.ts lists them):
 the exact terraform and pulumi lexicon pins of example-terraform-estate,
-example-choudoufu-estate and e2e/fixtures/pulumi-workspace, which name the
-published chant (`PUBLISHED_CHANT`) while unreleased so a plain `npm ci`
-meets them, and `version` after, moving with the floors (behold#1015; a demo
-copy, src/pulumi-member.test.ts and the pulumi e2e scripts re-pin their copy
-at the installed lexicon, so a local build serves them too); the three-cloud
-workspace's pins (by path while unreleased, by package and version after) and
-its package.json; behold's own chant ranges (the published chant while
-unreleased, the release after); and src/chant-drift-record.ts, which
-feature-detects `@intentius/chant/drift-record` at run time while unreleased
-and imports it statically after. src/chant-release.test.ts holds them to the
-switch. To flip it once the release is published: set `released: true` on the
-`CHANT_RELEASE` line (and `version`, if the release has another number), run
-`npx tsx scripts/chant-release.ts`, then `npm install` here and in
-example-three-cloud.
+example-choudoufu-estate and e2e/fixtures/pulumi-workspace (the published
+chant, `PUBLISHED_CHANT`, while unreleased, so a plain `npm ci` meets them,
+and `version` once released, moving with the floors; behold#1015), the
+three-cloud workspace's pins (by path while unreleased, by package and
+version once released) and its package.json, and behold's own chant ranges,
+the pulumi lexicon devDependency among them. src/chant-release.test.ts holds
+them to the switch, and `npx tsx scripts/chant-release.ts --check` lists any
+file out of step.
+
+With the release out, behold imports what it once copied from chant:
+src/drift-line.ts decodes with `@intentius/chant/drift-record` (keeping
+behold#995's unknown-status rule on top), src/graph-db/types.ts, listing.ts
+and mask.ts re-export chant's engine-facts, index-document, cloud-lister and
+mask modules, the investigation templates come from
+`@intentius/chant/capabilities/templates` with no stub, the index diff is
+`@intentius/chant/lifecycle/index-diff`, and `behold index` calls chant's
+`runCloudIndex` statically. src/value-match.ts stays until the pulumi
+lexicon has a `referenceCatalog` (chant#4535's note on behold#1005).
 
 ## A pipeline's numbers, from Prometheus (behold#571)
 
@@ -831,9 +836,8 @@ NDJSON (chant#4451): one `drift-start` with the addresses it expects, one
 `drift-record` per instance as its read finishes, one `drift-settle`. Each
 line is decoded in `streamDrift` (src/workspace-reader.ts) by
 src/drift-line.ts, which uses chant's own `decodeDriftLine` from
-`@intentius/chant/drift-record` when the chant beside behold ships it
-(src/chant-drift-record.ts, behold#1005) and its copy of chant's checks at
-fdce0d963 otherwise, and each record frame repaints only its own card. The
+`@intentius/chant/drift-record` (behold#1005) and narrows its line to what a
+card reads, and each record frame repaints only its own card. The
 start is refused below `DRIFT_STREAM_CHANT_FLOOR` (409, the floor's refusal,
 nothing spawned), unless `BEHOLD_DRIFT_CHANT` names the chant to run.
 
@@ -1912,13 +1916,11 @@ reads azure's `azureEndpoint` and aws's `awsEndpoint` through chant
 `memberOutputsComponent("aws")` and a records step whose cfn-deploy inputs
 are `stackOutput("azure", "azureEndpoint")` and `stackOutput("aws",
 "awsEndpoint")`, and dns lists `terraform` (with `terraform.roots.azure` at
-`../azure`, which is the change signal) and `pulumi`. No chant release has
-`member-outputs` or the pulumi lexicon yet (0.124.52 lacks both), so the
-demo needs a local build of chant's core and lexicons, stamped at
-`CHANT_RELEASE.version` (src/chant-release.ts), and while that release is not
-cut the workspace pins both lexicons by path so a pin never asks for a
-version the local build lacks; behold's own code does not import them, so
-there is no floor. scripts/front-door.ts loads the pulumi lexicon only for
+`../azure`, which is the change signal) and `pulumi`. `member-outputs` and
+the pulumi lexicon are in chant 0.124.54, which the example depends on, and
+the workspace pins both lexicons by package at that version
+(`CHANT_RELEASE`, src/chant-release.ts); behold's own code does not import
+them, so there is no floor. scripts/front-door.ts loads the pulumi lexicon only for
 the aws plan, so `npm ci` in the example runs every other subcommand. The e2e's second half runs
 `chant components pr-plan --member dns` over a change to azure/ and asserts
 dns's records step names azure under its unresolved inputs. `behold demo three-cloud` runs `scripts/emulators-up.sh` (the

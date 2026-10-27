@@ -70,22 +70,13 @@ scratch under the default TMPDIR and does not change it. To keep a run's
 files somewhere else, use the scripts' own knobs (`BEHOLD_E2E_WORK`,
 `BEHOLD_E2E_TARGET`, `BEHOLD_SAFE_ENV_DIR`) rather than TMPDIR.
 
-## BEHOLD_E2E_CHANT_LINK
+## Which chant the three-cloud scripts use
 
-multi-engine-demo-e2e.sh and three-cloud-change-set-e2e.sh need a chant that
-no release has yet (member-outputs, chant#4455, and the pulumi lexicon,
-chant#4453). `BEHOLD_E2E_CHANT_LINK` is a whitespace-separated list of built
-chant package directories; each one is symlinked into the example copy's
-node_modules under its package.json name, replacing what npm installed:
-
-```sh
-BEHOLD_E2E_CHANT_LINK="/path/to/chant/packages/core /path/to/chant/lexicons/terraform /path/to/chant/lexicons/pulumi" \
-  bash e2e/lib/safe-env.sh bash e2e/multi-engine-demo-e2e.sh
-```
-
-The list is split on whitespace, so a directory path can't contain a space.
-Build each lexicon (`npm run build`) first. Without the link the scripts skip
-and say why.
+multi-engine-demo-e2e.sh and three-cloud-change-set-e2e.sh install the
+example copy's own dependencies, which name chant 0.124.54 from npm, the
+first release with member-outputs (chant#4455) and the pulumi lexicon
+(chant#4453). A copy whose install lacks either fails; nothing is linked in
+(behold#1005 dropped `BEHOLD_E2E_CHANT_LINK`).
 
 ## three-cloud-change-set needs floci 48c6e47
 

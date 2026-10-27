@@ -1,7 +1,7 @@
 // behold#1026 / chant#4532: `behold index` is chant's `runCloudIndex` with behold's
 // command name, per-user store and token variables. The cases that need chant's
-// command run against the chant installed beside behold and skip when it has none
-// (published chant 0.124.52 has none); the rest use a fake `runCloudIndex`.
+// command run against the chant installed beside behold (0.124.54, behold#1005);
+// the rest use a fake `runCloudIndex`.
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
@@ -179,11 +179,14 @@ function listing(scope: CloudScope, startedAt: string): ListingResult {
   };
 }
 
-// Against chant's real command and local store: skipped unless the chant beside
-// behold has it (a local build of chant's integration/consolidation-graph).
+// Against chant's real command and local store (chant#4532, in chant 0.124.54, behold#1005).
 const real = await chantCloudIndex();
 
-describe.skipIf(!real)("behold index with chant's runCloudIndex and local store", () => {
+describe("behold index with chant's runCloudIndex and local store", () => {
+  it("the default lookup finds chant's command", () => {
+    expect(real).toBeTypeOf("function");
+  });
+
   it("writes only under behold's per-user store, two runs give two versions, and the graph pane's loader reads them", async () => {
     const t = tempTree();
     let clock = Date.parse("2026-10-26T12:00:00.000Z");

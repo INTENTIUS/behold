@@ -22,13 +22,11 @@
 # is logged in to. Nothing is written under the fixture: it is served from a
 # copy under the OS temp directory, and chant writes its reader project there
 # too.
-# Needs a local build of chant (the pulumi lexicon is on no release yet):
-# @intentius/chant-lexicon-pulumi beside behold, or BEHOLD_E2E_PULUMI_LEXICON.
-# chant#4453 moved the kind there, and chant reads a pinned package's kinds
-# only at the pinned version. The fixture pins the published chant while
-# behold's CHANT_RELEASE is unreleased (behold#1015), so the copy is linked to
-# the installed lexicon and re-pinned at its version, the way `behold demo`
-# treats a demo copy (src/demo-pins.ts).
+# Needs @intentius/chant-lexicon-pulumi beside behold (a devDependency, chant
+# 0.124.54), or BEHOLD_E2E_PULUMI_LEXICON. chant#4453 moved the kind there, and
+# chant reads a pinned package's kinds only at the pinned version, so the copy
+# is linked to the installed lexicon and re-pinned at its version, the way
+# `behold demo` treats a demo copy (src/demo-pins.ts).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 PORT="${BEHOLD_E2E_PORT:-4697}"
@@ -42,7 +40,7 @@ mkdir -p "$PULUMI_BACKEND_DIR"
 export PULUMI_BACKEND_URL="file://$PULUMI_BACKEND_DIR" PULUMI_SKIP_UPDATE_CHECK=true
 trap 'rm -rf "$WORK"' EXIT
 
-[ -f "$LEX_PKG/package.json" ] || { echo "x no pulumi lexicon at $LEX_PKG: install a local build of chant beside behold or set BEHOLD_E2E_PULUMI_LEXICON"; exit 1; }
+[ -f "$LEX_PKG/package.json" ] || { echo "x no pulumi lexicon at $LEX_PKG: run npm ci (behold's devDependencies include it) or set BEHOLD_E2E_PULUMI_LEXICON"; exit 1; }
 
 echo "-> copy $FIXTURE to $WS, pinned at the installed pulumi lexicon"
 cp -R "$FIXTURE" "$WS"

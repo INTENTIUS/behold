@@ -38,11 +38,9 @@
 #   6. the azure#outputs part has a hole naming azure.azureEndpoint.
 #
 # The example needs a chant with member-outputs (chant#4455) and the pulumi
-# lexicon (chant#4453), which no release has yet: link chant main's, built,
-# e.g. BEHOLD_E2E_CHANT_LINK="/path/to/chant/packages/core
-# /path/to/chant/lexicons/terraform /path/to/chant/lexicons/pulumi". dns's
-# components import them, so without them the whole script skips, with the
-# reason. e2e/multi-engine-demo-e2e.sh asserts the rest of behold#1000: the
+# lexicon (chant#4453), which dns's components import: chant 0.124.54, which
+# the copy's `npm install` brings from npm (behold#1005). A copy without them
+# fails. e2e/multi-engine-demo-e2e.sh asserts the rest of behold#1000: the
 # composed graph, the drift colours and a moved part refusing the set.
 #
 # Nothing is applied. Scratch discipline (src/scratch.ts): the containers
@@ -97,17 +95,9 @@ mkdir -p "$TARGET"
 tar -C example-three-cloud --exclude node_modules --exclude .front-door --exclude export --exclude .terraform --exclude .tofu-records \
   --exclude .plunge --exclude stack-export.json --exclude Pulumi.local.yaml -cf - . | tar -C "$TARGET" -xf -
 npm --prefix "$TARGET" install --no-audit --no-fund --silent
-# dns's components import member-outputs, so a chant that has it is linked
-# before anything loads them.
-for dir in ${BEHOLD_E2E_CHANT_LINK:-}; do
-  name=$(node -p "require('$dir/package.json').name")
-  rm -rf "$TARGET/node_modules/$name"
-  mkdir -p "$(dirname "$TARGET/node_modules/$name")"
-  ln -s "$dir" "$TARGET/node_modules/$name"
-done
 if [ ! -f "$TARGET/node_modules/@intentius/chant/src/components/verbs/member-outputs.ts" ] || [ ! -f "$TARGET/node_modules/@intentius/chant-lexicon-pulumi/workspace-kinds.json" ]; then
-  echo "skip: the copy has no chant with member-outputs (chant#4455) or no @intentius/chant-lexicon-pulumi, which dns's components import; set BEHOLD_E2E_CHANT_LINK to chant main's packages/core, lexicons/terraform and lexicons/pulumi"
-  exit 0
+  echo "FAIL: the copy's npm install has no chant with member-outputs (chant#4455) or no @intentius/chant-lexicon-pulumi, which dns's components import; example-three-cloud depends on chant 0.124.54, which has both" >&2
+  exit 1
 fi
 # The aws member's engine: the fake plunge, for front-door's calls and chant's.
 # The export stands where a live apply-aws writes it.

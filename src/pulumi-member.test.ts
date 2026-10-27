@@ -31,13 +31,12 @@ const REQUIRE_PEERS = process.env.BEHOLD_REQUIRE_PEERS === "1";
 // graph has no node for the stack root since chant#4456 (C6). Provenance:
 //  - e2e/fixtures/pulumi-workspace: one member, `app`, whose Pulumi.yaml and
 //    stack-export.json are chant's own testdata/pulumi-member at chant
-//    8cd73461a. The declaration pins the pulumi lexicon at the published chant
-//    while CHANT_RELEASE is unreleased (src/chant-release.ts, behold#1015);
-//    it was 0.124.34 when the graph below was recorded.
+//    8cd73461a. The declaration pins the pulumi lexicon at CHANT_RELEASE
+//    (src/chant-release.ts, 0.124.54, behold#1005).
 //  - __fixtures__/pulumi-workspace-graph-app.json: `chant workspace graph .
-//    --member app --json` in that fixture, unedited, by chant from
-//    integration/pulumi-engine at a20de35a1 (it reports 0.124.34), with that
-//    branch's lexicons/pulumi installed beside behold (behold#999).
+//    --member app --json` run in that fixture, unedited, by the published
+//    chant 0.124.54 with @intentius/chant-lexicon-pulumi 0.124.54 installed
+//    beside behold (re-recorded for behold#1005).
 const FIXTURE = join(import.meta.dirname, "..", "e2e", "fixtures", "pulumi-workspace");
 const GRAPH = (): Record<string, unknown> =>
   JSON.parse(readFileSync(join(import.meta.dirname, "__fixtures__", "pulumi-workspace-graph-app.json"), "utf8")) as Record<string, unknown>;
@@ -89,17 +88,16 @@ describe("the pulumi member kind (behold#994)", () => {
 
 // The e2e: the fixture served the way `behold serve <workspace>` serves it,
 // through the real chant installed beside behold. chant reads the kinds of a
-// pinned package only at the version the pin names, and the fixture pins the
-// published chant (behold#1015), which has no pulumi lexicon; the one beside
-// behold is a local build of chant stamped at CHANT_RELEASE. So the test
-// serves a copy of the fixture under the OS temp directory, re-pinned at the
-// installed lexicon and linked to it the way a demo copy is (src/demo-pins.ts),
-// and the gate is that a pulumi lexicon is installed at all. Nothing is
-// written under the fixture.
+// pinned package only at the version the pin names. behold depends on the
+// pulumi lexicon at the release the fixture pins (a devDependency, behold#1005),
+// and the test still serves a copy of the fixture under the OS temp directory,
+// re-pinned at the installed lexicon and linked to it the way a demo copy is
+// (src/demo-pins.ts), so an install that omitted dev dependencies skips with
+// the reason. Nothing is written under the fixture.
 const PULUMI_LEXICON_PKG = "@intentius/chant-lexicon-pulumi";
 const INSTALLED = resolvedVersion(PULUMI_LEXICON_PKG);
 const gate = !INSTALLED && !REQUIRE_PEERS;
-const why = `needs ${PULUMI_LEXICON_PKG} (INTENTIUS/chant#4453) installed beside behold, a local build of chant until CHANT_RELEASE is released`;
+const why = `needs ${PULUMI_LEXICON_PKG} (INTENTIUS/chant#4453) installed beside behold (a devDependency of behold, so \`npm ci\` installs it)`;
 const COPY = gate ? "" : mkdtempSync(join(tmpdir(), "behold-pulumi-workspace-"));
 afterAll(() => {
   if (COPY) rmSync(COPY, { recursive: true, force: true });

@@ -95,73 +95,18 @@ const EDITS: { file: string; edit: Edit }[] = [
     edit: (d, r) => ({
       ...d,
       dependencies: setDeps(d.dependencies as Json, ["@intentius/chant", "@intentius/chant-k8s-client", TERRAFORM], chantRange(r)),
-      devDependencies: setDeps(d.devDependencies as Json, ["@intentius/chant-lexicon-sql"], chantRange(r)),
+      devDependencies: setDeps(d.devDependencies as Json, ["@intentius/chant-lexicon-sql", PULUMI], chantRange(r)),
     }),
   },
 ];
 
-const DRIFT_MODULE_HEAD = `/**
- * Written by scripts/chant-release.ts from CHANT_RELEASE (src/chant-release.ts,
- * behold#1005). Edit the switch and run the script, not this file.
- *
- * chant's drift record module, \`@intentius/chant/drift-record\`
- * (INTENTIUS/chant#4451), or undefined when the chant beside behold has none.
- * src/drift-line.ts decodes with it when it is here.
- */
-
-/** What src/drift-line.ts uses of chant's module. */
-export interface ChantDriftModule {
-  decodeDriftLine(text: string): unknown;
-  DRIFT_STATUSES: readonly string[];
-}
-`;
-
-/** src/chant-drift-record.ts for a value of the switch. */
-export function driftModuleSource(r: ChantRelease): string {
-  if (r.released) {
-    return `${DRIFT_MODULE_HEAD}
-// chant ${r.version} is released and behold depends on it, so the module is a
-// static import and the bundle carries it.
-import * as chant from "@intentius/chant/drift-record";
-
-export const chantDriftModule: ChantDriftModule | undefined = chant;
-`;
-  }
-  return `${DRIFT_MODULE_HEAD}
-// chant ${r.version} is not released: the published chant behold depends on has
-// no drift-record module, and a static import would fail to resolve. So it is
-// looked for at run time, under a specifier the type checker and the bundler
-// leave alone. A local build of chant's integration branch installed beside
-// behold has it, under tsx and vitest. The bundled dist/cli.js under plain node
-// does not load chant's TypeScript source from node_modules and gets
-// undefined, as does a chant without the module: src/drift-line.ts then
-// decodes with its own copy.
-const SPECIFIER: string = "@intentius/chant/drift-record";
-
-export const chantDriftModule: ChantDriftModule | undefined = await import(/* @vite-ignore */ SPECIFIER).then(
-  (m: Partial<ChantDriftModule>) => (typeof m.decodeDriftLine === "function" && Array.isArray(m.DRIFT_STATUSES) ? (m as ChantDriftModule) : undefined),
-  () => undefined,
-);
-`;
-}
-
 /** Every file the switch decides, read from `repo`, with what it should hold. */
 export function chantReleaseFiles(repo: string, r: ChantRelease = CHANT_RELEASE): ReleaseFile[] {
-  const out: ReleaseFile[] = EDITS.map(({ file, edit }) => {
+  return EDITS.map(({ file, edit }) => {
     const have = json(readFileSync(join(repo, file), "utf8"));
     const want = edit(have, r);
     return { file, want: stringify(want), differs: JSON.stringify(want) !== JSON.stringify(have) };
   });
-  const drift = "src/chant-drift-record.ts";
-  const want = driftModuleSource(r);
-  let have = "";
-  try {
-    have = readFileSync(join(repo, drift), "utf8");
-  } catch {
-    /* not written yet */
-  }
-  out.push({ file: drift, want, differs: have !== want });
-  return out;
 }
 
 /** Write every file that disagrees with the switch. Returns the files written. */
