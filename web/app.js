@@ -8262,7 +8262,7 @@ initTerragucciEstate({ fetchUrl: apiFetch, copy: copyToClipboard });
 function renderPanelCarve() {
   if (!carveMode()) return;
   if (!carveHost) {
-    carveHost = addPanelTab("carve", "Carve", "The peel walkthrough: advise → pick → emit → bridge → handoff → done.");
+    carveHost = addPanelTab("carve", "Carve", "The carve walkthrough: advise → pick → emit → bridge → handoff → done.");
     if (!carveHost) return;
     carveHost.id = "tab-carve";
   }

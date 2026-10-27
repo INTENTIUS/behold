@@ -157,7 +157,7 @@ function servedWithManifests(): ReturnType<typeof carveApp> {
     JSON.stringify({
       version: 2,
       target: "aws_lambda_function.api",
-      from: "/tmp/carve-fixture/legacy-tf",
+      from: "/tmp/carve-fixture/tf-root",
       boundary: {},
       emit: { source: "tfstate", files: ["src/api.ts"], at: "2026-08-30T04:12:44.246Z" },
     }),

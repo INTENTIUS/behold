@@ -31,7 +31,7 @@ import {
 import type { CarveReport } from "./carve-lens.ts";
 
 const REPORT: CarveReport = {
-  from: "legacy-tf",
+  from: "tf-root",
   count: 2,
   bands: { "clean leaf": 1, "leave in Terraform": 1 },
   resources: [
@@ -49,9 +49,9 @@ const REPORT: CarveReport = {
  */
 function fakeDemo(): { demo: CarveDemo; argv: () => string[][]; root: string } {
   const root = mkdtempSync(join(tmpdir(), "behold-carve-demo-"));
-  mkdirSync(join(root, "legacy-tf"), { recursive: true });
-  writeFileSync(join(root, "legacy-tf", "storage.tf"), 'resource "aws_s3_bucket" "assets" {}\n');
-  writeFileSync(join(root, "legacy-tf", "terraform.tfstate"), "{}\n");
+  mkdirSync(join(root, "tf-root"), { recursive: true });
+  writeFileSync(join(root, "tf-root", "storage.tf"), 'resource "aws_s3_bucket" "assets" {}\n');
+  writeFileSync(join(root, "tf-root", "terraform.tfstate"), "{}\n");
   writeFileSync(join(root, "carve-report.json"), JSON.stringify(REPORT));
 
   const chantRoot = join(root, "app", "node_modules", "@intentius", "chant");
@@ -117,8 +117,8 @@ process.exit(2);
     root,
     demo: {
       root,
-      from: join(root, "legacy-tf"),
-      state: join(root, "legacy-tf", "terraform.tfstate"),
+      from: join(root, "tf-root"),
+      state: join(root, "tf-root", "terraform.tfstate"),
       project: join(root, "app"),
       out: join(root, "app", "carveout"),
     },
@@ -174,7 +174,7 @@ describe("carveSlug / shortenIn", () => {
     expect(carveSlug("module.cdn")).toBe("module-cdn");
   });
   it("takes the copy's prefix off an echoed path, and leaves plain flags alone", () => {
-    expect(shortenIn("/demo/legacy-tf", "/demo")).toBe("legacy-tf");
+    expect(shortenIn("/demo/tf-root", "/demo")).toBe("tf-root");
     expect(shortenIn("/demo", "/demo")).toBe(".");
     expect(shortenIn("--select", "/demo")).toBe("--select");
     expect(shortenIn("/elsewhere/tf", "/demo")).toBe("/elsewhere/tf");
@@ -424,7 +424,7 @@ describe("GET /api/project — the demo block the stepper gates its buttons on",
     };
     expect(body.carve.demo.runnable).toBe(true);
     expect(body.carve.demo.outLabel).toBe("app/carveout");
-    expect(body.carve.demo.fromLabel).toBe("legacy-tf");
+    expect(body.carve.demo.fromLabel).toBe("tf-root");
     expect(body.carve.demo.buildCaveat).toContain("chant#1637");
     rmSync(d.root, { recursive: true, force: true });
   });

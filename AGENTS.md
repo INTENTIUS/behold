@@ -1152,7 +1152,7 @@ would go.
 
 ### The walkthrough (`behold demo carve`, #254)
 
-`behold demo carve` copies a bundled half-migrated estate (a chant project
+`behold demo carve` copies a bundled mixed estate (a chant project
 beside a Terraform one), runs the advisor over the copy, and serves the same
 carve view plus a six-step stepper on the panel's Carve tab: advise → pick →
 emit → bridge → handoff → done.

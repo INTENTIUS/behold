@@ -91,7 +91,7 @@ Usage:
           S3 bucket + policy on a local emulator: blue = declared, click
           Deploy, watch it turn green. \`behold demo k8s\` stands a workload
           up on a throwaway k3d cluster instead. \`behold demo carve\` is the
-          odd one out: no cluster, no Docker, no cloud — a half-migrated
+          odd one out: no cluster, no Docker, no cloud — a mixed
           Terraform/chant estate plus the six-step carve walkthrough on the
           panel's Carve tab. Its \`--live\` tier flips that: docker + terraform
           on PATH, a scratch Floci booted and deleted on exit, the starred

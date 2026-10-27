@@ -1037,7 +1037,7 @@ try {
     // #230 M3: `carve apply` is echoed on the same terms — a command with a
     // copy button, and no control that runs it. The stage comes off the carve
     // manifest the two steps wrote, not off this session's memory of them.
-    check("Handoff echoes the graduation command off the manifest", handoff.includes("chant carve apply --from legacy-tf --output app/carveout"));
+    check("Handoff echoes the graduation command off the manifest", handoff.includes("chant carve apply --from tf-root --output app/carveout"));
     check("…composed from the manifest, so no --select", !/carve apply[^\n]*--select/.test(handoff));
     check("…and it says the trigger is a person, not an endpoint", handoff.includes("no apply endpoint and no apply button"));
     check("the manifest says bridged, and does not call that carved", handoff.includes("bridged") && !handoff.includes("chant owns it"));

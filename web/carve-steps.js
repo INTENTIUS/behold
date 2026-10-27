@@ -21,7 +21,7 @@ export const CARVE_STEPS = [
   {
     id: "advise",
     label: "Advise",
-    blurb: "chant scored every resource in the Terraform half. Green carves cheaply; grey stays where it is.",
+    blurb: "chant scored every resource in the Terraform root. Green hands over cheaply; grey stays in Terraform.",
   },
   {
     id: "pick",

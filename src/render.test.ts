@@ -479,11 +479,11 @@ describe("renderCarveEstate — the carve estate frame (#254)", () => {
     edges: [],
     groups: { byStack: { aws: ["apiLogs", "assetsCdnDomain"] } },
   };
-  const estate = () => renderCarveEstate(bandedIr, appIr, { tfTitle: "legacy-tf — terraform", appTitle: "app — chant" });
+  const estate = () => renderCarveEstate(bandedIr, appIr, { tfTitle: "tf-root — terraform", appTitle: "app — chant" });
 
   it("boxes both members and keeps the band panels inside the TF side", () => {
     const svg = estate().svg;
-    expect(svg).toContain("legacy-tf — terraform");
+    expect(svg).toContain("tf-root — terraform");
     expect(svg).toContain("app — chant");
     expect(svg).toContain("carve now");
     expect(svg).toContain("leave in Terraform");
@@ -522,7 +522,7 @@ describe("renderCarveEstate — the carve estate frame (#254)", () => {
         "/out/x.carve.json",
       );
     const carvedEstate = (states: Map<string, ReturnType<typeof state>>) =>
-      renderCarveEstate(bandedIr, appIr, { tfTitle: "legacy-tf — terraform", appTitle: "app — chant", carved: states });
+      renderCarveEstate(bandedIr, appIr, { tfTitle: "tf-root — terraform", appTitle: "app — chant", carved: states });
 
     it("draws a graduated resource inside the chant box, keeping its Terraform address", () => {
       const target = bandedIr.nodes[0].id;
@@ -564,7 +564,7 @@ describe("renderCarveEstate — the carve estate frame (#254)", () => {
       const already = bandedIr.nodes[1].id;
       const VIEWS = parseViews(
         renderCarveMorph(bandedIr, appIr, ["aws_s3_bucket.b0"], {
-          tfTitle: "legacy-tf — terraform",
+          tfTitle: "tf-root — terraform",
           appTitle: "app — chant",
           carved: new Map([[already, state(already, "applied")]]),
         }),
@@ -583,7 +583,7 @@ describe("renderCarveEstate — the carve estate frame (#254)", () => {
   describe("renderCarveMorph", () => {
     const parseViews = (html: string) => JSON.parse(html.match(/const VIEWS = (\[[\s\S]*?\]);\n/)![1].replace(/\\u003c/g, "<"));
     const morph = () =>
-      renderCarveMorph(bandedIr, appIr, ["aws_s3_bucket.b0"], { tfTitle: "legacy-tf — terraform", appTitle: "app — chant" });
+      renderCarveMorph(bandedIr, appIr, ["aws_s3_bucket.b0"], { tfTitle: "tf-root — terraform", appTitle: "app — chant" });
 
     it("keeps the carved card's id in both views — one badge, two positions", () => {
       const html = morph();
@@ -608,7 +608,7 @@ describe("renderCarveEstate — the carve estate frame (#254)", () => {
       const VIEWS = parseViews(morph());
       for (const view of VIEWS) {
         const keys = view.boxes.map((b: { key: string }) => b.key);
-        expect(keys).toContain("legacy-tf — terraform");
+        expect(keys).toContain("tf-root — terraform");
         expect(keys).toContain("app — chant");
         expect(keys).toContain("carve now");
       }

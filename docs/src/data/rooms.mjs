@@ -30,7 +30,7 @@ export const TILES = [
 	{ id: 'terragucci', label: 'terragucci', blurb: 'The pipeline\'s reports, per root', room: 'terragucci' },
 	{ id: 'sql-yodeler', label: 'SQL Yodeler', blurb: 'Schema, gates and releases', room: 'sql-yodeler' },
 	{ id: 'choudoufu', label: 'choudoufu', blurb: 'Tag ownership on AWS, GCP, Azure and Kubernetes', room: 'choudoufu' },
-	{ id: 'carve', label: 'A carve-out', blurb: 'What moves off Terraform first', room: 'carve' },
+	{ id: 'carve', label: 'A carve-out', blurb: 'chant and Terraform side by side, resource by resource', room: 'carve' },
 	{ id: 'demo', label: 'No project yet', blurb: 'The demo on a local emulator', room: 'demo' },
 ];
 
@@ -99,6 +99,7 @@ export const ROOMS = [
 			"Module calls open into their contents, joined by the references chant's Terraform lexicon resolves",
 			'Outputs and variables join the cards at the attributes zoom',
 			'A read across two roots stays on its card as text',
+			'The same roots run on choudoufu or in terragucci, and behold draws either one',
 		],
 		needs: [
 			'Only the checkout: behold reads the `.tf` files without a cloud account or a `terraform` binary',
@@ -114,7 +115,7 @@ export const ROOMS = [
 		proof: ['example-terraform-estate'],
 		tasks: [
 			{ label: 'Look at a Terraform estate', href: 'using/terraform' },
-			{ label: 'Look at a Terraform carve-out', href: 'using/carve' },
+			{ label: 'Hand resources between Terraform and chant', href: 'using/carve' },
 		],
 		background: [
 			{ label: 'Roots and skips', href: 'using/terraform#roots-are-discovered-and-the-skips-are-reported' },
@@ -247,12 +248,12 @@ export const ROOMS = [
 	},
 	{
 		id: 'carve',
-		title: 'behold on a Terraform carve-out',
-		lede: "Move resources from Terraform to chant one at a time. behold draws chant's peelability report and ranks each resource by what carving it costs.",
+		title: 'behold on Terraform and chant together',
+		lede: "Hand resources between Terraform and chant one at a time. behold draws chant's carve report and the edges each handoff touches.",
 		works: [
 			'Cards banded by verdict, with carve now at the top',
 			'The score arithmetic behind each rank in the inspect pane',
-			'`behold demo carve` walks a half-migrated estate step by step',
+			'`behold demo carve` walks a chant project and a Terraform root on one account, step by step',
 			"Each carved resource's stage, read from chant's carve manifests",
 		],
 		needs: [
@@ -261,7 +262,7 @@ export const ROOMS = [
 		],
 		first: {
 			command: 'chant carve advise --from ./terraform --report carve.json\nnpx behold carve carve.json',
-			link: { label: 'Look at a Terraform carve-out', href: 'using/carve' },
+			link: { label: 'Hand resources between Terraform and chant', href: 'using/carve' },
 		},
 		task: [
 			'Run `chant carve advise --from <terraform dir> --report carve.json`.',
@@ -270,12 +271,12 @@ export const ROOMS = [
 		],
 		proof: ['example-carve'],
 		tasks: [
-			{ label: 'Look at a Terraform carve-out', href: 'using/carve' },
+			{ label: 'Hand resources between Terraform and chant', href: 'using/carve' },
 			{ label: 'The walkthrough', href: 'using/carve#the-walkthrough-behold-demo-carve' },
 		],
 		background: [
 			{ label: 'The arithmetic behind a rank', href: 'using/carve#the-arithmetic-behind-a-rank' },
-			{ label: 'What has graduated', href: 'using/carve#the-strangler-fig-what-has-actually-graduated' },
+			{ label: 'Who owns what now', href: 'using/carve#who-owns-each-resource-now' },
 		],
 		reference: [
 			{ label: 'Look at a Terraform estate', href: 'using/terraform' },

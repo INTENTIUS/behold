@@ -395,12 +395,12 @@ const carveSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 ${80 
 
 const CARVE_DEMO = {
   root: "/demos/carve",
-  from: "/demos/carve/legacy-tf",
-  state: "/demos/carve/legacy-tf/terraform.tfstate",
+  from: "/demos/carve/tf-root",
+  state: "/demos/carve/tf-root/terraform.tfstate",
   project: "/demos/carve/app",
   out: "/demos/carve/app/carveout",
   outLabel: "app/carveout",
-  fromLabel: "legacy-tf",
+  fromLabel: "tf-root",
   runnable: true,
   buildCaveat: "The gate shown is `chant lint`, not `chant build` — `build` fails only WAW042 now, real drift the Terraform never declared (chant#1637).",
 };
@@ -410,7 +410,7 @@ export const CARVE_EMIT = {
   ok: true,
   select: "aws_s3_bucket.assets",
   command:
-    "chant carve emit --from legacy-tf --state legacy-tf/terraform.tfstate --select aws_s3_bucket.assets --output app/carveout",
+    "chant carve emit --from tf-root --state tf-root/terraform.tfstate --select aws_s3_bucket.assets --output app/carveout",
   output: "Carved aws_s3_bucket.assets (peelability 84) — observe position, reversible.\n  Emitted: app/carveout/src/assets.ts",
   artifacts: [
     {
@@ -436,7 +436,7 @@ export const CARVE_EMIT = {
 export const CARVE_BRIDGE = {
   ok: true,
   select: "aws_s3_bucket.assets",
-  command: "chant carve bridge --from legacy-tf --select aws_s3_bucket.assets --output app/carveout",
+  command: "chant carve bridge --from tf-root --select aws_s3_bucket.assets --output app/carveout",
   output: "Wrote proposals to app/carveout/ — review, then apply. Nothing in your Terraform changed.",
   runbook: {
     path: "app/carveout/aws_s3_bucket-assets-runbook.md",
@@ -905,7 +905,7 @@ export function startStub(port, { carve = false, nonChant = false, choudoufu = f
         return json({
           ir: carveIr,
           svg: carveSvg,
-          meta: { projectDir: "/demos/carve/carve-report.json", env: null, tier: null, target: null, carve: true, note: "chant carve advisory for legacy-tf" },
+          meta: { projectDir: "/demos/carve/carve-report.json", env: null, tier: null, target: null, carve: true, note: "chant carve advisory for tf-root" },
         });
       }
       if (path === "/api/substrates") return json({ substrates: [] });
