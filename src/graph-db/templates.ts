@@ -14,15 +14,20 @@
  * otherwise. Cypher templates take the node and their inputs as query
  * parameters, never spliced into the text.
  *
- * TODO(behold#1027, #1022 ruling Q5, https://github.com/INTENTIUS/behold/issues/1022#issuecomment-6432728696):
- * the catalog lives in chant, beside the capability catalog and its contract
- * document, as a second kind of entry, and behold reads it as data. chant has
- * no such entry kind yet (its side is filed with this issue), so this list is
- * behold's stub of it. When chant ships the entry kind, read the catalog from
- * `chant search --capabilities --json` (or wherever chant puts it) and keep
- * this list only as the fallback for an older chant.
+ * The catalog lives in chant (#1022 ruling Q5,
+ * https://github.com/INTENTIUS/behold/issues/1022#issuecomment-6432728696),
+ * as the capability catalog's second kind of entry (INTENTIUS/chant#4531),
+ * and behold reads it as data through src/graph-db/chant-templates.ts. While
+ * `CHANT_RELEASE.released` is false (src/chant-release.ts) a published chant
+ * has no catalog, so {@link STUB_TEMPLATES} is the fallback: the same ids,
+ * the same queries, Cypher binding `$key`.
+ *
+ * TODO(behold#1027, chant#4531): when the switch flips, delete
+ * STUB_TEMPLATES and the fallback in {@link selectTemplates}.
  */
 import type { ResourceRow, LoadedRows, SourceKind } from "./rows.ts";
+import { CHANT_RELEASE } from "../chant-release.ts";
+import { loadChantTemplates } from "./chant-templates.ts";
 
 export type TemplateLanguage = "search" | "cypher";
 
@@ -48,7 +53,8 @@ export interface Template {
   note?: string;
 }
 
-export const TEMPLATES: readonly Template[] = [
+/** behold's copy of chant#4531's initial set, for a chant without the catalog. */
+export const STUB_TEMPLATES: readonly Template[] = [
   {
     name: "dependents",
     title: "What depends on it",
@@ -151,6 +157,32 @@ export const TEMPLATES: readonly Template[] = [
     note: "The record's versions come from facts.recordVersions, when the engine ran with -history or --versions. Snapshot history (chant#4519's store) is not loaded into the session yet.",
   },
 ];
+
+export type TemplateCatalogSource = "chant" | "behold-stub" | "missing";
+
+export interface TemplateCatalog {
+  source: TemplateCatalogSource;
+  templates: readonly Template[];
+  /** Said where the catalog is listed. */
+  note: string;
+}
+
+/**
+ * chant's templates when the installed chant has them. Otherwise, while the
+ * chant release is not out, behold's stub; once it is out, nothing, because
+ * every chant behold accepts then carries the catalog.
+ */
+export function selectTemplates(fromChant: readonly Template[] | undefined, released: boolean = CHANT_RELEASE.released): TemplateCatalog {
+  if (fromChant) return { source: "chant", templates: fromChant, note: "chant's investigation templates (@intentius/chant/capabilities/templates.json, chant#4531)" };
+  if (released)
+    return { source: "missing", templates: [], note: `the installed chant has no investigation templates; chant ${CHANT_RELEASE.version} or later carries them` };
+  return { source: "behold-stub", templates: STUB_TEMPLATES, note: `behold's stub of chant's templates: the installed chant predates ${CHANT_RELEASE.version} (chant#4531)` };
+}
+
+export const TEMPLATE_CATALOG: TemplateCatalog = selectTemplates(await loadChantTemplates());
+
+/** The templates behold offers: {@link TEMPLATE_CATALOG}'s. */
+export const TEMPLATES: readonly Template[] = TEMPLATE_CATALOG.templates;
 
 /** A search input is a term, never a second clause: letters, digits and `_ : . - / * ( ) ,` only. */
 const SEARCH_INPUT = /^[A-Za-z0-9_:.\-/*(),]+$/;

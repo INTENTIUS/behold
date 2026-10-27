@@ -14,7 +14,7 @@
  *   GET /api/graphdb              what is loaded, from where, read when; the peer's state
  *   GET /api/graphdb/query        ?cypher=&params=<JSON object>: one read-only Cypher query
  *   GET /api/graphdb/resolve      ?ref=: a name, id, address or cloud id to candidates and templates
- *   GET /api/graphdb/templates    the template catalog (behold's stub of chant's, see templates.ts)
+ *   GET /api/graphdb/templates    the template catalog (chant's, or behold's stub of it on an older chant)
  *   GET /api/graphdb/template     ?name=&node=&in.<input>=: one template filled for one node, run when it is Cypher
  *   GET /graph                    the pane's page (web/graph.html)
  *
@@ -35,7 +35,7 @@ import { CypherRefused, GraphDb, graphDbDir, type CypherAnswer } from "./db.ts";
 import { loadLadybug, type PeerImport, type PeerRefusal } from "./peer.ts";
 import { emptyRows, finishRows, rowsFromChantIr, rowsFromEngineGraph, rowsFromIndex, rowsFromListing, type LoadedRows, type SourceStamp } from "./rows.ts";
 import { findDocuments, type EngineRunner, type Git, type MemberRef } from "./sources.ts";
-import { TEMPLATES, TemplateError, applies, expandTemplate, resolveResource, type Expanded } from "./templates.ts";
+import { TEMPLATES, TEMPLATE_CATALOG, TemplateError, applies, expandTemplate, resolveResource, type Expanded } from "./templates.ts";
 
 /** The chant read the session starts from: one project's IR, or a composed estate with its member names. */
 export interface ChantRead {
@@ -270,7 +270,7 @@ export function mountGraphPane(app: Hono, deps: GraphPaneDeps): GraphSession {
     return runCypher(c, cypher, params, { cypher });
   });
 
-  app.get("/api/graphdb/templates", (c) => c.json({ templates: TEMPLATES, catalog: "behold stub; chant's template entry kind is pending (behold#1022 ruling Q5)" }));
+  app.get("/api/graphdb/templates", (c) => c.json({ templates: TEMPLATES, catalog: TEMPLATE_CATALOG.note, catalogSource: TEMPLATE_CATALOG.source }));
 
   app.get("/api/graphdb/resolve", async (c) => {
     const pub = refusePublic(c);
