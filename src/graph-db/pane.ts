@@ -17,6 +17,8 @@
  *   GET /api/graphdb/templates    the template catalog (chant's, or behold's stub of it on an older chant)
  *   GET /api/graphdb/template     ?name=&node=&in.<input>=: one template filled for one node, run when it is Cypher
  *   GET /graph                    the pane's page (web/graph.html)
+ *   GET /api/graphdb/index-versions, /api/graphdb/index-diff
+ *                                 behold#1028: two reads of one index scope diffed, drawn as an overlay (./index-diff-routes.ts)
  *
  * Every answer carries `sources`: each source's `observedAt` (when it read
  * the world, null for a declared source) and `readAt` (when behold read it),
@@ -34,6 +36,7 @@ import type { GraphIR } from "@intentius/chant";
 import { CypherRefused, GraphDb, graphDbDir, type CypherAnswer } from "./db.ts";
 import { loadLadybug, type PeerImport, type PeerRefusal } from "./peer.ts";
 import { emptyRows, finishRows, rowsFromChantIr, rowsFromEngineGraph, rowsFromIndex, rowsFromListing, type LoadedRows, type SourceStamp } from "./rows.ts";
+import { INDEX_DIFF_ROUTES, mountIndexDiff } from "./index-diff-routes.ts";
 import { findDocuments, type EngineRunner, type Git, type MemberRef } from "./sources.ts";
 import { TEMPLATES, TEMPLATE_CATALOG, TemplateError, applies, expandTemplate, resolveResource, type Expanded } from "./templates.ts";
 
@@ -217,6 +220,7 @@ export const GRAPH_ROUTES = [
   { method: "GET", path: "/api/graphdb/templates", desc: "behold#1027: the investigation templates (search path patterns and Cypher)" },
   { method: "GET", path: "/api/graphdb/template", desc: "behold#1027: one template filled for one node: ?name=&node=&in.<input>=; a Cypher one runs" },
   { method: "GET", path: "/graph", desc: "behold#1027: the graph pane (a Cypher box and resolve-from-resource)" },
+  ...INDEX_DIFF_ROUTES,
 ] as const;
 
 /** Mount the pane's routes on `app`. Every one is a GET. */
@@ -241,6 +245,14 @@ export function mountGraphPane(app: Hono, deps: GraphPaneDeps): GraphSession {
   };
 
   app.get("/graph", (c) => c.redirect("/graph.html"));
+
+  mountIndexDiff(app, {
+    projectDir: deps.projectDir,
+    ...(deps.git ? { git: deps.git } : {}),
+    ...(deps.env ? { env: deps.env } : {}),
+    ...(deps.home ? { home: deps.home } : {}),
+    ...(deps.public ? { public: true } : {}),
+  });
 
   app.get("/api/graphdb", async (c) => {
     const pub = refusePublic(c);
