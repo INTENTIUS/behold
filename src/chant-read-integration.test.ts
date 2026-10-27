@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { runChantRaw, isScheduledRead, resolveChant } from "./chant.ts";
 import { createApp } from "./server.ts";
 import { invalidateReadGeneration, withReadSignal } from "./read-scheduler.ts";
+import { readStats } from "./read-stats.ts";
 
 // Real subprocesses, no cluster. The fixture writes its instrumentation outside
 // the member so observing it cannot accidentally change the source stamp.
@@ -28,10 +29,18 @@ if (process.argv.includes('--tree')) {
   process.on('SIGTERM', () => process.exit(0));
   setInterval(() => {}, 1000);
 } else {
-  setTimeout(() => {
+  const done = () => {
     event({ event: 'finish', pid: process.pid });
     process.stdout.write(JSON.stringify({ pid: process.pid, variant: process.env.READ_TEST_VARIANT }));
-  }, process.argv.includes('--slow') ? 1000 : 150);
+  };
+  // READ_TEST_HOLD: stay running until the test creates this file, so a test
+  // can order events against a process that is certainly still alive.
+  const hold = process.env.READ_TEST_HOLD;
+  if (hold) {
+    const poll = setInterval(() => { if (fs.existsSync(hold)) { clearInterval(poll); done(); } }, 10);
+  } else {
+    setTimeout(done, process.argv.includes('--slow') ? 1000 : 150);
+  }
 }
 `, { mode: 0o755 });
   expect(resolveChant(project).source).toBe("project");
@@ -56,15 +65,25 @@ describe("real Chant read scheduling", () => {
     expect(fresh.stdout).not.toBe(b.stdout);
   });
 
-  it("the HTTP middleware isolates cancellation between matching requests", async () => {
+  it("the HTTP middleware isolates cancellation between matching requests", { timeout: 60_000 }, async () => {
+    // behold#1033: no step depends on how fast the machine is. The fake chant
+    // holds until released, the second request is known to have joined the
+    // in-flight read (the scheduler's shared count) before the first leaves,
+    // and the release comes only after the first request has settled.
+    const release = join(scratch, "release");
+    vi.stubEnv("READ_TEST_HOLD", release);
     const app = createApp({ projectDir: project, port: 0 });
     app.onError((error, c) => c.json({ error: error.message }, 500));
     const caller = new AbortController();
+    const sharedBefore = readStats().shared;
     const first = app.request(new Request("http://localhost/api/diff?env=home", { signal: caller.signal }));
     const second = app.request("/api/diff?env=home");
-    await vi.waitFor(() => expect(events().filter((e) => e.event === "start")).toHaveLength(1));
+    const patient = { timeout: 30_000, interval: 10 };
+    await vi.waitFor(() => expect(events().filter((e) => e.event === "start")).toHaveLength(1), patient);
+    await vi.waitFor(() => expect(readStats().shared).toBe(sharedBefore + 1), patient);
     caller.abort(new Error("client disconnected"));
     expect((await first).status).toBe(500);
+    writeFileSync(release, "");
     expect((await second).status).toBe(200);
     expect(events().filter((e) => e.event === "start")).toHaveLength(1);
   });
