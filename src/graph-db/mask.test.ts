@@ -1,4 +1,6 @@
-// The row masking (src/graph-db/mask.ts), kept when the lister moved to chant (chant#4532).
+// The row masking (src/graph-db/mask.ts): chant's lister masking (chant#4532), re-exported since behold#1005.
+import * as lister from "@intentius/chant/cloud-lister/mask";
+import * as chantKeys from "@intentius/chant/sensitive-key";
 import { describe, expect, it } from "vitest";
 import { isSensitiveKey, MASKED, maskValue, SENSITIVE_KEY_PATTERNS } from "./mask.ts";
 
@@ -21,30 +23,11 @@ describe("row masking", () => {
     });
   });
 
-  it("uses chant's key list when the installed chant exports it", async () => {
-    const specifier = "@intentius/chant/sensitive-key";
-    let chant: { SENSITIVE_KEY_PATTERNS?: readonly RegExp[]; isSensitiveKey?: (k: string) => boolean } | undefined;
-    try {
-      chant = await import(/* @vite-ignore */ specifier);
-    } catch {
-      chant = undefined;
-    }
-    if (!chant?.SENSITIVE_KEY_PATTERNS) return; // published chant 0.124.52 has no such module yet
-    expect(SENSITIVE_KEY_PATTERNS.map(String)).toEqual(chant.SENSITIVE_KEY_PATTERNS.map(String));
-    for (const k of ["password", "Secret", "apiToken", "private_key", "credentials", "ConnectionString", "Key", "KeyName"]) {
-      expect(isSensitiveKey(k)).toBe(chant.isSensitiveKey!(k));
-    }
-  });
-
-  it("writes the masked value chant's lister writes", async () => {
-    const specifier = "@intentius/chant/cloud-lister/mask";
-    let lister: { MASKED?: string } | undefined;
-    try {
-      lister = await import(/* @vite-ignore */ specifier);
-    } catch {
-      lister = undefined;
-    }
-    if (lister?.MASKED === undefined) return; // no chant with chant#4532 beside behold
+  it("is chant's list and chant's masked value", () => {
+    expect(SENSITIVE_KEY_PATTERNS).toBe(chantKeys.SENSITIVE_KEY_PATTERNS);
     expect(MASKED).toBe(lister.MASKED);
+    for (const k of ["password", "Secret", "apiToken", "private_key", "credentials", "ConnectionString", "Key", "KeyName"]) {
+      expect(isSensitiveKey(k)).toBe(chantKeys.isSensitiveKey(k));
+    }
   });
 });

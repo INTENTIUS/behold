@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ADOPTION_REPORT_CHANT_FLOOR, DRIFT_RECORD_CHANT_FLOOR, DRIFT_STREAM_CHANT_FLOOR, LEDGER_ROOT_MEMBER_CHANT_FLOOR } from "./chant-floors.ts";
 import { CHANT_RELEASE, PUBLISHED_CHANT } from "./chant-release.ts";
-import { chantRange, chantReleaseFiles, chantVersion, driftModuleSource } from "./chant-release-sync.ts";
+import { chantRange, chantReleaseFiles, chantVersion } from "./chant-release-sync.ts";
 
 const REPO = join(import.meta.dirname, "..");
 const json = (file: string) => JSON.parse(readFileSync(join(REPO, file), "utf8")) as Record<string, any>;
@@ -47,18 +47,15 @@ describe("CHANT_RELEASE (behold#1005)", () => {
     expect(pkg.devDependencies["@intentius/chant-lexicon-sql"]).toBe(chantRange(CHANT_RELEASE));
   });
 
-  it("unreleased, a dependency stays at the published chant and the drift module is looked for at run time", () => {
+  it("unreleased, a dependency stays at the published chant", () => {
     const r = { version: "0.124.99", released: false };
     expect(chantRange(r)).toBe(`^${PUBLISHED_CHANT}`);
-    expect(driftModuleSource(r)).toContain("await import(");
-    expect(driftModuleSource(r)).not.toContain('from "@intentius/chant/drift-record"');
   });
 
-  it("released, every range names the release, three-cloud pins and depends on both lexicons by version, and the drift module is a static import", () => {
+  it("released, every range names the release, and three-cloud pins and depends on both lexicons by version", () => {
     const r = { version: "0.124.99", released: true };
     expect(chantRange(r)).toBe("^0.124.99");
-    expect(driftModuleSource(r)).toContain('import * as chant from "@intentius/chant/drift-record";');
-    const files = Object.fromEntries(chantReleaseFiles(REPO, r).map((f) => [f.file, JSON.parse(f.file.endsWith(".json") ? f.want : "null")]));
+    const files = Object.fromEntries(chantReleaseFiles(REPO, r).map((f) => [f.file, JSON.parse(f.want)]));
     expect(files["example-three-cloud/chant.workspace.json"].pins).toEqual([
       { package: "@intentius/chant-lexicon-terraform", version: "0.124.99" },
       { package: "@intentius/chant-lexicon-pulumi", version: "0.124.99" },

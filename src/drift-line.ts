@@ -9,46 +9,23 @@
  * -resource` writes (INTENTIUS/choudoufu#2245), and `chant workspace drift
  * --member <name> --stream` prints it.
  *
- * behold#1005: when the chant beside behold ships the module
- * (src/chant-drift-record.ts, which follows CHANT_RELEASE in
- * src/chant-release.ts), {@link decodeDriftLine} decodes with chant's own
- * `decodeDriftLine`, so chant's checks decide which lines are read and its
- * words are the refusal. Its line is then narrowed to the fields below, so a
- * card gets the same shape whichever decoder ran. One difference, from
- * behold#995: a status outside chant's list is kept, not refused, so it can
- * be painted neutral and labelled unknown. chant refuses such a record, so
- * behold's own checks read that line, and a settle line's count of such a
- * status is dropped before chant reads it.
- *
- * Without chant's module (the published chant behold depends on has none,
- * and the bundled CLI under plain node does not load chant's source), the
- * checks below are the decoder. They follow chant's `decodeDriftLine`,
- * `driftRecord` and `foldDriftLines` at chant commit
- * {@link DRIFT_RECORD_SOURCE}. Only what a card needs is checked: the
- * discriminator, the version, member, engine, read and status from their
- * closed lists, and a reason on every `not-observed`. Unknown fields are
- * dropped, as chant's decoder drops them.
+ * behold#1005: the lists and the version are chant's, re-exported, and
+ * {@link decodeDriftLine} decodes with chant's own `decodeDriftLine`, so
+ * chant's checks decide which lines are read and its words are the refusal.
+ * chant's line is then narrowed to the fields below, the shape a card reads.
+ * One difference, from behold#995: a status outside chant's list is kept, not
+ * refused, so it can be painted neutral and labelled unknown. chant refuses
+ * such a record, so behold's own checks read that line, and a settle line's
+ * count of such a status is dropped before chant reads it. Those checks are
+ * the narrowing as well: the discriminator, the version, member, engine,
+ * read and status from chant's closed lists, and a reason on every
+ * `not-observed`. Unknown fields are dropped, as chant's decoder drops them.
  */
-import { chantDriftModule } from "./chant-drift-record.ts";
+import { decodeDriftLine as chantDecodeDriftLine, DRIFT_ENGINES, DRIFT_READS, DRIFT_STATUSES, DRIFT_VERSION, type DriftEngine, type DriftRead, type DriftStatus } from "@intentius/chant/drift-record";
+import { UNOBSERVED_REASONS, type UnobservedReason } from "@intentius/chant/observation";
 
-
-/** The chant commit whose `packages/core/src/drift-record.ts` this file follows. */
-export const DRIFT_RECORD_SOURCE = "INTENTIUS/chant@fdce0d963 (integration/choudoufu-engine)";
-
-export const DRIFT_VERSION = "v1";
-
-export const DRIFT_ENGINES = ["terraform", "tofu", "choudoufu", "chant", "warden", "sql", "pulumi", "plunge"] as const;
-export type DriftEngine = (typeof DRIFT_ENGINES)[number];
-
-export const DRIFT_READS = ["state", "plan", "refresh", "live-read", "ownership"] as const;
-export type DriftRead = (typeof DRIFT_READS)[number];
-
-export const DRIFT_STATUSES = ["in-sync", "drifted", "pending", "missing", "unclaimed", "undeclared", "runtime", "recorded", "not-observed"] as const;
-export type DriftStatus = (typeof DRIFT_STATUSES)[number];
-
-/** The observation contract's reasons (chant `observation.ts`), `not-reached` included. */
-export const UNOBSERVED_REASONS = ["read-failed", "no-credentials", "no-binding", "unsupported-kind", "filtered", "not-reached"] as const;
-export type UnobservedReason = (typeof UNOBSERVED_REASONS)[number];
+export { DRIFT_ENGINES, DRIFT_READS, DRIFT_STATUSES, DRIFT_VERSION, UNOBSERVED_REASONS };
+export type { DriftEngine, DriftRead, DriftStatus, UnobservedReason };
 
 export interface DriftUnobserved {
   reason: UnobservedReason;
@@ -175,18 +152,12 @@ function record(v: Record<string, unknown>): DriftRecordLine {
   };
 }
 
-/** Which decoder {@link decodeDriftLine} uses: chant's module when it is here, else behold's own checks. */
-export const DRIFT_DECODER: "chant" | "behold" = chantDriftModule ? "chant" : "behold";
-
 /**
  * Read one line of the stream, checking it. Throws {@link DriftLineError}.
- * With chant's module, chant decodes the line and behold narrows chant's
- * result; a record whose status chant does not list is read by behold's own
- * checks (behold#995).
+ * chant decodes the line and behold narrows chant's result; a record whose
+ * status chant does not list is read by behold's own checks (behold#995).
  */
 export function decodeDriftLine(text: string): DriftLine {
-  const chant = chantDriftModule;
-  if (!chant) return decodeOwn(text);
   let v: unknown;
   try {
     v = JSON.parse(text);
@@ -194,7 +165,7 @@ export function decodeDriftLine(text: string): DriftLine {
     return decodeOwn(text);
   }
   if (!isObject(v)) return decodeOwn(text);
-  const known = (s: unknown) => chant.DRIFT_STATUSES.includes(s as string);
+  const known = (s: unknown) => (DRIFT_STATUSES as readonly unknown[]).includes(s);
   if (v.type === "drift-record" && typeof v.status === "string" && !known(v.status)) return decodeOwn(text);
   let input = text;
   if (v.type === "drift-settle" && isObject(v.counts) && Object.keys(v.counts).some((s) => !known(s))) {
@@ -202,14 +173,14 @@ export function decodeDriftLine(text: string): DriftLine {
   }
   let line: unknown;
   try {
-    line = chant.decodeDriftLine(input);
+    line = chantDecodeDriftLine(input);
   } catch (err) {
     throw new DriftLineError((err as Error).message);
   }
   return decodeOwn(JSON.stringify(line));
 }
 
-/** behold's own checks: the decoder without chant's module, and the narrowing after it. */
+/** behold's own checks: the narrowing after chant's decoder, and the reader of a status chant does not list. */
 function decodeOwn(text: string): DriftLine {
   let v: unknown;
   try {

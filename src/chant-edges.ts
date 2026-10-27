@@ -36,10 +36,12 @@
  * build of chant's integration branch has them (under tsx and vitest), the
  * published chant and the bundled dist/cli.js do not.
  *
- * TODO(behold#1005): once src/chant-release.ts says `released: true`, import
- * the passes statically, delete src/value-match.ts and the `value-match`
- * source here, and leave a graph whose lexicon has no catalog with the edges
- * chant gives it.
+ * TODO(behold#1005): src/chant-release.ts says `released: true` (chant
+ * 0.124.54), and this step still waits on chant#4535's note: the pulumi
+ * lexicon has no `referenceCatalog` yet, and choudoufu roster nodes need
+ * mapping to the terraform lexicon. Then import the passes statically,
+ * delete src/value-match.ts and the `value-match` source here, and leave a
+ * graph whose lexicon has no catalog with the edges chant gives it.
  */
 import type { GraphIR, IREdge, IRNode } from "@intentius/chant";
 import { addValueMatchEdges } from "./value-match.ts";

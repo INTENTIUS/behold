@@ -45,13 +45,9 @@
 # scripts/front-door.ts oob-edit <member>` for each member, and watch each
 # edited card change colour on the page.
 #
-# Needs chant's packages/core, lexicons/terraform and lexicons/pulumi from a
-# checkout of chant main, built (`npm run build` in each lexicon), linked into
-# the copy: BEHOLD_E2E_CHANT_LINK="/path/to/chant/packages/core
-# /path/to/chant/lexicons/terraform /path/to/chant/lexicons/pulumi". No
-# release has the pulumi lexicon yet (0.124.34 is the local build's version).
-# Without it the script skips, with the reason. Skips too, exit 0, when
-# Docker or choudoufu is absent.
+# The copy's `npm install` brings chant 0.124.54 from npm, the first release
+# with member-outputs and @intentius/chant-lexicon-pulumi (behold#1005). A
+# copy without them fails. Skips, exit 0, when Docker or choudoufu is absent.
 #
 # Scratch discipline (src/scratch.ts): the containers are
 # behold-multi-engine-floci, -floci-az and -floci-gcp on their own ports,
@@ -111,15 +107,8 @@ mkdir -p "$TARGET"
 tar -C example-three-cloud --exclude node_modules --exclude .front-door --exclude export --exclude .terraform --exclude .tofu-records \
   --exclude .plunge --exclude stack-export.json --exclude Pulumi.local.yaml -cf - . | tar -C "$TARGET" -xf -
 npm --prefix "$TARGET" install --no-audit --no-fund --silent
-for dir in ${BEHOLD_E2E_CHANT_LINK:-}; do
-  name=$(node -p "require('$dir/package.json').name")
-  rm -rf "$TARGET/node_modules/$name"
-  mkdir -p "$(dirname "$TARGET/node_modules/$name")"
-  ln -s "$dir" "$TARGET/node_modules/$name"
-done
 if [ ! -f "$TARGET/node_modules/@intentius/chant/src/components/verbs/member-outputs.ts" ] || [ ! -f "$TARGET/node_modules/@intentius/chant-lexicon-pulumi/workspace-kinds.json" ]; then
-  echo "skip: the copy has no chant with member-outputs or no @intentius/chant-lexicon-pulumi; set BEHOLD_E2E_CHANT_LINK to chant main's packages/core, lexicons/terraform and lexicons/pulumi"
-  exit 0
+  fail "the copy's npm install has no chant with member-outputs or no @intentius/chant-lexicon-pulumi; example-three-cloud depends on chant 0.124.54, which has both"
 fi
 # The export a live `front-door.ts apply-aws` writes after `plunge up`.
 cp "$FIX/aws-stack-export.json" "$TARGET/aws/stack-export.json"

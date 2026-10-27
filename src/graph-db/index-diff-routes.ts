@@ -1,7 +1,7 @@
 /**
  * behold#1028: behold's half of the index diff. It loads two versions of one
- * index scope, calls the pure diff (./index-diff.ts, which can move into
- * chant unchanged), and hands the graph pane what to draw as an overlay.
+ * index scope, calls chant's pure diff (chant#4533), and hands the graph
+ * pane what to draw as an overlay.
  *
  * Where versions are read from, the same three stores the graph pane loads
  * (./sources.ts), every read a read:
@@ -12,15 +12,15 @@
  *  - behold's per-user store (behold#1025 Q4), where `behold index` writes
  *    with no project.
  *
- * behold#1034: when the installed chant has #4519's store API and #4533's
- * `readIndexVersionRef` / `diffIndexVersionRefs`, the project's configured
- * chant store (`resolveSnapshotStore`, so `snapshots.store` in chant.config,
- * s3 included) is read through chant first, and its versions are listed under
- * the store name `chant-store`. Nothing in behold walks that store's layout,
- * so an s3 store diffs the same way a local one does. chant's store is never
- * fetched or published here: a pane read writes nothing, not even a local
- * ref. A published chant without that API gets today's local reads only.
- * Tests pass a fake store as {@link VersionReaders.chantStore}.
+ * behold#1034: the project's configured chant store (`resolveSnapshotStore`,
+ * so `snapshots.store` in chant.config, s3 included) is read through chant's
+ * `readIndexVersionRef` / `diffIndexVersionRefs` (chant#4519, #4533) first,
+ * and its versions are listed under the store name `chant-store`. Nothing in
+ * behold walks that store's layout, so an s3 store diffs the same way a local
+ * one does. chant's store is never fetched or published here: a pane read
+ * writes nothing, not even a local ref. A project whose store cannot be
+ * opened (a misconfigured s3 store, say) gets the local reads only. Tests
+ * pass a fake store as {@link VersionReaders.chantStore}.
  *
  * A version's path relative to its store's `index/` is
  * `<scopeKey>/<observedAt>-<digest12>.json` (chant#4519), so two versions of
@@ -30,20 +30,8 @@
  *
  * The diff itself is chant's (chant#4533, `diffIndexVersions` in
  * `@intentius/chant/lifecycle/index-diff`; ruling on behold#1024: behold is a
- * control plane and every model lives in chant). It is in no published chant
- * yet, so it is found at run time under a specifier the type checker and the
- * bundler do not follow, as src/behold-index.ts and src/chant-edges.ts do. A
- * chant without it gets the bundled copy, ./index-diff.ts, with chant's
- * `indexCoverageFor` (chant#4519) when that chant has it and the copy's own
- * rule when not. The answer says which ran: `diffModule` (`chant` or
- * `behold-fallback`) and `coverageRule`.
- *
- * TODO(behold#1005): once src/chant-release.ts says `released: true`, import
- * `diffIndexVersions` from `@intentius/chant/lifecycle/index-diff` statically,
- * delete ./index-diff.ts and its fallback here ({@link chantIndexDiff},
- * {@link coverageLookup}), and type the documents as chant's `IndexDocument`.
- * The same release lets {@link chantIndexStore} import `resolveSnapshotStore`,
- * `readIndexVersionRef` and `diffIndexVersionRefs` statically (behold#1034).
+ * control plane and every model lives in chant), a static import since
+ * behold#1005 flipped src/chant-release.ts. behold keeps no copy of it.
  *
  * Routes, both GET and neither acts:
  *
@@ -62,7 +50,17 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, basename } from "node:path";
 import type { Context, Hono } from "hono";
-import { coverageForFallback, diffIndexVersions, IndexScopeMismatch, type CoverageLookup, type DiffDocument, type DiffNode, type DiffOptions, type IndexDiff } from "./index-diff.ts";
+import {
+  diffIndexVersionRefs,
+  diffIndexVersions,
+  IndexScopeMismatch,
+  readIndexVersionRef,
+  type IndexDiff,
+  type IndexDiffDocument,
+  type IndexDiffNode,
+  type IndexVersionRef as ChantVersionRef,
+} from "@intentius/chant/lifecycle/index-diff";
+import { resolveSnapshotStore, type SnapshotStore } from "@intentius/chant/lifecycle/snapshot-store";
 import { GIT_INDEX_DIR, LOCAL_INDEX_DIR, SNAPSHOT_REF, userIndexDir, type Git } from "./sources.ts";
 
 const VERSION_NAME = /^\d{8}T\d{6}Z-[0-9a-f]{12}\.json$/;
@@ -77,28 +75,19 @@ export interface IndexVersionRef {
   from: string;
 }
 
+/** An index version as the diff reads it: chant's `IndexDiffDocument` (an `IndexDocument` is one). */
+export type DiffDocument = IndexDiffDocument;
+
 /** The slice of chant's `SnapshotStore` (chant#4519) an index diff reads. */
-export interface ChantIndexStore {
-  readonly kind: string;
-  readonly where?: string;
-  listIndex(scopeKey: string): Promise<string[]>;
-  readIndexAt(scopeKey: string, version: string): Promise<unknown>;
-}
+export type ChantIndexStore = Pick<SnapshotStore, "kind" | "listIndex" | "readIndexAt"> & { readonly where?: string };
 
-/** chant's version references (chant#4533, lifecycle/index-diff.ts). */
-export interface ChantVersionRef {
-  scopeKey: string;
-  version?: string;
-}
+export type { ChantVersionRef };
 
-/**
- * The project's chant store and chant's two readers over it (behold#1034).
- * Typed here rather than imported: no published chant has them yet.
- */
+/** The project's chant store and chant's two readers over it (behold#1034). Tests pass fakes. */
 export interface ChantIndexStoreApi {
   store: ChantIndexStore;
-  readIndexVersionRef: (store: ChantIndexStore, ref: ChantVersionRef) => Promise<{ scopeKey: string; version: string; doc: unknown }>;
-  diffIndexVersionRefs: (store: ChantIndexStore, from: ChantVersionRef, to?: ChantVersionRef) => Promise<unknown>;
+  readIndexVersionRef: (store: ChantIndexStore, ref: ChantVersionRef) => Promise<{ scopeKey: string; version: string; doc: DiffDocument }>;
+  diffIndexVersionRefs: (store: ChantIndexStore, from: ChantVersionRef, to?: ChantVersionRef) => Promise<IndexDiff>;
 }
 
 export interface VersionReaders {
@@ -106,9 +95,7 @@ export interface VersionReaders {
   git?: Git;
   env?: NodeJS.ProcessEnv;
   home?: string;
-  /** The diff to run; tests pass one. Default {@link chantIndexDiff}. */
-  indexDiff?: () => Promise<IndexDiffImpl>;
-  /** The project's chant store, or undefined on a chant without the store readers. Tests pass a fake. Default {@link chantIndexStore}. */
+  /** The project's chant store, or undefined when it cannot be opened. Tests pass a fake. Default {@link chantIndexStore}. */
   chantStore?: (projectDir: string) => Promise<ChantIndexStoreApi | undefined>;
 }
 
@@ -166,40 +153,19 @@ export function listIndexVersions(o: VersionReaders): IndexVersionRef[] {
     .sort((a, b) => (a.scopeKey === b.scopeKey ? (a.version < b.version ? -1 : 1) : a.scopeKey < b.scopeKey ? -1 : 1));
 }
 
-let cachedStoreModule: Promise<Omit<ChantIndexStoreApi, "store"> & { resolveSnapshotStore: (o: { cwd: string }) => Promise<ChantIndexStore> } | undefined> | undefined;
-
 /**
- * The project's chant store with chant's readers (behold#1034), when the
- * installed chant has all three of `resolveSnapshotStore`,
- * `readIndexVersionRef` and `diffIndexVersionRefs`. Feature-detected under
- * specifiers the type checker and the bundler do not follow; undefined on a
- * published chant without them, or when the project's store cannot be opened
- * (a misconfigured s3 store, say), and the caller reads locally as before.
+ * The project's chant store with chant's readers (behold#1034). Undefined
+ * when the project's store cannot be opened (a misconfigured s3 store, say),
+ * and the caller reads locally.
  */
 export async function chantIndexStore(projectDir: string): Promise<ChantIndexStoreApi | undefined> {
-  cachedStoreModule ??= (async () => {
-    const found: Record<string, unknown> = {};
-    for (const specifier of ["@intentius/chant/lifecycle/index-diff", "@intentius/chant/lifecycle/snapshot-store", "@intentius/chant/lifecycle", "@intentius/chant"]) {
-      const name: string = specifier;
-      try {
-        const mod = (await import(/* @vite-ignore */ name)) as Record<string, unknown>;
-        for (const k of ["readIndexVersionRef", "diffIndexVersionRefs", "resolveSnapshotStore"]) if (found[k] === undefined && typeof mod[k] === "function") found[k] = mod[k];
-      } catch {
-        // not in this chant
-      }
-    }
-    if (typeof found.readIndexVersionRef !== "function" || typeof found.diffIndexVersionRefs !== "function" || typeof found.resolveSnapshotStore !== "function") return undefined;
-    return found as unknown as Omit<ChantIndexStoreApi, "store"> & { resolveSnapshotStore: (o: { cwd: string }) => Promise<ChantIndexStore> };
-  })();
-  const mod = await cachedStoreModule;
-  if (!mod) return undefined;
   let store: ChantIndexStore;
   try {
-    store = await mod.resolveSnapshotStore({ cwd: projectDir });
+    store = await resolveSnapshotStore({ cwd: projectDir });
   } catch {
     return undefined;
   }
-  return { store, readIndexVersionRef: mod.readIndexVersionRef, diffIndexVersionRefs: mod.diffIndexVersionRefs };
+  return { store, readIndexVersionRef, diffIndexVersionRefs };
 }
 
 const storeWhere = (api: ChantIndexStoreApi): string => api.store.where ?? api.store.kind;
@@ -240,7 +206,7 @@ export async function listAllIndexVersions(o: VersionReaders, named: ReadonlyArr
 
 /** A store whose reads are kept, so chant's diff and the overlay read each version once. */
 function memoStore(store: ChantIndexStore): ChantIndexStore {
-  const reads = new Map<string, Promise<unknown>>();
+  const reads = new Map<string, ReturnType<ChantIndexStore["readIndexAt"]>>();
   return {
     kind: store.kind,
     ...(store.where ? { where: store.where } : {}),
@@ -264,62 +230,7 @@ export function readIndexVersion(ref: IndexVersionRef, o: VersionReaders): DiffD
   return JSON.parse(text) as DiffDocument;
 }
 
-let cachedCoverage: Promise<{ lookup: CoverageLookup; rule: "chant" | "behold-fallback" }> | undefined;
-
-/** chant's `indexCoverageFor` when the installed chant has it (chant#4519), else the diff's copy of the rule. */
-export function coverageLookup(): Promise<{ lookup: CoverageLookup; rule: "chant" | "behold-fallback" }> {
-  cachedCoverage ??= (async () => {
-    for (const specifier of ["@intentius/chant/lifecycle/index-document", "@intentius/chant"]) {
-      const name: string = specifier;
-      try {
-        const mod = (await import(/* @vite-ignore */ name)) as Record<string, unknown>;
-        if (typeof mod.indexCoverageFor === "function") return { lookup: mod.indexCoverageFor as CoverageLookup, rule: "chant" as const };
-      } catch {
-        // not in this chant
-      }
-    }
-    return { lookup: coverageForFallback, rule: "behold-fallback" as const };
-  })();
-  return cachedCoverage;
-}
-
-/** chant's `diffIndexVersions` (chant#4533), typed as behold calls it. Its output has the bundled copy's shape. */
-export type ChantDiffIndexVersions = (from: DiffDocument, to: DiffDocument, o?: { fromVersion?: string; toVersion?: string }) => IndexDiff;
-
-export interface IndexDiffImpl {
-  diff: (from: DiffDocument, to: DiffDocument, o: Omit<DiffOptions, "coverageFor">) => IndexDiff;
-  diffModule: "chant" | "behold-fallback";
-  coverageRule: "chant" | "behold-fallback";
-}
-
-let cachedDiff: Promise<IndexDiffImpl> | undefined;
-
-/**
- * chant's diff when the installed chant has it (chant#4533), else the bundled
- * copy with {@link coverageLookup}'s rule. Feature-detected, never a static
- * import: the published chant has no `lifecycle/index-diff` yet.
- */
-export function chantIndexDiff(): Promise<IndexDiffImpl> {
-  cachedDiff ??= (async () => {
-    for (const specifier of ["@intentius/chant/lifecycle/index-diff", "@intentius/chant/lifecycle"]) {
-      const name: string = specifier;
-      try {
-        const mod = (await import(/* @vite-ignore */ name)) as Record<string, unknown>;
-        if (typeof mod.diffIndexVersions === "function") {
-          const chantDiff = mod.diffIndexVersions as ChantDiffIndexVersions;
-          return { diff: (a, b, o) => chantDiff(a, b, o), diffModule: "chant" as const, coverageRule: "chant" as const };
-        }
-      } catch {
-        // not in this chant
-      }
-    }
-    const { lookup, rule } = await coverageLookup();
-    return { diff: (a, b, o) => diffIndexVersions(a, b, { ...o, coverageFor: lookup }), diffModule: "behold-fallback" as const, coverageRule: rule };
-  })();
-  return cachedDiff;
-}
-
-/** A refusal from either diff, by its `code`: chant's error classes are not the bundled copy's. */
+/** A refusal from chant's diff or a store reader, by its `code` (a fake store's readers throw plain errors that carry one). */
 function diffRefusal(e: unknown): IndexDiffRefused | undefined {
   const x = e as { code?: unknown; message?: string; fromScopeKey?: string; toScopeKey?: string };
   if (x?.code === "index-scope-mismatch") return new IndexDiffRefused(x.message ?? "index-scope-mismatch", "index-scope-mismatch", 409, { fromScopeKey: x.fromScopeKey, toScopeKey: x.toScopeKey });
@@ -336,7 +247,7 @@ export interface OverlayDraw {
   omitted: number;
 }
 
-function nameOf(n: DiffNode): string {
+function nameOf(n: IndexDiffNode): string {
   const a = n.attrs ?? {};
   for (const k of ["name", "Name", "BucketName", "QueueName", "RoleName", "FunctionName"]) if (typeof a[k] === "string") return a[k] as string;
   return n.nativeId || n.id.split("/").slice(4).join("/") || n.id;
@@ -344,7 +255,7 @@ function nameOf(n: DiffNode): string {
 
 /** What the pane draws: every node and edge the diff names, the unchanged neighbours of changed ones, each with its change. */
 export function overlayFor(diff: IndexDiff, fromDoc: DiffDocument, toDoc: DiffDocument): OverlayDraw {
-  const nodes = new Map<string, DiffNode>();
+  const nodes = new Map<string, IndexDiffNode>();
   for (const n of fromDoc.graph.nodes) nodes.set(n.id, n);
   for (const n of toDoc.graph.nodes) nodes.set(n.id, n);
   const change = new Map<string, { change: OverlayChange; detail?: string }>();
@@ -397,9 +308,6 @@ function refFor(arg: string, scope: string | undefined): { scopeKey: string | un
 export interface DiffAnswer {
   diff: IndexDiff;
   draw: OverlayDraw;
-  /** Whose diff ran: chant's (chant#4533) or the bundled copy. */
-  diffModule: "chant" | "behold-fallback";
-  coverageRule: "chant" | "behold-fallback";
   stores: { from: IndexStoreName; to: IndexStoreName };
   /** behold#1034: set when a version was read through chant's store: its kind (`s3`, `local`, `git-ref`, ...) and where it is. */
   chantStore?: { kind: string; where: string };
@@ -453,17 +361,15 @@ export async function diffFromStores(q: { scope?: string; from?: string; to?: st
     let toDoc: DiffDocument;
     let diff: IndexDiff;
     try {
-      fromDoc = (await chant.readIndexVersionRef(store, { scopeKey: scope, version: fromRef.version })).doc as DiffDocument;
-      toDoc = (await chant.readIndexVersionRef(store, { scopeKey: scope, version: toRef.version })).doc as DiffDocument;
-      diff = (await chant.diffIndexVersionRefs(store, { scopeKey: scope, version: fromRef.version }, { scopeKey: scope, version: toRef.version })) as IndexDiff;
+      fromDoc = (await chant.readIndexVersionRef(store, { scopeKey: scope, version: fromRef.version })).doc;
+      toDoc = (await chant.readIndexVersionRef(store, { scopeKey: scope, version: toRef.version })).doc;
+      diff = await chant.diffIndexVersionRefs(store, { scopeKey: scope, version: fromRef.version }, { scopeKey: scope, version: toRef.version });
     } catch (e) {
       throw diffRefusal(e) ?? new IndexDiffRefused(`an index version could not be read from chant's ${chant.store.kind} store: ${(e as Error).message}`, "index-read-failed", 404);
     }
     return {
       diff,
       draw: overlayFor(diff, fromDoc, toDoc),
-      diffModule: "chant",
-      coverageRule: "chant",
       stores: { from: "chant-store", to: "chant-store" },
       chantStore: { kind: chant.store.kind, where: storeWhere(chant) },
     };
@@ -472,21 +378,20 @@ export async function diffFromStores(q: { scope?: string; from?: string; to?: st
   let toDoc: DiffDocument;
   try {
     const read = async (ref: IndexVersionRef): Promise<DiffDocument> =>
-      ref.store === "chant-store" && chant ? ((await chant.readIndexVersionRef(chant.store, { scopeKey: ref.scopeKey, version: ref.version })).doc as DiffDocument) : readIndexVersion(ref, o);
+      ref.store === "chant-store" && chant ? (await chant.readIndexVersionRef(chant.store, { scopeKey: ref.scopeKey, version: ref.version })).doc : readIndexVersion(ref, o);
     fromDoc = await read(fromRef);
     toDoc = await read(toRef);
   } catch (e) {
     throw new IndexDiffRefused(`an index version could not be read: ${(e as Error).message}`, "index-read-failed", 404);
   }
   const mixed = chant && (fromRef.store === "chant-store" || toRef.store === "chant-store") ? { chantStore: { kind: chant.store.kind, where: storeWhere(chant) } } : {};
-  const impl = await (o.indexDiff ?? chantIndexDiff)();
   let diff: IndexDiff;
   try {
-    diff = impl.diff(fromDoc, toDoc, { fromVersion: fromRef.version, toVersion: toRef.version });
+    diff = diffIndexVersions(fromDoc, toDoc, { fromVersion: fromRef.version, toVersion: toRef.version });
   } catch (e) {
     throw diffRefusal(e) ?? e;
   }
-  return { diff, draw: overlayFor(diff, fromDoc, toDoc), diffModule: impl.diffModule, coverageRule: impl.coverageRule, stores: { from: fromRef.store, to: toRef.store }, ...mixed };
+  return { diff, draw: overlayFor(diff, fromDoc, toDoc), stores: { from: fromRef.store, to: toRef.store }, ...mixed };
 }
 
 export const INDEX_DIFF_ROUTES = [
@@ -504,8 +409,6 @@ export interface IndexDiffDeps {
   env?: NodeJS.ProcessEnv;
   home?: string;
   public?: boolean;
-  /** The diff to run; tests pass one. Default {@link chantIndexDiff}. */
-  indexDiff?: () => Promise<IndexDiffImpl>;
   /** The project's chant store; tests pass a fake. Default {@link chantIndexStore}. */
   chantStore?: (projectDir: string) => Promise<ChantIndexStoreApi | undefined>;
 }
@@ -517,7 +420,6 @@ export function mountIndexDiff(app: Hono, deps: IndexDiffDeps): void {
     ...(deps.git ? { git: deps.git } : {}),
     ...(deps.env ? { env: deps.env } : {}),
     ...(deps.home ? { home: deps.home } : {}),
-    ...(deps.indexDiff ? { indexDiff: deps.indexDiff } : {}),
     ...(deps.chantStore ? { chantStore: deps.chantStore } : {}),
   });
   const refusePublic = (c: Context) =>

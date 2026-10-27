@@ -52,8 +52,8 @@ HCL with a `live` block. Its provider block reaches floci-az the way
 choudoufu's own floci-az estates do, every endpoint and credential stated.
 `apply-azure` plans it with the terraform lexicon's `choudoufuPlanSet`, run
 as a step of a one-step Op (chant#4483), and applies that set with
-`choudoufuWaveApply`, under the same floci-az endpoint lock. Published chant
-0.124.52 has no such Op activity, so with it the script calls the same
+`choudoufuWaveApply`, under the same floci-az endpoint lock. On a chant
+older than the activity (0.124.52 and before) the script calls the same
 function directly. Its records stay in `azure/.tofu-records`.
 
 Each cloud publishes its endpoint as an output (`output()` in aws and gcp, an
@@ -71,43 +71,15 @@ through the pulumi lexicon, which dns lists too: `plunge stack output --json
 --show-secrets=false` for the applied value and `plunge preview --json` for
 the planned one. gcp still reaches dns through `build-dns`.
 
-## A local chant build
+## Which chant
 
 The `azure` and `aws` components need a chant with `member-outputs`
 (chant#4455), and the aws member needs `@intentius/chant-lexicon-pulumi`
-(chant#4453). Both are on chant's main branch and in no release yet;
-0.124.52, which this directory installs, has neither, and the pulumi lexicon
-is not published at all. Until a release carries them, install a local
-build of chant, packed the way a release packs it. A symlink to chant's
-source is not the same thing: it has no `dist/` and runs `bin/chant` from
-source. In a checkout of chant main (`CHANT` below):
-
-```sh
-cd "$CHANT" && npm ci && scripts/ci-lexicon-artifacts.sh --steps generate,bundle
-# Stamp the packages' versions, uncommitted, at the coming release: behold's
-# CHANT_RELEASE (src/chant-release.ts), which is chant's NEXT_RELEASE. 0.124.53
-# meets every ^0.124.52 here and every floor in behold. behold's exact pins
-# name 0.124.52 until that release (behold#1015); its demos re-pin their copy.
-for pj in packages/*/package.json lexicons/*/package.json; do
-  node -e 'const f=process.argv[1];const p=require(f);if(!String(p.name).startsWith("@intentius/"))process.exit(0);p.version="0.124.53";require("fs").writeFileSync(f,JSON.stringify(p,null,2)+"\n")' "$PWD/$pj"
-done
-mkdir -p /tmp/chant-local && npm pack -w packages/core -w lexicons/terraform -w lexicons/pulumi --pack-destination /tmp/chant-local
-git checkout -- '*package.json'
-# Here:
-npm install && npm install --no-save /tmp/chant-local/*.tgz
-```
-
-Each `npm pack` runs that package's own prepack, which is the build a release
-ships. The workspace pins both lexicons by path (`node_modules/@intentius/...`),
-so the pin reads whichever build is installed there and sets no version a
-local build can't meet. `npm run front-door` and `npm run change-set` need
-the local build too, since they run dns's components and the pulumi part.
-A later plain `npm install` here puts the npm release back, so run the
-`--no-save` install again after one. scripts/front-door.ts loads the pulumi
-lexicon only for the aws plan, so the other subcommands (`apply-azure` among
-them) run after a plain `npm ci`. Once that chant release is published,
-behold's `CHANT_RELEASE` flips (src/chant-release.ts) and this directory pins
-and depends on both lexicons by version instead.
+(chant#4453). chant 0.124.54 is the first release with both, and this
+directory depends on it: `npm ci` here installs it. The workspace pins the
+terraform and pulumi lexicons by package at 0.124.54, and chant checks each
+pin against the installed lexicon. behold follows the same release through
+`CHANT_RELEASE` (src/chant-release.ts, behold#1005).
 
 ## One change set
 
@@ -165,4 +137,3 @@ npx serve export
 
 `cd dns && npx chant run front-door` runs the same steps as an Op.
 
-Needs the local chant build (see above).

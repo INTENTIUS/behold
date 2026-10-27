@@ -32,8 +32,8 @@
  * Everything here is pure: documents in, rows out. Building the database is
  * src/graph-db/db.ts; finding the documents is src/graph-db/sources.ts.
  */
-import { createHash } from "node:crypto";
 import type { GraphIR } from "@intentius/chant";
+import { indexScopeKey } from "@intentius/chant/lifecycle/index-document";
 import type { CloudScope, ListingResult } from "./listing.ts";
 import { maskValue } from "./mask.ts";
 import type { GraphLayout, LayoutColumn } from "./layout-gen.ts";
@@ -385,30 +385,9 @@ export function rowsFromIndex(doc: IndexDocument, o: { version: string; readAt: 
   return rows;
 }
 
-// chant#4519's scope digest, copied so a listing loads under the key the
-// index store would give it. TODO(behold#1027): import `indexScopeKey` from
-// chant once the release carrying it is out (src/chant-release.ts).
-function canonicalJson(value: unknown): string {
-  return JSON.stringify(value, (_k, v: unknown) =>
-    v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : v,
-  );
-}
-
-const sortUnique = (xs: readonly string[]): string[] => [...new Set(xs)].sort();
-
-/** `cloud/<substrate>/<scopeId>/<digest12>`, chant#4519's `indexScopeKey` for a cloud scope. */
+/** `cloud/<substrate>/<scopeId>/<digest12>`: chant#4519's `indexScopeKey` for a cloud scope, so a listing loads under the key the index store would give it. */
 export function cloudScopeKey(scope: CloudScope): string {
-  const canonical = {
-    kind: "cloud",
-    substrate: scope.substrate,
-    scopeId: scope.scopeId,
-    locations: scope.locations === "*" ? "*" : sortUnique(scope.locations),
-    types: scope.types === "*" ? "*" : sortUnique(scope.types),
-    ...(scope.tagFilter && Object.keys(scope.tagFilter).length ? { tagFilter: Object.fromEntries(Object.entries(scope.tagFilter).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) } : {}),
-  };
-  const digest = createHash("sha256").update(canonicalJson(canonical), "utf8").digest("hex").slice(0, 12);
-  const seg = (s: string) => encodeURIComponent(s).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
-  return `cloud/${seg(scope.substrate)}/${seg(scope.scopeId)}/${digest}`;
+  return indexScopeKey({ kind: "cloud", ...scope });
 }
 
 /**

@@ -17,17 +17,13 @@
  * The catalog lives in chant (#1022 ruling Q5,
  * https://github.com/INTENTIUS/behold/issues/1022#issuecomment-6432728696),
  * as the capability catalog's second kind of entry (INTENTIUS/chant#4531),
- * and behold reads it as data through src/graph-db/chant-templates.ts. While
- * `CHANT_RELEASE.released` is false (src/chant-release.ts) a published chant
- * has no catalog, so {@link STUB_TEMPLATES} is the fallback: the same ids,
- * the same queries, Cypher binding `$key`.
- *
- * TODO(behold#1027, chant#4531): when the switch flips, delete
- * STUB_TEMPLATES and the fallback in {@link selectTemplates}.
+ * and behold reads it through src/graph-db/chant-templates.ts. Every chant
+ * behold accepts carries it (behold#1005 flipped src/chant-release.ts), so
+ * behold keeps no copy of it.
  */
 import type { ResourceRow, LoadedRows, SourceKind } from "./rows.ts";
 import { CHANT_RELEASE } from "../chant-release.ts";
-import { loadChantTemplates } from "./chant-templates.ts";
+import { chantTemplates } from "./chant-templates.ts";
 
 export type TemplateLanguage = "search" | "cypher";
 
@@ -53,112 +49,7 @@ export interface Template {
   note?: string;
 }
 
-/** behold's copy of chant#4531's initial set, for a chant without the catalog. */
-export const STUB_TEMPLATES: readonly Template[] = [
-  {
-    name: "dependents",
-    title: "What depends on it",
-    sources: ["chant"],
-    inputs: [],
-    language: "search",
-    query: "->*{{node}}",
-    reads: "source",
-  },
-  {
-    name: "dependencies",
-    title: "What it depends on",
-    sources: ["chant"],
-    inputs: [],
-    language: "search",
-    query: "<-*{{node}}",
-    reads: "source",
-  },
-  {
-    name: "paths-to-kind",
-    title: "Paths from it to a kind",
-    sources: ["chant"],
-    inputs: [{ name: "kind", description: "A kind or type, as kind: takes it (aws_internet_gateway, EC2::InternetGateway)." }],
-    language: "search",
-    query: "{{node}} ->*kind:{{kind}}",
-    reads: "source",
-  },
-  {
-    name: "capability",
-    title: "Whether a capability holds for it",
-    sources: ["chant"],
-    inputs: [{ name: "capability", description: "A capability from chant's catalog, with its arguments: internet-reachable(22)." }],
-    language: "search",
-    query: "{{node}} cap:{{capability}}",
-    reads: "source",
-  },
-  {
-    name: "drift",
-    title: "Drift",
-    sources: ["chant"],
-    inputs: [{ name: "env", description: "The environment to read live." }],
-    language: "search",
-    query: "{{node}}",
-    reads: "live",
-    note: "Draws the node in the environment's live read, coloured by drift.",
-  },
-  {
-    name: "dependents-all",
-    title: "What depends on it, across every source",
-    inputs: [],
-    language: "cypher",
-    query: "MATCH (o:Resource)-[:REF*1..6]->(r:Resource {key: $key}) RETURN DISTINCT o.key AS key, o.kind AS kind, o.scopeKey AS scope",
-    reads: "session",
-  },
-  {
-    name: "dependencies-all",
-    title: "What it depends on, across every source",
-    inputs: [],
-    language: "cypher",
-    query: "MATCH (r:Resource {key: $key})-[:REF*1..6]->(o:Resource) RETURN DISTINCT o.key AS key, o.kind AS kind, o.scopeKey AS scope",
-    reads: "session",
-  },
-  {
-    name: "ownership",
-    title: "Ownership",
-    inputs: [],
-    language: "cypher",
-    query:
-      "MATCH (r:Resource {key: $key}) OPTIONAL MATCH (r)-[:KNOWN_AS]->(:CloudId)<-[:KNOWN_AS]-(o:Resource) WHERE o.key <> r.key " +
-      "RETURN r.key AS key, r.ownership AS ownership, r.engineOwnership AS engineOwnership, r.facts AS facts, r.observedAt AS observedAt, collect(DISTINCT o.key) AS sameObject",
-    reads: "session",
-    note: "ownership is chant's marker verdict, owned or foreign. engineOwnership is an engine's, bound, unowned, pending or foreign. Absent is unknown, never guessed. A cloud listing reads markers only.",
-  },
-  {
-    name: "same-object",
-    title: "The same object in other sources",
-    inputs: [],
-    language: "cypher",
-    query: "MATCH (r:Resource {key: $key})-[:KNOWN_AS]->(c:CloudId)<-[:KNOWN_AS]-(o:Resource) WHERE o.scopeKey <> r.scopeKey RETURN DISTINCT o.key AS key, o.scopeKey AS scope, c.value AS cloudId, c.kind AS cloudIdKind",
-    reads: "session",
-  },
-  {
-    name: "readers",
-    title: "Who reads it from another estate or root",
-    inputs: [],
-    language: "cypher",
-    query:
-      "MATCH (o:Resource)-[e:REF]->(r:Resource {key: $key}) WHERE o.scopeKey <> r.scopeKey RETURN o.key AS key, o.scopeKey AS scope, e.viaAttr AS via, e.origin AS origin, e.rule AS rule " +
-      "UNION MATCH (r:Resource {key: $key})-[:KNOWN_AS]->(:CloudId)<-[:KNOWN_AS]-(t:Resource)<-[e:REF]-(o:Resource) WHERE o.scopeKey <> r.scopeKey RETURN o.key AS key, o.scopeKey AS scope, e.viaAttr AS via, e.origin AS origin, e.rule AS rule",
-    reads: "session",
-    note: "A derived edge (origin derived, rule identity:<kind>) is an identity match, not a declared reference.",
-  },
-  {
-    name: "history",
-    title: "History",
-    inputs: [],
-    language: "cypher",
-    query: "MATCH (r:Resource {key: $key}) RETURN r.key AS key, r.facts AS facts, r.version AS version, r.observedAt AS observedAt",
-    reads: "snapshots",
-    note: "The record's versions come from facts.recordVersions, when the engine ran with -history or --versions. Snapshot history (chant#4519's store) is not loaded into the session yet.",
-  },
-];
-
-export type TemplateCatalogSource = "chant" | "behold-stub" | "missing";
+export type TemplateCatalogSource = "chant" | "missing";
 
 export interface TemplateCatalog {
   source: TemplateCatalogSource;
@@ -167,19 +58,13 @@ export interface TemplateCatalog {
   note: string;
 }
 
-/**
- * chant's templates when the installed chant has them. Otherwise, while the
- * chant release is not out, behold's stub; once it is out, nothing, because
- * every chant behold accepts then carries the catalog.
- */
-export function selectTemplates(fromChant: readonly Template[] | undefined, released: boolean = CHANT_RELEASE.released): TemplateCatalog {
-  if (fromChant) return { source: "chant", templates: fromChant, note: "chant's investigation templates (@intentius/chant/capabilities/templates.json, chant#4531)" };
-  if (released)
-    return { source: "missing", templates: [], note: `the installed chant has no investigation templates; chant ${CHANT_RELEASE.version} or later carries them` };
-  return { source: "behold-stub", templates: STUB_TEMPLATES, note: `behold's stub of chant's templates: the installed chant predates ${CHANT_RELEASE.version} (chant#4531)` };
+/** chant's templates, or nothing when the installed chant somehow has none. */
+export function selectTemplates(fromChant: readonly Template[] | undefined): TemplateCatalog {
+  if (fromChant?.length) return { source: "chant", templates: fromChant, note: "chant's investigation templates (@intentius/chant/capabilities/templates, chant#4531)" };
+  return { source: "missing", templates: [], note: `the installed chant has no investigation templates; chant ${CHANT_RELEASE.version} or later carries them` };
 }
 
-export const TEMPLATE_CATALOG: TemplateCatalog = selectTemplates(await loadChantTemplates());
+export const TEMPLATE_CATALOG: TemplateCatalog = selectTemplates(chantTemplates());
 
 /** The templates behold offers: {@link TEMPLATE_CATALOG}'s. */
 export const TEMPLATES: readonly Template[] = TEMPLATE_CATALOG.templates;

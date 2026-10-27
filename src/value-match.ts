@@ -1,7 +1,10 @@
 /**
  * RETIRING (behold#1030): src/chant-edges.ts draws chant's derived edges
  * (chant#4522, #4523) where chant can, and runs this pass only as its
- * fallback. Delete this module when behold#1005 flips src/chant-release.ts.
+ * fallback. behold#1005 flipped src/chant-release.ts (chant 0.124.54), and
+ * this module stays until the pulumi lexicon has a `referenceCatalog` and
+ * choudoufu roster nodes are mapped to terraform's rules (chant#4535's note
+ * on behold#1005); then delete it (the checklist on behold#1005).
  *
  * Value-matched edges — connect resources wired by a literal name/ARN VALUE
  * rather than a symbolic `$ref`. chant's source graph only draws an edge when

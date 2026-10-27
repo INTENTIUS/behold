@@ -1,7 +1,7 @@
 {
   "$schema": "https://intentius.io/chant/schemas/workspace/graph/v1/graph.schema.json",
   "contract": 1,
-  "chant": "0.124.34",
+  "chant": "0.124.54",
   "at": null,
   "plantable": {
     "plantable": false,
@@ -24,11 +24,11 @@
       "kind": "pulumi",
       "status": "composed",
       "reason": null,
-      "chant": "0.124.34",
+      "chant": "0.124.54",
       "irVersion": 1,
       "live": false,
       "cached": false,
-      "stamp": "sha256:93ccca40ad4f0f95b8c6dfb8d394e426090f4411e8b1d49207bf13ba389a660a",
+      "stamp": "sha256:33d4fe72c5de9791727e3a7c05f478f0b23fc766e7dae190e5d4661c40f9f64d",
       "meta": {
         "pulumiMember": {
           "export": "stack-export.json",
@@ -37,8 +37,18 @@
         },
         "lint": {
           "errors": 0,
-          "warnings": 0,
-          "findings": []
+          "warnings": 1,
+          "findings": [
+            {
+              "ruleId": "PUL010",
+              "severity": "warning",
+              "message": "[app/aws:iam/rolePolicy:RolePolicy::webReadsAssets] urn:pulumi:dev::app::aws:iam/rolePolicy:RolePolicy::webReadsAssets names 1 parent or dependency URN(s) stack-export.json does not hold (urn:pulumi:dev::app::aws:s3/bucket:Bucket::elsewhere), so the graph has no edge for them. Replace the file with a fresh `pulumi stack export`.",
+              "file": "chant.config.json",
+              "line": 1,
+              "column": 1,
+              "entity": "app/aws:iam/rolePolicy:RolePolicy::webReadsAssets"
+            }
+          ]
         }
       },
       "box": null
@@ -87,6 +97,7 @@
       "to": "app/app/aws:iam/role:Role::web",
       "kind": "ref",
       "viaAttr": "dependencies",
+      "grain": "instance",
       "member": "app"
     },
     {
@@ -94,6 +105,7 @@
       "to": "app/app/aws:s3/bucket:Bucket::assets",
       "kind": "ref",
       "viaAttr": "dependencies",
+      "grain": "instance",
       "member": "app"
     },
     {
@@ -101,6 +113,7 @@
       "to": "app/app/aws:iam/role:Role::web",
       "kind": "ref",
       "viaAttr": "dependencies",
+      "grain": "instance",
       "member": "app"
     },
     {
@@ -108,6 +121,7 @@
       "to": "app/app/my:mod:Web::web-app",
       "kind": "ref",
       "viaAttr": "parent",
+      "grain": "instance",
       "member": "app"
     }
   ],
