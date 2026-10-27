@@ -73,7 +73,7 @@ import { ChantDemo, chantDemoRoutes } from "./chant-demo.ts";
 import { ciReportUrlOf, ciRunsRoutes, readCiRunIndex, type CiRunEntry } from "./ci-run-index.ts";
 import { localRunRoutes } from "./ci-local-run.ts";
 import { adoptionRoutes } from "./adoption.ts";
-import type { GitRun } from "./terragucci-lifecycle.ts";
+import { realGit, type GitRun } from "./terragucci-lifecycle.ts";
 import { TERRAGUCCI_COMPONENTS_FILE, componentJobs, componentsIrFromDeclaration, componentRootMap, readTerragucciComponents, waveTitles, type TerragucciComponents } from "./terragucci-components.ts";
 import { hasTerragruntUnits } from "./terragrunt-units.ts";
 import { summarizePlan } from "./reconcile.ts";
@@ -179,7 +179,7 @@ import { allowedHostsFrom, guardRequest } from "./request-guard.ts";
 import { applyMemberPasses, memberKindOf, memberKindSpec, memberPassNote, servesAsEstate, type MemberPassRun } from "./member-kind.ts";
 import { TerraformReadError, terraformMemberWorkspace, terraformReaderState, terraformVia } from "./terraform-member.ts";
 import { addInstanceCards } from "./instance-cards.ts";
-import { APPLY_RUNS_WHERE, ledgerRunsOf, memberLocalApplies, rootMemberWhere, unknownRootApplies, unknownRootNote, withLocalApplies, type LocalApply } from "./member-local-applies.ts";
+import { APPLY_RUNS_WHERE, LedgerRunsCache, ledgerRunsOf, memberLocalApplies, rootMemberWhere, unknownRootApplies, unknownRootNote, withLocalApplies, type LocalApply } from "./member-local-applies.ts";
 import { paintTerraformPlan, readTerraformPlan, terraformPlanNote, type MemberPlanAnswer, type PlanReadDeps, type TerraformPlanRead } from "./terraform-plan.ts";
 import { normalizeTerraformNodes } from "./terraform-lens.ts";
 import { invalidateMember, memberIr, memberIrCacheStats, memberSourceStamp } from "./member-ir.ts";
@@ -222,7 +222,8 @@ import { flagsFloorRefusal, readFeatureFlags } from "./feature-flags.ts";
 import { COLLISION_READ, collisionsFloorRefusal, readCollisions } from "./collision-marks.ts";
 import { sqlYodelerLaneRoute } from "./sql-yodeler-lane.ts";
 import { cachedHealth, invalidateHealth, readHealthOverlay, rememberHealth, type HealthMember } from "./health-overlay.ts";
-import { rootReader, rootStreamTransport } from "./workspace-reader.ts";
+import { rootReader, rootStreamTransport, type WorkspaceReader } from "./workspace-reader.ts";
+import { ledgerTip } from "./member-ledger.ts";
 import { driftStreamRoutes } from "./drift-stream.ts";
 import { DRIFT_DEFAULT_KINDS, DRIFT_KINDS, paintWorkspaceDrift } from "./drift-overlay.ts";
 import { PUBLIC_SEARCHES_IN_FLIGHT, SearchAskError, cachedCapabilities, checkAsk, drawnOf, runSearch, searchTarget, type SearchTarget } from "./search.ts";
@@ -5148,21 +5149,31 @@ function simplifiedEstateNesting(byContainer: Record<string, string[]>, ir: Grap
  * nothing when no workspace is served or its chant is below
  * LEDGER_ROOT_MEMBER_CHANT_FLOOR, and leaves a member out when its read fails
  * or the chant's rows carry no root_member, so its card shows the run index
- * alone.
+ * alone. behold#1020: each read is cached on the ledger tip
+ * (`ledgerRunsCache`), so a components read on an unchanged branch spawns
+ * one `git rev-parse` and no chant.
  */
-async function memberLocalApplyReads(ws: Workspace | undefined, members: ReadonlyArray<string | undefined>): Promise<{ byMember: Map<string, LocalApply[]>; note?: string }> {
+const ledgerRunsCache = new LedgerRunsCache();
+export async function memberLocalApplyReads(
+  ws: Workspace | undefined,
+  members: ReadonlyArray<string | undefined>,
+  deps: { cache?: LedgerRunsCache; git?: GitRun; reader?: Pick<WorkspaceReader, "readLedgerRuns"> } = {},
+): Promise<{ byMember: Map<string, LocalApply[]>; note?: string }> {
   const byMember = new Map<string, LocalApply[]>();
   const named = members.filter((m): m is string => !!m);
   if (!ws || !named.length || !meetsFloor(ws.chant, LEDGER_ROOT_MEMBER_CHANT_FLOOR)) return { byMember };
-  const reader = rootReader(ws.root);
+  const reader = deps.reader ?? rootReader(ws.root);
+  const cache = deps.cache ?? ledgerRunsCache;
+  const tip = await ledgerTip(ws.root, deps.git ?? realGit);
+  const runs = (where: string[]) => cache.read({ root: ws.root, chant: ws.chant }, tip, where, () => reader.readLedgerRuns(where).then(ledgerRunsOf));
   await Promise.all(
     named.map(async (m) => {
-      const answer = await reader.readLedgerRuns([rootMemberWhere(m)]).then(ledgerRunsOf, () => undefined);
+      const answer = await runs([rootMemberWhere(m)]);
       if (answer?.supported) byMember.set(m, memberLocalApplies(answer, m));
     }),
   );
   if (!byMember.size) return { byMember };
-  const unknown = await reader.readLedgerRuns([APPLY_RUNS_WHERE]).then(ledgerRunsOf, () => undefined);
+  const unknown = await runs([APPLY_RUNS_WHERE]);
   const note = unknown ? unknownRootNote(unknownRootApplies(unknown)) : undefined;
   return { byMember, ...(note ? { note } : {}) };
 }

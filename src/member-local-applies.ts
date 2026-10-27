@@ -28,6 +28,7 @@
  */
 import type { GraphIR } from "@intentius/chant";
 import { MEMBER_RUNS_LEXICON } from "./component-releases.ts";
+import { RELEASES_READ_TTL_MS } from "./lifecycle-releases.ts";
 
 /** The attr a member card carries its local applies under, newest first. */
 export const LOCAL_APPLIES = "_localApplies";
@@ -162,4 +163,58 @@ export function unknownRootNote(runs: readonly LocalApply[]): string | undefined
   if (!runs.length) return undefined;
   const roots = [...new Set(runs.map((r) => r.root ?? "no TerraformRoot label"))].sort();
   return `${runs.length} local ${runs.length === 1 ? "apply" : "applies"} of an unknown root (${roots.join(", ")})`;
+}
+
+/**
+ * behold#1020: the `chant ledger runs` reads, cached on the ledger tip.
+ *
+ * The member run card made one uncached `chant ledger runs --where
+ * root_member=<m>` per non-chant member, and one `--where labels.Apply=true`,
+ * on every components read. chant answers those from the local
+ * `chant/lifecycle` branch, so an answer read at one tip holds until the
+ * branch moves: a read is reused while the tip it was read at is still the
+ * tip (src/member-ledger.ts `ledgerTip`). With no tip to key on (no branch
+ * yet, or not a git repository), a read is reused for
+ * {@link RELEASES_READ_TTL_MS}, as the releases read is
+ * (src/component-releases.ts). A read that failed, or a chant that does not
+ * say (`supported: false`), is never kept, so the next request asks again.
+ * The key also holds the workspace root and the chant version that listed it,
+ * so a switch to another workspace, or another chant, reads afresh.
+ */
+export class LedgerRunsCache {
+  private readonly entries = new Map<string, { tip: string | null; at: number; read: Promise<LedgerRunsAnswer | undefined> }>();
+
+  constructor(private readonly now: () => number = Date.now) {}
+
+  /** `load`'s answer for `where` at `tip`, from the cache while it holds. */
+  read(scope: { root: string; chant: string }, tip: string | null, where: readonly string[], load: () => Promise<LedgerRunsAnswer | undefined>): Promise<LedgerRunsAnswer | undefined> {
+    const key = [scope.root, scope.chant, ...where].join("\u0000");
+    const hit = this.entries.get(key);
+    if (hit && hit.tip === tip && (tip !== null || this.now() - hit.at < RELEASES_READ_TTL_MS)) return hit.read;
+    const read = load().then(
+      (answer) => {
+        if (!answer?.supported) this.drop(key, read);
+        return answer;
+      },
+      () => {
+        this.drop(key, read);
+        return undefined;
+      },
+    );
+    this.entries.set(key, { tip, at: this.now(), read });
+    return read;
+  }
+
+  /** How many reads are kept, for a test. */
+  get size(): number {
+    return this.entries.size;
+  }
+
+  clear(): void {
+    this.entries.clear();
+  }
+
+  private drop(key: string, read: Promise<unknown>): void {
+    if (this.entries.get(key)?.read === read) this.entries.delete(key);
+  }
 }
