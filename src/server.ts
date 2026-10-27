@@ -161,7 +161,8 @@ import { statusVocabulary } from "./status-vocabulary.ts";
 import { attachBehaviour, type BehaviourMember } from "./behaviour.ts";
 import { attachBehaviourDelta, attachDeclaredBehaviour, paintLive, predictMember, trafficFor, type DeltaMember, type PredictMemberDeps } from "./behaviour-delta.ts";
 import { addEstateMemberEdges } from "./estate-edges.ts";
-import { addChoudoufuReferenceEdges, liveCheckToIr, readLiveCheck, setChoudoufuRunner, setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
+import { addChoudoufuReferenceEdges, captureChoudoufu, liveCheckToIr, readLiveCheck, setChoudoufuRunner, setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
+import { GRAPH_ROUTES, mountGraphPane, type GraphPaneDeps } from "./graph-db/pane.ts";
 import { choudoufuDiffNodes, choudoufuPlanAnswer, paintPlanDrift, readChoudoufuLive, type Runner as ChoudoufuRunner } from "./choudoufu-live.ts";
 import { cachedChoudoufuPlan, setChoudoufuChantDeps, type ChoudoufuChantDeps, type PlanResourceDrift } from "./choudoufu-chant-read.ts";
 import { choudoufuLexiconNote, setEstateLexiconRead, type LexiconRead } from "./choudoufu-refs.ts";
@@ -248,6 +249,8 @@ export interface ServerOptions {
   dotsPreview?: DotsPreviewOptions;
   /** behold#915: a stand-in for the headless-browser peer, for tests; never set by the CLI. */
   shotDeps?: ShotDeps;
+  /** behold#1027: stand-ins for the graph pane's peer, engine runner, git and database directory, for tests; never set by the CLI. */
+  graph?: Partial<GraphPaneDeps>;
   /** The address to bind. 127.0.0.1 unless given (`--host`, BEHOLD_HOST). */
   host?: string;
   /** Names besides loopback that behold answers to (`--allow-host`,
@@ -2665,6 +2668,22 @@ export function createApp(
     return c.body(JSON.stringify(read.document), "error" in read.document ? 422 : 200, { "content-type": "application/json; charset=UTF-8" });
   });
 
+  // behold#1027: the graph pane. Every member's graph and every index in one
+  // embedded LadybugDB (the optional peer @ladybugdb/core), queried in Cypher
+  // or from a resource name or id. GET routes only (src/graph-db/pane.ts);
+  // nothing here acts, and the only file it writes is its own database.
+  mountGraphPane(app, {
+    projectDir: () => cfg.projectDir,
+    members: () => estateMembers(estateDirs()),
+    readChant: async () =>
+      cfg.projectDirs
+        ? { ir: await composeEstate(estateDirs()), members: estateMemberNames(estateDirs()), from: "behold's estate read (chant graph per member)" }
+        : { ir: await graphIr(cfg.projectDir), from: "chant graph --format ir" },
+    choudoufu: (args, cwd) => captureChoudoufu(args, cwd),
+    ...(cfg.public ? { public: true } : {}),
+    ...cfg.graph,
+  });
+
   // #193: the API's front door, for agents. Everything the SPA can see is
   // plain JSON over these routes — this index makes them discoverable without
   // reading source. Shapes and the read/act loop: AGENTS.md (shipped in the
@@ -2676,6 +2695,7 @@ export function createApp(
       agentsGuide: "https://github.com/INTENTIUS/behold/blob/main/AGENTS.md",
       routes: [
         { method: "GET", path: "/api", desc: "this index" },
+        ...GRAPH_ROUTES,
         { method: "GET", path: "/api/project", desc: "project info: dir, recents, environments, tiers, targets, stacks, preview lock" },
         { method: "POST", path: "/api/project/open", desc: "switch the served project: JSON body {dir} (validated; preview-locked)" },
         { method: "POST", path: "/api/project/reveal", desc: "open the OS file manager at a served/recent project dir: JSON body {dir?}" },
