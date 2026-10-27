@@ -57,10 +57,22 @@
     "hono": "^4.13.13"
   },
   "peerDependencies": {
-    "playwright-core": "^1.62.0"
+    "playwright-core": "^1.62.0",
+    "@aws-sdk/credential-providers": "^3.0.0",
+    "@azure/identity": "^4.0.0",
+    "google-auth-library": "^9.0.0 || ^10.0.0"
   },
   "peerDependenciesMeta": {
     "playwright-core": {
+      "optional": true
+    },
+    "@aws-sdk/credential-providers": {
+      "optional": true
+    },
+    "@azure/identity": {
+      "optional": true
+    },
+    "google-auth-library": {
       "optional": true
     }
   },
