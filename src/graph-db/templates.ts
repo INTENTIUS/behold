@@ -126,7 +126,7 @@ export const STUB_TEMPLATES: readonly Template[] = [
       "MATCH (r:Resource {key: $key}) OPTIONAL MATCH (r)-[:KNOWN_AS]->(:CloudId)<-[:KNOWN_AS]-(o:Resource) WHERE o.key <> r.key " +
       "RETURN r.key AS key, r.ownership AS ownership, r.engineOwnership AS engineOwnership, r.facts AS facts, r.observedAt AS observedAt, collect(DISTINCT o.key) AS sameObject",
     reads: "session",
-    note: "ownership is chant's verdict (owned or foreign); engineOwnership is an engine's (bound, unowned, pending or foreign). Absent is unknown, never guessed. A cloud listing reads markers only.",
+    note: "ownership is chant's marker verdict, owned or foreign. engineOwnership is an engine's, bound, unowned, pending or foreign. Absent is unknown, never guessed. A cloud listing reads markers only.",
   },
   {
     name: "same-object",
