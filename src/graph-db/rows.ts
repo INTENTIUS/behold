@@ -3,7 +3,8 @@
  * behold#1025's design comment lays out for LadybugDB:
  *
  *   Resource(key PK, source, scopeKey, version, id, kind, lexicon, listedType,
- *            location, nativeId, attrs, tags, facts, observedAt, ...)
+ *            location, nativeId, ownership, engineOwnership, attrs, tags,
+ *            facts, observedAt, ...)
  *   CloudId(value PK, kind), with KNOWN_AS from each Resource
  *   REF(FROM Resource TO Resource, kind, viaAttr, toAttr, grain, origin, rule,
  *       relation, ambiguous)
@@ -20,6 +21,14 @@
  * lister's key list (src/cloud-lister/mask.ts) before it is a row, whatever
  * the source, so nothing in the database holds what the lister would hide.
  *
+ * The columns are chant's graph schema's, laid out by ./layout-gen.ts
+ * (behold#1031): ./layout.generated.ts for the vendored schema, which these
+ * row types are checked against (./layout.ts), or the installed chant's
+ * schema at run time. A column that layout has and the vendored one does not
+ * (a field a newer chant added) is filled here from the node or edge field
+ * it names, so a newer chant's field reaches the database without a behold
+ * release.
+ *
  * Everything here is pure: documents in, rows out. Building the database is
  * src/graph-db/db.ts; finding the documents is src/graph-db/sources.ts.
  */
@@ -27,6 +36,8 @@ import { createHash } from "node:crypto";
 import type { GraphIR } from "@intentius/chant";
 import type { CloudScope, ListingResult } from "../cloud-lister/types.ts";
 import { maskValue } from "../cloud-lister/mask.ts";
+import type { GraphLayout, LayoutColumn } from "./layout-gen.ts";
+import { GRAPH_LAYOUT } from "./layout.generated.ts";
 import type { EngineFacts, EngineGraphDocument, FactEdge, FactGraph, FactNode, IndexDocument } from "./types.ts";
 
 export type SourceKind = "chant" | "engine" | "index" | "cloud";
@@ -47,8 +58,10 @@ export interface ResourceRow {
   name: string;
   /** An engine address (choudoufu instance address, plunge URN) or attrs.address. */
   address: string;
-  /** `facts.ownership` (bound, unowned, pending, foreign), or the IR's owned/foreign, or "". */
+  /** chant's verdict, the IR node's `ownership` (owned, foreign), or "" (behold#906 Q4). */
   ownership: string;
+  /** The engine's verdict, `facts.ownership` (bound, unowned, pending, foreign), or "" when no engine said. */
+  engineOwnership: string;
   attrs: string;
   tags: string;
   facts: string;
@@ -105,9 +118,33 @@ export interface LoadedRows {
   refs: RefRow[];
   sources: SourceStamp[];
   notes: string[];
+  /** The layout the rows are for; absent is the vendored one (./layout.generated.ts). */
+  layout?: GraphLayout;
 }
 
-export const emptyRows = (): LoadedRows => ({ resources: [], cloudIds: [], knownAs: [], refs: [], sources: [], notes: [] });
+export const emptyRows = (layout?: GraphLayout): LoadedRows => ({ resources: [], cloudIds: [], knownAs: [], refs: [], sources: [], notes: [], ...(layout ? { layout } : {}) });
+
+const vendoredColumns = (table: string): Set<string> => new Set(GRAPH_LAYOUT.tables.find((t) => t.name === table)?.columns.map((c) => c.name) ?? []);
+const VENDORED = { Resource: vendoredColumns("Resource"), REF: vendoredColumns("REF") };
+
+/** The schema-field columns `layout` has on `table` that the vendored layout lacks: what the loaders fill generically. */
+export function extraColumns(layout: GraphLayout | undefined, table: "Resource" | "REF"): LayoutColumn[] {
+  if (!layout || layout === (GRAPH_LAYOUT as unknown as GraphLayout)) return [];
+  const t = layout.tables.find((x) => x.name === table);
+  return (t?.columns ?? []).filter((c) => c.from !== "behold" && !VENDORED[table].has(c.name));
+}
+
+/** A field's value as its column holds it: JSON (masked) for a structured column, else the value when it has the column's type, else the type's empty value. */
+export function columnValue(c: LayoutColumn, v: unknown): string | number | boolean {
+  if (c.json) return v === undefined ? "" : JSON.stringify(maskValue(v));
+  if (c.type === "BOOLEAN") return v === true;
+  if (c.type === "DOUBLE" || c.type === "INT64") return typeof v === "number" && Number.isFinite(v) ? (c.type === "INT64" ? Math.trunc(v) : v) : 0;
+  return typeof v === "string" ? v : "";
+}
+
+function fillExtras(row: object, from: object, cols: readonly LayoutColumn[]): void {
+  for (const c of cols) (row as Record<string, unknown>)[c.name] = columnValue(c, (from as Record<string, unknown>)[c.from.slice(c.from.indexOf(".") + 1)]);
+}
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
@@ -151,8 +188,9 @@ export function cloudIdsOf(node: FactNode, extra: ReadonlyArray<{ kind: string; 
   return [...out].map(([value, kind]) => ({ value, kind }));
 }
 
-function ownershipOf(node: FactNode): string {
-  return node.facts?.ownership ?? node.ownership ?? "";
+/** chant's verdict and the engine's, kept apart (behold#906 Q4). */
+function ownershipOf(node: FactNode): { ownership: string; engineOwnership: string } {
+  return { ownership: str(node.ownership), engineOwnership: str(node.facts?.ownership) };
 }
 
 interface NodeLoad {
@@ -171,6 +209,8 @@ function json(v: unknown): string {
 
 function loadGraph(rows: LoadedRows, graph: FactGraph | GraphIR, o: NodeLoad): { nodes: number; edges: number } {
   const g = graph as FactGraph;
+  const nodeExtras = extraColumns(rows.layout, "Resource");
+  const edgeExtras = extraColumns(rows.layout, "REF");
   const seen = new Set<string>();
   let nodes = 0;
   for (const node of g.nodes ?? []) {
@@ -181,7 +221,7 @@ function loadGraph(rows: LoadedRows, graph: FactGraph | GraphIR, o: NodeLoad): {
     const extra = o.extra?.(node) ?? {};
     const { cloudIds: extraIds, ...cols } = extra;
     const facts: EngineFacts | undefined = node.facts;
-    rows.resources.push({
+    const row: ResourceRow = {
       key,
       source: o.source,
       scopeKey: o.scopeKey,
@@ -194,13 +234,15 @@ function loadGraph(rows: LoadedRows, graph: FactGraph | GraphIR, o: NodeLoad): {
       nativeId: "",
       name: nameOf(node),
       address: str(node.attrs?.address),
-      ownership: ownershipOf(node),
+      ...ownershipOf(node),
       attrs: json(maskValue(node.attrs ?? {})),
       tags: "",
       facts: json(facts),
       observedAt: facts?.observedAt ?? o.observedAt,
       ...cols,
-    });
+    };
+    fillExtras(row, node, nodeExtras);
+    rows.resources.push(row);
     for (const c of cloudIdsOf(node, extraIds)) {
       rows.cloudIds.push(c);
       rows.knownAs.push({ key, value: c.value });
@@ -213,7 +255,7 @@ function loadGraph(rows: LoadedRows, graph: FactGraph | GraphIR, o: NodeLoad): {
     const to = o.keyOf(e.to);
     // A reference whose end is not in this source is dangling, never an edge (behold#1025 "Edge").
     if (!seen.has(from) || !seen.has(to)) continue;
-    rows.refs.push({
+    const ref: RefRow = {
       from,
       to,
       kind: str(e.kind),
@@ -224,7 +266,9 @@ function loadGraph(rows: LoadedRows, graph: FactGraph | GraphIR, o: NodeLoad): {
       rule: str(e.rule),
       relation: e.relation ?? "reference",
       ambiguous: e.ambiguous === true,
-    });
+    };
+    fillExtras(ref, e, edgeExtras);
+    rows.refs.push(ref);
     edges++;
   }
   return { nodes, edges };
@@ -266,7 +310,9 @@ export function rowsFromChantIr(ir: GraphIR, o: { member?: string; members?: rea
     const keys = new Set(rows.resources.map((r) => r.key));
     for (const e of ir.edges as FactEdge[]) {
       if (!keys.has(e.from) || !keys.has(e.to)) continue;
-      rows.refs.push({ from: e.from, to: e.to, kind: str(e.kind), viaAttr: str(e.viaAttr), toAttr: str(e.toAttr), grain: str(e.grain), origin: e.origin ?? "declared", rule: str(e.rule), relation: e.relation ?? "reference", ambiguous: e.ambiguous === true });
+      const ref: RefRow = { from: e.from, to: e.to, kind: str(e.kind), viaAttr: str(e.viaAttr), toAttr: str(e.toAttr), grain: str(e.grain), origin: e.origin ?? "declared", rule: str(e.rule), relation: e.relation ?? "reference", ambiguous: e.ambiguous === true };
+      fillExtras(ref, e, extraColumns(rows.layout, "REF"));
+      rows.refs.push(ref);
       const s = stamps.get(memberOf(e.from));
       if (s) s.edges++;
     }
@@ -427,6 +473,7 @@ export function deriveIdentityEdges(rows: LoadedRows): number {
     owners.set(k.value, list);
   }
   const have = new Set(rows.refs.map((r) => `${r.from}\u0000${r.to}\u0000${r.viaAttr}`));
+  const edgeExtras = extraColumns(rows.layout, "REF");
   let added = 0;
   for (const r of rows.resources) {
     if (!r.attrs) continue;
@@ -444,7 +491,9 @@ export function deriveIdentityEdges(rows: LoadedRows): number {
         const id = `${r.key}\u0000${hit.key}\u0000${path}`;
         if (have.has(id)) continue;
         have.add(id);
-        rows.refs.push({ from: r.key, to: hit.key, kind: "ref", viaAttr: path, toAttr: "", grain: "property", origin: "derived", rule: `identity:${kindOf.get(value) ?? "provider-id"}`, relation: "reference", ambiguous: hits.length > 1 });
+        const ref: RefRow = { from: r.key, to: hit.key, kind: "ref", viaAttr: path, toAttr: "", grain: "property", origin: "derived", rule: `identity:${kindOf.get(value) ?? "provider-id"}`, relation: "reference", ambiguous: hits.length > 1 };
+        fillExtras(ref, {}, edgeExtras);
+        rows.refs.push(ref);
         added++;
       }
     }

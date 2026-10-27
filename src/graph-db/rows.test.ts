@@ -118,7 +118,9 @@ describe("engine graph documents (chant#4520 section 3)", () => {
     expect(engineScopeKey(choudoufu)).toBe("engine/choudoufu/web");
     const eip = rows.resources.find((r) => r.id === "module.app[0].aws_eip.pool[1]")!;
     expect(eip.key).toBe("engine/choudoufu/web/module.app[0].aws_eip.pool[1]");
-    expect(eip.ownership).toBe("bound");
+    // behold#906 Q4: the engine's verdict has its own column; chant's (IRNode.ownership) is absent on an engine node.
+    expect(eip.engineOwnership).toBe("bound");
+    expect(eip.ownership).toBe("");
     expect(eip.address).toBe("module.app[0].aws_eip.pool[1]");
     expect(JSON.parse(eip.facts)).toMatchObject({ ownedBy: "marker", markers: { source: "live" } });
     expect(rows.sources[0]).toMatchObject({ source: "engine", name: "choudoufu", version: "0.33.0", observedAt: "2026-10-26T12:00:00Z", readAt });

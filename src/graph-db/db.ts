@@ -26,6 +26,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { LbugConnection, LbugDatabase, LbugModule, LbugQueryResult } from "./peer.ts";
 import type { LoadedRows } from "./rows.ts";
+import type { GraphLayout } from "./layout-gen.ts";
+import { GRAPH_LAYOUT } from "./layout.generated.ts";
 
 /** Where session databases live. */
 export function graphDbDir(env: NodeJS.ProcessEnv = process.env, home: string = homedir()): string {
@@ -99,20 +101,23 @@ export function checkReadQuery(q: string): string {
   return s;
 }
 
-/** The schema, behold#1025's three tables plus the typed columns the templates read. */
-export const SCHEMA: readonly string[] = [
-  "CREATE NODE TABLE Resource(key STRING, source STRING, scopeKey STRING, version STRING, id STRING, kind STRING, lexicon STRING, listedType STRING, location STRING, nativeId STRING, name STRING, address STRING, ownership STRING, attrs STRING, tags STRING, facts STRING, observedAt STRING, PRIMARY KEY(key))",
-  "CREATE NODE TABLE CloudId(value STRING, kind STRING, PRIMARY KEY(value))",
-  "CREATE REL TABLE KNOWN_AS(FROM Resource TO CloudId)",
-  "CREATE REL TABLE REF(FROM Resource TO Resource, kind STRING, viaAttr STRING, toAttr STRING, grain STRING, origin STRING, rule STRING, relation STRING, ambiguous BOOLEAN)",
-];
+/**
+ * The schema, behold#1025's three tables plus the typed columns the templates
+ * read, as generated from chant's graph schema (behold#1031,
+ * ./layout.generated.ts). A session built with a newer installed chant's
+ * schema uses that layout's statements instead (./layout.ts `activeLayout`).
+ */
+export const SCHEMA: readonly string[] = GRAPH_LAYOUT.ddl;
 
-const INSERT_RESOURCE =
-  "CREATE (:Resource {key: $key, source: $source, scopeKey: $scopeKey, version: $version, id: $id, kind: $kind, lexicon: $lexicon, listedType: $listedType, location: $location, nativeId: $nativeId, name: $name, address: $address, ownership: $ownership, attrs: $attrs, tags: $tags, facts: $facts, observedAt: $observedAt})";
-const INSERT_CLOUD_ID = "CREATE (:CloudId {value: $value, kind: $kind})";
-const INSERT_KNOWN_AS = "MATCH (r:Resource {key: $key}), (c:CloudId {value: $value}) CREATE (r)-[:KNOWN_AS]->(c)";
-const INSERT_REF =
-  "MATCH (a:Resource {key: $from}), (b:Resource {key: $to}) CREATE (a)-[:REF {kind: $kind, viaAttr: $viaAttr, toAttr: $toAttr, grain: $grain, origin: $origin, rule: $rule, relation: $relation, ambiguous: $ambiguous}]->(b)";
+/** The DDL and the insert statement per table for one layout, in build order. */
+export function statementsFor(layout: GraphLayout): { ddl: readonly string[]; inserts: { resource: string; cloudId: string; knownAs: string; ref: string } } {
+  const ins = (t: string): string => {
+    const s = layout.inserts[t];
+    if (!s) throw new Error(`graph build: the layout has no ${t} table`);
+    return s;
+  };
+  return { ddl: layout.ddl, inserts: { resource: ins("Resource"), cloudId: ins("CloudId"), knownAs: ins("KNOWN_AS"), ref: ins("REF") } };
+}
 
 const all = async (r: LbugQueryResult | LbugQueryResult[]): Promise<LbugQueryResult> => (Array.isArray(r) ? r[r.length - 1]! : r);
 
@@ -174,17 +179,18 @@ export class GraphDb {
     const c = new lbug.Connection(w);
     await c.init();
     try {
-      for (const ddl of SCHEMA) await c.query(ddl);
+      const st = statementsFor(rows.layout ?? GRAPH_LAYOUT);
+      for (const ddl of st.ddl) await c.query(ddl);
       const run = async (stmt: string, list: readonly object[]) => {
         if (!list.length) return;
         const p = await c.prepare(stmt);
         if (!p.isSuccess()) throw new Error(`graph build: ${p.getErrorMessage()}`);
         for (const params of list) await c.execute(p, params as Record<string, unknown>);
       };
-      await run(INSERT_RESOURCE, rows.resources);
-      await run(INSERT_CLOUD_ID, rows.cloudIds);
-      await run(INSERT_KNOWN_AS, rows.knownAs);
-      await run(INSERT_REF, rows.refs);
+      await run(st.inserts.resource, rows.resources);
+      await run(st.inserts.cloudId, rows.cloudIds);
+      await run(st.inserts.knownAs, rows.knownAs);
+      await run(st.inserts.ref, rows.refs);
     } finally {
       await c.close();
       await w.close();

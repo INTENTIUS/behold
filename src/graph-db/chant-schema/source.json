@@ -1,0 +1,12 @@
+{
+  "repo": "INTENTIUS/chant",
+  "path": "packages/core/src/graph-schema/graph.schema.json",
+  "ref": "integration/consolidation-graph",
+  "commit": "b67edc44702f9b82817419fd76dae80fb04473c1",
+  "sha256": "1dcddee4c8d34eed8962ade1669ea790c2a4bc9da720102da38bc9ecc2b32925",
+  "fixtures": {
+    "choudoufu.engine-graph.json": "a22dd08795e04c9c1f904bcdb8044c2abf1447654148a7ab0d212f90e5013401",
+    "index.json": "8cce58731df53593e0c2dbcf5a8b240780485013c4b170dc709a318bc4dbe642",
+    "plunge.engine-graph.json": "dc7465dfc2666943ba6136b91f0c7c26ea04fa4e021db1f4f20d8a957567f518"
+  }
+}
