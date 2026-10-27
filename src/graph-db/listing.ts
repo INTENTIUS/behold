@@ -1,25 +1,28 @@
 /**
- * behold#1029: the cloud lister's output, the "listing result" source shape
+ * The cloud lister's output, the "listing result" source shape
  * of behold#1025's design (https://github.com/INTENTIUS/behold/issues/1025#issuecomment-6430966093,
  * ruled in #issuecomment-6431259469).
  *
- * The ruling puts the index schema's TypeScript types in chant core (Q5), and
- * chant's `typeListing` (chant#4521) turns a `ListingResult` into an
- * `IndexDocument`. No published chant carries those types yet, so this module
- * holds the shape structurally. When chant ships it, behold imports chant's
- * types behind its chant floor (src/chant-release.ts) and this file becomes a
- * re-export.
+ * The lister moved to chant (INTENTIUS/chant#4532,
+ * packages/core/src/cloud-lister/), and `behold index` calls chant's
+ * `runCloudIndex`. behold keeps this shape only to read a listing the graph
+ * pane loads (src/graph-db/sources.ts, rows.ts), held structurally because
+ * no published chant exports it yet.
+ *
+ * TODO(chant#4532, behold#1005): once src/chant-release.ts says
+ * `released: true`, re-export chant's types from
+ * `@intentius/chant/cloud-lister/types` instead.
  *
  * What the lister fills, per the design and chant#4520's ruled `EngineFacts`:
  *
  *  - every resource gets the path-style id the ruling names (Q2),
- *    `<substrate>/<scopeId>/<location>/<listedType>/<nativeId>` (src/cloud-lister/ids.ts);
+ *    `<substrate>/<scopeId>/<location>/<listedType>/<nativeId>` (chant packages/core/src/cloud-lister/ids.ts);
  *  - `facts` carries only what a cloud listing can read: `markers` (from tags
  *    and labels), `cloudIds` and `observedAt`. `ownership`, `ownedBy` and
  *    `recordVersions` stay absent, because they are relative to an estate or
  *    stack and a record the lister never reads;
  *  - properties, tags and every string under them are masked before the
- *    result exists (src/cloud-lister/mask.ts).
+ *    result exists (src/graph-db/mask.ts).
  */
 
 import type { UnobservedReason } from "@intentius/chant";
@@ -125,7 +128,7 @@ export interface ListedResource {
 /** The lister's whole output for one run (#1025 `ListingResult`). */
 export interface ListingResult {
   listing: "v1";
-  source: { name: "behold-lister"; version: string };
+  source: { name: string; version: string };
   scope: CloudScope;
   startedAt: string;
   completedAt: string;

@@ -21,7 +21,7 @@
  * The coverage lookup is chant's `indexCoverageFor` (chant#4519, on chant's
  * integration/consolidation-graph, in no published chant yet), found at run
  * time under a specifier the type checker does not follow, as
- * src/chant-index.ts does. A chant without it gets the diff's own copy of
+ * src/behold-index.ts does. A chant without it gets the diff's own copy of
  * the rule, and the answer says which one ran (`coverageRule`).
  *
  * Routes, both GET and neither acts:
