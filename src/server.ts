@@ -56,7 +56,7 @@ import { ghReady, resolveWorkflow, dispatchAndFollow, followRun, joinCiProgress 
 import { saveDispatchedRun, readDispatchedRun, concludeDispatchedRun, type DispatchedRun } from "./ci-run-store.ts";
 import { joinComponentStatus, joinTickVerdicts, componentStatusColor } from "./component-status.ts";
 import { reclassifyOverlay, pruneImports, attachRuntimeContainment, pruneRuntimeChildren } from "./overlay.ts";
-import { addValueMatchEdges } from "./value-match.ts";
+import { deriveGraphEdges } from "./chant-edges.ts";
 import { addK8sDeclaredEdges } from "./k8s-edges.ts";
 import { applyHelmArtifacts } from "./helm-artifacts.ts";
 import { applyHelmRenderDrift, readHelmRenderDrift } from "./helm-drift.ts";
@@ -3157,7 +3157,7 @@ export function createApp(
         // edges). Declared contracts should name their own field — `sourceRef`,
         // not `spec.sourceRef.name` — and value-match fills what is left.
         ir = addK8sDeclaredEdges(ir);
-        ir = addValueMatchEdges(ir);
+        ir = await deriveGraphEdges(ir);
         // The estate's own edge (#166): a control-plane member's Kustomization /
         // Application declares the directory it applies, and behold knows each
         // member by its checkout — so the join a single project cannot make is
@@ -3289,7 +3289,7 @@ export function createApp(
         // touching server.ts at all, and #143 (ec5e444) then carried
         // `addK8sDeclaredEdges` into both logical branches but not this. No
         // commit message, comment or test ever recorded the omission.
-        const base = addClusterAnchorEdges(addValueMatchEdges(addK8sDeclaredEdges(raw)), logicalContext);
+        const base = addClusterAnchorEdges(await deriveGraphEdges(addK8sDeclaredEdges(raw)), logicalContext);
         // #379/#380/#382: name and box the Terraform cards before the lens
         // projects them, so its own boxes hold cards rather than block classes.
         const singleRun = applyMemberPasses(base, { detail: opts.detail });
@@ -3342,8 +3342,9 @@ export function createApp(
         // azure's. First of the two since #166 — see the estate branch above.
         ir = addK8sDeclaredEdges(ir);
         // Connect resources wired by a literal name/ARN value the symbolic-ref
-        // graph misses (see addValueMatchEdges).
-        ir = addValueMatchEdges(ir);
+        // graph misses: chant's derived edges when it can draw them, else
+        // value-match (src/chant-edges.ts, behold#1030).
+        ir = await deriveGraphEdges(ir);
         // #234's free rider — see the estate branch above.
         ir = markOperatorHome(ir);
         // Anchor a mixed-substrate estate (#103): the k8s half carries no
@@ -4031,7 +4032,7 @@ export function createApp(
         // estate exists for. Both paths derive identically: a live overlay adds
         // colour, never a different topology.
         ir = addK8sDeclaredEdges(ir);
-        ir = addValueMatchEdges(ir);
+        ir = await deriveGraphEdges(ir);
         ir = addEstateMemberEdges(ir, estateMembers(cfg.projectDirs));
         ir = addChoudoufuReferenceEdges(ir);
         // #234's free rider — see /api/graph's estate branch.
@@ -4297,7 +4298,7 @@ export function createApp(
         // overlay's logical lens was missing it for exactly the same reason
         // /api/graph's was (see that branch), and the overlay is
         // source-anchored, so this is the same derivation on both.
-        const projectionInput = addClusterAnchorEdges(addValueMatchEdges(addK8sDeclaredEdges(ir)), boundContext);
+        const projectionInput = addClusterAnchorEdges(await deriveGraphEdges(addK8sDeclaredEdges(ir)), boundContext);
         // #379/#380/#382 — as on the source logical path.
         applyMemberPasses(projectionInput, { detail: opts.detail });
         const { ir: projected, byContainer, namespaceBoxes } = projectTopology(projectionInput, env, boundContext, [await graphPath(cfg.projectDir, opts), cfg.projectDir]);
@@ -4326,7 +4327,7 @@ export function createApp(
       ir = addK8sDeclaredEdges(ir);
       // Connect resources wired by a literal name/ARN value (e.g. an RDS
       // instance's DBSubnetGroupName) that the symbolic-ref graph misses.
-      ir = addValueMatchEdges(ir);
+      ir = await deriveGraphEdges(ir);
       // #234's free rider — see /api/graph's estate branch. The overlay is
       // source-anchored, so the OperatorStack's declared labels are here too.
       ir = markOperatorHome(ir);
@@ -4459,7 +4460,7 @@ export function createApp(
     // And the same import-handle pruning below ATTRIBUTES tier + value-matched edges.
     if ((optsFromQuery(new URL(c.req.url)).detail ?? 2) < 3) pruneImports(result.ir);
     addK8sDeclaredEdges(result.ir);
-    addValueMatchEdges(result.ir);
+    await deriveGraphEdges(result.ir);
     addClusterAnchorEdges(result.ir, await boundK8sContext(env));
     const { svg } = renderGraph(result.ir, { boxes: "byContainer" });
     return c.json({

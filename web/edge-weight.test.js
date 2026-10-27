@@ -47,3 +47,22 @@ describe("edgeWeights (#878)", () => {
     expect(weightLegend(new Map([["x→y", "reference"]]))).toEqual([]);
   });
 });
+
+describe("edgeWeights over chant's derived edges (behold#1030)", () => {
+  it("weighs an edge chant derived as inferred, as the matcher's were", () => {
+    const kindOf = new Map([
+      ["db", "AWS::RDS::DBInstance"],
+      ["group", "AWS::RDS::DBSubnetGroup"],
+    ]);
+    const w = edgeWeights(
+      [{ from: "db", to: "group", kind: "ref", viaAttr: "DBSubnetGroupName", origin: "derived", rule: "aws:AWS::RDS::DBInstance:DBSubnetGroupName" }],
+      kindOf,
+    );
+    expect(w.get("db→group")).toBe("inferred");
+  });
+
+  it("keeps a declared edge a reference", () => {
+    const w = edgeWeights([{ from: "db", to: "group", kind: "ref", viaAttr: "DBSubnetGroupName", origin: "declared" }], new Map());
+    expect(w.get("db→group")).toBe("reference");
+  });
+});
