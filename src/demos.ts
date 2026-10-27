@@ -130,7 +130,21 @@ function readCatalog(file: string, catalog: DemoCatalog): DemoEntry[] {
   const catalogDir = dirname(resolve(file));
   return list
     .filter((e): e is DemoEntry => validEntry(e))
-    .map((e) => ({ ...e, catalog, catalogDir }));
+    .map((e) => ({ ...e, ...(e.serve.spawnEnv ? { serve: { ...e.serve, spawnEnv: expandSpawnEnv(e.serve.spawnEnv) } } : {}), catalog, catalogDir }));
+}
+
+/** behold#1032: a spawnEnv value may name a variable of the environment behold
+ * starts in, `${NAME}` or `${NAME:-default}`, so the port a demo's up script
+ * takes from the environment (choudoufu-estate's BEHOLD_CHOUDOUFU_FLOCI_PORT)
+ * reaches the endpoint its choudoufu spawns get. An unset or empty variable
+ * takes the default (empty without one); any other text stays as written.
+ * Exported for testing. */
+export function expandSpawnEnv(env: Record<string, string>, from: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(env)) {
+    out[k] = v.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g, (_m, name: string, dflt?: string) => from[name] || (dflt ?? ""));
+  }
+  return out;
 }
 
 function validEntry(e: unknown): e is DemoEntry {

@@ -82,8 +82,13 @@ if [ -n "$CHOUDOUFU_VERSION" ] && [ "$(printf '%s\n0.22.0\n' "$CHOUDOUFU_VERSION
   exit 1
 fi
 
-export FLOCI_CONTAINER=behold-multi-engine-floci FLOCI_AZ_CONTAINER=behold-multi-engine-floci-az FLOCI_GCP_CONTAINER=behold-multi-engine-floci-gcp
-export FLOCI_PORT=4664 FLOCI_AZ_PORT=4665 FLOCI_GCP_PORT=4666
+# behold#1032: names and ports from the environment, these as defaults, so
+# a second run can sit beside this one (e2e/README.md). The images ride
+# FLOCI_IMAGE, FLOCI_AZ_IMAGE and FLOCI_GCP_IMAGE into emulators-up.sh, which
+# pins its own defaults.
+: "${FLOCI_CONTAINER:=behold-multi-engine-floci}" "${FLOCI_AZ_CONTAINER:=behold-multi-engine-floci-az}" "${FLOCI_GCP_CONTAINER:=behold-multi-engine-floci-gcp}"
+: "${FLOCI_PORT:=4664}" "${FLOCI_AZ_PORT:=4665}" "${FLOCI_GCP_PORT:=4666}"
+export FLOCI_CONTAINER FLOCI_AZ_CONTAINER FLOCI_GCP_CONTAINER FLOCI_PORT FLOCI_AZ_PORT FLOCI_GCP_PORT
 for c in "$FLOCI_CONTAINER" "$FLOCI_AZ_CONTAINER" "$FLOCI_GCP_CONTAINER"; do
   if docker ps -a --format '{{.Names}}' | grep -qx "$c"; then
     echo "$c already exists: a previous run didn't tear down; \`docker rm -f $c\` and re-run" >&2

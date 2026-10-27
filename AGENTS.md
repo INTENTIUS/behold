@@ -2120,6 +2120,10 @@ live here, with the enforceable ones enforced.
   renaming it is a settings change for the maintainer (behold#1018).
   No `gh pr merge --auto`; merge one PR at a time, in order, and rebase the
   next onto what landed.
+- **Emulator e2e scripts** take their container names, ports and images
+  from the environment and run under `e2e/lib/safe-env.sh`, which keeps real
+  cloud credentials out of reach and fails on a real-cloud rejection in the
+  log; e2e/README.md has the variables (behold#1032).
 - **The local gate** is `just check` (tsc, tests, build). The tests never read
   the caller's environment (behold#1013): src/test-env.ts, vitest's setup
   file, removes CHOUDOUFU_BIN, PLUNGE_BIN and the other variables behold

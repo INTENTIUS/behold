@@ -6,7 +6,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadDemoRegistry, missingRequirements, fetchesFromNetwork, demoTargetDir, demoLocalPath, loadDemo, type DemoEntry } from "./demos.ts";
+import { expandSpawnEnv, loadDemoRegistry, missingRequirements, fetchesFromNetwork, demoTargetDir, demoLocalPath, loadDemo, type DemoEntry } from "./demos.ts";
 import { choudoufuBinary } from "./choudoufu-member.ts";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -162,6 +162,22 @@ describe("loadDemoRegistry — malformed input degrades, never throws", () => {
     const dir = tmpRoot(JSON.stringify({ demos: [entry(true, "yes"), entry("yes", "string"), entry(1, "number"), entry(undefined, "none")] }));
     expect(loadDemoRegistry(dir).map((e) => e.name)).toEqual(["yes", "none"]);
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("behold#1032: a spawnEnv value expands ${NAME:-default} from the environment", () => {
+    expect(expandSpawnEnv({ AWS_ENDPOINT_URL: "http://127.0.0.1:${P:-4650}", R: "us-east-1" }, {})).toEqual({ AWS_ENDPOINT_URL: "http://127.0.0.1:4650", R: "us-east-1" });
+    expect(expandSpawnEnv({ AWS_ENDPOINT_URL: "http://127.0.0.1:${P:-4650}" }, { P: "4750" })).toEqual({ AWS_ENDPOINT_URL: "http://127.0.0.1:4750" });
+    expect(expandSpawnEnv({ A: "${P:-4650}" }, { P: "" })).toEqual({ A: "4650" });
+    expect(expandSpawnEnv({ A: "x${Q}y", B: "$P {P}" }, { Q: "1", P: "2" })).toEqual({ A: "x1y", B: "$P {P}" });
+    const prev = process.env.BEHOLD_CHOUDOUFU_FLOCI_PORT;
+    process.env.BEHOLD_CHOUDOUFU_FLOCI_PORT = "4750";
+    try {
+      const shipped = loadDemoRegistry(REPO).find((e) => e.name === "choudoufu-estate")!;
+      expect(shipped.serve.spawnEnv?.AWS_ENDPOINT_URL).toBe("http://127.0.0.1:4750");
+    } finally {
+      if (prev === undefined) delete process.env.BEHOLD_CHOUDOUFU_FLOCI_PORT;
+      else process.env.BEHOLD_CHOUDOUFU_FLOCI_PORT = prev;
+    }
   });
 
   it("a spawnEnv that is not a string map drops the entry; a well-formed one is carried", () => {

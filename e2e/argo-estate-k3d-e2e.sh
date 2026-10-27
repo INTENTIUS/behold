@@ -90,7 +90,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-CLUSTER=behold-argo-e2e
+# behold#1032: a second run beside this one names its own cluster.
+CLUSTER="${BEHOLD_E2E_CLUSTER:-behold-argo-e2e}"
 CONTEXT=k3d-behold-argo-demo # what the members' chant.config.ts pins
 ESTATE=example-argo-estate
 PORT="${BEHOLD_E2E_PORT:-4697}"

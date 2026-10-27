@@ -80,7 +80,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-CLUSTER=behold-flux-e2e
+# behold#1032: a second run beside this one names its own cluster.
+CLUSTER="${BEHOLD_E2E_CLUSTER:-behold-flux-e2e}"
 CONTEXT=k3d-behold-flux-demo # what the members' chant.config.ts pins
 ESTATE=example-flux-estate
 PORT="${BEHOLD_E2E_PORT:-4695}"
