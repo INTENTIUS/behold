@@ -18,10 +18,17 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-CONTAINER=behold-choudoufu-floci
-PORT=4650
+# behold#1032: name, port and image come from the environment, so a second
+# copy can run beside the first. demos.json's spawnEnv reads the same port
+# variable, so behold's choudoufu spawns follow it; choudoufu-down.sh reads
+# the same container variable.
+: "${BEHOLD_CHOUDOUFU_FLOCI_CONTAINER:=behold-choudoufu-floci}"
+: "${BEHOLD_CHOUDOUFU_FLOCI_PORT:=4650}"
 # The image the live-mv workbench measures against (choudoufu's live/floci-image).
-IMAGE="ghcr.io/lex00/floci@sha256:a39185cc3971d0188663d61043cb038dff1260d8a975b1aa72c4e2bb1feac3cb"
+: "${BEHOLD_CHOUDOUFU_FLOCI_IMAGE:=ghcr.io/lex00/floci@sha256:a39185cc3971d0188663d61043cb038dff1260d8a975b1aa72c4e2bb1feac3cb}"
+CONTAINER="$BEHOLD_CHOUDOUFU_FLOCI_CONTAINER"
+PORT="$BEHOLD_CHOUDOUFU_FLOCI_PORT"
+IMAGE="$BEHOLD_CHOUDOUFU_FLOCI_IMAGE"
 
 if ! docker info >/dev/null 2>&1; then
   echo "choudoufu-estate demo: Docker is not running — start Docker and re-run." >&2

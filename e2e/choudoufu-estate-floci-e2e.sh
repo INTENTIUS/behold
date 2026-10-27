@@ -27,13 +27,21 @@
 #                              flips direction.
 #
 # Scratch discipline (src/scratch.ts): the container is behold-choudoufu-floci
-# on 127.0.0.1:4650, refused if it already exists, removed on exit by the
-# demo's own down script and nothing else. Skips, exit 0, with the reason,
+# on 127.0.0.1:4650 (BEHOLD_CHOUDOUFU_FLOCI_CONTAINER, _PORT), refused if it
+# already exists, removed on exit by the demo's own down script and nothing
+# else. Skips, exit 0, with the reason,
 # when Docker or choudoufu is absent — CI has neither.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 PORT="${BEHOLD_E2E_PORT:-4699}"
 TARGET="${BEHOLD_E2E_TARGET:-$(mktemp -d "${TMPDIR:-/tmp}/behold-choudoufu-e2e.XXXXXX")/estate}"
+# behold#1032: the demo's floci name, port and image from the environment,
+# choudoufu-up.sh's values as defaults, exported so the up and down scripts
+# and demos.json's spawnEnv (which `behold demo` expands) see the same ones.
+# BEHOLD_CHOUDOUFU_FLOCI_IMAGE, when set, reaches choudoufu-up.sh as it is.
+: "${BEHOLD_CHOUDOUFU_FLOCI_CONTAINER:=behold-choudoufu-floci}" "${BEHOLD_CHOUDOUFU_FLOCI_PORT:=4650}"
+export BEHOLD_CHOUDOUFU_FLOCI_CONTAINER BEHOLD_CHOUDOUFU_FLOCI_PORT
+FLOCI_NAME="$BEHOLD_CHOUDOUFU_FLOCI_CONTAINER"
 
 # behold#388: the binary behold itself spawns, so the run and the tool under
 # test never diverge.
@@ -41,8 +49,8 @@ CHOUDOUFU="${CHOUDOUFU_BIN:-choudoufu}"
 if ! docker info >/dev/null 2>&1; then echo "skip: Docker is not running"; exit 0; fi
 if ! command -v "$CHOUDOUFU" >/dev/null 2>&1; then echo "skip: ${CHOUDOUFU} is not on PATH (set CHOUDOUFU_BIN to name a build)"; exit 0; fi
 if ! "$CHOUDOUFU" version -json | grep -q choudoufu_version; then echo "skip: choudoufu predates version -json's choudoufu_version (needs 0.16.0 or a build from main)"; exit 0; fi
-if docker ps -a --format '{{.Names}}' | grep -qx behold-choudoufu-floci; then
-  echo "behold-choudoufu-floci already exists — a previous run didn't tear down; \`docker rm -f behold-choudoufu-floci\` and re-run" >&2
+if docker ps -a --format '{{.Names}}' | grep -qx "$FLOCI_NAME"; then
+  echo "$FLOCI_NAME already exists — a previous run didn't tear down; \`docker rm -f $FLOCI_NAME\` and re-run" >&2
   exit 1
 fi
 
@@ -54,7 +62,7 @@ node ./bin/behold.js demo choudoufu-estate "$TARGET" --port "$PORT" >/tmp/behold
 PID=$!
 cleanup() {
   kill "$PID" 2>/dev/null || true
-  [ -x "$TARGET/scripts/choudoufu-down.sh" ] && bash "$TARGET/scripts/choudoufu-down.sh" || docker rm -f behold-choudoufu-floci >/dev/null 2>&1 || true
+  [ -x "$TARGET/scripts/choudoufu-down.sh" ] && bash "$TARGET/scripts/choudoufu-down.sh" || docker rm -f "$FLOCI_NAME" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -103,7 +111,7 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$PORT/ap
 
 echo "→ 5. by hand: the role moves to team-a; the receipt reads it back"
 LINE=$(printf '%s' "$M" | jq -r '.moves[] | select(.address == "aws_iam_role.team_a") | .command')
-( cd "$TARGET/team-a" && AWS_ENDPOINT_URL=http://127.0.0.1:4650 AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_REGION=us-east-1 \
+( cd "$TARGET/team-a" && AWS_ENDPOINT_URL="http://127.0.0.1:$BEHOLD_CHOUDOUFU_FLOCI_PORT" AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_REGION=us-east-1 \
     ${LINE/choudoufu live-mv/$CHOUDOUFU live-mv -json} | jq -e '.written == true and .verified == true' >/dev/null )
 echo "  ✓ $LINE (written, verified)"
 R=$(api "/api/choudoufu/split?plan=split.json&receipt=1")
