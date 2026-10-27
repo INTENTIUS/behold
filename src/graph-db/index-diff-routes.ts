@@ -18,11 +18,20 @@
  * by scope before either is read. The diff then compares the two stamps'
  * `scopeKey` again and refuses a mismatch by name.
  *
- * The coverage lookup is chant's `indexCoverageFor` (chant#4519, on chant's
- * integration/consolidation-graph, in no published chant yet), found at run
- * time under a specifier the type checker does not follow, as
- * src/behold-index.ts does. A chant without it gets the diff's own copy of
- * the rule, and the answer says which one ran (`coverageRule`).
+ * The diff itself is chant's (chant#4533, `diffIndexVersions` in
+ * `@intentius/chant/lifecycle/index-diff`; ruling on behold#1024: behold is a
+ * control plane and every model lives in chant). It is in no published chant
+ * yet, so it is found at run time under a specifier the type checker and the
+ * bundler do not follow, as src/behold-index.ts and src/chant-edges.ts do. A
+ * chant without it gets the bundled copy, ./index-diff.ts, with chant's
+ * `indexCoverageFor` (chant#4519) when that chant has it and the copy's own
+ * rule when not. The answer says which ran: `diffModule` (`chant` or
+ * `behold-fallback`) and `coverageRule`.
+ *
+ * TODO(behold#1005): once src/chant-release.ts says `released: true`, import
+ * `diffIndexVersions` from `@intentius/chant/lifecycle/index-diff` statically,
+ * delete ./index-diff.ts and its fallback here ({@link chantIndexDiff},
+ * {@link coverageLookup}), and type the documents as chant's `IndexDocument`.
  *
  * Routes, both GET and neither acts:
  *
@@ -41,7 +50,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, basename } from "node:path";
 import type { Context, Hono } from "hono";
-import { coverageForFallback, diffIndexVersions, IndexScopeMismatch, NotAnIndexVersion, type CoverageLookup, type DiffDocument, type DiffNode, type IndexDiff } from "./index-diff.ts";
+import { coverageForFallback, diffIndexVersions, IndexScopeMismatch, type CoverageLookup, type DiffDocument, type DiffNode, type DiffOptions, type IndexDiff } from "./index-diff.ts";
 import { GIT_INDEX_DIR, LOCAL_INDEX_DIR, SNAPSHOT_REF, userIndexDir, type Git } from "./sources.ts";
 
 const VERSION_NAME = /^\d{8}T\d{6}Z-[0-9a-f]{12}\.json$/;
@@ -61,6 +70,8 @@ export interface VersionReaders {
   git?: Git;
   env?: NodeJS.ProcessEnv;
   home?: string;
+  /** The diff to run; tests pass one. Default {@link chantIndexDiff}. */
+  indexDiff?: () => Promise<IndexDiffImpl>;
 }
 
 const realGit: Git = (args, cwd) => execFileSync("git", args, { cwd, encoding: "utf8", timeout: 20_000, maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
@@ -142,6 +153,50 @@ export function coverageLookup(): Promise<{ lookup: CoverageLookup; rule: "chant
   return cachedCoverage;
 }
 
+/** chant's `diffIndexVersions` (chant#4533), typed as behold calls it. Its output has the bundled copy's shape. */
+export type ChantDiffIndexVersions = (from: DiffDocument, to: DiffDocument, o?: { fromVersion?: string; toVersion?: string }) => IndexDiff;
+
+export interface IndexDiffImpl {
+  diff: (from: DiffDocument, to: DiffDocument, o: Omit<DiffOptions, "coverageFor">) => IndexDiff;
+  diffModule: "chant" | "behold-fallback";
+  coverageRule: "chant" | "behold-fallback";
+}
+
+let cachedDiff: Promise<IndexDiffImpl> | undefined;
+
+/**
+ * chant's diff when the installed chant has it (chant#4533), else the bundled
+ * copy with {@link coverageLookup}'s rule. Feature-detected, never a static
+ * import: the published chant has no `lifecycle/index-diff` yet.
+ */
+export function chantIndexDiff(): Promise<IndexDiffImpl> {
+  cachedDiff ??= (async () => {
+    for (const specifier of ["@intentius/chant/lifecycle/index-diff", "@intentius/chant/lifecycle"]) {
+      const name: string = specifier;
+      try {
+        const mod = (await import(/* @vite-ignore */ name)) as Record<string, unknown>;
+        if (typeof mod.diffIndexVersions === "function") {
+          const chantDiff = mod.diffIndexVersions as ChantDiffIndexVersions;
+          return { diff: (a, b, o) => chantDiff(a, b, o), diffModule: "chant" as const, coverageRule: "chant" as const };
+        }
+      } catch {
+        // not in this chant
+      }
+    }
+    const { lookup, rule } = await coverageLookup();
+    return { diff: (a, b, o) => diffIndexVersions(a, b, { ...o, coverageFor: lookup }), diffModule: "behold-fallback" as const, coverageRule: rule };
+  })();
+  return cachedDiff;
+}
+
+/** A refusal from either diff, by its `code`: chant's error classes are not the bundled copy's. */
+function diffRefusal(e: unknown): IndexDiffRefused | undefined {
+  const x = e as { code?: unknown; message?: string; fromScopeKey?: string; toScopeKey?: string };
+  if (x?.code === "index-scope-mismatch") return new IndexDiffRefused(x.message ?? "index-scope-mismatch", "index-scope-mismatch", 409, { fromScopeKey: x.fromScopeKey, toScopeKey: x.toScopeKey });
+  if (x?.code === "not-an-index-version") return new IndexDiffRefused(x.message ?? "not-an-index-version", "not-an-index-version", 400);
+  return undefined;
+}
+
 export type OverlayChange = "added" | "removed" | "changed" | "not-observed" | "same";
 
 export interface OverlayDraw {
@@ -212,6 +267,8 @@ function refFor(arg: string, scope: string | undefined): { scopeKey: string | un
 export interface DiffAnswer {
   diff: IndexDiff;
   draw: OverlayDraw;
+  /** Whose diff ran: chant's (chant#4533) or the bundled copy. */
+  diffModule: "chant" | "behold-fallback";
   coverageRule: "chant" | "behold-fallback";
   stores: { from: IndexStoreName; to: IndexStoreName };
 }
@@ -264,16 +321,14 @@ export async function diffFromStores(q: { scope?: string; from?: string; to?: st
   } catch (e) {
     throw new IndexDiffRefused(`an index version could not be read: ${(e as Error).message}`, "index-read-failed", 404);
   }
-  const { lookup, rule } = await coverageLookup();
+  const impl = await (o.indexDiff ?? chantIndexDiff)();
   let diff: IndexDiff;
   try {
-    diff = diffIndexVersions(fromDoc, toDoc, { coverageFor: lookup, fromVersion: fromRef.version, toVersion: toRef.version });
+    diff = impl.diff(fromDoc, toDoc, { fromVersion: fromRef.version, toVersion: toRef.version });
   } catch (e) {
-    if (e instanceof IndexScopeMismatch) throw new IndexDiffRefused(e.message, e.code, 409, { fromScopeKey: e.fromScopeKey, toScopeKey: e.toScopeKey });
-    if (e instanceof NotAnIndexVersion) throw new IndexDiffRefused(e.message, e.code, 400);
-    throw e;
+    throw diffRefusal(e) ?? e;
   }
-  return { diff, draw: overlayFor(diff, fromDoc, toDoc), coverageRule: rule, stores: { from: fromRef.store, to: toRef.store } };
+  return { diff, draw: overlayFor(diff, fromDoc, toDoc), diffModule: impl.diffModule, coverageRule: impl.coverageRule, stores: { from: fromRef.store, to: toRef.store } };
 }
 
 export const INDEX_DIFF_ROUTES = [
@@ -291,11 +346,19 @@ export interface IndexDiffDeps {
   env?: NodeJS.ProcessEnv;
   home?: string;
   public?: boolean;
+  /** The diff to run; tests pass one. Default {@link chantIndexDiff}. */
+  indexDiff?: () => Promise<IndexDiffImpl>;
 }
 
 /** Mount the two routes. Both GET; neither acts. */
 export function mountIndexDiff(app: Hono, deps: IndexDiffDeps): void {
-  const readers = (): VersionReaders => ({ projectDir: deps.projectDir(), ...(deps.git ? { git: deps.git } : {}), ...(deps.env ? { env: deps.env } : {}), ...(deps.home ? { home: deps.home } : {}) });
+  const readers = (): VersionReaders => ({
+    projectDir: deps.projectDir(),
+    ...(deps.git ? { git: deps.git } : {}),
+    ...(deps.env ? { env: deps.env } : {}),
+    ...(deps.home ? { home: deps.home } : {}),
+    ...(deps.indexDiff ? { indexDiff: deps.indexDiff } : {}),
+  });
   const refusePublic = (c: Context) =>
     deps.public ? c.json({ error: "a public view shows the declared source only, and index versions hold cloud ids", code: "public", remedy: "Serve without --public to diff index versions." }, 403) : undefined;
 

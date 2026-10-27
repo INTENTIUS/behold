@@ -103,7 +103,7 @@ export function initIndexDiff(doc = document, fetchJson = (u) => fetch(u, { head
     $("g-error").textContent = "";
     $("g-rows").innerHTML = "";
     $("g-draw").innerHTML = drawOverlaySvg(r.body.draw);
-    $("d-summary").textContent = [...diffSummary(r.body.diff), `coverage rule: ${r.body.coverageRule}`, r.body.draw.omitted ? `${r.body.draw.omitted} unchanged nodes not drawn` : ""].filter(Boolean).join("\n");
+    $("d-summary").textContent = [...diffSummary(r.body.diff), `diff: ${r.body.diffModule ?? "behold-fallback"}, coverage rule: ${r.body.coverageRule}`, r.body.draw.omitted ? `${r.body.draw.omitted} unchanged nodes not drawn` : ""].filter(Boolean).join("\n");
   });
 }
 /* c8 ignore stop */

@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import { coverageForFallback, diffIndexVersions, IndexScopeMismatch, type DiffDocument } from "./index-diff.ts";
-import { coverageLookup, diffFromStores, listIndexVersions, mountIndexDiff, overlayFor } from "./index-diff-routes.ts";
+import { chantIndexDiff, coverageLookup, diffFromStores, listIndexVersions, mountIndexDiff, overlayFor, type IndexDiffImpl } from "./index-diff-routes.ts";
 import { LOCAL_INDEX_DIR } from "./sources.ts";
 
 const DIR = join(import.meta.dirname, "__fixtures__", "index-diff");
@@ -225,5 +225,48 @@ describe("the routes", () => {
     const src = readFileSync(join(import.meta.dirname, "index-diff.ts"), "utf8");
     const imports = [...src.matchAll(/from\s+"([^"]+)"/g)].map((m) => m[1]!);
     expect(imports.filter((i) => !i.startsWith("node:") && !i.startsWith("@intentius/chant"))).toEqual([]);
+  });
+});
+
+describe("chant's diff (chant#4533) behind a feature-detect", () => {
+  const readers = (dir: string, indexDiff?: () => Promise<IndexDiffImpl>) => ({ projectDir: dir, git: noGit, env: { BEHOLD_INDEX_DIR: join(dir, "none") }, ...(indexDiff ? { indexDiff } : {}) });
+
+  it("runs the diff it is given and says whose ran", async () => {
+    const calls: string[] = [];
+    const fake: IndexDiffImpl = {
+      diff: (a, b, o) => {
+        calls.push(`${o.fromVersion}..${o.toVersion}`);
+        return diffIndexVersions(a, b, o);
+      },
+      diffModule: "chant",
+      coverageRule: "chant",
+    };
+    const a = await diffFromStores({ scope: "cloud/aws/000000000000/5c1f0e2a9b7d" }, readers(project(), async () => fake));
+    expect(calls).toEqual([`${V1}..${V2}`]);
+    expect(a.diffModule).toBe("chant");
+    expect(a.diff.counts.properties).toBe(1);
+  });
+
+  it("a refusal from chant's diff is read by its code, not its class", async () => {
+    const chantLike = Object.assign(new Error("refused: different scopes"), { code: "index-scope-mismatch", fromScopeKey: "x", toScopeKey: "y" });
+    const fake: IndexDiffImpl = {
+      diff: () => {
+        throw chantLike;
+      },
+      diffModule: "chant",
+      coverageRule: "chant",
+    };
+    await expect(diffFromStores({ scope: "cloud/aws/000000000000/5c1f0e2a9b7d" }, readers(project(), async () => fake))).rejects.toMatchObject({
+      code: "index-scope-mismatch",
+      status: 409,
+      extra: { fromScopeKey: "x", toScopeKey: "y" },
+    });
+  });
+
+  it("the installed chant's diff, or the bundled copy, gives the bundled copy's answer", async () => {
+    const impl = await chantIndexDiff();
+    expect(["chant", "behold-fallback"]).toContain(impl.diffModule);
+    const theirs = impl.diff(load(V1), load(V2), { fromVersion: V1, toVersion: V2 });
+    expect(theirs).toEqual(diffIndexVersions(load(V1), load(V2), { fromVersion: V1, toVersion: V2 }));
   });
 });
