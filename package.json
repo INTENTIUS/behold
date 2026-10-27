@@ -3,7 +3,7 @@
   "version": "0.30.2",
   "license": "Apache-2.0",
   "type": "module",
-  "description": "behold — a live control plane on chant. See your whole estate (every substrate in one graph), coloured by drift; act through delegated, gated Ops.",
+  "description": "behold \u2014 a live control plane on chant. See your whole estate (every substrate in one graph), coloured by drift; act through delegated, gated Ops.",
   "bin": {
     "behold": "./bin/behold.js"
   },
@@ -41,7 +41,7 @@
     "preview:tour": "tsx scripts/tour-preview.ts",
     "tsc": "tsc --noEmit",
     "test": "vitest run",
-    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --external:hono --external:@hono/node-server --external:@intentius/pinhole --external:@kubernetes/client-node --external:ajv --external:@modelcontextprotocol/sdk --outfile=dist/cli.js && chmod +x dist/cli.js",
+    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --external:hono --external:@hono/node-server --external:@intentius/pinhole --external:@kubernetes/client-node --external:ajv --external:@modelcontextprotocol/sdk --external:@ladybugdb/core --outfile=dist/cli.js && chmod +x dist/cli.js",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build"
   },
@@ -60,7 +60,8 @@
     "playwright-core": "^1.62.0",
     "@aws-sdk/credential-providers": "^3.0.0",
     "@azure/identity": "^4.0.0",
-    "google-auth-library": "^9.0.0 || ^10.0.0"
+    "google-auth-library": "^9.0.0 || ^10.0.0",
+    "@ladybugdb/core": ">=0.22.0"
   },
   "peerDependenciesMeta": {
     "playwright-core": {
@@ -73,6 +74,9 @@
       "optional": true
     },
     "google-auth-library": {
+      "optional": true
+    },
+    "@ladybugdb/core": {
       "optional": true
     }
   },

@@ -46,7 +46,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findServe, realDir, within } from "./serve-registry.ts";
-import { DEFAULT_LINK_BASE, localCapabilities, localSearch, shotFromArgs } from "./shot-cli.ts";
+import { DEFAULT_LINK_BASE, localCapabilities, localGraph, localSearch, shotFromArgs } from "./shot-cli.ts";
 import type { ShotRefusalBody, ShotRequest, ShotResult } from "./shot.ts";
 
 /** The serve `behold serve` starts when no port is given. */
@@ -192,7 +192,12 @@ export interface Context {
   localSearch(query: URLSearchParams): Promise<{ status: number; body: Record<string, unknown> }>;
   /** behold#926: GET /api/capabilities with no serve, the body as text (src/shot-cli.ts). */
   localCapabilities(): Promise<{ status: number; text: string }>;
+  /** behold#1027: GET /api/graphdb/<path> with no serve (src/shot-cli.ts `localGraph`). Absent: the real one. */
+  localGraph?(path: GraphPath, query: URLSearchParams): Promise<{ status: number; body: Record<string, unknown> }>;
 }
+
+/** The graph pane's routes `ask` reaches (src/graph-db/pane.ts). */
+export type GraphPath = "query" | "resolve" | "template";
 
 const trimUrl = (u: string): string => u.replace(/\/+$/, "");
 
@@ -291,6 +296,88 @@ export function askAnswer(status: number, body: Record<string, unknown>): { doc:
   return { doc: { ...(doc as Record<string, unknown>), link: typeof body.link === "string" ? body.link : null, drawn: false }, failed };
 }
 
+const CYPHER_HELP =
+  "A read-only Cypher query over the graph pane's database (behold#1027): every member's chant IR, every engine graph document (choudoufu, plunge) and every index version, in one LadybugDB. " +
+  "Tables: Resource(key, source, scopeKey, version, id, kind, lexicon, listedType, location, nativeId, name, address, ownership, attrs, tags, facts, observedAt) keyed <member>/<id> as chant workspace search prints it; " +
+  "CloudId(value, kind) with (Resource)-[:KNOWN_AS]->(CloudId), so the same object in two sources is two hops; (Resource)-[:REF {kind, viaAttr, toAttr, grain, origin, rule, relation, ambiguous}]->(Resource), origin derived for an identity match. " +
+  "attrs, tags and facts are JSON strings. Anything that writes (CREATE, MERGE, SET, DELETE, COPY, LOAD, CALL ...) is refused. Needs the optional peer @ladybugdb/core; without it ask refuses with the install line. " +
+  "Example: MATCH (a:Resource)-[:KNOWN_AS]->(c:CloudId)<-[:KNOWN_AS]-(b:Resource) WHERE a.scopeKey <> b.scopeKey RETURN a.key, b.key, c.value";
+
+function jsonObjectArg(raw: unknown, name: string): Record<string, unknown> | undefined {
+  if (raw === undefined) return undefined;
+  let v: unknown;
+  try {
+    v = JSON.parse(String(raw));
+  } catch {
+    throw new ToolError(`${name} is a JSON object`);
+  }
+  if (!v || typeof v !== "object" || Array.isArray(v)) throw new ToolError(`${name} is a JSON object`);
+  return v as Record<string, unknown>;
+}
+
+/**
+ * behold#1027: ask with cypher or resource. Through the serve's
+ * GET /api/graphdb routes, or, with no serve, the same routes of behold's app
+ * started in this process. The answer is the route's, verbatim: the rows,
+ * the keys, what the pane would draw, the link, and every source's read time.
+ */
+async function askGraph(a: Record<string, unknown>, ctx: Context): Promise<CallToolResult> {
+  const asked = ["query", "cypher", "resource", "countBy"].filter((k) => typeof a[k] === "string" && a[k]);
+  if (asked.length > 1) throw new ToolError(`ask takes one of query, cypher or resource, and was given ${asked.join(" and ")}`);
+  for (const k of ["env", "snapshot", "plan", "show"]) if (a[k] !== undefined) throw new ToolError(`${k} goes with a chant search query, not with cypher or resource`);
+  let path: GraphPath;
+  const q = new URLSearchParams();
+  if (typeof a.cypher === "string") {
+    if (a.template !== undefined || a.inputs !== undefined) throw new ToolError("template and inputs go with resource");
+    if (!a.cypher.trim()) throw new ToolError("cypher is empty");
+    path = "query";
+    q.set("cypher", a.cypher);
+    const params = jsonObjectArg(a.params, "params");
+    if (params) q.set("params", JSON.stringify(params));
+  } else {
+    if (a.params !== undefined) throw new ToolError("params goes with cypher");
+    const ref = String(a.resource ?? "").trim();
+    if (!ref) throw new ToolError("resource is empty");
+    if (typeof a.template === "string") {
+      // The template runs on the one node the resource resolves to, so resolve first, through the same route.
+      const resolved = await graphRoute(ctx, "resolve", new URLSearchParams({ ref }));
+      const cands = Array.isArray(resolved.body.candidates) ? (resolved.body.candidates as Array<{ key?: unknown }>) : [];
+      if (resolved.status !== 200) throw new ToolError(typeof resolved.body.error === "string" ? resolved.body.error : `resolve answered ${resolved.status}`, resolved.body);
+      if (cands.length !== 1 || typeof cands[0]!.key !== "string") {
+        throw new ToolError(`${ref} resolves to ${cands.length} nodes, so the template has no one node to run on; ask with the key of one`, { candidates: cands, sources: resolved.body.sources });
+      }
+      path = "template";
+      q.set("name", a.template);
+      q.set("node", cands[0]!.key as string);
+      const inputs = jsonObjectArg(a.inputs, "inputs") ?? {};
+      for (const [k, v] of Object.entries(inputs)) {
+        if (typeof v !== "string") throw new ToolError(`input ${k} is a string`);
+        q.set(`in.${k}`, v);
+      }
+    } else {
+      if (a.inputs !== undefined) throw new ToolError("inputs goes with template");
+      path = "resolve";
+      q.set("ref", ref);
+    }
+  }
+  const { status, body, serve } = await graphRoute(ctx, path, q);
+  if (status !== 200) throw new ToolError(typeof body.error === "string" ? body.error : `GET /api/graphdb/${path} answered ${status}`, { status, ...body });
+  const note = serve
+    ? `Nothing is drawn: ask never moves the tab. show with the link's node and focus draws it in the open tab at ${serve}.`
+    : `Nothing is drawn: no behold serve of ${ctx.projectDir} was running, so behold answered in this process. Start \`${serveCommand(ctx.projectDir)}\` to see it.`;
+  return { content: [{ type: "text", text: JSON.stringify({ ...body, drawn: false }) }, { type: "text", text: note }] };
+}
+
+async function graphRoute(ctx: Context, path: GraphPath, q: URLSearchParams): Promise<{ status: number; body: Record<string, unknown>; serve?: string }> {
+  const serve = await ctx.findServe();
+  if (serve?.ours) {
+    const res = await ctx.fetch(`${serve.url}/api/graphdb/${path}?${q}`, { headers: { accept: "application/json" } });
+    return { status: res.status, body: (await res.json().catch(() => ({}))) as Record<string, unknown>, serve: serve.url };
+  }
+  const local = ctx.localGraph ?? ((p: GraphPath, query: URLSearchParams) => localGraph(ctx.projectDir, p, query));
+  return local(path, q);
+}
+
 export const TOOLS: Tool[] = [
   {
     name: "ask",
@@ -301,6 +388,7 @@ export const TOOLS: Tool[] = [
       "Uses the running behold serve of this project; with none, behold answers in this process. Needs chant 0.124.46 or newer. " +
       "Which demo questions it answers: \"what's in here?\" is countBy kind with the query kind:aws_ (or empty); \"how many resources does each module own, by type?\" is countBy module, then countBy kind with the query narrowed to a module; " +
       "\"what would this change do, and why does it replace the database?\" is plan with the query attr:planAction=replace and show planActions,planReplacePaths,planActionReason. " +
+      "Beside a chant search query, ask takes cypher (a read-only Cypher query over every member's graph and every index in one LadybugDB, behold#1027) or resource (resolve a name, id, address or cloud id, then a template). " +
       SEARCH_OPTIONS,
     inputSchema: {
       type: "object",
@@ -311,11 +399,22 @@ export const TOOLS: Tool[] = [
         plan: VIEW_PROPS.plan!,
         countBy: VIEW_PROPS.countBy!,
         show: { type: "string", description: "Comma-separated attributes to carry on each row (chant search --show)." },
+        cypher: { type: "string", description: CYPHER_HELP },
+        params: { type: "string", description: "With cypher: its parameters, as a JSON object ({\"k\": \"aws_s3_bucket\"} for $k). Values are strings, numbers, booleans or null." },
+        resource: {
+          type: "string",
+          description:
+            "Start from a resource (behold#1022): a name, an IR id, a block address or a cloud id (an ARN, an instance id, a Kubernetes UID). The answer is one node or the candidates, with the investigation templates that apply to it. Works without the LadybugDB peer.",
+        },
+        template: { type: "string", description: "With resource that resolves to one node: run that template (dependents, dependencies, paths-to-kind, capability, drift, dependents-all, dependencies-all, ownership, same-object, readers, history)." },
+        inputs: { type: "string", description: "With template: its inputs as a JSON object of strings ({\"kind\": \"aws_internet_gateway\"})." },
       },
       additionalProperties: false,
     },
     annotations: READ_ONLY,
     async run(a, ctx) {
+      if (typeof a.cypher === "string" || typeof a.resource === "string") return askGraph(a, ctx);
+      if (a.params !== undefined || a.template !== undefined || a.inputs !== undefined) throw new ToolError("params goes with cypher, and template and inputs with resource");
       const view = viewOf(a);
       if (!view.q && !view.countBy) throw new ToolError("ask needs a query, or countBy to count the whole estate");
       const q = new URLSearchParams({
@@ -553,6 +652,9 @@ export const MCP_USAGE = `Usage: behold mcp [project-dir] [--url <serve> | --por
   document for a query, verbatim, with the link to the view that draws it;
   show moves the open behold tab to a view; shot returns a PNG of one with
   its link.
+  ask also takes cypher, a read-only Cypher query over the graph pane's
+  database (needs the optional peer @ladybugdb/core), or resource, a name,
+  id, address or cloud id to resolve, with a template to run on it.
   chant answers and behold draws. Configure it in the agent,
   for example: claude mcp add behold -- npx @intentius/behold mcp <dir>
 

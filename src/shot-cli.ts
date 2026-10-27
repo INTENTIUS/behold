@@ -193,6 +193,23 @@ export async function localCapabilities(projectDir: string): Promise<{ status: n
   });
 }
 
+/**
+ * behold#1027: a graph pane route (GET /api/graphdb/...) with no serve
+ * running, through behold's app started in this process for the one request,
+ * so `behold mcp ask` with a Cypher query or a resource answers from the same
+ * route a serve answers. `path` is the route below /api/graphdb.
+ */
+export async function localGraph(projectDir: string, path: "query" | "resolve" | "template", query: URLSearchParams): Promise<{ status: number; body: Record<string, unknown> }> {
+  if (!existsSync(projectDir)) throw new Error(`project not found at ${projectDir}`);
+  const cfg = await localServeOptions(projectDir);
+  return withLocalServe(cfg, async (base) => {
+    const res = await fetch(`${base}/api/graphdb/${path}?${query}`, { headers: { accept: "application/json" } });
+    const body = (await res.json()) as Record<string, unknown>;
+    if (typeof body.link === "string") body.link = body.link.replace(base, DEFAULT_LINK_BASE);
+    return { status: res.status, body };
+  });
+}
+
 /** The default file: under the OS temp directory, never in the project. */
 export function defaultShotPath(now = new Date()): string {
   return join(tmpdir(), `behold-shot-${now.toISOString().replace(/[:.]/g, "-")}.png`);

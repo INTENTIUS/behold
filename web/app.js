@@ -2395,6 +2395,14 @@ function renderPanelView() {
   lanes.title = "The time-lanes view — captured frames of this graph over time";
   lanes.style.cssText = "color:var(--pending);text-decoration:none;font-size:var(--t-body)";
   row.appendChild(lanes);
+  // behold#1027: the graph pane, every member's graph and every index in one LadybugDB, asked in Cypher.
+  const cypher = document.createElement("a");
+  cypher.className = "lanes-link";
+  cypher.href = "/graph";
+  cypher.textContent = "cypher →";
+  cypher.title = "The graph pane: ask every member's graph and every index in Cypher, or start from a resource name or cloud id";
+  cypher.style.cssText = "color:var(--pending);text-decoration:none;font-size:var(--t-body);margin-left:10px";
+  row.appendChild(cypher);
   tools.appendChild(row);
   // #882: the picture's options: its scale, and whether a heading and the key go in.
   const png = document.createElement("div");
