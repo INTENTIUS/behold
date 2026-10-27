@@ -5,9 +5,16 @@
  * out on behold#1025): nodes added and removed, properties changed, edges
  * added and removed. It reads nothing and writes nothing.
  *
- * This module imports nothing from the rest of behold, so it can move into
- * chant unchanged (the maintainer's constraint on behold#1028: behold stays a
- * control plane and chant defines the models). Its shapes are structural
+ * This module moved into chant (chant#4533, `diffIndexVersions` in
+ * `@intentius/chant/lifecycle/index-diff`), and ./index-diff-routes.ts calls
+ * chant's when the installed chant has it. This copy is the fallback for a
+ * published chant without it, and has the same output shape.
+ *
+ * TODO(behold#1005): delete this module once src/chant-release.ts says
+ * `released: true`; ./index-diff-routes.ts then imports chant's statically.
+ *
+ * It imports nothing from the rest of behold (the maintainer's constraint on
+ * behold#1028: behold stays a control plane and chant defines the models). Its shapes are structural
  * copies of chant's `IndexDocument`, `CoverageEntry`, `IRNode` and `IREdge`,
  * every field optional where chant's is.
  *
