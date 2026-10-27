@@ -1,7 +1,7 @@
 /**
  * The string leaves of a node's declared attrs, moved out of src/value-match.ts
- * (behold#1030) so that module can go once behold#1005 flips chant's release
- * switch: src/ops-lens.ts joins op steps onto these leaves and is not an edge
+ * (behold#1030) so that module can go when behold#1005's value-match step
+ * lands: src/ops-lens.ts joins op steps onto these leaves and is not an edge
  * pass. The walk is the one value-match used, unchanged (#166).
  */
 

@@ -20,11 +20,9 @@
  * through chant's library. Pure: imports only src/floor.ts and
  * src/chant-release.ts, so any module may import it.
  *
- * A read whose chant is not released yet takes its floor from
- * `CHANT_RELEASE.version` (src/chant-release.ts, behold#1005), the number of
- * the release that will carry it, which a local build of chant is stamped
- * at. When the release is cut under another number, the one edit there moves
- * every such floor.
+ * A read that came with the multi-engine chant release takes its floor from
+ * `CHANT_RELEASE.version` (src/chant-release.ts, behold#1005), 0.124.54, so
+ * the one edit there moves every such floor.
  */
 import { meetsFloor } from "./floor.ts";
 import { CHANT_RELEASE } from "./chant-release.ts";

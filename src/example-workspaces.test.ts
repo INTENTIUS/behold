@@ -56,26 +56,21 @@ describe("the bundled estates' workspace declarations", () => {
   // choudoufu#2246: the azure site is a choudoufu estate, so its output is a
   // Terraform output of that name. behold#1000: the aws site is a Pulumi
   // program on plunge, its output a stack output of that name. behold#1005:
-  // the two lexicons that supply those kinds follow CHANT_RELEASE
-  // (src/chant-release.ts). Until it is released they are pinned by path, at
-  // node_modules, so the pin reads whichever build is installed there (no
-  // release has the pulumi lexicon yet, and the demo runs on a local build of
-  // chant). Once it is, both are pinned by package at the release, and the
-  // example's package.json depends on that release of each.
+  // the two lexicons that supply those kinds are pinned by package at the
+  // chant release CHANT_RELEASE names (src/chant-release.ts, 0.124.54, the
+  // first release with the pulumi lexicon), and the example's package.json
+  // depends on that release of each.
   it("example-three-cloud declares dns and three clouds on three engines, each cloud's output named like a dns parameter", () => {
     const decl = declaration("example-three-cloud");
     const kind: Record<string, string> = { dns: "chant", aws: "pulumi", azure: "choudoufu", gcp: "chant" };
     expect(decl.members).toEqual(["dns", "aws", "azure", "gcp"].map((n) => ({ name: n, dir: n, kind: kind[n] })));
     const PULUMI_LEXICON = "@intentius/chant-lexicon-pulumi";
     const deps = (JSON.parse(readFileSync(join(REPO, "example-three-cloud", "package.json"), "utf8")) as { dependencies: Record<string, string> }).dependencies;
-    if (CHANT_RELEASE.released) {
-      expect(decl.pins).toEqual([{ package: TERRAFORM_LEXICON, version: CHANT_RELEASE.version }, { package: PULUMI_LEXICON, version: CHANT_RELEASE.version }]);
-      expect(deps[TERRAFORM_LEXICON]).toBe(`^${CHANT_RELEASE.version}`);
-      expect(deps[PULUMI_LEXICON]).toBe(`^${CHANT_RELEASE.version}`);
-    } else {
-      expect(decl.pins).toEqual([{ path: `node_modules/${TERRAFORM_LEXICON}` }, { path: `node_modules/${PULUMI_LEXICON}` }]);
-      expect(deps[PULUMI_LEXICON]).toBeUndefined();
-    }
+    expect(CHANT_RELEASE).toEqual({ version: "0.124.54", released: true });
+    expect(decl.pins).toEqual([{ package: TERRAFORM_LEXICON, version: CHANT_RELEASE.version }, { package: PULUMI_LEXICON, version: CHANT_RELEASE.version }]);
+    expect(deps[TERRAFORM_LEXICON]).toBe(`^${CHANT_RELEASE.version}`);
+    expect(deps[PULUMI_LEXICON]).toBe(`^${CHANT_RELEASE.version}`);
+    expect(deps["@intentius/chant"]).toBe(`^${CHANT_RELEASE.version}`);
     const dns = readFileSync(join(REPO, "example-three-cloud", "dns", "src", "route53.ts"), "utf8");
     const gcp = readFileSync(join(REPO, "example-three-cloud", "gcp", "src", "site.ts"), "utf8");
     expect(gcp).toContain(`"gcpEndpoint")`);

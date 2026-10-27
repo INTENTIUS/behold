@@ -40,7 +40,7 @@ const chantIr: GraphIR = {
 
 const listing: ListingResult = {
   listing: "v1",
-  source: { name: "behold-lister", version: "0.30.2" },
+  source: { name: "chant-lister", version: "0.30.2" },
   scope: { substrate: "aws", scopeId: "000000000000", locations: ["us-east-1"], types: ["AWS::S3::Bucket"] },
   startedAt: "2026-10-26T11:00:00Z",
   completedAt: "2026-10-26T11:00:02Z",

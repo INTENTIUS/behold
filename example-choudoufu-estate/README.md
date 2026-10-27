@@ -44,14 +44,12 @@ the monolith's card for it reads *owned by tlmig-sample-team-a*, and
 `/api/choudoufu/split?plan=split.json&receipt=1` says `moved`. Apply team-a
 afterwards to bring its VPC up, and team-b's read resolves.
 
-`chant.workspace.json` pins the terraform lexicon at the chant on npm
-(0.124.52) until the chant release behold waits on is out (`CHANT_RELEASE` in
-src/chant-release.ts, behold#1015), and the demo copy is re-pinned at whichever
-lexicon is installed beside behold. Streaming drift card by card and the drift
-record overlay need chant 0.124.53, a local build of chant until that release:
-the tarballs "A local chant build" in example-three-cloud/README.md packs,
-installed in behold's checkout with `npm install --no-save`. On the published
-chant the stream start is refused with the version it needs.
+`chant.workspace.json` pins the terraform lexicon at chant 0.124.54, the
+release behold depends on (`CHANT_RELEASE` in src/chant-release.ts,
+behold#1005), and the demo copy is re-pinned at whichever lexicon is installed
+beside behold. Streaming drift card by card and the drift record overlay need
+that release; on an older chant the stream start is refused with the version
+it needs.
 
 `bash scripts/choudoufu-down.sh` removes the container. The `.terraform/`
 directories and the record stores are gitignored.

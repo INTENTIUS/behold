@@ -177,10 +177,9 @@ e2e-streamed-drift:
 # from every engine, an out-of-band edit per engine turning that card from in
 # sync to drifted, and one change set with a part per engine under one digest
 # that a moved part in any engine refuses whole. Then the three-cloud change
-# set e2e, which reads the same document part by part. Needs Docker, choudoufu,
-# and chant main's core, terraform and pulumi lexicons linked:
-#   BEHOLD_E2E_CHANT_LINK="<chant>/packages/core <chant>/lexicons/terraform <chant>/lexicons/pulumi" just e2e-multi-engine
-# SKIPs with exit 0 without them. The live run (a real plunge, the emulators,
+# set e2e, which reads the same document part by part. Needs Docker and
+# choudoufu (SKIPs with exit 0 without them); the example copy installs chant
+# 0.124.54 from npm. The live run (a real plunge, the emulators,
 # `front-door.ts oob-edit <member>`) is the maintainer's.
 e2e-multi-engine:
     bash e2e/multi-engine-demo-e2e.sh
@@ -241,7 +240,7 @@ e2e-workbench:
 demo-host-check:
     cd deploy/demo-host/chant && npm ci && npm run check
 
-# behold#1005: write the pins, ranges and drift module that follow
+# behold#1005: write the pins and ranges that follow
 # CHANT_RELEASE (src/chant-release.ts); `just chant-release --check` lists
 # what disagrees and writes nothing.
 chant-release *args:
