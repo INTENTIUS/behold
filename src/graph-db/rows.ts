@@ -18,7 +18,7 @@
  * `attrs`, `tags` and `facts` are JSON strings, as the design says, with a few
  * typed columns the resolve rules and #1022's templates read (`name`,
  * `address`, `ownership`). Every attribute value is masked with the cloud
- * lister's key list (src/cloud-lister/mask.ts) before it is a row, whatever
+ * lister's key list (src/graph-db/mask.ts) before it is a row, whatever
  * the source, so nothing in the database holds what the lister would hide.
  *
  * The columns are chant's graph schema's, laid out by ./layout-gen.ts
@@ -34,8 +34,8 @@
  */
 import { createHash } from "node:crypto";
 import type { GraphIR } from "@intentius/chant";
-import type { CloudScope, ListingResult } from "../cloud-lister/types.ts";
-import { maskValue } from "../cloud-lister/mask.ts";
+import type { CloudScope, ListingResult } from "./listing.ts";
+import { maskValue } from "./mask.ts";
 import type { GraphLayout, LayoutColumn } from "./layout-gen.ts";
 import { GRAPH_LAYOUT } from "./layout.generated.ts";
 import type { EngineFacts, EngineGraphDocument, FactEdge, FactGraph, FactNode, IndexDocument } from "./types.ts";

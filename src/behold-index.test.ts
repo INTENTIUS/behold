@@ -1,136 +1,21 @@
-// behold#1026: `behold index <substrate>` over a fake lister. The refusal of every
-// action flag, the default store location, and that nothing is written outside the
-// store. The cases that need chant's index pipeline (chant#4519, #4521, #4522) run
-// against the chant installed beside behold and skip when it has none (published
-// chant 0.124.52 has none); the rest use a fake of chant's functions.
-import { mkdirSync, mkdtempSync, readdirSync, statSync } from "node:fs";
+// behold#1026 / chant#4532: `behold index` is chant's `runCloudIndex` with behold's
+// command name, per-user store and token variables. The cases that need chant's
+// command run against the chant installed beside behold and skip when it has none
+// (published chant 0.124.52 has none); the rest use a fake `runCloudIndex`.
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative, sep } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import {
-  ACTION_FLAGS,
-  IndexUsageError,
-  defaultIndexStoreDir,
-  findChantProject,
-  parseIndexArgs,
-  planIndexStore,
-  runIndex,
-  scopeAndTarget,
-  type IndexDeps,
-} from "./behold-index.ts";
-import { chantIndexApi, type ChantIndexApi, type ChantIndexLookup, type IndexStore } from "./chant-index.ts";
-import { listCloud, type CloudScope, type ListingResult, type SubstrateTarget } from "./cloud-lister/index.ts";
-import { fakeFetcher, refusingChains } from "./cloud-lister/fakes.ts";
+import { CHANT_CLOUD_INDEX, chantCloudIndex, chantEnv, defaultIndexStoreDir, needsChantMessage, runIndex, type RunCloudIndex } from "./behold-index.ts";
+import { CHANT_RELEASE } from "./chant-release.ts";
 import { findIndexDir, userIndexDir, type Found } from "./graph-db/sources.ts";
-import type { IndexDocument } from "./graph-db/types.ts";
+import type { CloudScope, ListingResult } from "./graph-db/listing.ts";
 
+const here = dirname(fileURLToPath(import.meta.url));
 const ACCOUNT = "000000000000";
 const ENDPOINT = "http://localhost:4566";
 const EMULATOR_ENV = { AWS_ACCESS_KEY_ID: "test", AWS_SECRET_ACCESS_KEY: "test" };
-
-function listing(scope: CloudScope, startedAt: string): ListingResult {
-  const at = startedAt;
-  const res = (listedType: string, nativeId: string, properties: Record<string, unknown>) => ({
-    id: `aws/${scope.scopeId}/${listedType.startsWith("AWS::IAM::") ? "global" : "us-east-1"}/${listedType}/${nativeId}`,
-    listedType,
-    location: listedType.startsWith("AWS::IAM::") ? "global" : "us-east-1",
-    nativeId,
-    cloudIds: [{ kind: "import-id" as const, value: nativeId }],
-    tags: {},
-    properties,
-    observedAt: at,
-    facts: { cloudIds: [{ kind: "import-id" as const, value: nativeId }], observedAt: at },
-  });
-  return {
-    listing: "v1",
-    source: { name: "behold-lister", version: "test" },
-    scope,
-    startedAt: at,
-    completedAt: at,
-    resources: [
-      res("AWS::S3::Bucket", "web-assets", { BucketName: "web-assets", Arn: "arn:aws:s3:::web-assets" }),
-      res("AWS::IAM::Role", "app-role", { RoleName: "app-role", Arn: `arn:aws:iam::${scope.scopeId}:role/app-role` }),
-    ],
-    coverage: [
-      { listedType: "AWS::IAM::Role", location: "global", verdict: "listed" },
-      { listedType: "AWS::S3::Bucket", location: "us-east-1", verdict: "listed" },
-    ],
-    notes: [],
-  };
-}
-
-/** A lister that records what it was asked and answers {@link listing}, one second later each call. */
-function fakeLister(start = "2026-10-26T12:00:00.000Z") {
-  const calls: Array<{ scope: CloudScope; target: SubstrateTarget }> = [];
-  let t = Date.parse(start);
-  return {
-    calls,
-    list: async (scope: CloudScope, target: SubstrateTarget) => {
-      calls.push({ scope, target });
-      const at = new Date(t).toISOString();
-      t += 1000;
-      return listing(scope, at);
-    },
-  };
-}
-
-/** chant's three functions, faked: typeListing stamps the listing, deriveEdges adds one edge, the store keeps writes in memory. */
-function fakeChant() {
-  const writes: IndexDocument[] = [];
-  const opened: unknown[] = [];
-  let lookups = 0;
-  const store: IndexStore = {
-    kind: "local",
-    where: "fake-store",
-    writable: true,
-    async writeIndex(doc) {
-      writes.push(doc);
-      const name = `${doc.stamp.observedAt.replace(/[-:]|\.\d{3}/g, "")}-${doc.stamp.digest.slice(0, 12)}.json`;
-      return { written: true, path: `${doc.stamp.scopeKey}/${name}` };
-    },
-    async listIndex() {
-      return [];
-    },
-  };
-  const api: ChantIndexApi = {
-    typeListing: (l) => ({
-      index: "v1",
-      stamp: {
-        source: { kind: "cloud", name: "behold-lister" },
-        scope: { kind: "cloud", ...l.scope },
-        scopeKey: `cloud/${l.scope.substrate}/${l.scope.scopeId}/aaaaaaaaaaaa`,
-        observedAt: l.startedAt,
-        digest: "b".repeat(64),
-      },
-      coverage: l.coverage,
-      graph: { version: 1, nodes: l.resources.map((r) => ({ id: r.id, kind: r.listedType, lexicon: "aws", attrs: r.properties })), edges: [], groups: {} } as unknown as IndexDocument["graph"],
-    }),
-    deriveEdges: (doc) => ({
-      ...doc,
-      graph: { ...doc.graph, edges: [{ from: doc.graph.nodes[0].id, to: doc.graph.nodes[1].id, kind: "ref", origin: "derived", rule: "aws:test" }] } as unknown as IndexDocument["graph"],
-    }),
-    storeConfig: (configured) => configured as { store: string },
-    createStore: (config) => {
-      opened.push(config);
-      return store;
-    },
-    projectStore: async (dir) => {
-      opened.push({ project: dir });
-      return store;
-    },
-  };
-  return {
-    writes,
-    opened,
-    get lookups() {
-      return lookups;
-    },
-    chant: async (): Promise<ChantIndexLookup> => {
-      lookups++;
-      return { api, missing: [] };
-    },
-  };
-}
 
 function tempTree() {
   const root = mkdtempSync(join(tmpdir(), "behold-index-"));
@@ -158,197 +43,94 @@ function capture() {
   return { out, err, stdout: (s: string) => void out.push(s), stderr: (s: string) => void err.push(s) };
 }
 
-const noLexicons: IndexDeps["lexicons"] = async () => ({ lexicons: [] });
+/** A `runCloudIndex` that records what behold handed it. */
+function fakeChant(code = 0) {
+  const calls: Array<{ argv: readonly string[]; options: Record<string, unknown> }> = [];
+  const run: RunCloudIndex = async (argv, options) => {
+    calls.push({ argv, options });
+    return code;
+  };
+  return { calls, chant: async () => run };
+}
 
-describe("behold index refuses every action flag", () => {
-  it("names the flag, wherever it sits and in either form", () => {
-    for (const flag of ACTION_FLAGS) {
-      for (const argv of [["aws", flag], [flag, "aws"], ["aws", "--account", ACCOUNT, `${flag}=1`]]) {
-        let caught: unknown;
-        try {
-          parseIndexArgs(argv);
-        } catch (e) {
-          caught = e;
-        }
-        expect(caught, `${argv.join(" ")}`).toBeInstanceOf(IndexUsageError);
-        expect((caught as IndexUsageError).actionFlag).toBe(flag);
-        expect((caught as Error).message).toMatch(/read-only/);
-      }
-    }
+describe("behold keeps no lister of its own", () => {
+  it("src/cloud-lister/ is gone; chant#4532 has it", () => {
+    expect(existsSync(join(here, "cloud-lister"))).toBe(false);
+    expect(existsSync(join(here, "chant-index.ts"))).toBe(false);
   });
+});
 
-  it("the action flags include behold's action side", () => {
-    for (const f of ["--apply", "--deploy", "--destroy", "--rollback", "--op", "--approve", "--enable-api"]) expect(ACTION_FLAGS).toContain(f);
-  });
-
-  it("stops before chant, the lister or the store is touched", async () => {
+describe("without chant's runCloudIndex", () => {
+  it("names the chant it needs, exits 2 and writes nothing", async () => {
     const t = tempTree();
-    const chant = fakeChant();
-    const lister = fakeLister();
     const io = capture();
-    for (const flag of ACTION_FLAGS) {
-      const code = await runIndex(["aws", "--account", ACCOUNT, "--regions", "us-east-1", flag], {
-        cwd: t.cwd,
-        home: t.home,
-        env: { ...EMULATOR_ENV, XDG_DATA_HOME: t.xdg },
-        stdout: io.stdout,
-        stderr: io.stderr,
-        list: lister.list,
-        chant: chant.chant,
-        lexicons: noLexicons,
-      });
-      expect(code, flag).toBe(2);
-    }
-    expect(chant.lookups).toBe(0);
-    expect(lister.calls).toEqual([]);
-    expect(chant.writes).toEqual([]);
+    const code = await runIndex(["aws", "--endpoint", ENDPOINT, "--account", ACCOUNT, "--regions", "us-east-1"], {
+      cwd: t.cwd,
+      home: t.home,
+      env: { ...EMULATOR_ENV, XDG_DATA_HOME: t.xdg },
+      stdout: io.stdout,
+      stderr: io.stderr,
+      chant: async () => undefined,
+    });
+    expect(code).toBe(2);
+    const text = io.err.join("");
+    expect(text).toContain(`needs chant ${CHANT_RELEASE.version} or newer`);
+    expect(text).toContain("chant#4532");
+    expect(text).toContain(CHANT_CLOUD_INDEX);
+    expect(text).toMatch(/Nothing was listed and nothing was written/);
     expect(io.out).toEqual([]);
-    expect(io.err.join("")).toMatch(/refuses --apply/);
     expect(files(t.root)).toEqual([]);
   });
 
-  it("an unknown flag is a usage error, not a pass", () => {
-    expect(() => parseIndexArgs(["aws", "--frobnicate"])).toThrow(/unknown argument/);
-    expect(() => parseIndexArgs(["--account", ACCOUNT])).toThrow(/needs a substrate/);
-    expect(() => parseIndexArgs(["cloudflare"])).toThrow(/unknown substrate/);
+  it("the message is the same one the lookup failure prints", () => {
+    expect(needsChantMessage()).toMatch(/^behold index needs chant /);
   });
 });
 
-describe("behold index over a fake lister", () => {
-  it("lists the scope asked for, types it, derives edges and writes one version", async () => {
-    const t = tempTree();
-    const chant = fakeChant();
-    const lister = fakeLister();
-    const io = capture();
-    const code = await runIndex(
-      ["aws", "--endpoint", ENDPOINT, "--account", ACCOUNT, "--regions", "us-east-1,eu-west-1", "--types", "AWS::S3::Bucket,AWS::IAM::Role", "--tag", "team=web"],
-      { cwd: t.cwd, home: t.home, env: { ...EMULATOR_ENV, XDG_DATA_HOME: t.xdg }, stdout: io.stdout, stderr: io.stderr, list: lister.list, chant: chant.chant, lexicons: noLexicons },
-    );
-    expect(io.err).toEqual([]);
-    expect(code).toBe(0);
-    expect(lister.calls).toHaveLength(1);
-    expect(lister.calls[0].scope).toEqual({
-      substrate: "aws",
-      scopeId: ACCOUNT,
-      locations: ["us-east-1", "eu-west-1"],
-      types: ["AWS::S3::Bucket", "AWS::IAM::Role"],
-      tagFilter: { team: "web" },
-    });
-    expect(lister.calls[0].target).toEqual({ substrate: "aws", aws: { endpoint: ENDPOINT, credentials: { accessKeyId: "test", secretAccessKey: "test" } } });
-    // The default store is the per-user one (no project, no --store).
-    expect(chant.opened).toEqual([{ store: "local", dir: join(t.xdg, "behold") }]);
-    expect(chant.writes).toHaveLength(1);
-    expect(chant.writes[0].graph.nodes).toHaveLength(2);
-    expect(chant.writes[0].graph.edges).toHaveLength(1);
-    const text = io.out.join("");
-    expect(text).toMatch(/2 nodes \(2 typed, 0 of unknown kind\), 1 derived edges/);
-    expect(text).toMatch(/^behold index: wrote 20261026T120000Z-bbbbbbbbbbbb\.json under cloud\/aws\/000000000000\/aaaaaaaaaaaa in fake-store$/m);
-  });
-
-  it("a second run writes a second version", async () => {
-    const t = tempTree();
-    const chant = fakeChant();
-    const lister = fakeLister();
-    const deps: IndexDeps = { cwd: t.cwd, home: t.home, env: { ...EMULATOR_ENV, XDG_DATA_HOME: t.xdg }, stdout: () => {}, stderr: () => {}, list: lister.list, chant: chant.chant, lexicons: noLexicons };
-    expect(await runIndex(["aws", "--endpoint", ENDPOINT, "--account", ACCOUNT, "--regions", "us-east-1"], deps)).toBe(0);
-    expect(await runIndex(["aws", "--endpoint", ENDPOINT, "--account", ACCOUNT, "--regions", "us-east-1"], deps)).toBe(0);
-    expect(chant.writes.map((d) => d.stamp.observedAt)).toEqual(["2026-10-26T12:00:00.000Z", "2026-10-26T12:00:01.000Z"]);
-  });
-
-  it("--json prints one object with the verdict fields", async () => {
+describe("with chant's runCloudIndex", () => {
+  it("hands over the argv untouched, with behold's command, store, tokens and version", async () => {
     const t = tempTree();
     const chant = fakeChant();
     const io = capture();
-    const code = await runIndex(["aws", "--endpoint", ENDPOINT, "--account", ACCOUNT, "--regions", "us-east-1", "--json"], {
+    const argv = ["azure", "--subscription", "s", "--endpoint", "https://localhost:4577", "--apply"];
+    const code = await runIndex(argv, {
       cwd: t.cwd,
       home: t.home,
-      env: { ...EMULATOR_ENV, XDG_DATA_HOME: t.xdg },
+      env: { XDG_DATA_HOME: t.xdg, BEHOLD_AZURE_TOKEN: "az", BEHOLD_GCP_TOKEN: "gc" },
       stdout: io.stdout,
       stderr: io.stderr,
-      list: fakeLister().list,
       chant: chant.chant,
-      lexicons: noLexicons,
+      version: "0.30.2",
     });
     expect(code).toBe(0);
-    const summary = JSON.parse(io.out.join(""));
-    expect(summary).toMatchObject({ substrate: "aws", scopeId: ACCOUNT, written: true, nodes: 2, derivedEdges: 1, coverage: { listed: 2, notObserved: 0 } });
+    expect(chant.calls).toHaveLength(1);
+    const { argv: passed, options } = chant.calls[0];
+    // An action flag is chant's to refuse; behold passes it on as typed.
+    expect(passed).toEqual(argv);
+    expect(options.command).toBe("behold index");
+    expect((options.defaultStoreDir as () => string)()).toBe(join(t.xdg, "behold"));
+    expect(options.env).toMatchObject({ CHANT_AZURE_TOKEN: "az", CHANT_GCP_TOKEN: "gc" });
+    expect(options.version).toBe("0.30.2");
+    expect(options.cwd).toBe(t.cwd);
+    expect(options.stdout).toBe(io.stdout);
   });
 
-  it("without chant's index pipeline it says what is missing and lists nothing", async () => {
-    const t = tempTree();
-    const lister = fakeLister();
+  it("returns chant's exit code", async () => {
+    expect(await runIndex(["aws", "--apply"], { env: {}, chant: fakeChant(2).chant })).toBe(2);
+  });
+
+  it("a bad BEHOLD_INDEX_DIR stops a run with no --store, not one that names a store", async () => {
     const io = capture();
-    const code = await runIndex(["aws", "--endpoint", ENDPOINT, "--account", ACCOUNT, "--regions", "us-east-1"], {
-      cwd: t.cwd,
-      home: t.home,
-      env: { ...EMULATOR_ENV, XDG_DATA_HOME: t.xdg },
-      stdout: io.stdout,
-      stderr: io.stderr,
-      list: lister.list,
-      chant: async () => ({ api: undefined, missing: ["typeListing (chant#4521, @intentius/chant/lifecycle/type-listing)"] }),
-    });
-    expect(code).toBe(2);
-    expect(lister.calls).toEqual([]);
-    expect(io.err.join("")).toMatch(/lacks typeListing \(chant#4521.*Nothing was listed and nothing was written/);
-    expect(files(t.root)).toEqual([]);
-  });
-
-  it("with an endpoint and no static credentials it is refused, and no SDK chain is asked", async () => {
-    const t = tempTree();
     const chant = fakeChant();
-    const chains = refusingChains();
-    const fake = fakeFetcher(() => undefined);
-    const io = capture();
-    const code = await runIndex(["aws", "--endpoint", ENDPOINT, "--account", ACCOUNT, "--regions", "us-east-1"], {
-      cwd: t.cwd,
-      home: t.home,
-      env: { XDG_DATA_HOME: t.xdg },
-      stdout: io.stdout,
-      stderr: io.stderr,
-      list: (scope, target, o) => listCloud(scope, target, { ...o, fetcher: fake.fetcher, chains, retryDelays: [] }),
-      chant: chant.chant,
-      lexicons: noLexicons,
-    });
-    expect(code).toBe(2);
-    expect(io.err.join("")).toMatch(/needs static credentials/);
-    expect(chains.count).toEqual({ aws: 0, azure: 0, gcp: 0 });
-    expect(fake.calls).toEqual([]);
-    expect(chant.writes).toEqual([]);
+    expect(await runIndex(["aws"], { env: { BEHOLD_INDEX_DIR: "/d/elsewhere" }, home: "/h", stderr: io.stderr, chant: chant.chant })).toBe(2);
+    expect(io.err.join("")).toMatch(/must end in \/index/);
+    expect(chant.calls).toEqual([]);
+    expect(await runIndex(["aws", "--store", "none"], { env: { BEHOLD_INDEX_DIR: "/d/elsewhere" }, home: "/h", chant: chant.chant })).toBe(0);
+    expect(chant.calls).toHaveLength(1);
   });
 
-  it("the CLI itself writes nothing: with a fake store the tree is unchanged", async () => {
-    const t = tempTree();
-    const chant = fakeChant();
-    await runIndex(["aws", "--endpoint", ENDPOINT, "--account", ACCOUNT, "--regions", "us-east-1"], {
-      cwd: t.cwd,
-      home: t.home,
-      env: { ...EMULATOR_ENV, XDG_DATA_HOME: t.xdg },
-      stdout: () => {},
-      stderr: () => {},
-      list: fakeLister().list,
-      chant: chant.chant,
-      lexicons: noLexicons,
-    });
-    expect(chant.writes).toHaveLength(1);
-    expect(files(t.root)).toEqual([]);
-  });
-});
-
-describe("scope and target from flags and the environment", () => {
-  const deps = { cwd: "/w", home: "/h" };
-  it("aws takes its region from AWS_REGION and its endpoint from AWS_ENDPOINT_URL", () => {
-    const { scope, target } = scopeAndTarget(parseIndexArgs(["aws", "--account", ACCOUNT]), { ...deps, env: { ...EMULATOR_ENV, AWS_REGION: "us-west-2", AWS_ENDPOINT_URL: ENDPOINT } });
-    expect(scope).toEqual({ substrate: "aws", scopeId: ACCOUNT, locations: ["us-west-2"], types: "*" });
-    expect(target).toEqual({ substrate: "aws", aws: { endpoint: ENDPOINT, credentials: { accessKeyId: "test", secretAccessKey: "test" } } });
-  });
-  it("gcp --anonymous sends no token, and needs an endpoint", () => {
-    const { target } = scopeAndTarget(parseIndexArgs(["gcp", "--project", "plc-corpus", "--endpoint", "http://localhost:4588/cloudasset", "--anonymous"]), { ...deps, env: {} });
-    expect(target).toEqual({ substrate: "gcp", gcp: { endpoint: "http://localhost:4588/cloudasset", token: null } });
-    expect(() => parseIndexArgs(["gcp", "--project", "p", "--anonymous"])).toThrow(/needs --endpoint/);
-  });
-  it("needs a scope id, and skips TLS checks only on loopback", () => {
-    expect(() => scopeAndTarget(parseIndexArgs(["azure"]), { ...deps, env: {} })).toThrow(/--subscription/);
-    expect(() => scopeAndTarget(parseIndexArgs(["azure", "--subscription", "s", "--endpoint", "https://management.azure.com", "--insecure-skip-verify"]), { ...deps, env: {} })).toThrow(/loopback/);
+  it("keeps chant's own token variables when both are set", () => {
+    expect(chantEnv({ CHANT_GCP_TOKEN: "c", BEHOLD_GCP_TOKEN: "b" }).CHANT_GCP_TOKEN).toBe("c");
   });
 });
 
@@ -362,40 +144,61 @@ describe("the default store location (behold#1025 Q4)", () => {
       expect(join(defaultIndexStoreDir(env, "/h"), "index")).toBe(userIndexDir(env, "/h"));
     }
   });
-
-  it("is used with no project and no --store, wherever the command runs", () => {
-    const none = () => false;
-    expect(planIndexStore({ cwd: "/a/b", env: { XDG_DATA_HOME: "/x" }, home: "/h", exists: none })).toEqual({ kind: "user", dir: join("/x", "behold") });
-    expect(planIndexStore({ cwd: "/elsewhere", env: { XDG_DATA_HOME: "/x" }, home: "/h", exists: none })).toEqual({ kind: "user", dir: join("/x", "behold") });
-  });
-
-  it("gives way to a chant project's store, and to --store", () => {
-    const exists = (p: string) => p === join("/proj", "chant.config.ts");
-    expect(findChantProject(join("/proj", "sub"), exists)).toBe("/proj");
-    expect(planIndexStore({ cwd: join("/proj", "sub"), env: {}, home: "/h", exists })).toEqual({ kind: "project", projectDir: "/proj" });
-    const local = planIndexStore({ store: "local:out", cwd: "/w", env: {}, home: "/h", exists });
-    expect(local).toMatchObject({ kind: "spec", configured: { store: "local" }, env: { CHANT_SNAPSHOT_STORE: "local", CHANT_SNAPSHOT_STORE_DIR: join("/w", "out") } });
-    const s3 = planIndexStore({ store: "s3://bucket/some/prefix/", cwd: "/w", env: {}, home: "/h" });
-    expect(s3).toMatchObject({ kind: "spec", env: { CHANT_SNAPSHOT_STORE: "s3", CHANT_SNAPSHOT_S3_BUCKET: "bucket", CHANT_SNAPSHOT_S3_PREFIX: "some/prefix" } });
-    expect(planIndexStore({ store: "git-ref:refs/x", cwd: "/w", env: {}, home: "/h" })).toMatchObject({ configured: { store: "git-ref", ref: "refs/x" } });
-    expect(() => planIndexStore({ store: "orphan-branch", cwd: "/w", env: {}, home: "/h" })).toThrow(/read-only/);
-    expect(() => planIndexStore({ store: "ftp://x", cwd: "/w", env: {}, home: "/h" })).toThrow(/not a store spec/);
-  });
 });
 
-// Against chant's real pipeline and local store: skipped unless the chant beside
-// behold has them (a local build of chant's integration/consolidation-graph).
-const real = await chantIndexApi();
+function listing(scope: CloudScope, startedAt: string): ListingResult {
+  const res = (listedType: string, nativeId: string, properties: Record<string, unknown>) => {
+    const location = listedType.startsWith("AWS::IAM::") ? "global" : "us-east-1";
+    return {
+      id: `aws/${scope.scopeId}/${location}/${listedType}/${nativeId}`,
+      listedType,
+      location,
+      nativeId,
+      cloudIds: [{ kind: "import-id" as const, value: nativeId }],
+      tags: {},
+      properties,
+      observedAt: startedAt,
+      facts: { cloudIds: [{ kind: "import-id" as const, value: nativeId }], observedAt: startedAt },
+    };
+  };
+  return {
+    listing: "v1",
+    source: { name: "chant-lister", version: "test" },
+    scope,
+    startedAt,
+    completedAt: startedAt,
+    resources: [
+      res("AWS::S3::Bucket", "web-assets", { BucketName: "web-assets" }),
+      res("AWS::IAM::Role", "app-role", { RoleName: "app-role" }),
+    ],
+    coverage: [
+      { listedType: "AWS::IAM::Role", location: "global", verdict: "listed" },
+      { listedType: "AWS::S3::Bucket", location: "us-east-1", verdict: "listed" },
+    ],
+    notes: [],
+  };
+}
 
-describe.skipIf(!real.api)("behold index with chant's pipeline and local store", () => {
-  it("writes only under the per-user store, two runs give two versions, and the graph pane's loader reads them", async () => {
+// Against chant's real command and local store: skipped unless the chant beside
+// behold has it (a local build of chant's integration/consolidation-graph).
+const real = await chantCloudIndex();
+
+describe.skipIf(!real)("behold index with chant's runCloudIndex and local store", () => {
+  it("writes only under behold's per-user store, two runs give two versions, and the graph pane's loader reads them", async () => {
     const t = tempTree();
-    const lister = fakeLister();
+    let clock = Date.parse("2026-10-26T12:00:00.000Z");
+    const list = async (scope: CloudScope) => {
+      const at = new Date(clock).toISOString();
+      clock += 1000;
+      return listing(scope, at);
+    };
     const env = { ...EMULATOR_ENV, XDG_DATA_HOME: t.xdg };
-    const deps: IndexDeps = { cwd: t.cwd, home: t.home, env, stdout: () => {}, stderr: () => {}, list: lister.list, lexicons: noLexicons };
+    const io = capture();
+    const deps = { cwd: t.cwd, home: t.home, env, stdout: io.stdout, stderr: io.stderr, passThrough: { list, lexicons: async () => ({ lexicons: [] }), exists: () => false } };
     const argv = ["aws", "--endpoint", ENDPOINT, "--account", ACCOUNT, "--regions", "us-east-1", "--types", "AWS::S3::Bucket,AWS::IAM::Role"];
     expect(await runIndex(argv, deps)).toBe(0);
     expect(await runIndex(argv, deps)).toBe(0);
+    expect(io.out.join("")).toMatch(/^behold index: wrote /m);
 
     const all = files(t.root);
     const storeIndex = relative(t.root, join(t.xdg, "behold", "index")) + sep;
@@ -407,7 +210,6 @@ describe.skipIf(!real.api)("behold index with chant's pipeline and local store",
     const versions = all.filter((f) => /\d{8}T\d{6}Z-[0-9a-f]{12}\.json$/.test(f));
     expect(versions).toHaveLength(2);
     expect(all.filter((f) => f.endsWith(`${sep}scope.json`))).toHaveLength(1);
-    expect(versions.every((v) => v.includes(`${sep}cloud${sep}aws${sep}${ACCOUNT}${sep}`))).toBe(true);
 
     // behold#1027's loader reads the latest version of the scope from the per-user store.
     const found: Found = { documents: [], notes: [] };
@@ -418,14 +220,24 @@ describe.skipIf(!real.api)("behold index with chant's pipeline and local store",
     expect(d.kind).toBe("index");
     if (d.kind !== "index") return;
     expect(d.doc.stamp.scope).toMatchObject({ kind: "cloud", substrate: "aws", scopeId: ACCOUNT });
-    expect(d.doc.graph.nodes.map((n) => n.id).sort()).toEqual([
-      `aws/${ACCOUNT}/global/AWS::IAM::Role/app-role`,
-      `aws/${ACCOUNT}/us-east-1/AWS::S3::Bucket/web-assets`,
-    ]);
     expect(d.version).toBe(versions.map((v) => v.split(sep).pop()!).sort()[1]);
+  });
 
-    // The first version stays readable through the store.
-    const store = real.api!.createStore({ store: "local", dir: join(t.xdg, "behold") }, { cwd: t.cwd });
-    expect(await store.listIndex(d.doc.stamp.scopeKey)).toHaveLength(2);
+  it("refuses an action flag before anything is listed", async () => {
+    const t = tempTree();
+    let listed = 0;
+    const io = capture();
+    const code = await runIndex(["aws", "--account", ACCOUNT, "--apply"], {
+      cwd: t.cwd,
+      home: t.home,
+      env: { ...EMULATOR_ENV, XDG_DATA_HOME: t.xdg },
+      stdout: io.stdout,
+      stderr: io.stderr,
+      passThrough: { list: async () => ((listed++, undefined) as never), exists: () => false },
+    });
+    expect(code).toBe(2);
+    expect(listed).toBe(0);
+    expect(io.err.join("")).toMatch(/^behold index is read-only and refuses --apply/);
+    expect(files(t.root)).toEqual([]);
   });
 });

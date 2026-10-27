@@ -27,7 +27,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
-import type { ListingResult } from "../cloud-lister/types.ts";
+import type { ListingResult } from "./listing.ts";
 import { isEngineGraphDocument, isIndexDocument, isListingResult, type EngineGraphDocument, type IndexDocument } from "./types.ts";
 
 export type FoundDocument =

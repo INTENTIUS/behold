@@ -32,7 +32,7 @@
  *    edge's meaning depend on which half it is in.
  *
  * The passes are looked for under specifiers the type checker and the
- * bundler leave alone, as src/chant-index.ts does for `behold index`: a local
+ * bundler leave alone, as src/behold-index.ts does for chant's `runCloudIndex`: a local
  * build of chant's integration branch has them (under tsx and vitest), the
  * published chant and the bundled dist/cli.js do not.
  *

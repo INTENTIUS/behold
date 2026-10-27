@@ -7,8 +7,8 @@
  * with `meta.engineGraph`, designed on chant#4520 section 3), the engine facts
  * on its nodes (`EngineFacts`, nested in `facts`, ruled on behold#1025 Q1), and
  * the index document (`IndexDocument`, chant#4519, laid out on behold#1025).
- * The fourth is behold's own: the cloud lister's `ListingResult`
- * (src/cloud-lister/types.ts, behold#1029).
+ * The fourth is the cloud lister's `ListingResult` (chant#4532, which moved
+ * behold#1029's lister into chant), held in src/graph-db/listing.ts.
  *
  * behold must build against published chant, and the published `IRNode` and
  * `IREdge` have no `facts`, `grain` or instance fields yet. So these are local
@@ -19,7 +19,7 @@
  * `@intentius/chant`'s `EngineFacts`, `EngineGraphDocument` and
  * `IndexDocument` is published, flip src/chant-release.ts's switch and make
  * this file re-export chant's types instead (the same swap
- * src/cloud-lister/types.ts names for the listing types).
+ * src/graph-db/listing.ts names for the listing types).
  */
 import type { GraphIR, IREdge, IRNode } from "@intentius/chant";
 
@@ -152,7 +152,7 @@ export function isIndexDocument(v: unknown): v is IndexDocument {
 }
 
 /** Whether `v` is shaped like the cloud lister's `ListingResult` (behold#1029). */
-export function isListingResult(v: unknown): v is import("../cloud-lister/types.ts").ListingResult {
+export function isListingResult(v: unknown): v is import("./listing.ts").ListingResult {
   if (!v || typeof v !== "object") return false;
   const d = v as { listing?: unknown; resources?: unknown; scope?: unknown };
   return d.listing === "v1" && Array.isArray(d.resources) && !!d.scope && typeof d.scope === "object";
