@@ -2,8 +2,8 @@
   "version": 2,
   "target": "aws_s3_bucket.assets",
   "tfType": "aws_s3_bucket",
-  "from": "/Users/alex/Documents/checkouts/intentius/behold/behold-demos/carve/legacy-tf",
-  "statePath": "/Users/alex/Documents/checkouts/intentius/behold/behold-demos/carve/legacy-tf/terraform.tfstate",
+  "from": "/Users/alex/Documents/checkouts/intentius/behold/behold-demos/carve/tf-root",
+  "statePath": "/Users/alex/Documents/checkouts/intentius/behold/behold-demos/carve/tf-root/terraform.tfstate",
   "boundary": {
     "target": "aws_s3_bucket.assets",
     "carveSet": [

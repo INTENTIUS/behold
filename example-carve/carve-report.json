@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "from": "example-carve/legacy-tf",
+  "from": "example-carve/tf-root",
   "advisory": "read-only — emits nothing, patches nothing, touches no live resource",
   "count": 12,
   "bands": {

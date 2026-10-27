@@ -3,11 +3,11 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { armOverride, parsePlanOutput, LIVE_CONTAINER, LIVE_PORT, LIVE_TARGETS } from "./carve-live.ts";
 
-const LEGACY_TF = join(import.meta.dirname, "..", "example-carve", "legacy-tf");
+const TF_ROOT = join(import.meta.dirname, "..", "example-carve", "tf-root");
 
 describe("the Floci --live tier (#254)", () => {
   it("arms the committed override template completely — no endpoint left on the shared :4566", () => {
-    const template = readFileSync(join(LEGACY_TF, "floci-override.tf.disabled"), "utf8");
+    const template = readFileSync(join(TF_ROOT, "floci-override.tf.disabled"), "utf8");
     const before = (template.match(/localhost:4566/g) ?? []).length;
     expect(before).toBeGreaterThan(0);
     const armed = armOverride(template, LIVE_PORT);
@@ -19,13 +19,13 @@ describe("the Floci --live tier (#254)", () => {
   });
 
   it("targets addresses the demo estate actually declares", () => {
-    const tf = readdirSync(LEGACY_TF)
+    const tf = readdirSync(TF_ROOT)
       .filter((f) => f.endsWith(".tf"))
-      .map((f) => readFileSync(join(LEGACY_TF, f), "utf8"))
+      .map((f) => readFileSync(join(TF_ROOT, f), "utf8"))
       .join("\n");
     for (const target of LIVE_TARGETS) {
       const [type, name] = target.split(".");
-      expect(tf, `${target} must exist in legacy-tf`).toContain(`resource "${type}" "${name}"`);
+      expect(tf, `${target} must exist in tf-root`).toContain(`resource "${type}" "${name}"`);
     }
   });
 

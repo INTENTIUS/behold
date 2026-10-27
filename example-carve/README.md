@@ -1,6 +1,6 @@
 # example-carve, the mixed estate the carve demo runs on
 
-A mixed estate. `app/` is chant and `legacy-tf/` is Terraform. Both manage one
+A mixed estate. `app/` is chant and `tf-root/` is Terraform. Both manage one
 AWS account, and the walkthrough hands one resource from Terraform to chant.
 
 Run it:
@@ -21,7 +21,7 @@ reason is on screen; a blank graph is the one outcome that's never allowed.
 example-carve/
   app/                     a small chant project — the pieces already carved
     carveout/              where Emit and Bridge write, in a copy (gitignored)
-  legacy-tf/               the Terraform root
+  tf-root/                 the Terraform root
     terraform.tfstate      synthetic state (fake account, fake ARNs)
     floci-override.tf.disabled   provider endpoints for the --live tier, inert
     modules/cdn/           a local module, so module.cdn resolves offline
@@ -38,7 +38,7 @@ on the source.
 ## The estate is mixed from the first frame
 
 `app/src/carved.ts` holds a CloudWatch log group and an SSM parameter that came
-out of `legacy-tf/` last month. The source says so, and `legacy-tf/cdn.tf` still
+out of `tf-root/` last month. The source says so, and `tf-root/cdn.tf` still
 carries the other half of that carve: a `data "aws_ssm_parameter"` block reading
 back the value chant now owns. That is the data-source rewrite `carve bridge`
 generates, sitting in the estate a month later and working.
@@ -53,8 +53,8 @@ identical at 0.52.1). Reproduce it with:
 
 ```sh
 npm install -D @cdktn/hcl2json          # once, anywhere on your PATH resolution
-chant carve advise --from example-carve/legacy-tf \
-                   --state example-carve/legacy-tf/terraform.tfstate
+chant carve advise --from example-carve/tf-root \
+                   --state example-carve/tf-root/terraform.tfstate
 ```
 
 | score | address | band | why | role in the script |
@@ -80,7 +80,7 @@ The scoring model is `100 - 12*inbound - 4*outbound - 4*outputs - 15*(tier-1) -
 resource is a boundary edge too now, `bridge: "tf-output-rewrite"`, because
 carving that resource means rewriting the output the same way carving a
 resource with an inbound reference means adding a data source. Every number
-above is that arithmetic on the edges in `legacy-tf/`, which is why the estate
+above is that arithmetic on the edges in `tf-root/`, which is why the estate
 is shaped the way it is:
 
 - The bucket has one inbound edge — `aws_lambda_function.api`'s
@@ -112,8 +112,8 @@ without shelling anything. JSON carries no comments, so this is its header:
 regenerate it, unchanged, with
 
 ```sh
-chant carve advise --from example-carve/legacy-tf \
-                   --state example-carve/legacy-tf/terraform.tfstate \
+chant carve advise --from example-carve/tf-root \
+                   --state example-carve/tf-root/terraform.tfstate \
                    --report example-carve/carve-report.json
 ```
 
@@ -147,7 +147,7 @@ itself, into `app/carveout/` in the copy; beat 6 is copy buttons, on purpose.
 3. **The cut edge.** Highlight the two dependencies the carve severs:
    `aws_lambda_function.api` reads the bucket name, and the `assets_bucket`
    output reads it too. Two one-line rewrites, not one.
-4. **Emit.** `carve emit --from legacy-tf --state legacy-tf/terraform.tfstate
+4. **Emit.** `carve emit --from tf-root --state tf-root/terraform.tfstate
    --select aws_s3_bucket.assets` adopts the bucket from state into typed chant
    source, folds both sub-resources into the carve set AS native props
    (chant#1637's fold, applied), and writes a boundary report. Nothing is
@@ -192,7 +192,7 @@ tier guarantees the first thirty seconds of the video.
 
 **`--live` is the full video.** `behold demo carve --live` boots a scratch
 Floci (`behold-carve-floci`, its own port, deleted on exit), arms
-`legacy-tf/floci-override.tf.disabled` (see its header) into the demo copy, and
+`tf-root/floci-override.tf.disabled` (see its header) into the demo copy, and
 `terraform apply -target`s the starred resources into it, so the tfstate the
 advisor reads is one terraform really wrote. At Handoff the stepper gains a
 read-only **terraform plan** button: before `state rm` it shows a no-op, after
@@ -227,7 +227,7 @@ rules on source the advisor called clean. It is fixed now.
 
 `chant lint` on the emitted project passes with warnings. `chant build` still
 fails, but on one rule: WAW042, no bucket policy denying non-TLS requests.
-That is not a carve-tooling gap — grep `legacy-tf/` for
+That is not a carve-tooling gap — grep `tf-root/` for
 `aws_s3_bucket_policy` and there isn't one. The Terraform never declared a
 TLS-deny policy for this bucket, in any form; chant's post-synth checks
 noticed the moment the resource had a native representation to check. Nothing

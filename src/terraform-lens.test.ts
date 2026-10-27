@@ -22,7 +22,7 @@ import { projectTerraformLogical, rootBoxTitle } from "./logical-terraform.ts";
 // output from `@intentius/chant-lexicon-terraform` 0.59.0, which reads an
 // estate's own HCL and emits one entity per block. Nothing hand-edited.
 //
-//  - terraform-ir-legacy-tf.json: behold's own bundled `example-carve/legacy-tf`
+//  - terraform-ir-tf-root.json: behold's own bundled `example-carve/tf-root`
 //    as one root named `app`, at chant's default detail. 29 nodes covering all
 //    seven entity kinds — 14 resources, 5 outputs, 4 variables, 3 data sources,
 //    a module, a provider and a terraform block. No `body` at this detail.
@@ -36,7 +36,7 @@ import { projectTerraformLogical, rootBoxTitle } from "./logical-terraform.ts";
 // for terraform entities (chant#2265).
 const HERE = dirname(fileURLToPath(import.meta.url));
 const load = (name: string): GraphIR => JSON.parse(readFileSync(join(HERE, "__fixtures__", name), "utf8")) as GraphIR;
-const legacy = (): GraphIR => load("terraform-ir-legacy-tf.json");
+const legacy = (): GraphIR => load("terraform-ir-tf-root.json");
 const twoRoots = (): GraphIR => load("terraform-ir-two-roots.json");
 const byId = (ir: GraphIR, id: string) => ir.nodes.find((n) => n.id === id)!;
 

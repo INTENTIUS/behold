@@ -30,7 +30,7 @@ import { spawn, spawnSync } from "node:child_process";
 export interface DemoCarve {
   /** The committed `carve advise --report` output, served if a fresh run fails. */
   report: string;
-  /** The Terraform estate the advisor reads (`legacy-tf`). */
+  /** The Terraform estate the advisor reads (`tf-root`). */
   from: string;
   /** The `.tfstate` that makes `carve advise`/`carve emit` work offline. */
   state?: string;

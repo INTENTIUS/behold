@@ -82,8 +82,8 @@
       "serve": {
         "carve": {
           "report": "carve-report.json",
-          "from": "legacy-tf",
-          "state": "legacy-tf/terraform.tfstate",
+          "from": "tf-root",
+          "state": "tf-root/terraform.tfstate",
           "project": "app",
           "out": "app/carveout"
         }

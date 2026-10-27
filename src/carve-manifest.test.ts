@@ -43,7 +43,7 @@ const FIXTURES_V2 = join(HERE, "__fixtures__", "carve-manifests-v2");
  * its `app/` pinned to `@intentius/chant@0.52.2` +
  * `@intentius/chant-lexicon-aws@0.52.2` (chant#998's manifest, chant PR #1575,
  * ships at 0.52.2), `npm install --no-save @cdktf/hcl2json` beside it for the
- * HCL parse, then the three carve verbs run against `legacy-tf/` with
+ * HCL parse, then the three carve verbs run against `tf-root/` with
  * `--output app/carveout`:
  *
  *   aws_iam_role.api            `carve emit`                          -> emitted
@@ -309,7 +309,7 @@ describe("applyCommandFor", () => {
     const cmd = applyCommandFor(state());
     expect(cmd).toContain("chant carve apply");
     expect(cmd).not.toContain("--select");
-    expect(cmd).toContain("--from /tmp/carve-fixture/legacy-tf");
+    expect(cmd).toContain("--from /tmp/carve-fixture/tf-root");
     expect(cmd).toContain(`--output ${FIXTURES}`);
   });
 
@@ -323,8 +323,8 @@ describe("applyCommandFor", () => {
   });
 
   it("takes display labels without changing which carve it names", () => {
-    const cmd = applyCommandFor(state(), { from: "legacy-tf", out: "app/carveout" });
-    expect(cmd).toContain("--from legacy-tf --output app/carveout");
+    const cmd = applyCommandFor(state(), { from: "tf-root", out: "app/carveout" });
+    expect(cmd).toContain("--from tf-root --output app/carveout");
   });
 });
 
@@ -460,7 +460,7 @@ const statusIo = (files: Record<string, string>): CarveManifestIo => ({
 
 /** A V2 manifest (chant ≥ 0.54.0): emitted files relative to its own directory. */
 const v2 = (target: string, file: string): string =>
-  JSON.stringify({ version: 1, target, tfType: target.split(".")[0], from: "/estate/legacy-tf", emit: { source: "tfstate", files: [file], at: "2026-09-01T10:00:00Z" } });
+  JSON.stringify({ version: 1, target, tfType: target.split(".")[0], from: "/estate/tf-root", emit: { source: "tfstate", files: [file], at: "2026-09-01T10:00:00Z" } });
 
 describe("discoverCarveStates — chant's walk first, the local walk below the floor", () => {
   const files = {
@@ -530,7 +530,7 @@ describe("joinCarvedSources — the chant#2040 join by declaring file", () => {
       stage: "emitted",
       graduated: false,
       at: "2026-09-01T10:00:00Z",
-      from: "/estate/legacy-tf",
+      from: "/estate/tf-root",
       file: "src/assets.ts",
     });
     expect(assets.attrs._status).toBe("good");

@@ -2,8 +2,8 @@
   "version": 1,
   "target": "aws_cloudwatch_log_group.worker",
   "tfType": "aws_cloudwatch_log_group",
-  "from": "/tmp/carve-fixture/legacy-tf",
-  "statePath": "/tmp/carve-fixture/legacy-tf/terraform.tfstate",
+  "from": "/tmp/carve-fixture/tf-root",
+  "statePath": "/tmp/carve-fixture/tf-root/terraform.tfstate",
   "boundary": {
     "target": "aws_cloudwatch_log_group.worker",
     "carveSet": [

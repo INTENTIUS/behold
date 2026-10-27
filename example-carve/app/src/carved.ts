@@ -1,9 +1,9 @@
 import { LogGroup, SsmParameter } from "@intentius/chant-lexicon-aws";
 
-// These two came out of ../legacy-tf last month, in the first pass of the
+// These two came out of ../tf-root last month, in the first pass of the
 // migration. Both were carved the same way:
 //
-//   chant carve emit --from ../legacy-tf --state ../legacy-tf/terraform.tfstate \
+//   chant carve emit --from ../tf-root --state ../tf-root/terraform.tfstate \
 //     --select aws_cloudwatch_log_group.api --output .
 //   terraform state rm aws_cloudwatch_log_group.api
 //
@@ -19,7 +19,7 @@ export const apiLogs = new LogGroup({
   RetentionInDays: 30,
 });
 
-// Was `aws_ssm_parameter.assets_cdn_domain` in ../legacy-tf. The surviving
+// Was `aws_ssm_parameter.assets_cdn_domain` in ../tf-root. The surviving
 // Terraform reads it back through a `data "aws_ssm_parameter"` block — the
 // data-source patch `carve bridge` writes for every inbound edge a carve cuts.
 export const assetsCdnDomain = new SsmParameter({

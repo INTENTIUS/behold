@@ -70,7 +70,7 @@ Point `behold carve` at a report in a directory that also holds manifests and yo
 `carve apply` moves ownership to chant. behold renders what the manifest records about it and echoes the command, with no `--select`, because the manifest in the output directory already names the target:
 
 ```sh
-chant carve apply --from legacy-tf --output app/carveout --env prod --stack assets --write-source
+chant carve apply --from tf-root --output app/carveout --env prod --stack assets --write-source
 ```
 
 There is no `/api/carve/apply` endpoint and no apply button anywhere in the UI. That is the same line the Handoff step draws around `terraform state rm`: behold triggers delegated work, it does not decide when an estate changes hands.

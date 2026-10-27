@@ -59,7 +59,7 @@ import { runLivePlan, type CarveLiveInfo } from "./carve-live.ts";
 export interface CarveDemo {
   /** The demo copy's root. The containment check's ceiling. */
   root: string;
-  /** The Terraform estate to carve from (`legacy-tf/`). */
+  /** The Terraform estate to carve from (`tf-root/`). */
   from: string;
   /** The synthetic `.tfstate` — what makes emit work offline. */
   state?: string;
