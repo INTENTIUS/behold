@@ -41,7 +41,9 @@
     "preview:tour": "tsx scripts/tour-preview.ts",
     "tsc": "tsc --noEmit",
     "test": "vitest run",
-    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --external:hono --external:@hono/node-server --external:@intentius/pinhole --external:@kubernetes/client-node --external:ajv --external:@modelcontextprotocol/sdk --external:@ladybugdb/core --outfile=dist/cli.js && chmod +x dist/cli.js",
+    "generate:graph-layout": "tsx src/graph-db/generate-layout.ts",
+    "check:graph-layout": "tsx src/graph-db/generate-layout.ts --check",
+    "build": "tsx src/graph-db/generate-layout.ts && esbuild src/cli.ts --bundle --platform=node --format=esm --external:hono --external:@hono/node-server --external:@intentius/pinhole --external:@kubernetes/client-node --external:ajv --external:@modelcontextprotocol/sdk --external:@ladybugdb/core --outfile=dist/cli.js && chmod +x dist/cli.js",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build"
   },

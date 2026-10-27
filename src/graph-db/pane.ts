@@ -37,6 +37,7 @@ import { CypherRefused, GraphDb, graphDbDir, type CypherAnswer } from "./db.ts";
 import { loadLadybug, type PeerImport, type PeerRefusal } from "./peer.ts";
 import { emptyRows, finishRows, rowsFromChantIr, rowsFromEngineGraph, rowsFromIndex, rowsFromListing, type LoadedRows, type SourceStamp } from "./rows.ts";
 import { INDEX_DIFF_ROUTES, mountIndexDiff } from "./index-diff-routes.ts";
+import { activeLayout, type ActiveLayout } from "./layout.ts";
 import { findDocuments, type EngineRunner, type Git, type MemberRef } from "./sources.ts";
 import { TEMPLATES, TEMPLATE_CATALOG, TemplateError, applies, expandTemplate, resolveResource, type Expanded } from "./templates.ts";
 
@@ -66,6 +67,8 @@ export interface GraphPaneDeps {
   home?: string;
   public?: boolean;
   now?: () => Date;
+  /** The layout the database is built with (behold#1031); absent, the installed chant's schema when it ships one, else behold's vendored copy. */
+  layout?: () => ActiveLayout;
 }
 
 export class GraphPeerMissing extends Error {
@@ -77,6 +80,7 @@ export class GraphPeerMissing extends Error {
 interface Built {
   project: string;
   rows: LoadedRows;
+  layout: ActiveLayout;
   builtAt: string;
 }
 
@@ -106,7 +110,9 @@ export class GraphSession {
 
   private async load(project: string): Promise<Built> {
     const readAt = this.now();
-    const rows = emptyRows();
+    const layout = (this.deps.layout ?? activeLayout)();
+    const rows = emptyRows(layout.from === "chant" ? layout.layout : undefined);
+    rows.notes.push(...layout.notes);
     try {
       const chant = await this.deps.readChant();
       rowsFromChantIr(chant.ir, { ...(chant.members ? { members: chant.members } : {}), readAt, from: chant.from }, rows);
@@ -128,7 +134,7 @@ export class GraphSession {
       else rowsFromListing(d.doc, { readAt, from: d.from }, rows);
     }
     finishRows(rows);
-    return { project, rows, builtAt: readAt };
+    return { project, rows, layout, builtAt: readAt };
   }
 
   /** The database for the current rows, built read-only on first use. Throws GraphPeerMissing without the peer. */
@@ -263,7 +269,14 @@ export function mountGraphPane(app: Hono, deps: GraphPaneDeps): GraphSession {
       peer: await session.peerState(),
       builtAt: built.builtAt,
       counts: { resources: r.resources.length, cloudIds: r.cloudIds.length, knownAs: r.knownAs.length, refs: r.refs.length, derived: r.refs.filter((e) => e.origin === "derived").length },
-      tables: ["Resource", "CloudId", "KNOWN_AS", "REF"],
+      tables: built.layout.layout.tables.map((t) => t.name),
+      layout: {
+        from: built.layout.from,
+        ...(built.layout.path ? { path: built.layout.path } : {}),
+        ...(built.layout.chantVersion ? { chantVersion: built.layout.chantVersion } : {}),
+        schemaSha256: built.layout.layout.source.sha256,
+        chantCommit: built.layout.layout.source.commit,
+      },
       sources: stamps(r),
       notes: r.notes,
     });
