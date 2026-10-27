@@ -52,8 +52,13 @@ describe("scratch discipline — every boot site honours it", () => {
     it(`${f}: behold-* name, refuse-if-exists, delete-own-only`, () => {
       const text = readFileSync(join(e2eDir, f), "utf8");
       const assign = text.match(/^CLUSTER=(\S+)/m);
-      expect(assign, "CLUSTER= is set once, literally").not.toBeNull();
-      expect(scratchNameProblem(assign![1].replace(/["']/g, ""))).toBeUndefined();
+      expect(assign, "CLUSTER= is set once").not.toBeNull();
+      const value = assign![1].replace(/["']/g, "");
+      // An env override (behold#1032) keeps a literal default, and the script
+      // refuses at run time any override that is not behold-*.
+      const override = value.match(/^\$\{[A-Z0-9_]+:-([^}]+)\}$/);
+      expect(scratchNameProblem(override ? override[1] : value)).toBeUndefined();
+      if (override) expect(text).toMatch(/case "\$CLUSTER" in behold-\*\) ;; \*\)[^\n]*exit/);
       expect(text).toMatch(/k3d cluster list[^\n]*\n[^\n]*already exists/);
       expect(text).toMatch(/trap [^\n]*EXIT/);
       for (const del of text.matchAll(/k3d cluster delete\s+"?(\$\{?[A-Za-z_]+\}?|[A-Za-z0-9._-]+)/g)) {
