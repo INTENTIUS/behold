@@ -294,8 +294,10 @@ describe("POST /api/demos/open — a catalog name, never a path (#268)", () => {
       expect(body.projectDirs).toEqual(members.map((m) => m.abs));
       expect(body.projectDir).toBe(join(root(), "monolith"));
       // The page reloads into /api/project; its workspace field is what turns the palette's workspace rows on.
-      const info = (await (await app.request("/api/project")).json()) as { projectDirs?: string[]; workspace?: { root: string } };
-      expect(info.workspace?.root).toBe(root());
+      // /api/project publishes the workspace's name and members (relative dirs), not its root.
+      const info = (await (await app.request("/api/project")).json()) as { projectDirs?: string[]; workspace?: { name: string; members: { dir: string; kind: string }[] } };
+      expect(info.workspace?.name).toBe("estate");
+      expect(info.workspace?.members.map((m) => [m.dir, m.kind])).toEqual(members.map((m) => [m.dir, "choudoufu"]));
       expect(info.projectDirs).toEqual(body.projectDirs);
     });
 
