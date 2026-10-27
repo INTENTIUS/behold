@@ -1,8 +1,7 @@
-# example-carve, the mixed estate the peeling demo runs on
+# example-carve, the mixed estate the carve demo runs on
 
-A migration caught half-done. `app/` is chant; `legacy-tf/` is Terraform; both
-describe one AWS account, and the walkthrough carves one more resource across
-the line while the camera is running.
+A mixed estate. `app/` is chant and `legacy-tf/` is Terraform. Both manage one
+AWS account, and the walkthrough hands one resource from Terraform to chant.
 
 Run it:
 
@@ -22,7 +21,7 @@ reason is on screen; a blank graph is the one outcome that's never allowed.
 example-carve/
   app/                     a small chant project — the pieces already carved
     carveout/              where Emit and Bridge write, in a copy (gitignored)
-  legacy-tf/               the Terraform half, still Terraform-owned
+  legacy-tf/               the Terraform root
     terraform.tfstate      synthetic state (fake account, fake ARNs)
     floci-override.tf.disabled   provider endpoints for the --live tier, inert
     modules/cdn/           a local module, so module.cdn resolves offline
@@ -69,9 +68,9 @@ chant carve advise --from example-carve/legacy-tf \
 | 43 | `aws_security_group.lambda` | leave in Terraform | 2 inbound, 2 outbound, tier 2, data present | |
 | 42 | `aws_subnet.private_a` | leave in Terraform | 3 inbound, 1 output, 2 outbound, data present | |
 | 42 | `aws_subnet.private_b` | leave in Terraform | 3 inbound, 1 output, 2 outbound, data present | |
-| 32 | `aws_vpc.main` | leave in Terraform | 5 inbound, 1 output, 1 outbound | the grey anchor: this stays, and that's fine |
+| 32 | `aws_vpc.main` | leave in Terraform | 5 inbound, 1 output, 1 outbound | |
 | 0 | `aws_network_acl.private` | leave in Terraform | no known native mapping | |
-| 0 | `random_pet.suffix` | leave in Terraform | no known native mapping | the long tail, stated plainly |
+| 0 | `random_pet.suffix` | leave in Terraform | no known native mapping | |
 
 Bands: 80-100 carve now, 50-79 carve with boundary edits, 0-49 leave in Terraform.
 
@@ -198,8 +197,7 @@ Floci (`behold-carve-floci`, its own port, deleted on exit), arms
 advisor reads is one terraform really wrote. At Handoff the stepper gains a
 read-only **terraform plan** button: before `state rm` it shows a no-op, after
 it the carved bucket is simply gone from Terraform's world — `0 to destroy`.
-The line the tier exists for is "Terraform forgot it, chant adopted it, and it
-never blinked."
+The bucket moved from Terraform to chant with no downtime.
 
 The observe beat is footage now, not caption: after Emit, "▶ watch chant read
 it live" runs `chant lifecycle diff prod --live` in the carveout with the
@@ -237,11 +235,9 @@ here would show up scanning the `.tf` by eye, because there is nothing to
 find — only an absence.
 
 Verified against chant 0.44.7. The walkthrough's Emit beat still shows `lint`,
-not `build`, the step's "why lint and not build?" note says why on screen —
-but the reason changed: `build` doesn't fail because the fold is incomplete
-anymore, it fails because the estate really does have a policy gap. "chant
-found a policy gap Terraform never noticed" is the honest line to close the
-video on.
+not `build`, and the step's "why lint and not build?" note gives the reason on
+screen: chant's policy check flagged a missing TLS-deny policy on the bucket.
+Adding one in Terraform fixes it too.
 
 ## Values
 

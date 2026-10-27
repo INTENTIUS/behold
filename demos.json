@@ -75,7 +75,7 @@
     },
     {
       "name": "carve",
-      "description": "The peel walkthrough: a half-migrated estate — a chant project beside a Terraform one — scored by `chant carve advise`, then a six-step stepper that carves one S3 bucket across the line on camera (advise, pick, emit, bridge, handoff, done). Emit and bridge really run, into the demo copy; the destructive terraform commands stay yours to paste. No cloud, no Docker, no terraform binary.",
+      "description": "The carve walkthrough: a chant project beside a Terraform root, scored by `chant carve advise`, then a six-step handoff of one S3 bucket (advise, pick, emit, bridge, handoff, done). Emit and bridge really run, into the demo copy; the destructive terraform commands stay yours to paste. No cloud, no Docker, no terraform binary.",
       "source": "bundled",
       "dir": "example-carve",
       "requires": [],

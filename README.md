@@ -27,9 +27,9 @@ https://intentius.io/behold/using/agents/.
 Never deploy with the Deploy button, `POST /api/apply` or `POST /api/ci/dispatch`. Gate approvals stay mine as well (`/api/ops/:name/signal/:gate`, `/api/workspace/gates/approve`, `/api/operator/approve/:op/:gate`). Op runs (`/api/ops/:name/run`) and rollbacks (`/api/rollback`) are mine too. Leave `--auto-sync` off, and keep a `behold preview` or `--public` serve read-only.
 ```
 
-Where Argo CD shows one cluster's tree, behold shows the mixed-substrate estate:
-cloud drift on AWS, supply-chain drift on GitHub Actions, artifact presence on
-Helm. Each substrate's own kind of truth, in one picture.
+behold shows the mixed-substrate estate: cloud drift on AWS, supply-chain drift
+on GitHub Actions, artifact presence on Helm. An Argo CD cluster draws in the
+same graph, with each substrate's own kind of truth in one picture.
 
 ```
 chant source ──build/lint──▶ graph IR ──behold──▶ live graph + drift + (delegated) actions
@@ -56,8 +56,8 @@ workspace, where a
 card's colour is **ownership** (bound, unowned, pending) rather than "nothing
 changed": a resource whose attributes drifted out of band still carries its
 markers and is still green, so attribute drift is a separate read you ask for
-with ⌘K → "Re-check live with plan"; `behold demo carve` is the Terraform peel
-walkthrough, below). Two more need no Docker either: `behold demo
+with ⌘K → "Re-check live with plan"; `behold demo carve` shows chant and
+Terraform managing one account together, below). Two more need no Docker either: `behold demo
 terraform-estate` draws a multi-root Terraform estate boxed by root, and shows
 what behold refuses to infer, since one root reads a key the other declares and
 no edge is drawn between them; `behold demo flux-estate` is a GitOps estate on
@@ -505,11 +505,11 @@ Documents are checked against terragucci's JSON Schemas when
 docs `using/terragucci`. `example-terragucci-reports/` is a bucket for
 terragucci's own example, written by terragucci's code.
 
-## Terraform carve-out: `behold carve <report.json>`
+## Terraform and chant: `behold carve <report.json>`
 
-`chant carve advise` ranks a Terraform estate by **peelability**: how cleanly
-each resource could be carved into native chant source. `behold carve` draws
-that ranking: one card per resource, three panels (carve now / boundary work /
+`chant carve advise` reads a Terraform estate and shows which resources chant
+can also manage, and the work each handoff takes. `behold carve` draws that
+report: one card per resource, three panels (carve now / boundary work /
 leave in Terraform) on the same `attrs._status` drift palette every other view
 uses, and the score arithmetic behind each rank in the inspect pane.
 
@@ -535,8 +535,8 @@ own `<address>.carve.json` manifests.
 npx @intentius/behold demo carve      # no Docker, no cloud, no terraform binary
 ```
 
-Copies a half-migrated estate (a small chant project beside a Terraform one,
-both describing the same AWS account), installs the chant it will shell, runs
+Copies a mixed estate (a small chant project beside a Terraform one, both on
+the same AWS account), installs the chant it will shell, runs
 `chant carve advise` over the copy, and opens the banded graph with a six-step
 stepper on the panel's **Carve** tab:
 
@@ -556,7 +556,7 @@ stepper on the panel's **Carve** tab:
 
 The Emit step reports `chant lint`, not `chant build`: `build` fails on the
 emitted bucket (scored 84 by the advisor) on one rule: WAW042, a TLS-deny
-bucket policy the source Terraform never declared. The panel links the
+bucket policy. Adding one in Terraform fixes it too. The panel links the
 reason. [example-carve/README.md](example-carve/README.md) has the estate's full story, the band table,
 and the offline/`--live` split.
 

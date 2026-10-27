@@ -136,11 +136,11 @@ approves it.
 
 `behold demo carve` also involves Terraform and answers a different question.
 This estate asks **what is in my Terraform** — draw it, box it by root, tell the
-roots from the modules. The carve demo asks **what would it cost to leave**:
-`chant carve advise` ranks each resource by peelability and the walkthrough
-carves one across the line.
+roots from the modules. The carve demo asks **which resources chant could also manage**:
+`chant carve advise` scores each resource and the walkthrough hands one to
+chant.
 
-Nothing here is being migrated. There is no chant project beside it, no
+This estate draws your Terraform as it is. There is no chant project beside it, no
 peelability score on any card, and no stepper.
 
 [#381]: https://github.com/INTENTIUS/behold/issues/381
