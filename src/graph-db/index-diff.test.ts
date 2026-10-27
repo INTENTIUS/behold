@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import { coverageForFallback, diffIndexVersions, IndexScopeMismatch, type DiffDocument } from "./index-diff.ts";
-import { chantIndexDiff, coverageLookup, diffFromStores, listIndexVersions, mountIndexDiff, overlayFor, type IndexDiffImpl } from "./index-diff-routes.ts";
+import { chantIndexDiff, chantIndexStore, coverageLookup, diffFromStores, listIndexVersions, mountIndexDiff, overlayFor, type ChantIndexStore, type ChantIndexStoreApi, type IndexDiffImpl } from "./index-diff-routes.ts";
 import { LOCAL_INDEX_DIR } from "./sources.ts";
 
 const DIR = join(import.meta.dirname, "__fixtures__", "index-diff");
@@ -140,18 +140,20 @@ function project(): string {
 const noGit = () => {
   throw new Error("not a git repository");
 };
+/** A published chant: no store readers, so only behold's local reads run (behold#1034). */
+const publishedChant = async () => undefined;
 
 describe("loading two versions from the stores", () => {
   it("lists versions per scope, oldest first", () => {
     const dir = project();
-    const vs = listIndexVersions({ projectDir: dir, git: noGit, env: { BEHOLD_INDEX_DIR: join(dir, "none") } });
+    const vs = listIndexVersions({ projectDir: dir, git: noGit, chantStore: publishedChant, env: { BEHOLD_INDEX_DIR: join(dir, "none") } });
     expect(vs.filter((v) => v.scopeKey.endsWith("5c1f0e2a9b7d")).map((v) => v.version)).toEqual([V1, V2]);
     expect(vs.every((v) => v.store === "project-local")).toBe(true);
   });
 
   it("defaults to the scope's last two versions and draws the overlay", async () => {
     const dir = project();
-    const a = await diffFromStores({ scope: "cloud/aws/000000000000/5c1f0e2a9b7d" }, { projectDir: dir, git: noGit, env: { BEHOLD_INDEX_DIR: join(dir, "none") } });
+    const a = await diffFromStores({ scope: "cloud/aws/000000000000/5c1f0e2a9b7d" }, { projectDir: dir, git: noGit, chantStore: publishedChant, env: { BEHOLD_INDEX_DIR: join(dir, "none") } });
     expect(a.diff.from.version).toBe(V1);
     expect(a.diff.to.version).toBe(V2);
     const byKey = Object.fromEntries(a.draw.nodes.map((n) => [n.key, n.change]));
@@ -162,7 +164,7 @@ describe("loading two versions from the stores", () => {
   it("refuses two versions under different scope paths before reading either", async () => {
     const dir = project();
     await expect(
-      diffFromStores({ from: `cloud/aws/000000000000/5c1f0e2a9b7d/${V1}`, to: "cloud/aws/000000000000/0123456789ab/20261026T140000Z-cccccccccccc.json" }, { projectDir: dir, git: noGit, env: { BEHOLD_INDEX_DIR: join(dir, "none") } }),
+      diffFromStores({ from: `cloud/aws/000000000000/5c1f0e2a9b7d/${V1}`, to: "cloud/aws/000000000000/0123456789ab/20261026T140000Z-cccccccccccc.json" }, { projectDir: dir, git: noGit, chantStore: publishedChant, env: { BEHOLD_INDEX_DIR: join(dir, "none") } }),
     ).rejects.toMatchObject({ code: "index-scope-mismatch", status: 409 });
   });
 
@@ -170,7 +172,7 @@ describe("loading two versions from the stores", () => {
     const dir = project();
     // The other scope's file holds V1's document, whose stamp names 5c1f0e2a9b7d.
     const other = "cloud/aws/000000000000/0123456789ab";
-    const vs = listIndexVersions({ projectDir: dir, git: noGit, env: { BEHOLD_INDEX_DIR: join(dir, "none") } });
+    const vs = listIndexVersions({ projectDir: dir, git: noGit, chantStore: publishedChant, env: { BEHOLD_INDEX_DIR: join(dir, "none") } });
     expect(vs.some((v) => v.scopeKey === other)).toBe(true);
     const a = load(V1);
     const b = { ...load(V2), stamp: { ...load(V2).stamp, scopeKey: other } };
@@ -192,7 +194,7 @@ describe("loading two versions from the stores", () => {
 describe("the routes", () => {
   const app = (dir: string) => {
     const h = new Hono();
-    mountIndexDiff(h, { projectDir: () => dir, git: noGit, env: { BEHOLD_INDEX_DIR: join(dir, "none") } });
+    mountIndexDiff(h, { projectDir: () => dir, git: noGit, chantStore: publishedChant, env: { BEHOLD_INDEX_DIR: join(dir, "none") } });
     return h;
   };
 
@@ -217,7 +219,7 @@ describe("the routes", () => {
 
   it("a public serve refuses both routes", async () => {
     const h = new Hono();
-    mountIndexDiff(h, { projectDir: () => project(), git: noGit, public: true });
+    mountIndexDiff(h, { projectDir: () => project(), git: noGit, chantStore: publishedChant, public: true });
     for (const p of ["/api/graphdb/index-versions", "/api/graphdb/index-diff"]) expect((await h.request(p)).status).toBe(403);
   });
 
@@ -229,7 +231,7 @@ describe("the routes", () => {
 });
 
 describe("chant's diff (chant#4533) behind a feature-detect", () => {
-  const readers = (dir: string, indexDiff?: () => Promise<IndexDiffImpl>) => ({ projectDir: dir, git: noGit, env: { BEHOLD_INDEX_DIR: join(dir, "none") }, ...(indexDiff ? { indexDiff } : {}) });
+  const readers = (dir: string, indexDiff?: () => Promise<IndexDiffImpl>) => ({ projectDir: dir, git: noGit, chantStore: publishedChant, env: { BEHOLD_INDEX_DIR: join(dir, "none") }, ...(indexDiff ? { indexDiff } : {}) });
 
   it("runs the diff it is given and says whose ran", async () => {
     const calls: string[] = [];
@@ -268,5 +270,120 @@ describe("chant's diff (chant#4533) behind a feature-detect", () => {
     expect(["chant", "behold-fallback"]).toContain(impl.diffModule);
     const theirs = impl.diff(load(V1), load(V2), { fromVersion: V1, toVersion: V2 });
     expect(theirs).toEqual(diffIndexVersions(load(V1), load(V2), { fromVersion: V1, toVersion: V2 }));
+  });
+});
+
+/** The installed chant's store readers (chant#4533), when it has them. */
+const realChantSpecifier: string = "@intentius/chant/lifecycle/index-diff";
+const real = (await import(/* @vite-ignore */ realChantSpecifier).catch(() => ({}))) as Partial<ChantIndexStoreApi>;
+
+describe("behold#1034: versions read through chant's store API", () => {
+  const SCOPE = "cloud/aws/000000000000/5c1f0e2a9b7d";
+  /** An s3-kind store held in memory: no folders behold could walk. */
+  const fakeS3 = (versions: Record<string, DiffDocument>, calls: string[] = []): ChantIndexStore => ({
+    kind: "s3",
+    where: "s3://fake-bucket/chant",
+    listIndex: async (scopeKey) => {
+      calls.push(`list ${scopeKey}`);
+      return scopeKey === SCOPE ? Object.keys(versions).sort() : [];
+    },
+    readIndexAt: async (scopeKey, version) => {
+      calls.push(`read ${version}`);
+      return scopeKey === SCOPE ? (versions[version] ?? null) : null;
+    },
+  });
+  /** chant#4533's two readers, as lifecycle/index-diff.ts has them, over the bundled diff. */
+  const notAVersion = (m: string) => Object.assign(new Error(m), { code: "not-an-index-version" });
+  const fakeReaders = (calls: string[]): Omit<ChantIndexStoreApi, "store"> => ({
+    readIndexVersionRef: async (store, ref) => {
+      calls.push(`readIndexVersionRef ${ref.version}`);
+      const version = ref.version ?? (await store.listIndex(ref.scopeKey)).pop();
+      if (!version) throw notAVersion(`the ${store.kind} store holds no index version under ${ref.scopeKey}`);
+      const doc = await store.readIndexAt(ref.scopeKey, version);
+      if (!doc) throw notAVersion(`the ${store.kind} store holds no index version ${ref.scopeKey}/${version}`);
+      return { scopeKey: ref.scopeKey, version, doc };
+    },
+    diffIndexVersionRefs: async (store, from, to) => {
+      calls.push(`diffIndexVersionRefs ${from.version}..${to?.version}`);
+      const a = (await store.readIndexAt(from.scopeKey, from.version!)) as DiffDocument | null;
+      const b = (await store.readIndexAt(to!.scopeKey, to!.version!)) as DiffDocument | null;
+      if (!a || !b) throw notAVersion("missing");
+      return diffIndexVersions(a, b, { fromVersion: from.version, toVersion: to!.version });
+    },
+  });
+  const empty = () => mkdtempSync(join(tmpdir(), "behold-index-diff-s3-"));
+  const readers = (dir: string, chantStore: () => Promise<ChantIndexStoreApi | undefined>) => ({ projectDir: dir, git: noGit, env: { BEHOLD_INDEX_DIR: join(dir, "none") }, chantStore });
+
+  it("diffs two versions only an s3 store holds, through chant's readers", async () => {
+    const calls: string[] = [];
+    const store = fakeS3({ [V1]: load(V1), [V2]: load(V2) }, calls);
+    const a = await diffFromStores({ scope: SCOPE }, readers(empty(), async () => ({ store, ...fakeReaders(calls) })));
+    expect(a.diff.from.version).toBe(V1);
+    expect(a.diff.to.version).toBe(V2);
+    expect(a.diff.counts.properties).toBe(1);
+    expect(a.diffModule).toBe("chant");
+    expect(a.stores).toEqual({ from: "chant-store", to: "chant-store" });
+    expect(a.chantStore).toEqual({ kind: "s3", where: "s3://fake-bucket/chant" });
+    expect(calls).toContain(`diffIndexVersionRefs ${V1}..${V2}`);
+    expect(calls).toContain(`readIndexVersionRef ${V1}`);
+    // chant's diff and the overlay share one read of each version.
+    expect(calls.filter((c) => c.startsWith("read 2"))).toEqual([`read ${V1}`, `read ${V2}`]);
+    expect(Object.fromEntries(a.draw.nodes.map((n) => [n.key, n.change]))).toMatchObject({ [B("web-logs")]: "changed", [B("new-bucket")]: "added" });
+  });
+
+  it("on a published chant, the same project reads its local store as before", async () => {
+    const a = await diffFromStores({ scope: SCOPE }, readers(project(), publishedChant));
+    expect(a.stores).toEqual({ from: "project-local", to: "project-local" });
+    expect(a.chantStore).toBeUndefined();
+    expect(a.diff.counts.properties).toBe(1);
+    // and an s3-only project has nothing to diff
+    await expect(diffFromStores({ scope: SCOPE }, readers(empty(), publishedChant))).rejects.toMatchObject({ code: "index-scope-unknown", status: 404 });
+  });
+
+  it("a scope chant's store does not hold falls back to the local read", async () => {
+    const calls: string[] = [];
+    const a = await diffFromStores({ scope: SCOPE }, readers(project(), async () => ({ store: fakeS3({}, calls), ...fakeReaders(calls) })));
+    expect(a.stores).toEqual({ from: "project-local", to: "project-local" });
+    expect(calls).toContain(`list ${SCOPE}`);
+    expect(calls.some((c) => c.startsWith("diffIndexVersionRefs"))).toBe(false);
+  });
+
+  it("a version in chant's store and one only local are read each where it is", async () => {
+    const calls: string[] = [];
+    const a = await diffFromStores({ scope: SCOPE }, readers(project(), async () => ({ store: fakeS3({ [V2]: load(V2) }, calls), ...fakeReaders(calls) })));
+    expect(a.stores).toEqual({ from: "project-local", to: "chant-store" });
+    expect(a.chantStore?.kind).toBe("s3");
+    expect(a.diff.counts.properties).toBe(1);
+  });
+
+  it("chant's refusal is read by its code", async () => {
+    const store = fakeS3({ [V1]: load(V1), [V2]: load(V2) });
+    const refusing = { ...fakeReaders([]), diffIndexVersionRefs: async () => { throw notAVersion("gone"); } };
+    await expect(diffFromStores({ scope: SCOPE }, readers(empty(), async () => ({ store, ...refusing })))).rejects.toMatchObject({ code: "not-an-index-version", status: 400 });
+  });
+
+  it("the routes list and diff an s3-only scope once it is named", async () => {
+    const store = fakeS3({ [V1]: load(V1), [V2]: load(V2) });
+    const h = new Hono();
+    const dir = empty();
+    mountIndexDiff(h, { projectDir: () => dir, git: noGit, env: { BEHOLD_INDEX_DIR: join(dir, "none") }, chantStore: async () => ({ store, ...fakeReaders([]) }) });
+    const listed = await h.request(`/api/graphdb/index-versions?scope=${encodeURIComponent(SCOPE)}`);
+    expect(await listed.json()).toEqual({ scopes: [{ scopeKey: SCOPE, versions: [{ version: V1, store: "chant-store" }, { version: V2, store: "chant-store" }] }] });
+    const res = await h.request(`/api/graphdb/index-diff?scope=${encodeURIComponent(SCOPE)}`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ diffModule: "chant", stores: { from: "chant-store", to: "chant-store" }, chantStore: { kind: "s3" } });
+  });
+
+  // With a local chant build installed, its real readers over the same fake store.
+  it.runIf(typeof real.readIndexVersionRef === "function" && typeof real.diffIndexVersionRefs === "function")("the installed chant's readers give the same answer over the fake store", async () => {
+    const store = fakeS3({ [V1]: load(V1), [V2]: load(V2) });
+    const a = await diffFromStores({ scope: SCOPE }, readers(empty(), async () => ({ store, readIndexVersionRef: real.readIndexVersionRef!, diffIndexVersionRefs: real.diffIndexVersionRefs! })));
+    expect(a.diff).toEqual(diffIndexVersions(load(V1), load(V2), { fromVersion: V1, toVersion: V2 }));
+  });
+
+  it("the default detector finds no store readers on this chant, or a store when it has them", async () => {
+    const api = await chantIndexStore(empty());
+    if (typeof real.diffIndexVersionRefs === "function") expect(api?.store.kind).toBeTypeOf("string");
+    else expect(api).toBeUndefined();
   });
 });
