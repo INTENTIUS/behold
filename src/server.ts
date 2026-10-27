@@ -167,7 +167,7 @@ import { cachedChoudoufuPlan, setChoudoufuChantDeps, type ChoudoufuChantDeps, ty
 import { choudoufuLexiconNote, setEstateLexiconRead, type LexiconRead } from "./choudoufu-refs.ts";
 import { readTerralith } from "./terralith-demo.ts";
 import { discoverSplitPlans, moveMembers, moveReceipt, movesPayload, readSplitPlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
-import { isOrgWorkspace, servedWorkspace, setServedWorkspace, workspaceMemberOf, type Workspace } from "./workspace.ts";
+import { drawnMembers, isOrgWorkspace, readWorkspace, servedWorkspace, setServedWorkspace, workspaceMemberOf, type Workspace } from "./workspace.ts";
 import { approveArgs, isEnvName, isOverrideGate, isPointGate, readWorkspaceGates } from "./workspace-gates.ts";
 import { pointsFloorRefusal, readOpenPoints } from "./decision-points.ts";
 import { orgFloorRefusal, readOrgRepos } from "./org-workspace.ts";
@@ -2222,17 +2222,18 @@ export function createApp(
    * project being left stays reachable through recents. Shared by
    * /api/project/open and the demo catalog's loader (#268) — one switch, so a
    * demo lands in exactly the state a hand-typed path would. */
-  const switchServedProject = (dirs: string[], env?: string, spawnEnv?: Record<string, string>): void => {
-    addRecent(cfg.projectDir);
+  const switchServedProject = (dirs: string[], env?: string, spawnEnv?: Record<string, string>, workspace?: Workspace): void => {
+    addRecent(workspace?.root ?? cfg.projectDir);
     cfg.projectDir = dirs[0];
-    // A switch always lands on a loose project or estate; a declared workspace
-    // is only served from `behold serve <root>`.
-    cfg.workspace = undefined;
-    setServedWorkspace(undefined);
+    // A switch lands on a loose project or estate, or (behold#1019) on the
+    // declared workspace a demo names with serve.workspace, read the way
+    // `behold serve <root>` reads it: `dirs` are then its drawn members.
+    cfg.workspace = workspace;
+    setServedWorkspace(workspace);
     // behold#999: recorded adoption reports belong to the demo they came with.
     cfg.adoptRecorded = undefined;
     // #389: one directory composes too when chant cannot read it — see servesAsEstate.
-    cfg.projectDirs = servesAsEstate(dirs) ? dirs : undefined;
+    cfg.projectDirs = workspace || servesAsEstate(dirs) ? dirs : undefined;
     // #372: a demo's scratch emulator reaches its choudoufu spawns through
     // this seam; a switch to anything else drops it, so no later project
     // inherits an endpoint meant for a demo.
@@ -2322,6 +2323,20 @@ export function createApp(
     }),
   );
 
+  /** behold#1019: the declared workspace at a demo copy's root, for the
+   * switch. A declaration with no members serves as the composed dirs, the
+   * way serveTarget in cli.ts reads one; a refusal is carried, never thrown. */
+  const demoWorkspace = async (root: string): Promise<{ ok: true; workspace: Workspace } | { ok: false; error: string } | undefined> => {
+    const read = await readWorkspace(root).catch((e: unknown) => ({ ok: false as const, refusal: { error: e instanceof Error ? e.message : String(e), code: "read-failed", remedy: "" } }));
+    if (!read.ok) {
+      process.stderr.write(`behold demo switch: ${read.refusal.error} Serving the composed view instead.\n`);
+      return { ok: false, error: read.refusal.error };
+    }
+    if (!read.workspace.members.length) return undefined;
+    process.stdout.write(`  serving chant workspace ${read.workspace.name} (${read.workspace.file})\n`);
+    return { ok: true, workspace: read.workspace };
+  };
+
   // One demo load at a time — `npm install` + a `setup` that stands a k3d
   // cluster up are minutes long, and two of them racing into the same target
   // directory is not a state worth having.
@@ -2359,7 +2374,14 @@ export function createApp(
       const target = demoTargetDir(entry);
       const loaded = await loadDemo(entry, { pkgRoot, target, log: (line) => process.stdout.write(line + "\n") });
       if (!loaded.ok) return c.json({ error: loaded.error }, 500);
-      const dirs = loaded.serveDirs;
+      // behold#1019: a serve.workspace demo lands on its declared workspace,
+      // as `behold demo <name>` does (behold#1014), so the palette rows that
+      // need one are there after the switch. A root chant can't read falls
+      // back to the composed dirs and the response says why.
+      const declared = loaded.workspaceRoot ? await demoWorkspace(loaded.workspaceRoot) : undefined;
+      const workspace = declared?.ok ? declared.workspace : undefined;
+      const dirs = workspace ? drawnMembers(workspace).map((m) => m.abs) : loaded.serveDirs;
+      if (!dirs.length) return c.json({ error: `${entry.name} loaded to ${target} but its workspace draws no members` }, 500);
       // #368/#372: the primary has to be a member some kind claims — a chant
       // project, or (#369) a choudoufu estate — not a chant project only.
       if (!memberKindOf(dirs[0])) {
@@ -2372,10 +2394,18 @@ export function createApp(
       if (entry.serve.local) {
         if (cfg.emulators?.length) await emulatorsDown(emulatorDirs(cfg.workspace?.root ?? cfg.projectDir, cfg.workspace));
         cfg.local = true;
-        cfg.emulators = await bootLocalEmulators(dirs[0], `behold demo ${entry.name} --local`);
+        cfg.emulators = await bootLocalEmulators(workspace?.root ?? dirs[0], `behold demo ${entry.name} --local`, workspace);
       }
-      switchServedProject(dirs, entry.serve.env, entry.serve.spawnEnv);
-      return c.json({ ok: true, demo: entry.name, projectDir: dirs[0], projectDirs: dirs, env: entry.serve.env ?? null });
+      switchServedProject(dirs, entry.serve.env, entry.serve.spawnEnv, workspace);
+      return c.json({
+        ok: true,
+        demo: entry.name,
+        projectDir: dirs[0],
+        projectDirs: dirs,
+        env: entry.serve.env ?? null,
+        ...(loaded.workspaceRoot ? { workspace: workspace ? { name: workspace.name, root: workspace.root } : null } : {}),
+        ...(declared && !declared.ok ? { workspaceRefusal: declared.error } : {}),
+      });
     } finally {
       loadingDemo = null;
     }
@@ -2652,7 +2682,7 @@ export function createApp(
         {
           method: "POST",
           path: "/api/demos/open",
-          desc: "load a demo and serve it: JSON body {name} (a catalog name, never a path) — copies/clones, installs, runs its setup, then switches (preview-locked)",
+          desc: "load a demo and serve it: JSON body {name} (a catalog name, never a path) — copies/clones, installs, runs its setup, then switches (preview-locked); a serve.workspace demo lands on its declared workspace (behold#1019) and answers workspace {name, root} or null, with workspaceRefusal when chant could not read it",
         },
         {
           method: "GET",

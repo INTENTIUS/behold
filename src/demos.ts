@@ -53,9 +53,9 @@ export interface DemoServe {
   /** behold#1014: `behold demo <name>` serves the copy's root, where its
    * chant.workspace.json sits, the way `behold serve <root>` does, so the
    * workspace routes and the palette rows that need a declared workspace
-   * (streamed drift, behold#998) are there. `dirs` stays the composed view a
-   * running server's demo switch lands on, because a switch never serves a
-   * declared workspace (switchServedProject in server.ts). */
+   * (streamed drift, behold#998) are there. The panel's demo switch reads the
+   * same declaration and lands on it too (behold#1019); `dirs` is the composed
+   * view it falls back to when chant can't read the declaration. */
   workspace?: boolean;
   /** #254: serve the carve walkthrough instead of a project graph. */
   carve?: DemoCarve;
