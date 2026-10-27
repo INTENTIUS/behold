@@ -1,0 +1,12 @@
+{
+  "repo": "INTENTIUS/chant",
+  "path": "packages/core/src/graph-schema/graph.schema.json",
+  "ref": "merge/cg-chant-index",
+  "commit": "b6281ef154bb06e3cb5db499221cdb7eeb87967f",
+  "sha256": "ecd84cb5ce5749a7166e51acc0c826a3b895c80874b35123f93f8d7f4c17437c",
+  "fixtures": {
+    "choudoufu.engine-graph.json": "4afef8eb4bdb4852e5a953de2a84f57c6abe7d00b84365d4bb0e261d2f9ac96b",
+    "index.json": "8cce58731df53593e0c2dbcf5a8b240780485013c4b170dc709a318bc4dbe642",
+    "plunge.engine-graph.json": "dc7465dfc2666943ba6136b91f0c7c26ea04fa4e021db1f4f20d8a957567f518"
+  }
+}

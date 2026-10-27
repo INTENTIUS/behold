@@ -90,7 +90,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-CLUSTER=behold-argo-e2e
+# behold#1032: a second run beside this one names its own cluster.
+CLUSTER="${BEHOLD_E2E_CLUSTER:-behold-argo-e2e}"
+# Scratch discipline (src/scratch.test.ts): an overridden name must still be behold-*.
+case "$CLUSTER" in behold-*) ;; *) echo "BEHOLD_E2E_CLUSTER must name a behold-* cluster, got: $CLUSTER" >&2; exit 2 ;; esac
 CONTEXT=k3d-behold-argo-demo # what the members' chant.config.ts pins
 ESTATE=example-argo-estate
 PORT="${BEHOLD_E2E_PORT:-4697}"

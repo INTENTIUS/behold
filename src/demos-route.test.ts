@@ -14,15 +14,23 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, realpathSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DemoEntry, DemoLoadOptions } from "./demos.ts";
+import type { WorkspaceRead } from "./workspace.ts";
 
 // vi.mock is hoisted above the imports, so the spies have to be too; their
 // implementations are installed below, where fs is in scope.
 const loadDemoMock = vi.hoisted(() => vi.fn<(entry: DemoEntry, opts: DemoLoadOptions) => Promise<unknown>>());
 const missingMock = vi.hoisted(() => vi.fn<(entry: DemoEntry) => string[]>());
+// behold#1019: the declared-workspace read the switch makes, which would shell chant.
+const readWorkspaceMock = vi.hoisted(() => vi.fn<(root: string) => Promise<WorkspaceRead>>());
 
 vi.mock("./demos.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./demos.ts")>();
   return { ...actual, loadDemo: loadDemoMock, missingRequirements: missingMock };
+});
+
+vi.mock("./workspace.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./workspace.ts")>();
+  return { ...actual, readWorkspace: readWorkspaceMock };
 });
 
 /** The fake loader: no copy, no npm — but it does make the target directory a
@@ -78,6 +86,7 @@ afterAll(() => {
 beforeEach(() => {
   loadDemoMock.mockReset().mockImplementation(fakeLoad);
   missingMock.mockReset().mockImplementation(fakeMissing);
+  readWorkspaceMock.mockReset().mockResolvedValue({ ok: false, refusal: { error: "no declaration in this test", code: "declaration-missing", remedy: "" } });
 });
 
 function makeApp(opts: { previewMode?: boolean } = {}) {
@@ -263,5 +272,60 @@ describe("POST /api/demos/open — a catalog name, never a path (#268)", () => {
     expect(res.status).toBe(500);
     expect(((await res.json()) as { error: string }).error).toMatch(/clone of/);
     expect(((await (await app.request("/api/project")).json()) as { projectDir: string }).projectDir).toBe(served);
+  });
+
+  describe("behold#1019: a serve.workspace demo lands on its declared workspace", () => {
+    const workspaceLoad = async (entry: DemoEntry, opts: DemoLoadOptions) => ({ ...(await fakeLoad(entry, opts)), workspaceRoot: opts.target });
+    const member = (root: string, dir: string) => ({ name: dir, dir, kind: "choudoufu", abs: join(root, dir), reason: null, because: null });
+    const root = () => join(sandbox, "behold-demos", "choudoufu-estate");
+
+    it("serves the workspace chant lists at the copy's root, so /api/project carries it", async () => {
+      const app = makeApp();
+      missingMock.mockReturnValue([]);
+      loadDemoMock.mockImplementationOnce(workspaceLoad);
+      const members = ["monolith", "team-a", "team-b", "team-c"].map((d) => member(root(), d));
+      readWorkspaceMock.mockResolvedValueOnce({ ok: true, workspace: { name: "estate", root: root(), file: "chant.workspace.json", chant: "0.124.50", members } });
+      const res = await post(app, { name: "choudoufu-estate" });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { projectDir: string; projectDirs: string[]; workspace: { name: string; root: string } | null; workspaceRefusal?: string };
+      expect(readWorkspaceMock).toHaveBeenCalledWith(root());
+      expect(body.workspace).toEqual({ name: "estate", root: root() });
+      expect(body.workspaceRefusal).toBeUndefined();
+      expect(body.projectDirs).toEqual(members.map((m) => m.abs));
+      expect(body.projectDir).toBe(join(root(), "monolith"));
+      // The page reloads into /api/project; its workspace field is what turns the palette's workspace rows on.
+      // /api/project publishes the workspace's name and members (relative dirs), not its root.
+      const info = (await (await app.request("/api/project")).json()) as { projectDirs?: string[]; workspace?: { name: string; members: { dir: string; kind: string }[] } };
+      expect(info.workspace?.name).toBe("estate");
+      expect(info.workspace?.members.map((m) => [m.dir, m.kind])).toEqual(members.map((m) => [m.dir, "choudoufu"]));
+      expect(info.projectDirs).toEqual(body.projectDirs);
+    });
+
+    it("falls back to the composed dirs, and says why, when chant can't read the declaration", async () => {
+      const app = makeApp();
+      missingMock.mockReturnValue([]);
+      loadDemoMock.mockImplementationOnce(workspaceLoad);
+      readWorkspaceMock.mockResolvedValueOnce({ ok: false, refusal: { error: "workspaces need 0.124.0 or newer.", code: "workspace-chant-too-old", remedy: "" } });
+      const res = await post(app, { name: "choudoufu-estate" });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { projectDirs: string[]; workspace: unknown; workspaceRefusal?: string };
+      expect(body.workspace).toBeNull();
+      expect(body.workspaceRefusal).toMatch(/0\.124\.0 or newer/);
+      expect(body.projectDirs).toHaveLength(4);
+      const info = (await (await app.request("/api/project")).json()) as { workspace?: unknown };
+      expect(info.workspace).toBeUndefined();
+    });
+
+    it("a later switch to a plain demo drops the workspace", async () => {
+      const app = makeApp();
+      missingMock.mockReturnValue([]);
+      loadDemoMock.mockImplementationOnce(workspaceLoad);
+      readWorkspaceMock.mockResolvedValueOnce({ ok: true, workspace: { name: "estate", root: root(), file: "chant.workspace.json", chant: "0.124.50", members: [member(root(), "monolith")] } });
+      expect((await post(app, { name: "choudoufu-estate" })).status).toBe(200);
+      expect((await post(app, { name: "argo-estate" })).status).toBe(200);
+      const info = (await (await app.request("/api/project")).json()) as { workspace?: unknown };
+      expect(info.workspace).toBeUndefined();
+      expect(readWorkspaceMock).toHaveBeenCalledTimes(1);
+    });
   });
 });

@@ -91,7 +91,7 @@
  * dashed) lands on the real card with its real glyph.
  */
 import type { GraphIR, IRNode, IREdge } from "@intentius/chant";
-import { stringLeaves } from "./value-match.ts";
+import { stringLeaves } from "./attr-leaves.ts";
 
 // ── The op.json shape, as much of it as this lens reads ───────────────────────
 //

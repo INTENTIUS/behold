@@ -53,9 +53,9 @@ export interface DemoServe {
   /** behold#1014: `behold demo <name>` serves the copy's root, where its
    * chant.workspace.json sits, the way `behold serve <root>` does, so the
    * workspace routes and the palette rows that need a declared workspace
-   * (streamed drift, behold#998) are there. `dirs` stays the composed view a
-   * running server's demo switch lands on, because a switch never serves a
-   * declared workspace (switchServedProject in server.ts). */
+   * (streamed drift, behold#998) are there. The panel's demo switch reads the
+   * same declaration and lands on it too (behold#1019); `dirs` is the composed
+   * view it falls back to when chant can't read the declaration. */
   workspace?: boolean;
   /** #254: serve the carve walkthrough instead of a project graph. */
   carve?: DemoCarve;
@@ -130,7 +130,21 @@ function readCatalog(file: string, catalog: DemoCatalog): DemoEntry[] {
   const catalogDir = dirname(resolve(file));
   return list
     .filter((e): e is DemoEntry => validEntry(e))
-    .map((e) => ({ ...e, catalog, catalogDir }));
+    .map((e) => ({ ...e, ...(e.serve.spawnEnv ? { serve: { ...e.serve, spawnEnv: expandSpawnEnv(e.serve.spawnEnv) } } : {}), catalog, catalogDir }));
+}
+
+/** behold#1032: a spawnEnv value may name a variable of the environment behold
+ * starts in, `${NAME}` or `${NAME:-default}`, so the port a demo's up script
+ * takes from the environment (choudoufu-estate's BEHOLD_CHOUDOUFU_FLOCI_PORT)
+ * reaches the endpoint its choudoufu spawns get. An unset or empty variable
+ * takes the default (empty without one); any other text stays as written.
+ * Exported for testing. */
+export function expandSpawnEnv(env: Record<string, string>, from: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(env)) {
+    out[k] = v.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g, (_m, name: string, dflt?: string) => from[name] || (dflt ?? ""));
+  }
+  return out;
 }
 
 function validEntry(e: unknown): e is DemoEntry {

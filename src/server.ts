@@ -56,7 +56,7 @@ import { ghReady, resolveWorkflow, dispatchAndFollow, followRun, joinCiProgress 
 import { saveDispatchedRun, readDispatchedRun, concludeDispatchedRun, type DispatchedRun } from "./ci-run-store.ts";
 import { joinComponentStatus, joinTickVerdicts, componentStatusColor } from "./component-status.ts";
 import { reclassifyOverlay, pruneImports, attachRuntimeContainment, pruneRuntimeChildren } from "./overlay.ts";
-import { addValueMatchEdges } from "./value-match.ts";
+import { deriveGraphEdges } from "./chant-edges.ts";
 import { addK8sDeclaredEdges } from "./k8s-edges.ts";
 import { applyHelmArtifacts } from "./helm-artifacts.ts";
 import { applyHelmRenderDrift, readHelmRenderDrift } from "./helm-drift.ts";
@@ -73,7 +73,7 @@ import { ChantDemo, chantDemoRoutes } from "./chant-demo.ts";
 import { ciReportUrlOf, ciRunsRoutes, readCiRunIndex, type CiRunEntry } from "./ci-run-index.ts";
 import { localRunRoutes } from "./ci-local-run.ts";
 import { adoptionRoutes } from "./adoption.ts";
-import type { GitRun } from "./terragucci-lifecycle.ts";
+import { realGit, type GitRun } from "./terragucci-lifecycle.ts";
 import { TERRAGUCCI_COMPONENTS_FILE, componentJobs, componentsIrFromDeclaration, componentRootMap, readTerragucciComponents, waveTitles, type TerragucciComponents } from "./terragucci-components.ts";
 import { hasTerragruntUnits } from "./terragrunt-units.ts";
 import { summarizePlan } from "./reconcile.ts";
@@ -161,13 +161,14 @@ import { statusVocabulary } from "./status-vocabulary.ts";
 import { attachBehaviour, type BehaviourMember } from "./behaviour.ts";
 import { attachBehaviourDelta, attachDeclaredBehaviour, paintLive, predictMember, trafficFor, type DeltaMember, type PredictMemberDeps } from "./behaviour-delta.ts";
 import { addEstateMemberEdges } from "./estate-edges.ts";
-import { addChoudoufuReferenceEdges, liveCheckToIr, readLiveCheck, setChoudoufuRunner, setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
+import { addChoudoufuReferenceEdges, captureChoudoufu, liveCheckToIr, readLiveCheck, setChoudoufuRunner, setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
+import { GRAPH_ROUTES, mountGraphPane, type GraphPaneDeps } from "./graph-db/pane.ts";
 import { choudoufuDiffNodes, choudoufuPlanAnswer, paintPlanDrift, readChoudoufuLive, type Runner as ChoudoufuRunner } from "./choudoufu-live.ts";
 import { cachedChoudoufuPlan, setChoudoufuChantDeps, type ChoudoufuChantDeps, type PlanResourceDrift } from "./choudoufu-chant-read.ts";
 import { choudoufuLexiconNote, setEstateLexiconRead, type LexiconRead } from "./choudoufu-refs.ts";
 import { readTerralith } from "./terralith-demo.ts";
 import { discoverSplitPlans, moveMembers, moveReceipt, movesPayload, readSplitPlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
-import { isOrgWorkspace, servedWorkspace, setServedWorkspace, workspaceMemberOf, type Workspace } from "./workspace.ts";
+import { drawnMembers, isOrgWorkspace, readWorkspace, servedWorkspace, setServedWorkspace, workspaceMemberOf, type Workspace } from "./workspace.ts";
 import { approveArgs, isEnvName, isOverrideGate, isPointGate, readWorkspaceGates } from "./workspace-gates.ts";
 import { pointsFloorRefusal, readOpenPoints } from "./decision-points.ts";
 import { orgFloorRefusal, readOrgRepos } from "./org-workspace.ts";
@@ -179,7 +180,7 @@ import { allowedHostsFrom, guardRequest } from "./request-guard.ts";
 import { applyMemberPasses, memberKindOf, memberKindSpec, memberPassNote, servesAsEstate, type MemberPassRun } from "./member-kind.ts";
 import { TerraformReadError, terraformMemberWorkspace, terraformReaderState, terraformVia } from "./terraform-member.ts";
 import { addInstanceCards } from "./instance-cards.ts";
-import { APPLY_RUNS_WHERE, ledgerRunsOf, memberLocalApplies, rootMemberWhere, unknownRootApplies, unknownRootNote, withLocalApplies, type LocalApply } from "./member-local-applies.ts";
+import { APPLY_RUNS_WHERE, LedgerRunsCache, ledgerRunsOf, memberLocalApplies, rootMemberWhere, unknownRootApplies, unknownRootNote, withLocalApplies, type LocalApply } from "./member-local-applies.ts";
 import { paintTerraformPlan, readTerraformPlan, terraformPlanNote, type MemberPlanAnswer, type PlanReadDeps, type TerraformPlanRead } from "./terraform-plan.ts";
 import { normalizeTerraformNodes } from "./terraform-lens.ts";
 import { invalidateMember, memberIr, memberIrCacheStats, memberSourceStamp } from "./member-ir.ts";
@@ -222,7 +223,8 @@ import { flagsFloorRefusal, readFeatureFlags } from "./feature-flags.ts";
 import { COLLISION_READ, collisionsFloorRefusal, readCollisions } from "./collision-marks.ts";
 import { sqlYodelerLaneRoute } from "./sql-yodeler-lane.ts";
 import { cachedHealth, invalidateHealth, readHealthOverlay, rememberHealth, type HealthMember } from "./health-overlay.ts";
-import { rootReader, rootStreamTransport } from "./workspace-reader.ts";
+import { rootReader, rootStreamTransport, type WorkspaceReader } from "./workspace-reader.ts";
+import { ledgerTip } from "./member-ledger.ts";
 import { driftStreamRoutes } from "./drift-stream.ts";
 import { DRIFT_DEFAULT_KINDS, DRIFT_KINDS, paintWorkspaceDrift } from "./drift-overlay.ts";
 import { PUBLIC_SEARCHES_IN_FLIGHT, SearchAskError, cachedCapabilities, checkAsk, drawnOf, runSearch, searchTarget, type SearchTarget } from "./search.ts";
@@ -247,6 +249,8 @@ export interface ServerOptions {
   dotsPreview?: DotsPreviewOptions;
   /** behold#915: a stand-in for the headless-browser peer, for tests; never set by the CLI. */
   shotDeps?: ShotDeps;
+  /** behold#1027: stand-ins for the graph pane's peer, engine runner, git and database directory, for tests; never set by the CLI. */
+  graph?: Partial<GraphPaneDeps>;
   /** The address to bind. 127.0.0.1 unless given (`--host`, BEHOLD_HOST). */
   host?: string;
   /** Names besides loopback that behold answers to (`--allow-host`,
@@ -2222,17 +2226,18 @@ export function createApp(
    * project being left stays reachable through recents. Shared by
    * /api/project/open and the demo catalog's loader (#268) — one switch, so a
    * demo lands in exactly the state a hand-typed path would. */
-  const switchServedProject = (dirs: string[], env?: string, spawnEnv?: Record<string, string>): void => {
-    addRecent(cfg.projectDir);
+  const switchServedProject = (dirs: string[], env?: string, spawnEnv?: Record<string, string>, workspace?: Workspace): void => {
+    addRecent(workspace?.root ?? cfg.projectDir);
     cfg.projectDir = dirs[0];
-    // A switch always lands on a loose project or estate; a declared workspace
-    // is only served from `behold serve <root>`.
-    cfg.workspace = undefined;
-    setServedWorkspace(undefined);
+    // A switch lands on a loose project or estate, or (behold#1019) on the
+    // declared workspace a demo names with serve.workspace, read the way
+    // `behold serve <root>` reads it: `dirs` are then its drawn members.
+    cfg.workspace = workspace;
+    setServedWorkspace(workspace);
     // behold#999: recorded adoption reports belong to the demo they came with.
     cfg.adoptRecorded = undefined;
     // #389: one directory composes too when chant cannot read it — see servesAsEstate.
-    cfg.projectDirs = servesAsEstate(dirs) ? dirs : undefined;
+    cfg.projectDirs = workspace || servesAsEstate(dirs) ? dirs : undefined;
     // #372: a demo's scratch emulator reaches its choudoufu spawns through
     // this seam; a switch to anything else drops it, so no later project
     // inherits an endpoint meant for a demo.
@@ -2322,6 +2327,20 @@ export function createApp(
     }),
   );
 
+  /** behold#1019: the declared workspace at a demo copy's root, for the
+   * switch. A declaration with no members serves as the composed dirs, the
+   * way serveTarget in cli.ts reads one; a refusal is carried, never thrown. */
+  const demoWorkspace = async (root: string): Promise<{ ok: true; workspace: Workspace } | { ok: false; error: string } | undefined> => {
+    const read = await readWorkspace(root).catch((e: unknown) => ({ ok: false as const, refusal: { error: e instanceof Error ? e.message : String(e), code: "read-failed", remedy: "" } }));
+    if (!read.ok) {
+      process.stderr.write(`behold demo switch: ${read.refusal.error} Serving the composed view instead.\n`);
+      return { ok: false, error: read.refusal.error };
+    }
+    if (!read.workspace.members.length) return undefined;
+    process.stdout.write(`  serving chant workspace ${read.workspace.name} (${read.workspace.file})\n`);
+    return { ok: true, workspace: read.workspace };
+  };
+
   // One demo load at a time — `npm install` + a `setup` that stands a k3d
   // cluster up are minutes long, and two of them racing into the same target
   // directory is not a state worth having.
@@ -2359,7 +2378,14 @@ export function createApp(
       const target = demoTargetDir(entry);
       const loaded = await loadDemo(entry, { pkgRoot, target, log: (line) => process.stdout.write(line + "\n") });
       if (!loaded.ok) return c.json({ error: loaded.error }, 500);
-      const dirs = loaded.serveDirs;
+      // behold#1019: a serve.workspace demo lands on its declared workspace,
+      // as `behold demo <name>` does (behold#1014), so the palette rows that
+      // need one are there after the switch. A root chant can't read falls
+      // back to the composed dirs and the response says why.
+      const declared = loaded.workspaceRoot ? await demoWorkspace(loaded.workspaceRoot) : undefined;
+      const workspace = declared?.ok ? declared.workspace : undefined;
+      const dirs = workspace ? drawnMembers(workspace).map((m) => m.abs) : loaded.serveDirs;
+      if (!dirs.length) return c.json({ error: `${entry.name} loaded to ${target} but its workspace draws no members` }, 500);
       // #368/#372: the primary has to be a member some kind claims — a chant
       // project, or (#369) a choudoufu estate — not a chant project only.
       if (!memberKindOf(dirs[0])) {
@@ -2372,10 +2398,18 @@ export function createApp(
       if (entry.serve.local) {
         if (cfg.emulators?.length) await emulatorsDown(emulatorDirs(cfg.workspace?.root ?? cfg.projectDir, cfg.workspace));
         cfg.local = true;
-        cfg.emulators = await bootLocalEmulators(dirs[0], `behold demo ${entry.name} --local`);
+        cfg.emulators = await bootLocalEmulators(workspace?.root ?? dirs[0], `behold demo ${entry.name} --local`, workspace);
       }
-      switchServedProject(dirs, entry.serve.env, entry.serve.spawnEnv);
-      return c.json({ ok: true, demo: entry.name, projectDir: dirs[0], projectDirs: dirs, env: entry.serve.env ?? null });
+      switchServedProject(dirs, entry.serve.env, entry.serve.spawnEnv, workspace);
+      return c.json({
+        ok: true,
+        demo: entry.name,
+        projectDir: dirs[0],
+        projectDirs: dirs,
+        env: entry.serve.env ?? null,
+        ...(loaded.workspaceRoot ? { workspace: workspace ? { name: workspace.name, root: workspace.root } : null } : {}),
+        ...(declared && !declared.ok ? { workspaceRefusal: declared.error } : {}),
+      });
     } finally {
       loadingDemo = null;
     }
@@ -2634,6 +2668,22 @@ export function createApp(
     return c.body(JSON.stringify(read.document), "error" in read.document ? 422 : 200, { "content-type": "application/json; charset=UTF-8" });
   });
 
+  // behold#1027: the graph pane. Every member's graph and every index in one
+  // embedded LadybugDB (the optional peer @ladybugdb/core), queried in Cypher
+  // or from a resource name or id. GET routes only (src/graph-db/pane.ts);
+  // nothing here acts, and the only file it writes is its own database.
+  mountGraphPane(app, {
+    projectDir: () => cfg.projectDir,
+    members: () => estateMembers(estateDirs()),
+    readChant: async () =>
+      cfg.projectDirs
+        ? { ir: await composeEstate(estateDirs()), members: estateMemberNames(estateDirs()), from: "behold's estate read (chant graph per member)" }
+        : { ir: await graphIr(cfg.projectDir), from: "chant graph --format ir" },
+    choudoufu: (args, cwd) => captureChoudoufu(args, cwd),
+    ...(cfg.public ? { public: true } : {}),
+    ...cfg.graph,
+  });
+
   // #193: the API's front door, for agents. Everything the SPA can see is
   // plain JSON over these routes — this index makes them discoverable without
   // reading source. Shapes and the read/act loop: AGENTS.md (shipped in the
@@ -2645,6 +2695,7 @@ export function createApp(
       agentsGuide: "https://github.com/INTENTIUS/behold/blob/main/AGENTS.md",
       routes: [
         { method: "GET", path: "/api", desc: "this index" },
+        ...GRAPH_ROUTES,
         { method: "GET", path: "/api/project", desc: "project info: dir, recents, environments, tiers, targets, stacks, preview lock" },
         { method: "POST", path: "/api/project/open", desc: "switch the served project: JSON body {dir} (validated; preview-locked)" },
         { method: "POST", path: "/api/project/reveal", desc: "open the OS file manager at a served/recent project dir: JSON body {dir?}" },
@@ -2652,7 +2703,7 @@ export function createApp(
         {
           method: "POST",
           path: "/api/demos/open",
-          desc: "load a demo and serve it: JSON body {name} (a catalog name, never a path) — copies/clones, installs, runs its setup, then switches (preview-locked)",
+          desc: "load a demo and serve it: JSON body {name} (a catalog name, never a path) — copies/clones, installs, runs its setup, then switches (preview-locked); a serve.workspace demo lands on its declared workspace (behold#1019) and answers workspace {name, root} or null, with workspaceRefusal when chant could not read it",
         },
         {
           method: "GET",
@@ -3106,7 +3157,7 @@ export function createApp(
         // edges). Declared contracts should name their own field — `sourceRef`,
         // not `spec.sourceRef.name` — and value-match fills what is left.
         ir = addK8sDeclaredEdges(ir);
-        ir = addValueMatchEdges(ir);
+        ir = await deriveGraphEdges(ir);
         // The estate's own edge (#166): a control-plane member's Kustomization /
         // Application declares the directory it applies, and behold knows each
         // member by its checkout — so the join a single project cannot make is
@@ -3238,7 +3289,7 @@ export function createApp(
         // touching server.ts at all, and #143 (ec5e444) then carried
         // `addK8sDeclaredEdges` into both logical branches but not this. No
         // commit message, comment or test ever recorded the omission.
-        const base = addClusterAnchorEdges(addValueMatchEdges(addK8sDeclaredEdges(raw)), logicalContext);
+        const base = addClusterAnchorEdges(await deriveGraphEdges(addK8sDeclaredEdges(raw)), logicalContext);
         // #379/#380/#382: name and box the Terraform cards before the lens
         // projects them, so its own boxes hold cards rather than block classes.
         const singleRun = applyMemberPasses(base, { detail: opts.detail });
@@ -3291,8 +3342,9 @@ export function createApp(
         // azure's. First of the two since #166 — see the estate branch above.
         ir = addK8sDeclaredEdges(ir);
         // Connect resources wired by a literal name/ARN value the symbolic-ref
-        // graph misses (see addValueMatchEdges).
-        ir = addValueMatchEdges(ir);
+        // graph misses: chant's derived edges when it can draw them, else
+        // value-match (src/chant-edges.ts, behold#1030).
+        ir = await deriveGraphEdges(ir);
         // #234's free rider — see the estate branch above.
         ir = markOperatorHome(ir);
         // Anchor a mixed-substrate estate (#103): the k8s half carries no
@@ -3980,7 +4032,7 @@ export function createApp(
         // estate exists for. Both paths derive identically: a live overlay adds
         // colour, never a different topology.
         ir = addK8sDeclaredEdges(ir);
-        ir = addValueMatchEdges(ir);
+        ir = await deriveGraphEdges(ir);
         ir = addEstateMemberEdges(ir, estateMembers(cfg.projectDirs));
         ir = addChoudoufuReferenceEdges(ir);
         // #234's free rider — see /api/graph's estate branch.
@@ -4246,7 +4298,7 @@ export function createApp(
         // overlay's logical lens was missing it for exactly the same reason
         // /api/graph's was (see that branch), and the overlay is
         // source-anchored, so this is the same derivation on both.
-        const projectionInput = addClusterAnchorEdges(addValueMatchEdges(addK8sDeclaredEdges(ir)), boundContext);
+        const projectionInput = addClusterAnchorEdges(await deriveGraphEdges(addK8sDeclaredEdges(ir)), boundContext);
         // #379/#380/#382 — as on the source logical path.
         applyMemberPasses(projectionInput, { detail: opts.detail });
         const { ir: projected, byContainer, namespaceBoxes } = projectTopology(projectionInput, env, boundContext, [await graphPath(cfg.projectDir, opts), cfg.projectDir]);
@@ -4275,7 +4327,7 @@ export function createApp(
       ir = addK8sDeclaredEdges(ir);
       // Connect resources wired by a literal name/ARN value (e.g. an RDS
       // instance's DBSubnetGroupName) that the symbolic-ref graph misses.
-      ir = addValueMatchEdges(ir);
+      ir = await deriveGraphEdges(ir);
       // #234's free rider — see /api/graph's estate branch. The overlay is
       // source-anchored, so the OperatorStack's declared labels are here too.
       ir = markOperatorHome(ir);
@@ -4408,7 +4460,7 @@ export function createApp(
     // And the same import-handle pruning below ATTRIBUTES tier + value-matched edges.
     if ((optsFromQuery(new URL(c.req.url)).detail ?? 2) < 3) pruneImports(result.ir);
     addK8sDeclaredEdges(result.ir);
-    addValueMatchEdges(result.ir);
+    await deriveGraphEdges(result.ir);
     addClusterAnchorEdges(result.ir, await boundK8sContext(env));
     const { svg } = renderGraph(result.ir, { boxes: "byContainer" });
     return c.json({
@@ -5118,21 +5170,31 @@ function simplifiedEstateNesting(byContainer: Record<string, string[]>, ir: Grap
  * nothing when no workspace is served or its chant is below
  * LEDGER_ROOT_MEMBER_CHANT_FLOOR, and leaves a member out when its read fails
  * or the chant's rows carry no root_member, so its card shows the run index
- * alone.
+ * alone. behold#1020: each read is cached on the ledger tip
+ * (`ledgerRunsCache`), so a components read on an unchanged branch spawns
+ * one `git rev-parse` and no chant.
  */
-async function memberLocalApplyReads(ws: Workspace | undefined, members: ReadonlyArray<string | undefined>): Promise<{ byMember: Map<string, LocalApply[]>; note?: string }> {
+const ledgerRunsCache = new LedgerRunsCache();
+export async function memberLocalApplyReads(
+  ws: Workspace | undefined,
+  members: ReadonlyArray<string | undefined>,
+  deps: { cache?: LedgerRunsCache; git?: GitRun; reader?: Pick<WorkspaceReader, "readLedgerRuns"> } = {},
+): Promise<{ byMember: Map<string, LocalApply[]>; note?: string }> {
   const byMember = new Map<string, LocalApply[]>();
   const named = members.filter((m): m is string => !!m);
   if (!ws || !named.length || !meetsFloor(ws.chant, LEDGER_ROOT_MEMBER_CHANT_FLOOR)) return { byMember };
-  const reader = rootReader(ws.root);
+  const reader = deps.reader ?? rootReader(ws.root);
+  const cache = deps.cache ?? ledgerRunsCache;
+  const tip = await ledgerTip(ws.root, deps.git ?? realGit);
+  const runs = (where: string[]) => cache.read({ root: ws.root, chant: ws.chant }, tip, where, () => reader.readLedgerRuns(where).then(ledgerRunsOf));
   await Promise.all(
     named.map(async (m) => {
-      const answer = await reader.readLedgerRuns([rootMemberWhere(m)]).then(ledgerRunsOf, () => undefined);
+      const answer = await runs([rootMemberWhere(m)]);
       if (answer?.supported) byMember.set(m, memberLocalApplies(answer, m));
     }),
   );
   if (!byMember.size) return { byMember };
-  const unknown = await reader.readLedgerRuns([APPLY_RUNS_WHERE]).then(ledgerRunsOf, () => undefined);
+  const unknown = await runs([APPLY_RUNS_WHERE]);
   const note = unknown ? unknownRootNote(unknownRootApplies(unknown)) : undefined;
   return { byMember, ...(note ? { note } : {}) };
 }

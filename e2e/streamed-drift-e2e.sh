@@ -25,8 +25,8 @@
 #
 # Skips, exit 0, with the reason, when Docker or choudoufu is absent, as
 # e2e/choudoufu-estate-floci-e2e.sh does. Scratch discipline as there: the
-# container is behold-choudoufu-floci, refused if it already exists, removed
-# on exit by the demo's down script.
+# container is behold-choudoufu-floci (BEHOLD_CHOUDOUFU_FLOCI_CONTAINER),
+# refused if it already exists, removed on exit by the demo's down script.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 PORT="${BEHOLD_E2E_PORT:-4698}"
@@ -38,12 +38,19 @@ export FAKE_DRIFT_SILENT="${FAKE_DRIFT_SILENT:-aws_cloudwatch_log_group.team_c_2
 export FAKE_DRIFT_DRIFTED="${FAKE_DRIFT_DRIFTED:-aws_iam_policy.team_b}"
 export FAKE_DRIFT_UNCLAIMED="${FAKE_DRIFT_UNCLAIMED:-aws_iam_role.team_c}"
 export BEHOLD_DRIFT_CHANT="$PWD/e2e/fixtures/fake-chant-drift/chant"
+# behold#1032: the demo's floci name, port and image from the environment,
+# choudoufu-up.sh's values as defaults, exported so the up and down scripts
+# and demos.json's spawnEnv (which `behold demo` expands) see the same ones.
+# BEHOLD_CHOUDOUFU_FLOCI_IMAGE, when set, reaches choudoufu-up.sh as it is.
+: "${BEHOLD_CHOUDOUFU_FLOCI_CONTAINER:=behold-choudoufu-floci}" "${BEHOLD_CHOUDOUFU_FLOCI_PORT:=4650}"
+export BEHOLD_CHOUDOUFU_FLOCI_CONTAINER BEHOLD_CHOUDOUFU_FLOCI_PORT
+FLOCI_NAME="$BEHOLD_CHOUDOUFU_FLOCI_CONTAINER"
 
 CHOUDOUFU="${CHOUDOUFU_BIN:-choudoufu}"
 if ! docker info >/dev/null 2>&1; then echo "skip: Docker is not running"; exit 0; fi
 if ! command -v "$CHOUDOUFU" >/dev/null 2>&1; then echo "skip: ${CHOUDOUFU} is not on PATH (set CHOUDOUFU_BIN to name a build)"; exit 0; fi
-if docker ps -a --format '{{.Names}}' | grep -qx behold-choudoufu-floci; then
-  echo "behold-choudoufu-floci already exists; \`docker rm -f behold-choudoufu-floci\` and re-run" >&2
+if docker ps -a --format '{{.Names}}' | grep -qx "$FLOCI_NAME"; then
+  echo "$FLOCI_NAME already exists; \`docker rm -f $FLOCI_NAME\` and re-run" >&2
   exit 1
 fi
 
@@ -57,7 +64,7 @@ CURL_PID=""
 cleanup() {
   [ -n "$CURL_PID" ] && kill "$CURL_PID" 2>/dev/null || true
   kill "$PID" 2>/dev/null || true
-  [ -x "$TARGET/scripts/choudoufu-down.sh" ] && bash "$TARGET/scripts/choudoufu-down.sh" || docker rm -f behold-choudoufu-floci >/dev/null 2>&1 || true
+  [ -x "$TARGET/scripts/choudoufu-down.sh" ] && bash "$TARGET/scripts/choudoufu-down.sh" || docker rm -f "$FLOCI_NAME" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 

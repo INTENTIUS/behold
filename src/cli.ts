@@ -28,6 +28,7 @@ import { readCarveReport } from "./carve-lens.ts";
 import { HCL_PARSER_PKG } from "./terraform-member.ts";
 import { runShot } from "./shot-cli.ts";
 import { runMcp } from "./mcp.ts";
+import { runIndex } from "./behold-index.ts";
 import { listCheckouts, type RepoTarget, type ViewRepos } from "./view-repos.ts";
 import {
   bootScratchFloci,
@@ -60,6 +61,9 @@ Usage:
                 [--width <px>] [--height <px>] [--link-base <url>] [--view <k=v&...>]
                 [--publish <remote>[/<branch>]]   (behold shot --help)
   behold mcp [project-dir] [--url <serve> | --port <n>]   (behold mcp --help)
+  behold index <aws|azure|gcp|kubernetes> [--account|--subscription|--project|--cluster <id>]
+                [--regions <r,…>] [--types <t,…>] [--tag <k=v>]… [--endpoint <url>] [--store <spec>] [--json]
+                (behold index --help)
 
   carve   Render a chant Terraform peelability report — the JSON from
           \`chant carve advise --from <tf-dir> --json\` — as a graph. One card
@@ -104,6 +108,13 @@ Usage:
           project to the current directory; pass a dir for someone else's, and
           --env for that project's live overlay. Bring the estate up first (e.g.
           behold preview, or your creds/env) so the snapshot reflects live state.
+
+  index   Read one cloud account, subscription, project or cluster with no
+          project, type it through chant, add derived edges, and write one
+          stamped index version to the index store (default: behold's
+          per-user data directory). Read-only: it lists through each cloud's
+          inventory API, refuses every action flag, and starts no server.
+          The graph pane of serve and preview loads what it writes.
 
   mcp     A stdio MCP server for a coding agent: capabilities returns
           chant's capability catalog (read it first), ask returns chant's
@@ -383,6 +394,11 @@ export async function run(argv: string[]): Promise<void> {
   if (cmd === "shot") {
     // Exit at once: the app a shot starts in-process may leave timers behind it.
     process.exit(await runShot(rest));
+  }
+
+  if (cmd === "index") {
+    // behold#1026: read-only; it starts no server and reaches no action route.
+    process.exit(await runIndex(rest, { version: beholdVersion() }));
   }
 
   if (cmd === "mcp") {

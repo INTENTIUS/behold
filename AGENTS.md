@@ -1289,6 +1289,33 @@ GET /api/capabilities
         "helpers":[...]}
 ```
 
+### The graph pane: Cypher and resolve-from-resource (behold#1027)
+
+Every member's chant IR, every engine graph document (`choudoufu live-graph
+-json`, `plunge graph --json`, read from `engine-graph.json` beside a member
+or `.behold/graph/*.json`), every index version (the latest per scope in
+`.chant/store/index/`, `_index/` on `refs/chant/snapshots`, and behold's
+per-user index directory) and every cloud listing in one LadybugDB per
+session. Tables: `Resource` keyed `<member>/<id>` (or the source's scope
+key), `CloudId` with `KNOWN_AS` from each Resource, and `REF` with `grain`,
+`origin` (`derived` for an identity match, with its `rule`) and `ambiguous`.
+The database is behold's own file under `$XDG_DATA_HOME/behold/graph` and
+read-only once built; a query that writes is refused. Cypher needs the
+optional peer `@ladybugdb/core` and answers 503 `graph-peer-missing` with the
+install line without it; resolve, the template catalog and the path-pattern
+templates work without it. Every answer carries `sources`, each with
+`observedAt` (null for a declared source) and `readAt`. A `--public` serve
+refuses the pane. behold mcp's `ask` takes `cypher` or `resource` (with
+`template` and `inputs`) beside `query`. All GET.
+
+```
+GET /api/graphdb                        sources, counts, notes, peer
+GET /api/graphdb/query?cypher=&params=  {"columns","rows","keys","draw":{nodes,edges},"link","sources"}
+GET /api/graphdb/resolve?ref=           {"candidates":[{key,matchedBy,...}],"templates":[...],"sources"}
+GET /api/graphdb/template?name=&node=&in.<input>=
+GET /graph                              the pane
+```
+
 ## Moving the person's open tab (#914)
 
 `POST /api/view` changes what every open tab of this serve draws. It is a
@@ -2093,6 +2120,10 @@ live here, with the enforceable ones enforced.
   renaming it is a settings change for the maintainer (behold#1018).
   No `gh pr merge --auto`; merge one PR at a time, in order, and rebase the
   next onto what landed.
+- **Emulator e2e scripts** take their container names, ports and images
+  from the environment and run under `e2e/lib/safe-env.sh`, which keeps real
+  cloud credentials out of reach and fails on a real-cloud rejection in the
+  log; e2e/README.md has the variables (behold#1032).
 - **The local gate** is `just check` (tsc, tests, build). The tests never read
   the caller's environment (behold#1013): src/test-env.ts, vitest's setup
   file, removes CHOUDOUFU_BIN, PLUNGE_BIN and the other variables behold

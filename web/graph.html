@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>behold · graph</title>
+    <style>
+      /* behold#1027: the graph pane. Box's tokens (theme.js KIOSK_THEME) as the fallback, as terralith.html does. */
+      :root {
+        --bg: #141d2b; --panel: #213027; --line: #2e3d2a; --fg: #9fef00; --muted: #7d9e5a; --edge: #40601d;
+        --managed: #19cb00; --foreign: #cecb00; --pending: #0d73cc; --degraded: #cc0403; --runtime: #0dcdcd;
+        --well: #070f1c; --surface-box: #20242a; --surface-pane-a: #262a30;
+        --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      @media (prefers-color-scheme: light) {
+        :root { --bg: #f6f7f4; --panel: #ffffff; --line: #d5dacb; --fg: #1d2a12; --muted: #5d6b4f; --edge: #8aa06a; --well: #eef1e8; --surface-box: #ffffff; --surface-pane-a: #f0f2ec; }
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--font-ui); }
+      main { max-width: 1400px; margin: 0 auto; padding: 16px; display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+      @media (max-width: 900px) { main { grid-template-columns: minmax(0, 1fr); } }
+      header { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: baseline; }
+      h1 { font-size: 18px; margin: 0; }
+      section { background: var(--surface-pane-a); border-radius: 8px; padding: 12px 14px; min-width: 0; }
+      h2 { font-size: 14px; margin: 0 0 8px; }
+      textarea, input { width: 100%; background: var(--well); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font: 13px/1.4 var(--font-mono); }
+      textarea { min-height: 7em; resize: vertical; }
+      button { background: var(--surface-box); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; margin: 6px 6px 0 0; font: inherit; cursor: pointer; }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      pre { white-space: pre-wrap; font: 12px/1.4 var(--font-mono); margin: 6px 0 0; color: var(--muted); }
+      #g-error { color: var(--degraded); }
+      .g-muted { color: var(--muted); }
+      table { border-collapse: collapse; width: 100%; font: 12px/1.35 var(--font-mono); display: block; overflow-x: auto; }
+      th, td { border-bottom: 1px solid var(--line); padding: 4px 6px; text-align: left; vertical-align: top; }
+      svg { width: 100%; height: auto; max-height: 560px; }
+      .g-edge { stroke: var(--edge); stroke-width: 1.4; }
+      .g-edge.derived { stroke-dasharray: 5 4; stroke: var(--foreign); }
+      .g-arrowhead { fill: var(--edge); }
+      .g-node circle { fill: var(--managed); }
+      .g-node.engine circle { fill: var(--runtime); }
+      .g-node.index circle, .g-node.cloud circle { fill: var(--pending); }
+      .g-node text { fill: var(--fg); font: 11px var(--font-mono); }
+      /* behold#1028: the index diff overlay. Not observed is never drawn as removed. */
+      .g-node.d-added circle { fill: var(--managed); }
+      .g-node.d-removed circle { fill: var(--degraded); }
+      .g-node.d-changed circle { fill: var(--foreign); }
+      .g-node.d-not-observed circle { fill: none; stroke: var(--muted); stroke-dasharray: 3 2; }
+      .g-node.d-same circle { fill: var(--edge); }
+      .g-edge.d-added { stroke: var(--managed); }
+      .g-edge.d-removed { stroke: var(--degraded); }
+      .g-edge.d-not-observed { stroke: var(--muted); stroke-dasharray: 3 3; }
+      select { background: var(--well); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 4px; font: 12px var(--font-mono); max-width: 100%; }
+      ul { margin: 6px 0 0; padding-left: 18px; font: 12px/1.4 var(--font-mono); }
+      a { color: var(--runtime); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Graph</h1>
+        <span id="g-peer" class="g-muted"></span>
+        <span id="g-counts" class="g-muted"></span>
+        <a href="/">Back to the estate</a>
+      </header>
+      <section>
+        <h2>Cypher</h2>
+        <form id="g-cypher-form">
+          <textarea id="g-cypher" spellcheck="false" aria-label="Cypher query">MATCH (a:Resource)-[:KNOWN_AS]->(c:CloudId)&lt;-[:KNOWN_AS]-(b:Resource) WHERE a.scopeKey &lt;&gt; b.scopeKey RETURN a.key, b.key, c.value LIMIT 50</textarea>
+          <input id="g-params" placeholder='Parameters as JSON, such as {"k": "aws_s3_bucket"}' aria-label="Parameters" />
+          <button type="submit">Ask</button>
+        </form>
+        <h2 style="margin-top: 14px">Start from a resource</h2>
+        <form id="g-resolve-form">
+          <input id="g-ref" placeholder="A name, an IR id, a block address or a cloud id" aria-label="Resource" />
+          <button type="submit">Resolve</button>
+        </form>
+        <ul id="g-candidates"></ul>
+        <div id="g-templates"></div>
+        <pre id="g-error"></pre>
+        <h2 style="margin-top: 14px">What changed between two reads</h2>
+        <form id="d-form">
+          <label>Scope <select id="d-scope" aria-label="Index scope"></select></label>
+          <label>From <select id="d-from" aria-label="Earlier version"></select></label>
+          <label>To <select id="d-to" aria-label="Later version"></select></label>
+          <button type="submit">Diff</button>
+        </form>
+        <p id="d-hint" class="g-muted"></p>
+        <pre id="d-summary"></pre>
+        <h2 style="margin-top: 14px">Sources, and when each was read</h2>
+        <pre id="g-sources"></pre>
+        <pre id="g-notes"></pre>
+      </section>
+      <section>
+        <h2>Answer <a id="g-link" hidden>open in the estate view</a></h2>
+        <div id="g-draw"></div>
+        <div id="g-rows"></div>
+      </section>
+    </main>
+    <script type="module">
+      import { initGraphPane } from "./graph-query.js";
+      import { initIndexDiff } from "./index-diff.js";
+      initGraphPane();
+      initIndexDiff();
+    </script>
+  </body>
+</html>

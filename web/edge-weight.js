@@ -9,6 +9,10 @@
 // put together. Plumbing that more than two cards share (one role for half
 // the estate) says nothing at all, so it draws no edge.
 //
+// An edge chant derived (`origin: "derived"` with the `rule` that drew it,
+// chant#4522/#4523, behold#1030) is a match chant made, not a declaration, so
+// it weighs as an inferred one does.
+//
 // Only references are weighed: a CI edge (needs, calls, triggers, …) keeps its
 // own kind's style (./edge-kind.js).
 
@@ -52,7 +56,7 @@ export function edgeWeights(edges = [], kindOf = new Map()) {
     if (plumbing(e)) {
       const hub = PLUMBING_KIND.test(kindOf.get(e.to) || "") ? e.to : e.from;
       w = (sharers.get(hub)?.size ?? 0) > 2 ? "hidden" : "plumbing";
-    } else if (e.inferred) w = "inferred";
+    } else if (e.inferred || e.origin === "derived") w = "inferred";
     else if (isWired(e)) w = "wired";
     else w = "reference";
     out.set(`${e.from}→${e.to}`, w);
