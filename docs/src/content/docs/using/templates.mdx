@@ -1,6 +1,6 @@
 ---
 title: Apps from templates
-description: The Templates tab lists the templates a terragucci repo offers and asks terragucci for an app or an add-on; the graph frames each app with its add-ons and offers its upgrade.
+description: The Templates tab lists the templates a terragucci repo offers and asks terragucci for an app or an add-on; the graph frames each app with its add-ons and offers its upgrade and its day-2 actions.
 draft: true
 ---
 
@@ -51,6 +51,43 @@ add-ons, and two buttons.
 
 Neither button is drawn in a public view, an embed or a static export.
 
+## Day-2 actions
+
+A template can declare actions, such as a rotation its module runs on demand.
+The inspect pane of an app's card lists one button per action its template
+and its add-ons offer, named by the action (`rotate`). Pressing one asks
+terragucci's action workflow to run with the app's root and the action's
+address, such as `apps/orders` and `module.app.action.<type>.rotate`.
+
+Pressing the button runs nothing in your infrastructure. terragucci plans the
+action and asks for an approval of that plan, and the request waits until a
+person other than the one who pressed the button approves it. The pane then
+shows a gate card for the request: who asked and when, the plan digest, the
+state `waiting`, and the line the second person runs at their shell:
+
+```sh
+npx terragucci approve action apps/orders --plan sha256:...
+```
+
+The card has a Copy button and nothing else. behold never approves, and an
+approval by the person who asked does not count; the card lists it as one that
+does not count, with the reason. Once someone else approves, terragucci's
+resume job runs the action and the card reads, for example, `rotate on
+apps/orders ran: ok`, with the exit code. The same request can also be made
+with a `/terragucci action <root> <address>` comment on an issue or a pull
+request, and it shows on the same card.
+
+Under the card, the action history lists each request and each run for the
+app's root, newest first, from terragucci's audit record: who asked, who
+approved, the digest, `ok` or `failed`, and a link to the run, such as
+`rotate on apps/orders, approved by dana, ok`.
+
+An action runs only on Terraform 1.14 or newer. On a repo whose roots run
+OpenTofu or choudoufu, the buttons stay in the pane but are switched off, and
+the pane says why, naming the engine, for example `apps/orders: an action
+runs on Terraform 1.14 or newer, and this root runs OpenTofu (tofu, from
+binary in terragucci.yml), which has no action invocation`.
+
 ## The routes
 
 - `GET /api/templates` runs the repo's own `terragucci templates list --json`
@@ -84,8 +121,21 @@ Neither button is drawn in a public view, an embed or a static export.
   on GitHub or the dispatch API on Forgejo. The workflow is written by
   `terragucci init` when `rollouts` is set.
 
-behold never runs `terragucci request` or `terragucci rollout` itself, never
-applies anything, and writes nothing in the repo. The runs in CI open the pull
+- `POST /api/templates/action` takes `{root, address}`. behold reads the apps
+  again: a root no app has is `422 not-an-app`, and an address the app's
+  templates do not list is `422 unknown-action`; neither starts anything. A
+  root on OpenTofu or choudoufu is `422 action-engine`, naming the engine. It
+  then dispatches `terragucci-action.yml` with exactly `root` and `address`,
+  as `gh workflow run terragucci-action.yml -f root=apps/orders -f address=module.app.action.<type>.rotate`
+  on GitHub or the dispatch API on Forgejo. A repo without that workflow
+  (terragucci writes it only for Terraform roots) is `409 no-action-workflow`.
+- `GET /api/terragucci/lifecycle` lists each action's gate under `actions`,
+  apart from the waves: `{op: "tf-action", gate: "<root>:<address>", state,
+  digest, command}`, with `applied.result` `ok` or `failed` once it ran.
+
+behold never runs `terragucci request`, `terragucci rollout` or `terragucci
+action` itself, never approves, never applies anything, and writes nothing in
+the repo. The runs in CI open the pull
 requests with the repo's own token.
 
 ## GitLab
@@ -94,4 +144,6 @@ A GitLab repo has no request workflow. The request answers `422` with
 `code: "request-forge"` and the line to run at your shell instead, such as
 `npx terragucci request acme/bucket/aws --name orders --version 1.2.0 --input bucket_name=orders-data`.
 An upgrade on GitLab answers the same way with the rollout line, such as
-`npx terragucci rollout acme/bucket/aws 1.3.0 --mode apply`.
+`npx terragucci rollout acme/bucket/aws 1.3.0 --mode apply`, and an action
+with the action line, such as
+`npx terragucci action apps/orders module.app.action.<type>.rotate`.

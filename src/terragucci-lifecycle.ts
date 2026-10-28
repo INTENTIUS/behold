@@ -10,7 +10,12 @@
  *   how those applies finished;
  * - `_gates/tf-apply/wave-<k>/<digest>.json`: the report a waiting wave kept
  *   for the digest it asked approval for;
- * - `_locks/tf-apply.json`: the roots a pull request or an apply holds.
+ * - `_locks/tf-apply.json`: the roots a pull request or an apply holds;
+ * - `_gates/tf-action.jsonl` and `_gates/tf-action/applied.jsonl` (behold#1037,
+ *   chant#4653): each day-2 action's request at the gate `<root>:<address>`,
+ *   its approvals, and the applied and finished lines of its run. These are
+ *   chant's gated requests, not waves, so the answer lists them apart, as
+ *   `actions`.
  *
  * Each wave is decided by chant's own rule (#520): the ledger is parsed with
  * chant's `parseGateLedger`, the applied lines with `parseAppliedGateLines`,
@@ -85,6 +90,10 @@ export const APPLIED_PATH = "_gates/tf-apply/applied.jsonl";
 /** Where a waiting wave keeps its report: `_gates/tf-apply/wave-<k>/<digest with ":" as "_">.json` (terragucci's approvedPath). */
 export const WAVE_RECORDS_DIR = "_gates/tf-apply";
 export const LOCKS_PATH = "_locks/tf-apply.json";
+/** behold#1037: day-2 actions, chant's gated requests under op `tf-action` (chant#4653), one gate per `<root>:<address>`. */
+export const ACTION_OP = "tf-action";
+export const ACTION_LEDGER_PATH = "_gates/tf-action.jsonl";
+export const ACTION_APPLIED_PATH = "_gates/tf-action/applied.jsonl";
 /** The checkout's own copy of the branch, read only when behold's fetch fails. */
 export const CHECKOUT_REF = `refs/remotes/origin/${LIFECYCLE_BRANCH}`;
 /** The ref behold keeps in its own cache. */
@@ -176,6 +185,12 @@ export interface GateLaneSpec {
    * branch path above is read under it.
    */
   ledgerPrefix?: string;
+  /**
+   * behold#1037: the product's day-2 actions, gated requests whose gate is
+   * `<root>:<address>` rather than a wave: the op, its ledger paths, and the
+   * line a second person runs to approve one. Only terragucci's lane has them.
+   */
+  actions?: { op: string; ledgerPath: string; appliedPath: string; approveCommand(root: string, digest: string | undefined, mode: GateApprovalSource): string };
 }
 
 /** A lane spec for `op` with chant's paths: `_gates/<op>.jsonl` and `_gates/<op>/applied.jsonl`. */
@@ -210,6 +225,11 @@ export function pointAnswerCommand(id: string): string {
 /** terragucci's approve line for wave `k`: `npx terragucci approve wave-<k>`, whatever chant names the gate. */
 export function terragucciApproveCommand(wave: number, digest: string | undefined | null, sealed = false): string {
   return `npx terragucci approve wave-${wave}${digest ? ` --plan ${digest}` : ""}${sealed ? " --sign" : ""}`;
+}
+
+/** terragucci's approve line for a day-2 action (terragucci#1310): `npx terragucci approve action <root> --plan <digest>`. */
+export function terragucciApproveActionCommand(root: string, digest: string | undefined | null, sealed = false): string {
+  return `npx terragucci approve action ${root}${digest ? ` --plan ${digest}` : ""}${sealed ? " --sign" : ""}`;
 }
 
 /** A gate policy as chant names it: `on-destroy` is an alias of `on-destructive` (terragucci#863). */
@@ -309,6 +329,7 @@ export const TERRAGUCCI_LANE: GateLaneSpec = opWavesLane("tf-apply", {
   overriders: terragucciOverriders,
   locksPath: LOCKS_PATH,
   recordsDir: WAVE_RECORDS_DIR,
+  actions: { op: ACTION_OP, ledgerPath: ACTION_LEDGER_PATH, appliedPath: ACTION_APPLIED_PATH, approveCommand: (root, digest, mode) => terragucciApproveActionCommand(root, digest, mode === "sealed") },
 });
 
 // ── terragucci's own formats ─────────────────────────────────────────────
@@ -567,6 +588,8 @@ export interface LifecycleAnswer {
   /** The rule the gates were decided by, read at base. */
   approval?: ApprovalRule;
   gates: GateEntry[];
+  /** behold#1037: each day-2 action's gate, for a lane whose spec has `actions` (terragucci's). */
+  actions?: ActionGateEntry[];
   locks: LockEntry[];
   /** One sentence for the page: where this came from, and how old it can be. */
   note: string;
@@ -848,6 +871,109 @@ export function gateEntries(
     place(h.wave, h.heldOn.since, { state: "held", heldOn: h.heldOn, command: h.command, ...(m !== rule.mode ? { mode: m } : {}), approvalMode: h.approvalMode });
   }
   return out.sort((a, b) => a.wave - b.wave);
+}
+
+/**
+ * behold#1037: one day-2 action's gate, a chant gated request at
+ * `<root>:<address>` (terragucci#1310). The states are a wave's, decided the
+ * same way, except that the requester's own approval never counts (chant's
+ * gated request), and `applied.result` is the run's `ok` or `failed`, from the
+ * finished line's `detail.result`.
+ */
+export interface ActionGateEntry {
+  op: string;
+  /** `<root>:<address>`. */
+  gate: string;
+  root: string;
+  address: string;
+  /** The action's name: the address's last part (`rotate`). */
+  name: string;
+  /** Who asked, as the request records it. */
+  requester?: string;
+  state: "waiting" | "expired" | "refused" | "approved" | "applied" | "failed";
+  digest?: string;
+  pending?: GateEntry["pending"];
+  approval?: LaneApproval;
+  refused?: GateEntry["refused"];
+  uncounted?: GateEntry["uncounted"];
+  applied?: { at: string; approvedAt: string; approvedBy: string; runId?: string; result?: "ok" | "failed"; finished?: string; exit?: number; tail?: string };
+  /** While it waits: the line a person other than the requester runs. behold never runs it. */
+  command?: string;
+  approvalMode: { mode: GateApprovalSource; from: "pending" | "base" };
+  source: LifecycleSource;
+}
+
+/** The action's root and address from its gate, the address known from the request's fields when they name it. */
+export function actionSubject(gate: string, address?: string): { root: string; address: string } {
+  if (address && gate.endsWith(`:${address}`) && gate.length > address.length + 1) return { root: gate.slice(0, -address.length - 1), address };
+  const i = gate.indexOf(":");
+  return i > 0 ? { root: gate.slice(0, i), address: gate.slice(i + 1) } : { root: gate, address: address ?? "" };
+}
+
+/** The requester's own approval never counts for a gated request (chant's rule). */
+export const REQUESTER_OWN = "the requester's own approval never counts: a person other than the one who asked approves an action";
+
+/** Each action's gate on the action ledger, newest first, decided under `rule` (the mode its request records, else the one at base). */
+export function actionGateEntries(ledger: GateLedger, source: LifecycleSource, now: Date, rule: LaneRule, spec: NonNullable<GateLaneSpec["actions"]>): ActionGateEntry[] {
+  const gates = new Set<string>();
+  for (const r of [...ledger.pending, ...ledger.resolutions, ...ledger.applied]) gates.add(r.gate);
+  const out: (ActionGateEntry & { last: number })[] = [];
+  for (const gate of gates) {
+    const pending = newest(ledger.pending.filter((p) => p.gate === gate), (p) => p.timestamp);
+    const request = ((pending as { request?: unknown } | undefined)?.request ?? {}) as { by?: unknown; fields?: { address?: unknown } };
+    const requester = typeof request.by === "string" ? request.by : undefined;
+    const { root, address } = actionSubject(gate, typeof request.fields?.address === "string" ? request.fields.address : undefined);
+    // The requester's own approvals are left out, and said.
+    const own = requester ? ledger.resolutions.filter((r) => r.gate === gate && r.resolvedBy === requester) : [];
+    const mine: GateLedger = own.length ? { ...ledger, resolutions: ledger.resolutions.filter((r) => !own.includes(r)) } : ledger;
+    const recorded = pending ? recordedMode(pending) : undefined;
+    const mode = recorded ?? rule.mode;
+    const { decision: _d, ...d } = decideLaneGate(mine, gate, { ...rule, mode }, now, true);
+    const digest = d.digest;
+    const ownHere = own.filter((r) => !digest || !r.planDigest || samePlanDigest(r.planDigest, digest)).map((r) => ({ approval: laneApproval(r, rule.signers), reason: REQUESTER_OWN }));
+    const uncounted = [...(d.uncounted ?? []), ...ownHere];
+    let applied: ActionGateEntry["applied"];
+    if (d.applied) {
+      const fin = newest(
+        ledger.finished.filter((f) => f.gate === gate && f.applied === d.applied!.at && (!digest || samePlanDigest(f.planDigest, digest))),
+        (f) => f.timestamp,
+      ) as (FinishedRecord & { detail?: Record<string, unknown> }) | undefined;
+      const detail = fin?.detail ?? {};
+      const result = fin ? (fin.result === "failed" || detail.result === "failed" ? "failed" : "ok") : undefined;
+      applied = {
+        at: d.applied.at,
+        approvedAt: d.applied.approvedAt,
+        approvedBy: d.applied.approvedBy,
+        ...(d.applied.runId ? { runId: d.applied.runId } : {}),
+        ...(result ? { result } : {}),
+        ...(fin ? { finished: fin.timestamp } : {}),
+        ...(typeof detail.exit === "number" ? { exit: detail.exit } : {}),
+        ...(typeof detail.tail === "string" ? { tail: detail.tail } : {}),
+      };
+    }
+    const state = (applied?.result === "failed" ? "failed" : d.state) as ActionGateEntry["state"];
+    const last = Math.max(pending ? t(pending.timestamp) : 0, d.approval ? t(d.approval.at) : 0, applied ? t(applied.finished ?? applied.at) : 0);
+    out.push({
+      op: (pending?.op || ledger.resolutions.find((r) => r.gate === gate)?.op) ?? spec.op,
+      gate,
+      root,
+      address,
+      name: address.split(".").pop() ?? address,
+      ...(requester ? { requester } : {}),
+      state,
+      ...(digest ? { digest } : {}),
+      ...(d.pending ? { pending: d.pending } : {}),
+      ...(d.approval ? { approval: d.approval } : {}),
+      ...(d.refused ? { refused: d.refused } : {}),
+      ...(uncounted.length ? { uncounted } : {}),
+      ...(applied ? { applied } : {}),
+      ...(state === "waiting" ? { command: spec.approveCommand(root, digest, mode) } : {}),
+      approvalMode: { mode, from: recorded ? "pending" : "base" },
+      source,
+      last,
+    });
+  }
+  return out.sort((a, b) => b.last - a.last || (a.gate < b.gate ? -1 : 1)).map(({ last: _l, ...e }) => e);
 }
 
 /** The wave a run of this op is in, from the newest pending fact of a wave gate that lists it as a member: for a denial whose fact names no wave. */
@@ -1177,7 +1303,7 @@ async function readAt(
   now: Date,
   spec: GateLaneSpec,
   packages: string = dir,
-): Promise<{ commit: { sha: string; committed: string }; approval: ApprovalRule; gates: GateEntry[]; locks: LockEntry[] } | undefined> {
+): Promise<{ commit: { sha: string; committed: string }; approval: ApprovalRule; gates: GateEntry[]; actions?: ActionGateEntry[]; locks: LockEntry[] } | undefined> {
   const tip = await git([...repo, "log", "-1", "--format=%H%x00%cI", ref, "--"]);
   if (tip.code !== 0 || !tip.stdout.trim()) return undefined;
   const [sha, committed] = tip.stdout.trim().split("\0") as [string, string];
@@ -1234,7 +1360,14 @@ async function readAt(
   const locks = Object.entries(lockMap)
     .sort(([a], [b]) => (a < b ? -1 : 1))
     .map(([root, l]) => ({ root, ...l, source: lockSource! }));
-  return { commit: { sha, committed }, approval, gates, locks };
+  // behold#1037: the day-2 actions' gated requests, read with the same parsers and decided under the same rule.
+  let actions: ActionGateEntry[] | undefined;
+  if (spec.actions) {
+    const [aLedger, aApplied] = await Promise.all([show(at(spec.actions.ledgerPath)), show(at(spec.actions.appliedPath))]);
+    const l = readGateLedgerText(aLedger, aApplied);
+    actions = l.pending.length || l.resolutions.length || l.applied.length ? actionGateEntries(l, await changed(at(spec.actions.ledgerPath), at(spec.actions.appliedPath)), now, rule.lane, spec.actions) : [];
+  }
+  return { commit: { sha, committed }, approval, gates, ...(actions ? { actions } : {}), locks };
 }
 
 /**

@@ -73,7 +73,7 @@ import { ChantDemo, chantDemoRoutes } from "./chant-demo.ts";
 import { ciReportUrlOf, ciRunsRoutes, readCiRunIndex, type CiRunEntry } from "./ci-run-index.ts";
 import { localRunRoutes } from "./ci-local-run.ts";
 import { adoptionRoutes } from "./adoption.ts";
-import { templatesRepo, templatesRoutes, type TemplatesIo } from "./templates.ts";
+import { actionEngineRefusal, templatesRepo, templatesRoutes, type TemplatesIo } from "./templates.ts";
 import { realGit, type GitRun } from "./terragucci-lifecycle.ts";
 import { TERRAGUCCI_COMPONENTS_FILE, componentJobs, componentsIrFromDeclaration, componentRootMap, readTerragucciComponents, waveTitles, type TerragucciComponents } from "./terragucci-components.ts";
 import { hasTerragruntUnits } from "./terragrunt-units.ts";
@@ -2116,6 +2116,12 @@ export function createApp(
       ...(tgConfig() ? { terragucci: { config: tgConfig()!, ...terragucciRefusal(tgConfig()!, "deploying from behold") } } : {}),
       // behold#1035: terragucci.yml sets templates, so the page draws the Templates tab (never in a public view).
       ...(!cfg.public && templatesRepo(cfg.projectDirs ?? [cfg.projectDir])?.templates ? { terragucciTemplates: true } : {}),
+      // behold#1037: ruling E, so an action button says why it starts nothing on an engine with no action invocation.
+      ...(() => {
+        const t = !cfg.public ? templatesRepo(cfg.projectDirs ?? [cfg.projectDir]) : undefined;
+        const why = t?.templates ? actionEngineRefusal(t) : undefined;
+        return why ? { terragucciActionRefusal: why } : {};
+      })(),
       // #571: the repo declares its roots as components, so the page opens on
       // the components zoom (web/app.js `bootZoom`).
       ...(servedTerragucciComponents() ? { terragucciComponents: true } : {}),
@@ -2812,6 +2818,7 @@ export function createApp(
         { method: "POST", path: "/api/templates/request", desc: "request an app from a template, or with app an add-on in that app's root: JSON body {template, version?, name, app?, inputs}; an add-on needs an add-on template and an app terragucci templates apps lists (422 not-an-app, addon-exists); checked against the catalog (422 missing-input, not-active, input-type, bad-name, ...) and chant's template-request/v1 when the installed chant has it, then dispatches terragucci-request.yml with template, version, name, inputs (and claimed_by when the workflow declares it): gh workflow run on GitHub, the Forgejo API with FORGEJO_TOKEN on Forgejo; answers 202 {dispatched, id, run?}; GitLab answers 422 request-forge with the terragucci request line; behold writes nothing and never runs terragucci request (behold#1035)" },
         { method: "GET", path: "/api/templates/apps", desc: "a terragucci repo's apps made from templates: what its terragucci templates apps --json printed, byte for byte (each app's root, template, version, add-ons, actions, upgrade and yanked); 409 terragucci-too-old on a terragucci without the command; refused under --public (behold#1036)" },
         { method: "POST", path: "/api/templates/upgrade", desc: "start an app's upgrade: JSON body {app, version?}; reads the app's template and upgrade from terragucci templates apps (422 not-an-app, 422 no-upgrade, 409 stale-upgrade when version is not the upgrade), then dispatches terragucci-rollout.yml with module and version, which the rollout carries wave by wave; GitLab answers 422 request-forge with the terragucci rollout line; behold applies nothing (behold#1036)" },
+        { method: "POST", path: "/api/templates/action", desc: "ask for one of an app's day-2 actions: JSON body {root, address}; the address must be one terragucci templates apps lists for that root (422 unknown-action, 422 not-an-app), and a root on OpenTofu or choudoufu is refused by its engine's name (422 action-engine); then dispatches terragucci-action.yml with exactly root and address (gh workflow run on GitHub, the Forgejo API on Forgejo), whose run asks chant's gated request; the lifecycle lane shows the waiting gate and the terragucci approve action line a person other than the requester runs; GitLab answers 422 request-forge with the terragucci action line; behold approves nothing and invokes nothing (behold#1037)" },
         { method: "GET", path: "/api/templates/requests/:id", desc: "a dispatched request's state: dispatched, running or ended, with the run, its conclusion and the pull request on request/<template>/<name> (pull_request, url) once the run ends; a template-request event on /api/events names the id when it changes (behold#1035)" },
         { method: "GET", path: "/api/ci/run", desc: "the persisted dispatched-run record (id, verdict) — what survives a behold restart" },
         { method: "POST", path: "/api/ci/readopt", desc: "re-adopt the persisted unconcluded run: follow it by its saved id (also attempted automatically at boot)" },

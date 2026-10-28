@@ -13,7 +13,19 @@
 // dispatches terragucci's rollout workflow. behold applies nothing. Neither
 // button is drawn in a public view, an embed or a static export.
 //
+// behold#1037: the pane also lists the actions the app's templates offer
+// (`actions` in the apps read), one button each, named by the action. A
+// button dispatches terragucci's action workflow and nothing more: the run
+// asks for an approval, the gate card below shows the digest, the waiting
+// state and the `terragucci approve action` line for a person other than the
+// one who asked, and the history lists each request, who approved it and how
+// it ended. On a root whose engine has no action invocation (OpenTofu,
+// choudoufu) the buttons stay, disabled, with the refusal beside them.
+//
 // Pure, apart from renderAppSection, which draws into the document it is handed.
+
+import { laneActionCards } from "./terragucci-lifecycle.js";
+import { laneRows } from "./terragucci-timeline.js";
 
 /** The apps from the envelope GET /api/templates/apps answers, or []. */
 export function appRows(answer) {
@@ -88,11 +100,13 @@ export function frameOf(frames, id) {
 
 /**
  * The buttons an app's inspect pane draws, in order: Add an add-on, then
- * Upgrade to <version> when the catalog offers one. None in a public view,
- * an embed or a static export. Each is `{id, label, title}`, plus what its
- * request sends; a later kind of request (an action) is one more entry here.
+ * Upgrade to <version> when the catalog offers one, then one per action the
+ * app's templates offer (behold#1037). None in a public view, an embed or a
+ * static export. Each is `{id, label, title}`, plus what its request sends.
+ * With `actionRefusal` (ruling E) an action button is `disabled` and its
+ * title is the refusal.
  */
-export function appButtons(app, { publicMode = false, embed = false, staticMode = false } = {}) {
+export function appButtons(app, { publicMode = false, embed = false, staticMode = false, actionRefusal = null } = {}) {
   if (publicMode || embed || staticMode || !app) return [];
   const out = [{ id: "addon", label: "Add an add-on", title: `Open the Templates form with only add-on templates, for ${app.app}. terragucci opens the pull request that adds the add-on to ${app.root}.` }];
   if (typeof app.upgrade === "string" && app.upgrade) {
@@ -103,7 +117,34 @@ export function appButtons(app, { publicMode = false, embed = false, staticMode 
       body: { app: app.app, version: app.upgrade },
     });
   }
+  for (const a of app.actions || []) {
+    if (!a || typeof a.address !== "string") continue;
+    const name = a.name || a.address.split(".").pop();
+    out.push({
+      id: "action",
+      label: name,
+      title: actionRefusal
+        ? actionRefusal
+        : `Ask terragucci to run ${name} (${a.address}) on ${app.root}. The run asks for an approval; a person other than you approves it with terragucci approve action, and only then does it run. behold approves nothing.`,
+      body: { root: app.root, address: a.address },
+      ...(actionRefusal ? { disabled: true } : {}),
+    });
+  }
   return out;
+}
+
+/** What the pane says once an action button was pressed: the POST's answer, or a refusal's code and words. */
+export function actionWords(answer) {
+  if (!answer) return { text: "" };
+  if (answer.error) return { text: `${answer.code ? `${answer.code}: ` : ""}${answer.error}${answer.command ? ` Run: ${answer.command}` : ""}`, refused: true };
+  return { text: `${answer.action} asked for on ${answer.root}: terragucci's run asks for an approval, and the gate card shows its digest and the line a person other than you runs.` };
+}
+
+/** The app root's action gate cards and action history: `lane` is /api/terragucci/lifecycle, `timeline` /api/terragucci/timeline. */
+export function appActions(app, { lane = null, timeline = null, now = new Date() } = {}) {
+  const cards = laneActionCards(lane, now, { root: app.root });
+  const history = timeline && Array.isArray(timeline.entries) ? laneRows({ ...timeline, entries: timeline.entries.filter((e) => e.kind === "action" || e.kind === "action-requested") }, { root: app.root, now }) : [];
+  return { cards, history };
 }
 
 /** The app's facts, one line each: template and version, add-ons, drift, a yanked pin. */
@@ -146,6 +187,7 @@ export function renderAppSection(host, frame, ui, opts = {}, doc = document) {
       const n = el("button", `tpl-app-${b.id}`, b.label);
       n.type = "button";
       n.title = b.title;
+      if (b.disabled) n.disabled = true;
       n.setAttribute("data-action", b.id);
       n.addEventListener("click", () => {
         if (b.id === "addon") ui.addAddon(frame.app);
@@ -158,8 +200,43 @@ export function renderAppSection(host, frame, ui, opts = {}, doc = document) {
   }
   const words = upgradeWords(opts.said);
   if (words.text) box.appendChild(el("p", words.refused ? "tg-refusal tpl-app-result" : "tg-legend tpl-app-result", words.text));
+  // behold#1037: ruling E said beside the buttons, then what the last action press answered.
+  if (opts.actionRefusal && buttons.some((b) => b.id === "action")) box.appendChild(el("p", "tg-refusal tpl-app-action-refusal", opts.actionRefusal));
+  const asked = actionWords(opts.actionSaid);
+  if (asked.text) box.appendChild(el("p", asked.refused ? "tg-refusal tpl-app-result" : "tg-legend tpl-app-result", asked.text));
+  // The action gate cards and the action history for this app's root.
+  if (!opts.publicMode && !opts.embed && !opts.staticMode && (opts.lane || opts.timeline)) {
+    const { cards, history } = appActions(frame.app, { lane: opts.lane, timeline: opts.timeline, now: opts.now || new Date() });
+    if (cards.length && ui.gateCard) {
+      box.appendChild(el("h4", null, "actions waiting or run"));
+      for (const c of cards) box.appendChild(ui.gateCard(c));
+    }
+    if (history.length) {
+      box.appendChild(el("h4", null, "action history"));
+      for (const r of history) {
+        const p = el("p", `tg-entry tg-${r.tone} tpl-app-history`);
+        p.title = r.title;
+        p.appendChild(el("span", "tg-when", r.when));
+        p.appendChild(el("span", null, ` ${r.text}`));
+        for (const l of r.links) {
+          const a = el("a", null, l.text);
+          a.href = l.href;
+          a.target = "_blank";
+          a.rel = "noopener";
+          p.appendChild(el("span", null, " · "));
+          p.appendChild(a);
+        }
+        box.appendChild(p);
+      }
+    }
+  }
   host.appendChild(box);
   return box;
+}
+
+/** Press an action button: POST /api/templates/action with the root and address. `fetchJson(url, init)` answers parsed JSON. */
+export function postAction(fetchJson, body) {
+  return fetchJson("/api/templates/action", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch((e) => ({ error: String(e) }));
 }
 
 /** Press Upgrade: POST /api/templates/upgrade with the app and the version the pane showed. `fetchJson(url, init)` answers parsed JSON. */
