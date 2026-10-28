@@ -6,6 +6,10 @@
 // dispatches terragucci's request workflow. The run in CI opens the pull
 // request; behold writes nothing. The tab is drawn only on a terragucci repo
 // that sets templates, and never in a public view, an embed or a static export.
+//
+// behold#1036: an app's Add an add-on opens the tab for that app (`forApp`):
+// only add-on templates are listed, each with Request, and the request posts
+// `app` beside the add-on's name. terragucci adds the add-on to the app's root.
 
 /** The tab's first line. */
 export const TEMPLATES_LEGEND =
@@ -13,6 +17,9 @@ export const TEMPLATES_LEGEND =
 
 /** What Submit says once the dispatch is accepted. */
 export const REQUESTED_WORDS = "Requested. terragucci is opening the pull request.";
+
+/** An add-on value naming an output of the app's own module. */
+export const APP_OUTPUT_REF = /^app\.[A-Za-z_][A-Za-z0-9_-]*$/;
 
 /** An app name, as chant's template request takes it. */
 export const NAME_PATTERN = /^[a-z][a-z0-9-]{0,39}$/;
@@ -47,9 +54,11 @@ const blank = (v) => v === undefined || v === null || v === "";
 /**
  * The request's inputs from the form's raw values (strings, and a boolean for
  * a checkbox): a number as a number, lines as a list, a JSON field parsed. An
- * empty optional field is left out, so the template's default holds.
+ * empty optional field is left out, so the template's default holds. With
+ * `appRefs` (an add-on's form) a value `app.<output>` stays as written: it
+ * names an output of the app's own module, whatever the field's kind.
  */
-export function formInputs(fields, raw) {
+export function formInputs(fields, raw, { appRefs = false } = {}) {
   const out = {};
   for (const f of fields) {
     const v = raw[f.name];
@@ -59,7 +68,8 @@ export function formInputs(fields, raw) {
       continue;
     }
     if (blank(v)) continue;
-    if (c === "number") out[f.name] = Number(v);
+    if (appRefs && APP_OUTPUT_REF.test(String(v).trim())) out[f.name] = String(v).trim();
+    else if (c === "number") out[f.name] = Number(v);
     else if (c === "lines") out[f.name] = String(v).split("\n").map((s) => s.trim()).filter(Boolean);
     else if (c === "json") {
       try {
@@ -93,6 +103,14 @@ export function requestWords(answer, record) {
   return { text: REQUESTED_WORDS };
 }
 
+/** The rows the tab lists: every template, or for an app (`forApp`) its add-on templates only. */
+export function listedRows(rows, forApp) {
+  return forApp ? rows.filter((r) => r.kind === "addon") : rows;
+}
+
+/** The legend's line when the tab is open for one app. */
+export const addonLegend = (app) => `Add-ons for ${app}. An add-on goes into ${app}'s own root, so the two are planned and applied together. Request one, and terragucci opens a pull request that adds it.`;
+
 /** Draw the tab into `host`. `doc` is the document (a test hands in its own). */
 export function renderTemplates(host, s, ui, doc = document) {
   const el = (tag, cls, text) => {
@@ -106,15 +124,22 @@ export function renderTemplates(host, s, ui, doc = document) {
   const a = s.answer;
   if (!a) return void host.appendChild(el("div", "tg-legend", "reading the templates"));
   if (a.error && !a.results) return void host.appendChild(el("div", "tg-refusal", `${a.code ? `${a.code}: ` : ""}${a.error}`));
-  const rows = templateRows(a);
-  if (!rows.length) host.appendChild(el("div", "tg-legend", "The catalog offers no template with a version a request may name."));
+  if (s.forApp) {
+    host.appendChild(el("div", "tg-legend tp-for-app", addonLegend(s.forApp)));
+    const all = el("button", "tp-all", "Show every template");
+    all.type = "button";
+    all.addEventListener("click", () => ui.forApp(null));
+    host.appendChild(all);
+  }
+  const rows = listedRows(templateRows(a), s.forApp);
+  if (!rows.length) host.appendChild(el("div", "tg-legend", s.forApp ? "The catalog offers no add-on template with a version a request may name." : "The catalog offers no template with a version a request may name."));
   for (const row of rows) {
     const f = rowFacts(row);
     const card = el("div", "ad-card");
     card.appendChild(el("h3", null, f.title));
     card.appendChild(el("div", "tg-legend", `${f.template} · ${f.kind} · ${f.version} · ${f.attestation}`));
     const open = s.open === row.template;
-    if (f.kind === "app" && !open) {
+    if ((s.forApp ? f.kind === "addon" : f.kind === "app") && !open) {
       const b = el("button", "tp-request", "Request");
       b.type = "button";
       b.addEventListener("click", () => ui.open(row.template));
@@ -135,7 +160,8 @@ function renderForm(row, s, ui, el) {
   };
   const label = (text, required) => el("label", "ad-label", required ? `${text} (required)` : text);
 
-  form.appendChild(label("App name", true));
+  if (s.forApp) form.appendChild(el("div", "tg-legend tp-app", `into the app ${s.forApp}`));
+  form.appendChild(label(s.forApp ? "Add-on name" : "App name", true));
   const name = el("input", "tp-name");
   name.type = "text";
   name.name = "name";
@@ -190,7 +216,7 @@ function renderForm(row, s, ui, el) {
   form.addEventListener("submit", (e) => {
     if (e && e.preventDefault) e.preventDefault();
     if (submit.disabled) return;
-    ui.submit(row, formInputs(fields, s.raw));
+    ui.submit(row, formInputs(fields, s.raw, { appRefs: !!s.forApp }));
   });
   refresh();
 
@@ -212,7 +238,7 @@ function renderForm(row, s, ui, el) {
 
 /** Mount the tab. `fetchJson(url, init)` answers parsed JSON. */
 export function startTemplates(host, { fetchJson, events, toast = () => {}, doc }) {
-  const s = { answer: null, open: null, name: "", raw: {}, sending: false, answerOf: null, record: null };
+  const s = { answer: null, open: null, name: "", raw: {}, sending: false, answerOf: null, record: null, forApp: null };
   const redraw = () => renderTemplates(host, s, ui, doc);
   const read = async () => {
     s.answer = await fetchJson("/api/templates").catch((e) => ({ error: String(e) }));
@@ -233,10 +259,15 @@ export function startTemplates(host, { fetchJson, events, toast = () => {}, doc 
       s.open = null;
       redraw();
     },
+    // behold#1036: the tab for one app's add-ons, or with null every template again.
+    forApp: (app) => {
+      Object.assign(s, { forApp: app || null, open: null, name: "", raw: {}, answerOf: null, record: null });
+      redraw();
+    },
     submit: async (row, inputs) => {
       s.sending = true;
       redraw();
-      const body = { template: row.template, version: row.latest, name: s.name, inputs };
+      const body = { template: row.template, version: row.latest, name: s.name, ...(s.forApp ? { app: s.forApp } : {}), inputs };
       s.answerOf = await fetchJson("/api/templates/request", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch((e) => ({ error: String(e) }));
       s.sending = false;
       s.record = null;

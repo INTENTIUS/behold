@@ -9,7 +9,7 @@ import { Broadcaster } from "./events.ts";
 import { FrameBuffer } from "./frames.ts";
 import { OpRunner } from "./op-runner.ts";
 import type { GhExec } from "./gh-run.ts";
-import { checkRequest, gitlabRequestLine, requestWorkflowInputs, type RequestRecord, type TemplateRow, type TemplatesIo, type TerragucciRun } from "./templates.ts";
+import { checkRequest, gitlabRequestLine, gitlabRolloutLine, requestBranch, requestWorkflowInputs, rolloutBranch, type RequestRecord, type TemplateRow, type TemplatesIo, type TerragucciRun } from "./templates.ts";
 
 // behold#1035: the Templates routes. Each test builds a repo in a temp dir and
 // hands the app spies for terragucci, gh and fetch; nothing reaches a forge.
@@ -18,6 +18,10 @@ const CATALOG = readFileSync(join(FIX, "templates-list.json"), "utf8");
 const ROWS = (JSON.parse(CATALOG) as { results: TemplateRow[] }).results;
 const WORKFLOW = readFileSync(join(FIX, "terragucci-request.yml"), "utf8");
 const WORKFLOW_CLAIMED = readFileSync(join(FIX, "terragucci-request-claimed.yml"), "utf8");
+// behold#1036: terragucci's own rendered request workflow (with `app`) and rollout workflow (with `module` and `version`).
+const WORKFLOW_ADDON = readFileSync(join(FIX, "terragucci-request-addon.yml"), "utf8");
+const ROLLOUT = readFileSync(join(FIX, "terragucci-rollout.yml"), "utf8");
+const APPS = readFileSync(join(FIX, "templates-apps.json"), "utf8");
 
 function repo(files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "behold-templates-"));
@@ -57,12 +61,12 @@ function app(projectDir: string, io: TemplatesIo, extra: { public?: boolean; app
   return createApp({ projectDir, port: 0, templatesIo: io, ...extra }, broadcaster, new FrameBuffer(), new OpRunner({ projectDir, broadcaster, onDone: () => {} }));
 }
 
-/** terragucci answering the fixture catalog, counting its runs. */
+/** terragucci answering the fixture catalog (and with `templates apps`, the fixture apps), counting its runs. */
 function tgSpy(): TerragucciRun & { calls: { cwd: string; args: string[] }[] } {
   const calls: { cwd: string; args: string[] }[] = [];
   const f = (async (cwd: string, args: string[]) => {
     calls.push({ cwd, args });
-    return { code: 0, stdout: CATALOG, stderr: "" };
+    return { code: 0, stdout: args[1] === "apps" ? APPS : CATALOG, stderr: "" };
   }) as TerragucciRun & { calls: typeof calls };
   f.calls = calls;
   return f;
@@ -274,7 +278,7 @@ describe("POST /api/templates/request (behold#1035)", () => {
     const dir = githubRepo();
     const gh = ghSpy();
     const a = app(dir, { terragucci: tgSpy(), gh });
-    for (const path of ["/api/ci/dispatch", "/api/apply?env=prod", "/api/templates/upgrade", "/api/templates/action"]) {
+    for (const path of ["/api/ci/dispatch", "/api/apply?env=prod", "/api/templates/action"]) {
       const res = await a.request(path, post({}));
       expect(res.status, path).toBe(409);
       expect(((await res.json()) as { code: string }).code, path).toBe("terragucci");
@@ -322,5 +326,182 @@ describe("the request's checks (behold#1035)", () => {
     expect(gitlabRequestLine({ template: "acme/bucket/aws", name: "orders", inputs: { bucket_name: "it's mine", readers: ["a", "b"] } })).toBe(
       `npx terragucci request acme/bucket/aws --name orders --input 'bucket_name=it'\\''s mine' --input 'readers=["a","b"]'`,
     );
+  });
+});
+
+// behold#1036: the apps, an add-on request into one, and an upgrade the rollout carries.
+const addonRepo = (extra: Record<string, string> = {}) => githubRepo(WORKFLOW_ADDON, { ".github/workflows/terragucci-rollout.yml": ROLLOUT, ...extra });
+const addon = { template: "acme/queue-addon/aws", version: "0.3.0", name: "queue", app: "orders", inputs: {} };
+
+describe("GET /api/templates/apps (behold#1036)", () => {
+  it("answers what the repo's own terragucci templates apps --json printed, byte for byte", async () => {
+    const stub = `import { readFileSync } from "node:fs";\nconst a = process.argv.slice(2).join(" ");\nif (a !== "templates apps --json") { process.stderr.write("unexpected " + a); process.exit(2); }\nprocess.stdout.write(readFileSync(${JSON.stringify(join(FIX, "templates-apps.json"))}));\n`;
+    const dir = addonRepo({
+      "node_modules/@intentius/terragucci/package.json": JSON.stringify({ name: "@intentius/terragucci", version: "0.4.47", bin: { terragucci: "dist/terragucci.mjs" } }),
+      "node_modules/@intentius/terragucci/dist/terragucci.mjs": stub,
+    });
+    const before = tree(dir);
+    const res = await app(dir, {}).request("/api/templates/apps");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    expect(await res.text()).toBe(APPS);
+    expect(tree(dir)).toEqual(before);
+  });
+
+  it("refuses a terragucci whose templates command has no apps as terragucci-too-old", async () => {
+    const old: TerragucciRun = async () => ({ code: 1, stdout: "", stderr: "terragucci: usage: terragucci templates [list | show <template>] [--registry <url>] [--json] [--config <file>]\n" });
+    const res = await app(addonRepo(), { terragucci: old }).request("/api/templates/apps");
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe("terragucci-too-old");
+  });
+});
+
+describe("POST /api/templates/request with app: an add-on (behold#1036)", () => {
+  it("dispatches terragucci-request.yml with the app input, on the add-on's branch", async () => {
+    const dir = addonRepo();
+    const gh = ghSpy();
+    const a = app(dir, { terragucci: tgSpy(), gh, ...quick });
+    const before = tree(dir);
+    const res = await a.request("/api/templates/request", post(addon));
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { id: string; branch: string; app: string };
+    expect(body).toMatchObject({ branch: "request/queue-addon/orders/queue", app: "orders" });
+    const runs = gh.calls.filter((c) => c.args[0] === "workflow");
+    expect(runs).toHaveLength(1);
+    // terragucci's rendered workflow declares claimed_by too, so the person behold resolved goes after app.
+    expect(runs[0]!.args.slice(0, 13)).toEqual(["workflow", "run", "terragucci-request.yml", "-f", "template=acme/queue-addon/aws", "-f", "version=0.3.0", "-f", "name=queue", "-f", "inputs={}", "-f", "app=orders"]);
+    expect(runs[0]!.args.slice(13).filter((x) => x !== "-f").every((x) => x.startsWith("claimed_by="))).toBe(true);
+    expect(await ended(a, body.id)).toMatchObject({ kind: "addon", app: "orders", conclusion: "success", pull_request: 7 });
+    expect(gh.calls.some((c) => c.args.join(" ").startsWith("pr list --head request/queue-addon/orders/queue "))).toBe(true);
+    expect(tree(dir)).toEqual(before);
+  });
+
+  it("answers 422 not-an-app for an app the repo does not have, and dispatches nothing", async () => {
+    const gh = ghSpy();
+    const res = await app(addonRepo(), { terragucci: tgSpy(), gh, ...quick }).request("/api/templates/request", post({ ...addon, app: "billing" }));
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { code: string; field: string; error: string };
+    expect(body.code).toBe("not-an-app");
+    expect(body.field).toBe("app");
+    expect(body.error).toContain("orders, search");
+    expect(gh.calls).toHaveLength(0);
+  });
+
+  it("answers addon-exists for a name the app already uses, and wrong-kind for an app template with app", async () => {
+    const gh = ghSpy();
+    const a = app(addonRepo(), { terragucci: tgSpy(), gh, ...quick });
+    const taken = await a.request("/api/templates/request", post({ ...addon, name: "cache" }));
+    expect(taken.status).toBe(422);
+    expect(((await taken.json()) as { code: string }).code).toBe("addon-exists");
+    const kind = await a.request("/api/templates/request", post({ ...valid, app: "orders" }));
+    expect(kind.status).toBe(422);
+    expect(((await kind.json()) as { code: string }).code).toBe("wrong-kind");
+    expect(gh.calls).toHaveLength(0);
+  });
+
+  it("takes an app.<output> value on an add-on, which only an add-on may name", () => {
+    const rows: TemplateRow[] = [...ROWS, { template: "acme/cache/aws", name: "cache", kind: "addon", versions: [{ version: "0.3.0", attestation: "signed" }], latest: "0.3.0", fields: [{ name: "subnet_ids", kind: "list", of: "string", required: true }] }];
+    expect(checkRequest(rows, { template: "acme/cache/aws", name: "cache", app: "orders", inputs: { subnet_ids: "app.private_subnets" } }).ok).toBe(true);
+    const app2 = checkRequest(rows, { ...valid, inputs: { bucket_name: "x", readers: "app.readers" } });
+    expect(app2.ok ? "ok" : app2.refusal.body.code).toBe("input-type");
+    expect(requestBranch("acme/cache/aws", "cache", "orders")).toBe("request/cache/orders/cache");
+  });
+});
+
+describe("POST /api/templates/upgrade (behold#1036)", () => {
+  it("runs gh workflow run terragucci-rollout.yml with the app's template as module and its upgrade as version", async () => {
+    const dir = addonRepo();
+    const gh = ghSpy();
+    const tg = tgSpy();
+    const a = app(dir, { terragucci: tg, gh, ...quick });
+    const before = tree(dir);
+    const res = await a.request("/api/templates/upgrade", post({ app: "orders", version: "1.3.0" }));
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { id: string; workflow: string; from: string; version: string; branch: string };
+    expect(body).toMatchObject({ workflow: "terragucci-rollout.yml", from: "1.2.0", version: "1.3.0", branch: "terragucci/rollout/acme-bucket-aws-1.3.0/wave-1" });
+    const runs = gh.calls.filter((c) => c.args[0] === "workflow");
+    expect(runs).toHaveLength(1);
+    expect(["gh", ...runs[0]!.args].join(" ")).toBe("gh workflow run terragucci-rollout.yml -f module=acme/bucket/aws -f version=1.3.0");
+    expect(runs[0]!.cwd).toBe(dir);
+    expect(tg.calls.map((c) => c.args.join(" "))).toEqual(["templates apps --json"]);
+    expect(await ended(a, body.id)).toMatchObject({ kind: "upgrade", app: "orders", workflow: "terragucci-rollout.yml", conclusion: "success", pull_request: 7 });
+    // Never terragucci rollout here, never an apply: gh's dispatch and reads only.
+    expect(gh.calls.every((c) => ["auth", "workflow", "run", "pr"].includes(c.args[0]!))).toBe(true);
+    expect(tree(dir)).toEqual(before);
+  });
+
+  it("refuses an app with no upgrade, a version that is not the upgrade, and an app the repo does not have", async () => {
+    const gh = ghSpy();
+    const a = app(addonRepo(), { terragucci: tgSpy(), gh, ...quick });
+    const none = await a.request("/api/templates/upgrade", post({ app: "search" }));
+    expect(none.status).toBe(422);
+    expect(((await none.json()) as { code: string }).code).toBe("no-upgrade");
+    const stale = await a.request("/api/templates/upgrade", post({ app: "orders", version: "1.4.0" }));
+    expect(stale.status).toBe(409);
+    expect((await stale.json()) as { code: string; upgrade: string }).toMatchObject({ code: "stale-upgrade", upgrade: "1.3.0" });
+    const billing = await a.request("/api/templates/upgrade", post({ app: "billing" }));
+    expect(billing.status).toBe(422);
+    expect(((await billing.json()) as { code: string }).code).toBe("not-an-app");
+    expect(gh.calls).toHaveLength(0);
+  });
+
+  it("refuses when the rollout workflow is not committed, or takes no module and version", async () => {
+    const gh = ghSpy();
+    const missing = await app(githubRepo(WORKFLOW_ADDON), { terragucci: tgSpy(), gh }).request("/api/templates/upgrade", post({ app: "orders" }));
+    expect(missing.status).toBe(409);
+    expect(((await missing.json()) as { code: string }).code).toBe("no-rollout-workflow");
+    const scheduleOnly = "name: terragucci-rollout\non:\n  schedule:\n    - cron: '*/15 * * * *'\n  workflow_dispatch: {}\njobs: {}\n";
+    const old = await app(githubRepo(WORKFLOW_ADDON, { ".github/workflows/terragucci-rollout.yml": scheduleOnly }), { terragucci: tgSpy(), gh }).request("/api/templates/upgrade", post({ app: "orders" }));
+    expect(old.status).toBe(409);
+    expect(((await old.json()) as { code: string }).code).toBe("terragucci-too-old");
+    expect(gh.calls).toHaveLength(0);
+  });
+
+  it("on Forgejo posts the rollout dispatch with module and version", async () => {
+    const dir = repo({ ".git/HEAD": "ref: refs/heads/main\n", ".git/config": gitConfig("git@forgejo.example:acme/infra.git"), "terragucci.yml": "forge: forgejo\ntemplates: {}\n", ".forgejo/workflows/terragucci-rollout.yml": ROLLOUT });
+    const seen: { url: string; method: string; body?: unknown }[] = [];
+    const fetch = async (url: string, init?: RequestInit) => {
+      seen.push({ url, method: init?.method ?? "GET", ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}) });
+      if (url.endsWith("/repos/acme/infra")) return Response.json({ default_branch: "main" });
+      if (url.endsWith("/dispatches")) return new Response(null, { status: 204 });
+      if (url.includes("/pulls")) return Response.json([{ number: 9, html_url: "https://forgejo.example/acme/infra/pulls/9", head: { ref: "terragucci/rollout/acme-bucket-aws-1.3.0/wave-1" } }]);
+      return new Response("not found", { status: 404 });
+    };
+    const a = app(dir, { terragucci: tgSpy(), fetch, env: { FORGEJO_TOKEN: "t0ken" }, ...quick });
+    const res = await a.request("/api/templates/upgrade", post({ app: "orders" }));
+    expect(res.status).toBe(202);
+    const { id } = (await res.json()) as { id: string };
+    const dispatch = seen.filter((s) => s.method === "POST");
+    expect(dispatch).toHaveLength(1);
+    expect(dispatch[0]!.url).toBe("https://forgejo.example/api/v1/repos/acme/infra/actions/workflows/terragucci-rollout.yml/dispatches");
+    expect(dispatch[0]!.body).toMatchObject({ ref: "main", inputs: { module: "acme/bucket/aws", version: "1.3.0" } });
+    expect(await ended(a, id)).toMatchObject({ pull_request: 9 });
+  });
+
+  it("answers GitLab with the terragucci rollout line, and refuses on its own off a terragucci repo with templates", async () => {
+    const gitlab = repo({ ".git/HEAD": "", ".git/config": gitConfig("https://gitlab.example/acme/infra.git"), "terragucci.yml": "forge: gitlab\ntemplates: {}\n" });
+    const gh = ghSpy();
+    const g = await app(gitlab, { terragucci: tgSpy(), gh }).request("/api/templates/upgrade", post({ app: "orders" }));
+    expect(g.status).toBe(422);
+    expect((await g.json()) as { code: string; command: string }).toMatchObject({ code: "request-forge", command: gitlabRolloutLine("acme/bucket/aws", "1.3.0") });
+    expect(gitlabRolloutLine("acme/bucket/aws", "1.3.0")).toBe("npx terragucci rollout acme/bucket/aws 1.3.0 --mode apply");
+    const tg = tgSpy();
+    const yodel = await app(repo({ ".git/HEAD": "", "yodel.config.ts": "export default {};\n" }), { terragucci: tg, gh }).request("/api/templates/upgrade", post({ app: "orders" }));
+    expect(yodel.status).toBe(409);
+    expect(((await yodel.json()) as { code: string }).code).toBe("sql-yodeler");
+    const bare = await app(repo({ ".git/HEAD": "", "terragucci.yml": "binary: tofu\n" }), { terragucci: tg, gh }).request("/api/templates/upgrade", post({ app: "orders" }));
+    expect(bare.status).toBe(409);
+    expect(((await bare.json()) as { code: string }).code).toBe("no-templates");
+    expect(tg.calls).toHaveLength(0);
+    expect(gh.calls).toHaveLength(0);
+  });
+
+  it("with --public refuses the apps read with 403 and the upgrade with 405", async () => {
+    const tg = tgSpy();
+    const a = app(addonRepo(), { terragucci: tg }, { public: true });
+    expect((await a.request("/api/templates/apps")).status).toBe(403);
+    expect((await a.request("/api/templates/upgrade", post({ app: "orders" }))).status).toBe(405);
+    expect(tg.calls).toHaveLength(0);
+    expect(rolloutBranch("acme/bucket/aws", "1.3.0")).toBe("terragucci/rollout/acme-bucket-aws-1.3.0/wave-1");
   });
 });

@@ -1,6 +1,6 @@
 ---
 title: Apps from templates
-description: The Templates tab lists the templates a terragucci repo offers, and a form for one asks terragucci to open the pull request that adds the app.
+description: The Templates tab lists the templates a terragucci repo offers and asks terragucci for an app or an add-on; the graph frames each app with its add-ons and offers its upgrade.
 draft: true
 ---
 
@@ -23,7 +23,35 @@ request is reviewed and merged: the pipeline plans it like any other.
 The tab is not drawn in a public view, an embed, a static export, or a repo
 without `templates`.
 
-## The two routes
+## Apps on the graph
+
+An app made from a template is one root: `module "app"` calls the template,
+and each add-on is one more `module "<name>"` in an `addon-<name>.tf` file in
+the same root. They are planned and applied together, so the graph draws their
+cards inside one dashed frame. The frame's title is the app's name with its
+template and version, such as `orders (bucket 1.2.0)`. When terragucci's
+reports mark any card inside it as drifted, the header also reads the count,
+such as `1 drifted`, and the drift marks stay on the cards themselves. A card
+in the root that is neither the app's module nor an add-on's stays outside
+the frame.
+
+Inspecting a card in the frame shows the app: its template and version, its
+add-ons, and two buttons.
+
+- **Add an add-on** opens the Templates tab with only the add-on templates
+  listed and the app already set. Request one, give the add-on a name, and
+  terragucci opens a pull request that adds `addon-<name>.tf` to the app's
+  root. An input may name an output of the app's own module as
+  `app.<output>`.
+- **Upgrade to `<version>`** appears when the catalog has a newer active
+  version of the app's template. It starts terragucci's rollout of that
+  template to that version. The rollout opens one pull request per wave, and
+  every app on the template moves with it, wave by wave, each wave planned,
+  reviewed and applied by the pipeline. behold only starts it.
+
+Neither button is drawn in a public view, an embed or a static export.
+
+## The routes
 
 - `GET /api/templates` runs the repo's own `terragucci templates list --json`
   and answers what it printed. A terragucci without the `templates` command
@@ -39,11 +67,31 @@ without `templates`.
   behold also passes the person it says filled the form; the requester the
   pull request records is the run's actor, which the forge vouches for.
 
-behold never runs `terragucci request` itself and writes nothing in the repo.
-The run in CI opens the pull request with the repo's own token.
+- `GET /api/templates/apps` runs `terragucci templates apps --json` and
+  answers what it printed: each app's root, template, version, add-ons,
+  `upgrade` (a version, or null) and `yanked`.
+- `POST /api/templates/request` with `app` set asks for an add-on in that
+  app. The template must be an add-on template, and the app one that
+  `templates apps` lists, else `422` with `code: "not-an-app"`. A name the
+  app's root already uses is `422 addon-exists`. The dispatch adds the `app`
+  input, and the pull request is on `request/<template>/<app>/<addon>`.
+- `POST /api/templates/upgrade` takes `{app, version}`. behold reads the apps
+  again and takes the module and version from them: an app with no upgrade is
+  `422 no-upgrade`, and a version that is no longer the upgrade is
+  `409 stale-upgrade`. It then dispatches `terragucci-rollout.yml` with the
+  inputs `module` (the template, such as `acme/bucket/aws`) and `version`, as
+  `gh workflow run terragucci-rollout.yml -f module=acme/bucket/aws -f version=1.3.0`
+  on GitHub or the dispatch API on Forgejo. The workflow is written by
+  `terragucci init` when `rollouts` is set.
+
+behold never runs `terragucci request` or `terragucci rollout` itself, never
+applies anything, and writes nothing in the repo. The runs in CI open the pull
+requests with the repo's own token.
 
 ## GitLab
 
 A GitLab repo has no request workflow. The request answers `422` with
 `code: "request-forge"` and the line to run at your shell instead, such as
 `npx terragucci request acme/bucket/aws --name orders --version 1.2.0 --input bucket_name=orders-data`.
+An upgrade on GitLab answers the same way with the rollout line, such as
+`npx terragucci rollout acme/bucket/aws 1.3.0 --mode apply`.

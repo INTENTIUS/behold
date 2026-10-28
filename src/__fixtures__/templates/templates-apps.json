@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "command": "templates",
+  "exit": 0,
+  "status": "ok",
+  "results": [
+    {
+      "app": "orders",
+      "root": "apps/orders",
+      "template": "acme/bucket/aws",
+      "version": "1.2.0",
+      "upgrade": "1.3.0",
+      "yanked": false,
+      "addons": [
+        { "name": "cache", "template": "acme/cache/aws", "version": "0.3.0", "upgrade": null, "yanked": false }
+      ],
+      "actions": [
+        { "module": "app", "type": "aws_lambda_invoke", "name": "rotate", "address": "module.app.action.aws_lambda_invoke.rotate" }
+      ]
+    },
+    {
+      "app": "search",
+      "root": "apps/search",
+      "template": "acme/bucket/aws",
+      "version": "1.3.0",
+      "upgrade": null,
+      "yanked": false,
+      "addons": [],
+      "actions": []
+    }
+  ]
+}

@@ -131,6 +131,11 @@ export const TERRAGUCCI_ALLOWED_WRITES: readonly { method: string; pattern: RegE
     pattern: /^\/api\/templates\/request$/,
     why: "dispatches terragucci's request workflow; writes nothing in the tree and holds no apply credential (behold#1035). The handler refuses any repo that is not terragucci with templates set, since this list also guards SQL Yodeler repos",
   },
+  {
+    method: "POST",
+    pattern: /^\/api\/templates\/upgrade$/,
+    why: "dispatches terragucci's rollout workflow with an app's template and its upgrade version, which a person starts and the rollout carries wave by wave; writes nothing in the tree and holds no apply credential (behold#1036). The handler refuses any repo that is not terragucci with templates set, as the request's does",
+  },
 ];
 
 /** Whether a `method` request to `path` is one of TERRAGUCCI_ALLOWED_WRITES. Reads are not writes and are not in it. */
