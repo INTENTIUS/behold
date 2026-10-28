@@ -9,7 +9,7 @@ import { Broadcaster } from "./events.ts";
 import { FrameBuffer } from "./frames.ts";
 import { OpRunner } from "./op-runner.ts";
 import type { GhExec } from "./gh-run.ts";
-import { checkRequest, gitlabRequestLine, gitlabRolloutLine, requestBranch, requestWorkflowInputs, rolloutBranch, type RequestRecord, type TemplateRow, type TemplatesIo, type TerragucciRun } from "./templates.ts";
+import { actionEngineRefusal, checkRequest, gitlabActionLine, gitlabRequestLine, gitlabRolloutLine, requestBranch, requestWorkflowInputs, rolloutBranch, type RequestRecord, type TemplateRow, type TemplatesIo, type TerragucciRun } from "./templates.ts";
 
 // behold#1035: the Templates routes. Each test builds a repo in a temp dir and
 // hands the app spies for terragucci, gh and fetch; nothing reaches a forge.
@@ -22,6 +22,8 @@ const WORKFLOW_CLAIMED = readFileSync(join(FIX, "terragucci-request-claimed.yml"
 const WORKFLOW_ADDON = readFileSync(join(FIX, "terragucci-request-addon.yml"), "utf8");
 const ROLLOUT = readFileSync(join(FIX, "terragucci-rollout.yml"), "utf8");
 const APPS = readFileSync(join(FIX, "templates-apps.json"), "utf8");
+// behold#1037: terragucci's rendered action workflow (terragucci#1310's golden, dispatch inputs `root` and `address`).
+const ACTION = readFileSync(join(FIX, "terragucci-action.yml"), "utf8");
 
 function repo(files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "behold-templates-"));
@@ -278,12 +280,14 @@ describe("POST /api/templates/request (behold#1035)", () => {
     const dir = githubRepo();
     const gh = ghSpy();
     const a = app(dir, { terragucci: tgSpy(), gh });
-    for (const path of ["/api/ci/dispatch", "/api/apply?env=prod", "/api/templates/action"]) {
+    // behold#1037 allowlists /api/templates/action; an approve route never is.
+    for (const path of ["/api/ci/dispatch", "/api/apply?env=prod", "/api/templates/approve", "/api/templates/action/approve"]) {
       const res = await a.request(path, post({}));
       expect(res.status, path).toBe(409);
       expect(((await res.json()) as { code: string }).code, path).toBe("terragucci");
     }
     expect((await a.request("/api/templates/request", { method: "PUT", headers: { "content-type": "application/json" }, body: "{}" })).status).toBe(409);
+    expect((await a.request("/api/templates/action", { method: "PUT", headers: { "content-type": "application/json" }, body: "{}" })).status).toBe(409);
     expect(gh.calls).toHaveLength(0);
   });
 
@@ -503,5 +507,136 @@ describe("POST /api/templates/upgrade (behold#1036)", () => {
     expect((await a.request("/api/templates/upgrade", post({ app: "orders" }))).status).toBe(405);
     expect(tg.calls).toHaveLength(0);
     expect(rolloutBranch("acme/bucket/aws", "1.3.0")).toBe("terragucci/rollout/acme-bucket-aws-1.3.0/wave-1");
+  });
+});
+
+describe("POST /api/templates/action (behold#1037)", () => {
+  const ROTATE = "module.app.action.aws_lambda_invoke.rotate";
+  /** A Terraform repo with templates on GitHub, its action workflow committed. */
+  const actionRepo = (extra: Record<string, string> = {}) => githubRepo(WORKFLOW_ADDON, { "terragucci.yml": "binary: terraform\ntemplates:\n  require: signed\n", ".github/workflows/terragucci-action.yml": ACTION, ...extra });
+
+  it("runs gh workflow run terragucci-action.yml with exactly root and address, and follows the run", async () => {
+    const dir = actionRepo();
+    const gh = ghSpy();
+    const tg = tgSpy();
+    const a = app(dir, { terragucci: tg, gh, ...quick });
+    const before = tree(dir);
+    const res = await a.request("/api/templates/action", post({ root: "apps/orders", address: ROTATE }));
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { id: string; workflow: string; app: string; action: string; note: string };
+    expect(body).toMatchObject({ dispatched: true, workflow: "terragucci-action.yml", app: "orders", root: "apps/orders", address: ROTATE, action: "rotate" });
+    expect(body.note).toContain("terragucci approve action apps/orders --plan <digest>");
+    const runs = gh.calls.filter((c) => c.args[0] === "workflow");
+    expect(runs).toHaveLength(1);
+    expect(["gh", ...runs[0]!.args].join(" ")).toBe(`gh workflow run terragucci-action.yml -f root=apps/orders -f address=${ROTATE}`);
+    expect(runs[0]!.cwd).toBe(dir);
+    expect(tg.calls.map((c) => c.args.join(" "))).toEqual(["templates apps --json"]);
+    const rec = await ended(a, body.id);
+    expect(rec).toMatchObject({ kind: "action", app: "orders", root: "apps/orders", address: ROTATE, name: "rotate", workflow: "terragucci-action.yml", conclusion: "success", run: 42 });
+    // An action opens no pull request, so none is looked for; and behold never approves: gh's dispatch and run reads only.
+    expect(rec.branch).toBeUndefined();
+    expect(gh.calls.some((c) => c.args[0] === "pr")).toBe(false);
+    expect(gh.calls.every((c) => ["auth", "workflow", "run"].includes(c.args[0]!))).toBe(true);
+    expect(tree(dir)).toEqual(before);
+  });
+
+  it("answers 422 unknown-action for an address the template does not list, and starts nothing", async () => {
+    const gh = ghSpy();
+    const a = app(actionRepo(), { terragucci: tgSpy(), gh, ...quick });
+    const res = await a.request("/api/templates/action", post({ root: "apps/orders", address: "module.app.action.aws_lambda_invoke.purge" }));
+    expect(res.status).toBe(422);
+    expect((await res.json()) as { code: string; actions: string[] }).toMatchObject({ code: "unknown-action", field: "address", actions: [ROTATE] });
+    // An app whose templates offer none, and a root no app has.
+    const none = await a.request("/api/templates/action", post({ root: "apps/search", address: ROTATE }));
+    expect(((await none.json()) as { code: string }).code).toBe("unknown-action");
+    const billing = await a.request("/api/templates/action", post({ root: "apps/billing", address: ROTATE }));
+    expect(billing.status).toBe(422);
+    expect(((await billing.json()) as { code: string }).code).toBe("not-an-app");
+    expect(gh.calls).toHaveLength(0);
+  });
+
+  it("refuses a root on OpenTofu or choudoufu by the engine's name, and starts nothing (ruling E)", async () => {
+    const gh = ghSpy();
+    for (const [files, engine] of [
+      [{ "terragucci.yml": "binary: tofu\ntemplates: {}\n" }, "OpenTofu (tofu, from binary in terragucci.yml)"],
+      [{ "terragucci.yml": "binary: choudoufu\ntemplates: {}\n" }, "choudoufu (choudoufu"],
+      [{ "terragucci.yml": "templates: {}\n", ".opentofu-version": "1.13.1\n" }, "OpenTofu (tofu, from .opentofu-version)"],
+      [{ "terragucci.yml": "templates: {}\n", "apps/orders/main.tofu": "" }, "OpenTofu (tofu, from .tofu files in apps/orders)"],
+    ] as const) {
+      const res = await app(actionRepo(files), { terragucci: tgSpy(), gh, ...quick }).request("/api/templates/action", post({ root: "apps/orders", address: ROTATE }));
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { code: string; error: string };
+      expect(body.code).toBe("action-engine");
+      expect(body.error).toContain(engine);
+      expect(body.error).toContain("has no action invocation");
+    }
+    expect(gh.calls).toHaveLength(0);
+    // The page is told too, so the buttons say why rather than vanish.
+    const project = (await (await app(actionRepo({ "terragucci.yml": "binary: tofu\ntemplates: {}\n" }), { terragucci: tgSpy(), gh }).request("/api/project")).json()) as { terragucciActionRefusal?: string };
+    expect(project.terragucciActionRefusal).toContain("OpenTofu");
+    const tf = (await (await app(actionRepo(), { terragucci: tgSpy(), gh }).request("/api/project")).json()) as { terragucciActionRefusal?: string };
+    expect(tf.terragucciActionRefusal).toBeUndefined();
+    expect(actionEngineRefusal({ root: "/nowhere", binary: "terraform" }, "apps/orders")).toBeUndefined();
+  });
+
+  it("refuses when the action workflow is not committed, or takes no root and address", async () => {
+    const gh = ghSpy();
+    const missing = await app(githubRepo(WORKFLOW_ADDON, { "terragucci.yml": "templates: {}\n" }), { terragucci: tgSpy(), gh }).request("/api/templates/action", post({ root: "apps/orders", address: ROTATE }));
+    expect(missing.status).toBe(409);
+    expect(((await missing.json()) as { code: string }).code).toBe("no-action-workflow");
+    const old = await app(actionRepo({ ".github/workflows/terragucci-action.yml": "name: terragucci action\non:\n  workflow_dispatch: {}\njobs: {}\n" }), { terragucci: tgSpy(), gh }).request("/api/templates/action", post({ root: "apps/orders", address: ROTATE }));
+    expect(old.status).toBe(409);
+    expect(((await old.json()) as { code: string }).code).toBe("terragucci-too-old");
+    expect(gh.calls).toHaveLength(0);
+  });
+
+  it("on Forgejo posts the action dispatch with root and address, and follows the run it names", async () => {
+    const dir = repo({ ".git/HEAD": "ref: refs/heads/main\n", ".git/config": gitConfig("git@forgejo.example:acme/infra.git"), "terragucci.yml": "forge: forgejo\nbinary: terraform\ntemplates: {}\n", ".forgejo/workflows/terragucci-action.yml": ACTION });
+    const seen: { url: string; method: string; body?: unknown }[] = [];
+    const fetch = async (url: string, init?: RequestInit) => {
+      seen.push({ url, method: init?.method ?? "GET", ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}) });
+      if (url.endsWith("/repos/acme/infra")) return Response.json({ default_branch: "main" });
+      if (url.endsWith("/dispatches")) return Response.json({ id: 5, run_number: 5 }, { status: 201 });
+      if (url.includes("/actions/runs/5")) return Response.json({ id: 5, status: "success", html_url: "https://forgejo.example/acme/infra/actions/runs/5" });
+      return new Response("not found", { status: 404 });
+    };
+    const a = app(dir, { terragucci: tgSpy(), fetch, env: { FORGEJO_TOKEN: "t0ken" }, ...quick });
+    const res = await a.request("/api/templates/action", post({ root: "apps/orders", address: ROTATE }));
+    expect(res.status).toBe(202);
+    const { id } = (await res.json()) as { id: string };
+    const dispatch = seen.filter((s) => s.method === "POST");
+    expect(dispatch).toHaveLength(1);
+    expect(dispatch[0]!.url).toBe("https://forgejo.example/api/v1/repos/acme/infra/actions/workflows/terragucci-action.yml/dispatches");
+    expect(dispatch[0]!.body).toMatchObject({ ref: "main", inputs: { root: "apps/orders", address: ROTATE } });
+    const rec = await ended(a, id);
+    expect(rec.kind).toBe("action");
+    expect(seen.some((s) => s.url.includes("/pulls"))).toBe(false);
+  });
+
+  it("answers GitLab with the terragucci action line, and refuses on its own off a terragucci repo with templates", async () => {
+    const gitlab = repo({ ".git/HEAD": "", ".git/config": gitConfig("https://gitlab.example/acme/infra.git"), "terragucci.yml": "forge: gitlab\nbinary: terraform\ntemplates: {}\n" });
+    const gh = ghSpy();
+    const g = await app(gitlab, { terragucci: tgSpy(), gh }).request("/api/templates/action", post({ root: "apps/orders", address: ROTATE }));
+    expect(g.status).toBe(422);
+    expect((await g.json()) as { code: string; command: string }).toMatchObject({ code: "request-forge", command: `npx terragucci action apps/orders ${ROTATE}` });
+    expect(gitlabActionLine("apps/orders", ROTATE)).toBe(`npx terragucci action apps/orders ${ROTATE}`);
+    const tg = tgSpy();
+    const yodel = await app(repo({ ".git/HEAD": "", "yodel.config.ts": "export default {};\n" }), { terragucci: tg, gh }).request("/api/templates/action", post({ root: "apps/orders", address: ROTATE }));
+    expect(yodel.status).toBe(409);
+    expect(((await yodel.json()) as { code: string }).code).toBe("sql-yodeler");
+    const bare = await app(repo({ ".git/HEAD": "", "terragucci.yml": "binary: terraform\n" }), { terragucci: tg, gh }).request("/api/templates/action", post({ root: "apps/orders", address: ROTATE }));
+    expect(bare.status).toBe(409);
+    expect(((await bare.json()) as { code: string }).code).toBe("no-templates");
+    expect(tg.calls).toHaveLength(0);
+    expect(gh.calls).toHaveLength(0);
+  });
+
+  it("with --public answers the action post 405 and starts nothing", async () => {
+    const tg = tgSpy();
+    const gh = ghSpy();
+    const res = await app(actionRepo(), { terragucci: tg, gh }, { public: true }).request("/api/templates/action", post({ root: "apps/orders", address: ROTATE }));
+    expect(res.status).toBe(405);
+    expect(tg.calls).toHaveLength(0);
+    expect(gh.calls).toHaveLength(0);
   });
 });

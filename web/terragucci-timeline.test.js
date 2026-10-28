@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { entryLine, laneLegend, laneRows, rootOfCard, toneOf } from "./terragucci-timeline.js";
+import { actionOf, entryLine, laneLegend, laneRows, rootOfCard, runUrlOf, toneOf } from "./terragucci-timeline.js";
 
 // #506: the lane's words, from answers shaped like /api/terragucci/timeline.
 const NOW = new Date("2026-10-08T13:31:00Z");
@@ -52,5 +52,46 @@ describe("the timeline lane (#506)", () => {
     expect(laneLegend(answer, { root: "envs/prod/search", shown: 0 })).toBe("the audit record names no entry for envs/prod/search");
     expect(laneLegend({ ...answer, total: 250 }, { shown: 3 })).toBe("3 of 250 entries from terragucci's audit record, newest first");
     expect(laneLegend({ error: "audit.jsonl in /r, line 2, is not JSON.", code: "terragucci-report" })).toContain("line 2");
+  });
+});
+
+describe("a day-2 action's history (behold#1037)", () => {
+  const GATE = "apps/orders:module.app.action.aws_lambda_invoke.rotate";
+  const DIGEST = `sha256:${"a1".repeat(32)}`;
+  const action = {
+    id: "act",
+    kind: "action",
+    at: "2026-10-08T10:30:00.000Z",
+    who: "dana",
+    what: GATE,
+    digest: DIGEST,
+    result: "ok",
+    roots: ["apps/orders"],
+    run: { run_id: "402" },
+    evidence: { source: "ledger", path: "_gates/tf-action/applied.jsonl", url: `https://github.com/acme/shop/commit/${"b".repeat(40)}` },
+    detail: { root: "apps/orders", address: "module.app.action.aws_lambda_invoke.rotate", approved_by: "dana", requester: "lee" },
+  };
+  const asked = { ...action, id: "ask", kind: "action-requested", at: "2026-10-08T10:00:00.000Z", who: "lee", result: "waiting", run: { run_id: "401" }, evidence: { ...action.evidence, path: "_gates/tf-action.jsonl" } };
+
+  it("renders an action entry as its name on its root, who approved it and how it ended, with its run link", () => {
+    expect(entryLine(action)).toBe("rotate on apps/orders, approved by dana, ok");
+    const rows = laneRows({ ...answer, entries: [action, asked] }, { root: "apps/orders", now: NOW });
+    expect(rows[0].text).toBe("rotate on apps/orders, approved by dana, ok");
+    expect(rows[0].tone).toBe("ok");
+    expect(rows[0].links).toEqual([
+      { text: "run", href: "https://github.com/acme/shop/actions/runs/402" },
+      { text: "ledger commit", href: action.evidence.url },
+    ]);
+    expect(runUrlOf(action)).toBe("https://github.com/acme/shop/actions/runs/402");
+  });
+
+  it("renders the request as who asked, waiting, with its digest, and a failed run as failed", () => {
+    expect(entryLine(asked)).toBe(`rotate on apps/orders requested by lee, waiting · plan ${"a1".repeat(6)}`);
+    expect(toneOf(asked)).toBe("wave");
+    expect(toneOf({ ...action, result: "failed" })).toBe("failed");
+    expect(entryLine({ ...action, result: "failed" })).toBe("rotate on apps/orders, approved by dana, failed");
+    // An entry with no detail still reads from its gate.
+    expect(actionOf({ what: GATE, roots: [] })).toEqual({ name: "rotate", root: "apps/orders", address: "module.app.action.aws_lambda_invoke.rotate" });
+    expect(runUrlOf({ ...action, evidence: { source: "ledger" } })).toBeNull();
   });
 });

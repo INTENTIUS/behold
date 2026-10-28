@@ -21,7 +21,7 @@ import { cssString, hoverCss, hoverFromMessage, hoverLinks, hoverMessage, isLigh
 import { gateCards } from "./workspace-gates.js";
 import { cornerOf, estateLine, hrefOf as tgHref, legend as tgLegend, markLine, rootRows as tgRootRows, waveCards } from "./terragucci.js";
 import { laneElement as tgLane, rootOfCard as tgRootOfCard, historyElement as tgHistoryLane } from "./terragucci-timeline.js";
-import { renderLane } from "./terragucci-lifecycle.js";
+import { gateCardElement, renderLane } from "./terragucci-lifecycle.js";
 import { renderReleases } from "./releases.js";
 import { renderTrunkLane } from "./trunk-lane.js";
 import { startLocalRuns } from "./local-run.js";
@@ -82,7 +82,7 @@ import {
   deltaRows,
 } from "./behaviour-scale.js";
 import { startTemplates } from "./templates.js";
-import { appFrames, appRows as tplAppRows, frameOf as tplFrameOf, postUpgrade, renderAppSection } from "./template-apps.js";
+import { appFrames, appRows as tplAppRows, frameOf as tplFrameOf, postAction, postUpgrade, renderAppSection } from "./template-apps.js";
 import { addPanelTab, initPanel, setPanelTab, togglePanelCollapsed, isPanelCollapsed, foldPanelOnPhone } from "./panel.js";
 // #254: the carve walkthrough's stepper — everything it DECIDES is a pure
 // function in there; this file owns the fetches, the graph selection, and the
@@ -1277,7 +1277,18 @@ function inspect(node) {
   }
   // behold#1036: the app this card is part of, and the requests that change it.
   const tplFrame = tplFrameOf(tplFrames, node.id);
-  if (tplFrame) renderAppSection(panel, tplFrame, tplAppUi, { publicMode, embed: !!embedOpts.embed, staticMode, said: tplSaid[tplFrame.app.app] });
+  if (tplFrame)
+    renderAppSection(panel, tplFrame, tplAppUi, {
+      publicMode,
+      embed: !!embedOpts.embed,
+      staticMode,
+      said: tplSaid[tplFrame.app.app],
+      // behold#1037: the app's actions, their gate cards from chant/lifecycle and their history from the audit record.
+      actionSaid: tplActionSaid[tplFrame.app.app],
+      actionRefusal: tplActionRefusal,
+      lane: tgLifecycle,
+      timeline: tgTimeline,
+    });
   // #681: what the open change set would do to this card, entry by entry.
   const csEntries = csAnswer && csOn ? csEntriesFor(csAnswer, node.id) : [];
   if (csEntries.length) {
@@ -7476,6 +7487,7 @@ async function initTemplates() {
   if (staticMode || publicMode || embedOpts.embed) return;
   const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
   if (!project.terragucciTemplates || project.publicMode) return;
+  tplActionRefusal = project.terragucciActionRefusal || null;
   const host = addPanelTab("templates", "Templates", "Apps this repo can make from a template: fill in a form, and terragucci opens the pull request that adds the app.");
   if (!host) return;
   host.id = "tab-templates";
@@ -7507,7 +7519,22 @@ var tplApps = null; // var: render() may draw before this line is reached
 var tplFrames = [];
 var tplSaid = {};
 var tplOpenAddons = null;
+var tplActionSaid = {}; // behold#1037: the last action press's answer, by app
+var tplActionRefusal = null; // ruling E: /api/project's terragucciActionRefusal
 var tplAppUi = {
+  // behold#1037: an action button dispatches terragucci's action workflow; the gate card then shows the approve line for someone else.
+  action: async (app, b) => {
+    if (b.disabled) return;
+    const answer = await postAction((url, init) => fetch(url, init).then((r) => r.json()), b.body);
+    tplActionSaid[app.app] = answer;
+    if (answer && answer.error) showToast(`✗ ${b.label} on ${app.root}: ${answer.error}`, false);
+    else showToast(`▶ ${b.label} on ${app.root} asked for; it waits for someone else's approval`, true);
+    loadTerragucciLane({ fresh: true });
+    const panel = document.getElementById("inspect-body");
+    const shown = panel && panel.dataset.node && lastGraphIr && lastGraphIr.nodes.find((n) => n.id === panel.dataset.node);
+    if (shown) inspect(shown);
+  },
+  gateCard: (card) => gateCardElement(card, { button, copy: copyToClipboard, link: tgLink }),
   addAddon: (app) => tplOpenAddons && tplOpenAddons(app.app),
   upgrade: async (app, body) => {
     const answer = await postUpgrade((url, init) => fetch(url, init).then((r) => r.json()), body);

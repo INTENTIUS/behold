@@ -2,7 +2,7 @@
 // requests in its inspect pane. The frame is data; the pane and the Templates
 // form are drawn into a small stand-in document (no DOM library in this repo).
 import { describe, expect, it } from "vitest";
-import { appButtons, appFrames, frameOf, frameTitle, postUpgrade, renderAppSection, templateShort } from "./template-apps.js";
+import { actionWords, appButtons, appFrames, frameOf, frameTitle, postAction, postUpgrade, renderAppSection, templateShort } from "./template-apps.js";
 import { startTemplates } from "./templates.js";
 
 class Node {
@@ -170,6 +170,83 @@ describe("the app's inspect pane (behold#1036)", () => {
       renderAppSection(pane, frame(), { addAddon() {}, upgrade() {} }, opts, doc);
       expect(buttons(pane)).toEqual([]);
       expect(pane.text()).toContain("orders (bucket 1.2.0)");
+    }
+  });
+});
+
+// behold#1037: the app's actions, their gate card and their history.
+describe("an app's day-2 actions (behold#1037)", () => {
+  const ROTATE = "module.app.action.aws_lambda_invoke.rotate";
+  const DA = `sha256:${"a".repeat(64)}`;
+  const withRotate = { ...orders, actions: [{ module: "app", type: "aws_lambda_invoke", name: "rotate", address: ROTATE }] };
+  const frameOfRotate = () => appFrames([withRotate], nodes, { roots })[0];
+  const source = { branch: "chant/lifecycle", commit: "1a2b3c4d5e6f7a8b", committed: "2026-10-28T10:00:00Z", path: "_gates/tf-action.jsonl" };
+  const lane = {
+    found: true,
+    gates: [],
+    locks: [],
+    actions: [
+      { op: "tf-action", gate: `apps/orders:${ROTATE}`, root: "apps/orders", address: ROTATE, name: "rotate", requester: "lee", state: "waiting", digest: DA, pending: { timestamp: "2026-10-28T10:00:00Z", expiresAt: "2099-01-01T00:00:00Z" }, command: `npx terragucci approve action apps/orders --plan ${DA}`, approvalMode: { mode: "ledger", from: "base" }, source },
+      { op: "tf-action", gate: `apps/search:${ROTATE}`, root: "apps/search", address: ROTATE, name: "rotate", state: "waiting", digest: DA, command: "npx terragucci approve action apps/search", approvalMode: { mode: "ledger", from: "base" }, source },
+    ],
+  };
+  const timeline = {
+    files: "/api/terragucci/file?key=",
+    entries: [
+      { id: "act", kind: "action", at: "2026-10-28T11:00:00.000Z", who: "dana", what: `apps/orders:${ROTATE}`, digest: DA, result: "ok", roots: ["apps/orders"], run: { run_id: "402" }, evidence: { source: "ledger", url: `https://github.com/acme/shop/commit/${"b".repeat(40)}` }, detail: { root: "apps/orders", address: ROTATE } },
+      { id: "apply", kind: "apply", at: "2026-10-28T09:00:00.000Z", who: "dana", what: "wave-1", digest: null, result: "applied", roots: ["apps/orders"], run: {}, evidence: { source: "report" } },
+    ],
+  };
+  const NOW = new Date("2026-10-28T12:00:00Z");
+
+  it("shows one button rotate for the template's action; clicking it posts the root and address", async () => {
+    const pane = new Node("div");
+    const pressed = [];
+    renderAppSection(pane, frameOfRotate(), { addAddon() {}, upgrade() {}, action: (a, b) => pressed.push(b.body) }, {}, doc);
+    const rotate = buttons(pane).filter((b) => b.textContent === "rotate");
+    expect(rotate).toHaveLength(1);
+    expect(rotate[0].attributes["data-action"]).toBe("action");
+    expect(rotate[0].title).toContain("a person other than you approves it with terragucci approve action");
+    rotate[0].fire("click");
+    expect(pressed).toEqual([{ root: "apps/orders", address: ROTATE }]);
+    const seen = [];
+    await postAction(async (url, init) => (seen.push([url, init.method, JSON.parse(init.body)]), { dispatched: true }), pressed[0]);
+    expect(seen).toEqual([["/api/templates/action", "POST", { root: "apps/orders", address: ROTATE }]]);
+    // An app whose templates offer no action has no action button.
+    expect(appButtons(orders).filter((b) => b.id === "action")).toEqual([]);
+  });
+
+  it("keeps the button on an engine with no action invocation, disabled, with the refusal beside it (ruling E)", () => {
+    const why = "apps/orders: an action runs on Terraform 1.14 or newer, and this root runs OpenTofu (tofu, from binary in terragucci.yml), which has no action invocation";
+    const pane = new Node("div");
+    renderAppSection(pane, frameOfRotate(), { addAddon() {}, upgrade() {} }, { actionRefusal: why }, doc);
+    const rotate = buttons(pane).find((b) => b.textContent === "rotate");
+    expect(rotate.disabled).toBe(true);
+    expect(rotate.title).toBe(why);
+    expect(pane.text()).toContain("OpenTofu");
+    expect(actionWords({ error: "an action runs on Terraform 1.14 or newer", code: "action-engine" }).text).toBe("action-engine: an action runs on Terraform 1.14 or newer");
+  });
+
+  it("draws the app root's waiting gate card with its approve line, and its action history", () => {
+    const pane = new Node("div");
+    const cards = [];
+    renderAppSection(pane, frameOfRotate(), { addAddon() {}, upgrade() {}, gateCard: (c) => (cards.push(c), new Node("div")) }, { lane, timeline, now: NOW, actionSaid: { dispatched: true, action: "rotate", root: "apps/orders" } }, doc);
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({ root: "apps/orders", state: "waiting", command: `npx terragucci approve action apps/orders --plan ${DA}` });
+    expect(pane.text()).toContain("rotate on apps/orders, approved by dana, ok");
+    expect(pane.text()).not.toContain("wave-1");
+    expect(pane.all().some((n) => n.tagName === "A" && n.href === "https://github.com/acme/shop/actions/runs/402")).toBe(true);
+    expect(pane.text()).toContain("rotate asked for on apps/orders");
+  });
+
+  it("draws no action button, card or history in a public view, an embed or a static export", () => {
+    for (const opts of [{ publicMode: true }, { embed: true }, { staticMode: true }]) {
+      const pane = new Node("div");
+      const cards = [];
+      renderAppSection(pane, frameOfRotate(), { addAddon() {}, upgrade() {}, gateCard: (c) => (cards.push(c), new Node("div")) }, { ...opts, lane, timeline, now: NOW }, doc);
+      expect(buttons(pane)).toEqual([]);
+      expect(cards).toEqual([]);
+      expect(pane.text()).not.toContain("approved by dana");
     }
   });
 });

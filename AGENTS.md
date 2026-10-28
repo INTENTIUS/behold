@@ -1953,8 +1953,8 @@ The commands behold starts run with behold's own environment, so Deploy (`POST
 /api/apply`, chant's local executor) applies with the credentials of whoever
 started it. On a terragucci repo (a `terragucci.yml` in the served directory or
 above it, up to the git root) behold deploys, approves and applies nothing,
-and the only things it starts are terragucci's own request and rollout
-workflows (below):
+and the only things it starts are terragucci's own request, rollout and
+action workflows (below):
 every other POST that deploys, approves or starts a run answers `409` with
 `code: "terragucci"` and names the pipeline (`src/terragucci-repo.ts`, #489), `/api/project` carries `terragucci`
 so the page offers no write, and auto-sync declines. The boundary is an
@@ -1964,8 +1964,9 @@ method and route, and that list holds only the exceptions below (the layout
 cache, project open and reveal, demo open, refresh, and the four carve
 steps), plus `POST /api/view`, which moves the open tabs and writes nothing
 (#914), `POST /api/templates/request`, which dispatches terragucci's
-request workflow (behold#1035), and `POST /api/templates/upgrade`, which
-dispatches its rollout workflow (behold#1036). A new write route is refused on a terragucci repo until it is added
+request workflow (behold#1035), `POST /api/templates/upgrade`, which
+dispatches its rollout workflow (behold#1036), and `POST
+/api/templates/action`, which dispatches its action workflow (behold#1037). A new write route is refused on a terragucci repo until it is added
 there. `src/terragucci-repo.test.ts` walks every non-GET route of the real
 app (`app.routes`, built plain, with a carve report and with `--terragucci`)
 and asserts each one is allowlisted or answers 409, and that every allowlist
@@ -2009,9 +2010,10 @@ These are also the only writes a guarded product repo answers: terragucci
 (`terragucci.yml` and its siblings) and SQL Yodeler (`yodel.config.ts`), both
 listed in `TERRAGUCCI_ALLOWED_WRITES`.
 
-`POST /api/templates/request` (behold#1035, `src/templates.ts`) and
-`POST /api/templates/upgrade` (behold#1036) are the two starts on a terragucci
-repo, and they write nothing anywhere. The request is described first. It is on the
+`POST /api/templates/request` (behold#1035, `src/templates.ts`),
+`POST /api/templates/upgrade` (behold#1036) and `POST /api/templates/action`
+(behold#1037) are the three starts on a terragucci repo, and they write
+nothing anywhere. The request is described first. It is on the
 allowlist, and because the list also guards SQL Yodeler repos the handler
 refuses on its own (`409`, the product's refusal or `code: "no-templates"`)
 unless the served repo is terragucci and its terragucci.yml sets
@@ -2056,6 +2058,28 @@ request per wave, and each wave is planned, reviewed and applied by the
 pipeline (ruling D). GitLab's rollout job takes no dispatch inputs, so GitLab
 answers `422 request-forge` with the `npx terragucci rollout` line. `--public`
 refuses the apps read (`403`) and the post (`405`).
+
+`POST /api/templates/action` takes `{root, address}`. It reads the apps again,
+and the address must be one terragucci lists in that root's `actions` (`422
+not-an-app` for a root no app has, `422 unknown-action` otherwise); nothing
+starts before that. A root whose engine has no action invocation (terragucci.yml's
+`binary`, the repo's `.opentofu-version`, or `.tofu` files in the root, as
+terragucci detects it) answers `422 action-engine` naming OpenTofu or
+choudoufu (ruling E), and `/api/project` carries `terragucciActionRefusal` so
+the buttons say so. It refuses on its own like the request, then dispatches the
+committed `terragucci-action.yml` with `root` and `address` only (`409
+no-action-workflow` when it is not committed, which terragucci does only for
+Terraform roots; `409 terragucci-too-old` when it takes neither input), through
+the same `gh` and Forgejo paths and the same runner slot. The run asks chant's
+gated request (op `tf-action`, gate `<root>:<address>`) and waits for a person
+other than the requester to run `terragucci approve action <root> --plan
+<digest>`; behold approves nothing and never runs the action. The lifecycle
+lane reads `_gates/tf-action.jsonl` and `_gates/tf-action/applied.jsonl` into
+`actions` (`src/terragucci-lifecycle.ts`), apart from the waves: a waiting
+gate carries that approve line, the requester's own approval is listed as one
+that does not count, and an applied one carries the run's `ok` or `failed`.
+GitLab answers `422 request-forge` with the `npx terragucci action` line.
+`--public` refuses the post (`405`).
 
 `POST /api/layout` (#228) writes **one** file, and not in the served project:
 the hand layout is a per-user cache (#469), `<user cache>/behold/layouts/<key>.json`

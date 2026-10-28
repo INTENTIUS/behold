@@ -484,6 +484,48 @@ describe("GET /api/terragucci/lifecycle (#505)", () => {
     const lane = app.routes.filter((r) => r.path === "/api/terragucci/lifecycle" || r.path === "/api/terragucci/events");
     expect(lane.map((r) => r.method).sort()).toEqual(["GET", "GET"]);
   });
+
+  // behold#1037: a day-2 action's gated request (chant#4653 tf-action), at the gate `<root>:<address>`.
+  const ADDRESS = "module.app.action.aws_lambda_invoke.rotate";
+  const GATE = `apps/orders:${ADDRESS}`;
+  const DA = `sha256:${"a".repeat(64)}`;
+  const act = (r: object): string => JSON.stringify({ version: 1, op: "tf-action", gate: GATE, ...r });
+  const asked = act({ kind: "pending", timestamp: "2026-10-09T08:00:00Z", expiresAt: "2099-01-01T00:00:00Z", planDigest: DA, runId: "88", request: { kind: "terraform-action", subject: GATE, by: "lee", fields: { address: ADDRESS } } });
+
+  it("lists a pending tf-action fact as a waiting action gate with terragucci's approve action line (behold#1037)", async () => {
+    const { checkout } = fixture({ files: { ...LANE, "_gates/tf-action.jsonl": asked } });
+    const a = (await (await served(checkout, scratch()).request("/api/terragucci/lifecycle")).json()) as LifecycleAnswer;
+    expect(a.actions).toHaveLength(1);
+    expect(a.actions![0]).toMatchObject({ op: "tf-action", gate: GATE, root: "apps/orders", address: ADDRESS, name: "rotate", requester: "lee", state: "waiting", digest: DA, command: `npx terragucci approve action apps/orders --plan ${DA}` });
+    // The waves are read as before; an action is not a wave.
+    expect(a.gates.map((g) => g.wave)).toEqual([1, 2, 3]);
+  });
+
+  it("does not count the requester's own approval, and says so", async () => {
+    const own = act({ resolvedBy: "lee", timestamp: "2026-10-09T09:00:00Z", planDigest: DA });
+    const { checkout } = fixture({ files: { "_gates/tf-action.jsonl": [asked, own].join("\n") } });
+    const a = await readLifecycle(checkout, { cacheRoot: scratch(), now: () => new Date("2026-10-10T00:00:00Z") });
+    expect(a.actions![0]).toMatchObject({ state: "waiting", command: `npx terragucci approve action apps/orders --plan ${DA}` });
+    expect(a.actions![0]!.uncounted).toEqual([expect.objectContaining({ approval: expect.objectContaining({ by: "lee" }), reason: expect.stringContaining("requester's own") })]);
+  });
+
+  it("lists an applied and finished action as applied, with the run's ok", async () => {
+    const files = {
+      "_gates/tf-action.jsonl": [asked, act({ resolvedBy: "dana", timestamp: "2026-10-09T09:00:00Z", planDigest: DA })].join("\n"),
+      "_gates/tf-action/applied.jsonl": [
+        act({ kind: "applied", planDigest: DA, approvedAt: "2026-10-09T09:00:00Z", approvedBy: "dana", timestamp: "2026-10-09T09:05:00Z", runId: "91" }),
+        act({ kind: "finished", planDigest: DA, applied: "2026-10-09T09:05:00Z", result: "applied", timestamp: "2026-10-09T09:06:00Z", detail: { result: "ok", exit: 0, tail: "Action complete", address: ADDRESS } }),
+      ].join("\n"),
+    };
+    const { checkout } = fixture({ files });
+    const a = await readLifecycle(checkout, { cacheRoot: scratch(), now: () => new Date("2026-10-10T00:00:00Z") });
+    expect(a.actions![0]).toMatchObject({ state: "applied", approval: { by: "dana" }, applied: { approvedBy: "dana", runId: "91", result: "ok", exit: 0, finished: "2026-10-09T09:06:00Z" } });
+    expect(a.actions![0]!.command).toBeUndefined();
+    // A failed run is failed, whatever chant's own result word.
+    const failed = { ...files, "_gates/tf-action/applied.jsonl": files["_gates/tf-action/applied.jsonl"].replace('"result":"applied"', '"result":"failed"').replace('"result":"ok"', '"result":"failed"') };
+    const b = await readLifecycle(fixture({ files: failed }).checkout, { cacheRoot: scratch(), now: () => new Date("2026-10-10T00:00:00Z") });
+    expect(b.actions![0]).toMatchObject({ state: "failed", applied: { result: "failed" } });
+  });
 });
 
 // behold#571: the kiosk's approval panel says whether a signed approval's seal

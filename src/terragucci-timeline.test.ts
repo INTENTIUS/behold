@@ -91,8 +91,8 @@ describe("readTimeline (#506)", () => {
     expect(r.present).toBe(true);
     expect(r.validation).toEqual({ by: "schema", terragucci: "0.4.7" });
     expect(r.projects).toEqual(["github.com/acme/network", "gitlab.example.com/platform/data"]);
-    expect(r.lines).toBe(14);
-    expect(r.entries).toHaveLength(13);
+    expect(r.lines).toBe(19);
+    expect(r.entries).toHaveLength(18);
     const ats = r.entries.map((e) => e.at);
     expect(ats).toEqual([...ats].sort().reverse());
     const by = Object.fromEntries(r.entries.map((e) => [e.kind, e]));
@@ -124,6 +124,15 @@ describe("readTimeline (#506)", () => {
     expect(by.migration!.roots).toEqual(["envs/prod/dns"]);
     expect(by["ephemeral-apply"]).toMatchObject({ roots: ["envs/dev/vpc"], run: { pull_request: "14", run_id: "304" } });
     expect(by["ephemeral-destroy"]!.roots).toEqual(["envs/dev/vpc"]);
+    // A write no run recorded concerns its root; a template request names an app, not a root.
+    expect(by["unrecorded-write"]).toMatchObject({ what: "envs/prod/vpc", roots: ["envs/prod/vpc"], evidence: { source: "state" } });
+    expect(by.request).toMatchObject({ who: "lee", what: "orders", roots: [], run: { pull_request: "7" } });
+    expect(by["agent-run"]).toMatchObject({ who: "lee", run: { pull_request: "14" } });
+    // behold#1037: a day-2 action's request and run concern the root their detail names, with the run behind each.
+    const ROTATE = "apps/orders:module.app.action.aws_lambda_invoke.rotate";
+    expect(by["action-requested"]).toMatchObject({ who: "lee", what: ROTATE, result: "waiting", roots: ["apps/orders"], run: { run_id: "401" } });
+    expect(by.action).toMatchObject({ who: "dana", what: ROTATE, result: "ok", roots: ["apps/orders"], run: { run_id: "402" }, detail: { requester: "lee", approved_by: "dana" } });
+    expect(by.action!.wave).toBeUndefined();
     // The entry's own fields ride along.
     expect(by.override!.detail).toMatchObject({ reason: "bastion subnet, reviewed in #88" });
     expect(by.override!.evidence).toMatchObject({ source: "ledger", path: "_gates/policy-override.jsonl" });

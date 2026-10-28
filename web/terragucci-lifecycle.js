@@ -126,6 +126,53 @@ export function laneGateCards(lane, now = new Date()) {
   });
 }
 
+const ACTION_TITLE = {
+  waiting: (a) => `${a.name} on ${a.root} waits for an approval${a.requester ? ` by someone other than ${a.requester}` : ""}`,
+  expired: (a) => `${a.name} on ${a.root}: the request for an approval expired`,
+  approved: (a) => `${a.name} on ${a.root} approved by ${a.approval.by}, not run yet`,
+  applied: (a) => (a.applied && a.applied.result ? `${a.name} on ${a.root} ran: ${a.applied.result}` : `${a.name} on ${a.root} ran (outcome not recorded)`),
+  failed: (a) => `${a.name} on ${a.root} failed`,
+  refused: (a) => `${a.name} on ${a.root} refused: an approval stands for another plan`,
+};
+
+const ACTION_NOTE = "An action runs only once a person other than the one who asked approves its plan digest: that person runs the line at their shell. behold does not approve, and does not run the action.";
+
+/**
+ * behold#1037: each day-2 action's gate as a card, in the shape of a wave's:
+ * who asked, its state, the digest, who approved and how the run ended, and
+ * while it waits the `terragucci approve action` line a second person runs.
+ * `root` keeps one app's. No button but Copy.
+ */
+export function laneActionCards(lane, now = new Date(), { root = null } = {}) {
+  if (!lane || !lane.found || !Array.isArray(lane.actions)) return [];
+  return lane.actions
+    .filter((a) => !root || a.root === root)
+    .map((a) => {
+      const facts = [];
+      if (a.pending) facts.push(`asked${a.requester ? ` by ${a.requester}` : ""} ${clock(a.pending.timestamp, now)}, ${ago(a.pending.timestamp, now)}`);
+      if (a.approval) facts.push(`${a.state === "refused" ? `approved for plan ${short(a.refused && a.refused.digest) || "(none)"} by` : "approved by"} ${approvalWords(a.approval, now)}`);
+      if (a.applied) facts.push(`${a.applied.result === "failed" ? "failed" : "ran"} ${clock(a.applied.finished || a.applied.at, now)}, ${ago(a.applied.finished || a.applied.at, now)}${typeof a.applied.exit === "number" ? `, exit ${a.applied.exit}` : ""}`);
+      if (a.digest) facts.push(`plan ${short(a.digest)}`);
+      facts.push(a.address);
+      if (modeWords(a)) facts.push(modeWords(a));
+      const uncounted = (a.uncounted || []).map((u) => `${u.approval.by}'s approval of this plan does not count: ${u.reason}`);
+      const job = a.pending && a.pending.url ? a.pending.url : null;
+      return {
+        gate: a.gate,
+        root: a.root,
+        name: a.name,
+        state: a.state,
+        tone: a.state === "waiting" ? "wave" : a.state === "failed" || a.state === "refused" ? "failed" : a.state === "expired" ? "none" : "ok",
+        title: ACTION_TITLE[a.state] ? ACTION_TITLE[a.state](a) : `${a.name} on ${a.root}: ${a.state}`,
+        facts: facts.join(" · "),
+        ...(uncounted.length ? { uncounted } : {}),
+        source: sourceWords(a.source, now),
+        ...(a.command ? { command: a.command, note: ACTION_NOTE } : {}),
+        ...(job ? { job } : {}),
+      };
+    });
+}
+
 /** Each locked root: who holds it and since when, and the commit it was read from. */
 export function laneLockRows(lane, now = new Date()) {
   if (!lane || !lane.found) return [];
@@ -158,68 +205,7 @@ export function renderLane(host, lane, polled, now, ui) {
     e.textContent = `the reports' index could not be checked: ${polled.reports.error}`;
     host.appendChild(e);
   }
-  for (const g of laneGateCards(lane, now)) {
-    const box = document.createElement("div");
-    box.className = `ws-gate tg-lane-gate tg-${g.tone}`;
-    const title = document.createElement("div");
-    title.className = "ws-gate-title";
-    title.textContent = g.title;
-    const facts = document.createElement("div");
-    facts.className = "ws-gate-facts";
-    facts.textContent = g.facts;
-    const src = document.createElement("div");
-    src.className = "ws-gate-note";
-    src.textContent = `from ${g.source}`;
-    box.append(title, facts);
-    for (const u of g.uncounted || []) {
-      const why = document.createElement("div");
-      why.className = "ws-gate-note";
-      why.textContent = u;
-      box.appendChild(why);
-    }
-    box.appendChild(src);
-    for (const o of g.overrides || []) {
-      const what = document.createElement("div");
-      what.className = "ws-gate-note";
-      what.textContent = o.text;
-      const cmd = document.createElement("code");
-      cmd.className = "tg-command";
-      cmd.textContent = o.command;
-      const copy = ui.button("Copy", "", () => ui.copy(o.command, copy));
-      copy.title = "Copy the line. Run it at your shell, with your reason: the override is yours.";
-      box.append(what, cmd, copy);
-      if (o.job) {
-        const links = document.createElement("div");
-        links.className = "ws-gate-note";
-        links.appendChild(ui.link("job", o.job));
-        box.appendChild(links);
-      }
-    }
-    if (g.overrideNote) {
-      const n = document.createElement("div");
-      n.className = "ws-gate-note";
-      n.textContent = g.overrideNote;
-      box.appendChild(n);
-    }
-    if (g.command) {
-      const cmd = document.createElement("code");
-      cmd.className = "tg-command";
-      cmd.textContent = g.command;
-      const copy = ui.button("Copy", "", () => ui.copy(g.command, copy));
-      copy.title = "Copy the line. Run it at your shell: the approval or answer is yours.";
-      const note = document.createElement("div");
-      note.className = "ws-gate-note";
-      note.textContent = g.note;
-      box.append(cmd, copy, note);
-    }
-    if (g.job) {
-      const links = document.createElement("div");
-      links.className = "ws-gate-note";
-      links.appendChild(ui.link("job", g.job));
-      box.appendChild(links);
-    }
-    host.appendChild(box);
-  }
+  for (const g of [...laneGateCards(lane, now), ...laneActionCards(lane, now)]) host.appendChild(gateCardElement(g, ui));
   for (const l of laneLockRows(lane, now)) {
     const row = document.createElement("div");
     row.className = "tg-root tg-lock";
@@ -232,4 +218,68 @@ export function renderLane(host, lane, polled, now, ui) {
     row.append(path, what);
     host.appendChild(row);
   }
+}
+
+/** One card from laneGateCards or laneActionCards as DOM: title, facts, source, and the line to copy. `doc` is the document (a test hands in its own). */
+export function gateCardElement(g, ui, doc = document) {
+  const box = doc.createElement("div");
+  box.className = `ws-gate tg-lane-gate tg-${g.tone}`;
+  const title = doc.createElement("div");
+  title.className = "ws-gate-title";
+  title.textContent = g.title;
+  const facts = doc.createElement("div");
+  facts.className = "ws-gate-facts";
+  facts.textContent = g.facts;
+  const src = doc.createElement("div");
+  src.className = "ws-gate-note";
+  src.textContent = `from ${g.source}`;
+  box.append(title, facts);
+  for (const u of g.uncounted || []) {
+    const why = doc.createElement("div");
+    why.className = "ws-gate-note";
+    why.textContent = u;
+    box.appendChild(why);
+  }
+  box.appendChild(src);
+  for (const o of g.overrides || []) {
+    const what = doc.createElement("div");
+    what.className = "ws-gate-note";
+    what.textContent = o.text;
+    const cmd = doc.createElement("code");
+    cmd.className = "tg-command";
+    cmd.textContent = o.command;
+    const copy = ui.button("Copy", "", () => ui.copy(o.command, copy));
+    copy.title = "Copy the line. Run it at your shell, with your reason: the override is yours.";
+    box.append(what, cmd, copy);
+    if (o.job) {
+      const links = doc.createElement("div");
+      links.className = "ws-gate-note";
+      links.appendChild(ui.link("job", o.job));
+      box.appendChild(links);
+    }
+  }
+  if (g.overrideNote) {
+    const n = doc.createElement("div");
+    n.className = "ws-gate-note";
+    n.textContent = g.overrideNote;
+    box.appendChild(n);
+  }
+  if (g.command) {
+    const cmd = doc.createElement("code");
+    cmd.className = "tg-command";
+    cmd.textContent = g.command;
+    const copy = ui.button("Copy", "", () => ui.copy(g.command, copy));
+    copy.title = "Copy the line. Run it at your shell: the approval or answer is yours.";
+    const note = doc.createElement("div");
+    note.className = "ws-gate-note";
+    note.textContent = g.note;
+    box.append(cmd, copy, note);
+  }
+  if (g.job) {
+    const links = doc.createElement("div");
+    links.className = "ws-gate-note";
+    links.appendChild(ui.link("job", g.job));
+    box.appendChild(links);
+  }
+  return box;
 }

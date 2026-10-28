@@ -40,9 +40,22 @@
  *   template) and `version` (its `upgrade`). A person starts it, and the
  *   existing rollout carries it wave by wave (ruling D); behold applies
  *   nothing and opens no pull request.
+ *
+ * behold#1037 adds an app's day-2 actions:
+ *
+ * - `POST /api/templates/action` with `{root, address}` dispatches
+ *   terragucci's action workflow (`terragucci-action.yml`, terragucci#1310)
+ *   with exactly `root` and `address`. The address must be one the apps read
+ *   lists for that root (`actions`, terragucci#1309), else
+ *   `422 unknown-action`. A root whose engine has no action invocation
+ *   (OpenTofu, choudoufu) is refused by its engine's name before anything
+ *   starts (ruling E). The run asks chant's gated request, and the request
+ *   waits for a person other than the requester to run
+ *   `terragucci approve action <root> --plan <digest>`; the lifecycle lane
+ *   shows the gate card. behold never approves and never runs the action.
  */
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { Context, Hono } from "hono";
 import { parseYAML } from "@intentius/chant/yaml";
@@ -57,6 +70,10 @@ import { productRefusal, servedProductRepo } from "./terragucci-repo.ts";
 export const REQUEST_WORKFLOW = "terragucci-request.yml";
 /** The rollout workflow's file, as terragucci renders it (singular; terragucci#1312 gives it the `module` and `version` inputs). */
 export const ROLLOUT_WORKFLOW = "terragucci-rollout.yml";
+/** The action workflow's file, as terragucci#1310 renders it (`name: terragucci action`, job `action`, dispatch inputs `root` and `address`). */
+export const ACTION_WORKFLOW = "terragucci-action.yml";
+/** The engines terragucci runs a root on that have no action invocation, by binary (ruling E of INTENTIUS/chant#4642). */
+export const NO_ACTION_ENGINES: Readonly<Record<string, string>> = { tofu: "OpenTofu", choudoufu: "choudoufu" };
 /** An add-on input that names an output of the app's own module: `app.<output>` (chant's `isAppOutputRef`). */
 export const APP_OUTPUT_REF = /^app\.[A-Za-z_][A-Za-z0-9_-]*$/;
 /** Where each forge keeps it. */
@@ -125,6 +142,8 @@ export interface TemplatesRepo {
   /** terragucci.yml sets `templates`. */
   templates: boolean;
   forge?: RequestForge;
+  /** terragucci.yml's `binary`, when it names one. */
+  binary?: string;
 }
 
 /** One `terragucci <args>` run in `cwd`. Code 127: no terragucci to run. */
@@ -154,8 +173,8 @@ export interface TemplatesDeps {
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
-/** The keys of terragucci's config this reads: `templates` and `forge`. */
-function configKeys(config: string): { templates?: unknown; forge?: unknown } {
+/** The keys of terragucci's config this reads: `templates`, `forge` and `binary`. */
+function configKeys(config: string): { templates?: unknown; forge?: unknown; binary?: unknown } {
   let text: string;
   try {
     text = readFileSync(config, "utf8");
@@ -165,11 +184,12 @@ function configKeys(config: string): { templates?: unknown; forge?: unknown } {
   if (config.endsWith(".ts")) {
     // A TypeScript config is not run here; its keys are read off the text.
     const forge = /\bforge\s*:\s*["'](github|forgejo|gitlab)["']/.exec(text)?.[1];
-    return { ...(/^\s*templates\s*:/m.test(text) ? { templates: true } : {}), ...(forge ? { forge } : {}) };
+    const binary = /\bbinary\s*:\s*["']([\w./-]+)["']/.exec(text)?.[1];
+    return { ...(/^\s*templates\s*:/m.test(text) ? { templates: true } : {}), ...(forge ? { forge } : {}), ...(binary ? { binary } : {}) };
   }
   try {
     const doc = config.endsWith(".json") ? JSON.parse(text) : parseYAML(text);
-    return isRecord(doc) ? { templates: doc.templates, forge: doc.forge } : {};
+    return isRecord(doc) ? { templates: doc.templates, forge: doc.forge, binary: doc.binary } : {};
   } catch {
     return {};
   }
@@ -205,8 +225,44 @@ export function templatesRepo(dirs: readonly string[]): TemplatesRepo | undefine
   const root = gitRoot(dirname(r.config));
   const templates = keys.templates !== undefined && keys.templates !== null && keys.templates !== false;
   const forge = requestForge(root, keys.forge);
-  return { config: r.config, root, templates, ...(forge ? { forge } : {}) };
+  return { config: r.config, root, templates, ...(forge ? { forge } : {}), ...(typeof keys.binary === "string" && keys.binary ? { binary: keys.binary } : {}) };
 }
+
+/**
+ * The binary an app's root runs, as terragucci detects it (terragucci
+ * `detect.ts` detectBinary), short of looking on PATH: terragucci.yml's
+ * `binary`, then `.opentofu-version` or `.terraform-version` at the repo
+ * root, then `.tofu` files in the root. Undefined when none of them says.
+ */
+export function rootBinary(repo: Pick<TemplatesRepo, "root" | "binary">, root?: string): { binary: string; from: string } | undefined {
+  if (repo.binary) return { binary: repo.binary.split("/").pop()!.replace(/\.exe$/, ""), from: "binary in terragucci.yml" };
+  if (existsSync(join(repo.root, ".opentofu-version"))) return { binary: "tofu", from: ".opentofu-version" };
+  if (existsSync(join(repo.root, ".terraform-version"))) return { binary: "terraform", from: ".terraform-version" };
+  if (root) {
+    try {
+      if (readdirSync(join(repo.root, root)).some((n) => n.endsWith(".tofu"))) return { binary: "tofu", from: `.tofu files in ${root}` };
+    } catch {
+      /* a root not on disk says nothing */
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Ruling E: the refusal of an action on a root whose engine has no action
+ * invocation, named by the engine, in terragucci's words (`engineRefusal`).
+ * Undefined for Terraform, or when behold cannot tell (the action workflow
+ * then answers, as terragucci writes it only for Terraform).
+ */
+export function actionEngineRefusal(repo: Pick<TemplatesRepo, "root" | "binary">, root?: string): string | undefined {
+  const b = rootBinary(repo, root);
+  const engine = b ? NO_ACTION_ENGINES[b.binary] : undefined;
+  if (!b || !engine) return undefined;
+  return `${root ?? "this repository's roots"}: an action runs on Terraform 1.14 or newer, and ${root ? "this root runs" : "they run"} ${engine} (${b.binary}, from ${b.from}), which has no action invocation`;
+}
+
+/** An action's name: its address's last part (`rotate` for `module.app.action.aws_lambda_invoke.rotate`). */
+export const actionName = (address: string): string => address.split(".").pop() ?? address;
 
 /** The installed terragucci package under `dir` (its root and version), walking up the node_modules directories. */
 export function terragucciPackage(dir: string): { root: string; version?: string; bin?: string } | undefined {
@@ -474,14 +530,18 @@ export function chantTemplateRequest(): Promise<ChantTemplateRequest | undefined
 /** The request's or upgrade's state, as `GET /api/templates/requests/:id` answers it. */
 export interface RequestRecord {
   id: string;
-  /** What was dispatched: an app, an add-on in `app`, or an upgrade of `app` to `version`. */
-  kind: "app" | "addon" | "upgrade";
+  /** What was dispatched: an app, an add-on in `app`, an upgrade of `app` to `version`, or one of `app`'s actions. */
+  kind: "app" | "addon" | "upgrade" | "action";
   /** The app an add-on goes into, or the app whose upgrade started the rollout. */
   app?: string;
   template: string;
   version: string;
   name: string;
-  branch: string;
+  /** The branch whose pull request the run opens; none for an action, which opens none. */
+  branch?: string;
+  /** An action's root and address. */
+  root?: string;
+  address?: string;
   forge: "github" | "forgejo";
   workflow: string;
   dispatchedAt: string;
@@ -498,7 +558,7 @@ export interface RequestRecord {
 
 /** The single-job pipeline the dial paints for a dispatched run: the request workflow's `request` job, or the rollout's `rollout`. */
 const onePipeline = (job: string): CiPipeline => ({ stages: [job], jobs: [{ jobName: job, component: job, stage: job, needs: [], script: [] }] });
-const PIPELINES: Record<string, CiPipeline> = { [REQUEST_WORKFLOW]: onePipeline("request"), [ROLLOUT_WORKFLOW]: onePipeline("rollout") };
+const PIPELINES: Record<string, CiPipeline> = { [REQUEST_WORKFLOW]: onePipeline("request"), [ROLLOUT_WORKFLOW]: onePipeline("rollout"), [ACTION_WORKFLOW]: onePipeline("action") };
 
 /** One shell word: as is when it is safe, else single-quoted. */
 const shellWord = (s: string) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, "'\\''")}'`);
@@ -515,6 +575,11 @@ export function gitlabRolloutLine(module: string, version: string): string {
   return ["npx terragucci rollout", shellWord(module), shellWord(version), "--mode apply"].join(" ");
 }
 
+/** The line a person runs on GitLab, where there is no action workflow: terragucci's own action command. */
+export function gitlabActionLine(root: string, address: string): string {
+  return ["npx terragucci action", shellWord(root), shellWord(address)].join(" ");
+}
+
 /** What a dispatch sends and how it is followed: the workflow, its inputs, the branch whose pull request answers it, and its record. */
 interface DispatchPlan {
   workflow: string;
@@ -523,15 +588,15 @@ interface DispatchPlan {
   label: string;
   /** The words after the workflow on the run's first line. */
   what: string;
-  /** The branch whose pull request the run opens. */
-  branch: string;
+  /** The branch whose pull request the run opens; none for a run that opens none (an action). */
+  branch?: string;
   rec: RequestRecord;
 }
 
 /**
  * Register `GET /api/templates`, `GET /api/templates/apps`,
- * `POST /api/templates/request`, `POST /api/templates/upgrade` and
- * `GET /api/templates/requests/:id`.
+ * `POST /api/templates/request`, `POST /api/templates/upgrade`,
+ * `POST /api/templates/action` and `GET /api/templates/requests/:id`.
  */
 export function templatesRoutes(app: Hono, deps: TemplatesDeps): void {
   const io = deps.io ?? {};
@@ -624,7 +689,7 @@ export function templatesRoutes(app: Hono, deps: TemplatesDeps): void {
             if (url) rec.runUrl = url;
           },
         });
-        const pr = await pullRequestOn(branch, { cwd: repo.root, exec: gh });
+        const pr = branch ? await pullRequestOn(branch, { cwd: repo.root, exec: gh }) : undefined;
         end({ conclusion: code === 0 ? "success" : code === 75 ? "lost" : "failure", ...(pr ? { pull_request: pr.number, ...(pr.url ? { url: pr.url } : {}) } : {}) });
         return code;
       };
@@ -667,6 +732,11 @@ export function templatesRoutes(app: Hono, deps: TemplatesDeps): void {
           }
         }
         let pr: { number: number; url?: string } | undefined;
+        if (!branch) {
+          // A run that opens no pull request (an action): its run is the only answer, and a Forgejo that names none leaves the gate card to say.
+          end({ conclusion, ...(runId === undefined ? { note: "dispatched; this Forgejo names no run, so the lifecycle lane's gate card says where the request stands" } : {}) });
+          return conclusion === "success" ? 0 : 1;
+        }
         for (;;) {
           pr = await fj.pullRequestOn(branch).catch(() => undefined);
           if (pr || conclusion !== "unknown" || Date.now() >= deadline) break;
@@ -856,5 +926,80 @@ export function templatesRoutes(app: Hono, deps: TemplatesDeps): void {
     const refused = await dispatch(c, repo, forge, { workflow: ROLLOUT_WORKFLOW, inputs, label: `terragucci rollout ${target.template} ${to}`, what: `${target.template} to ${to}, from ${name}`, branch, rec });
     if (refused) return refused;
     return c.json({ dispatched: true, id, workflow: ROLLOUT_WORKFLOW, forge, branch, app: name, template: target.template, from: target.version, version: to, ...(rec.run !== undefined ? { run: rec.run } : {}) }, 202);
+  });
+
+  // behold#1037: a person asks for one of an app's day-2 actions; another person approves it, and terragucci's run invokes it.
+  app.post("/api/templates/action", async (c) => {
+    if (deps.preview()) return c.json({ error: "asking for an action is disabled in preview mode", code: "preview" }, 403);
+    const r = repoOr("asking for a day-2 action");
+    if (!r.ok) return send(c, r.refusal);
+    const repo = r.repo;
+    const raw = (await c.req.json().catch(() => undefined)) as unknown;
+    if (!isRecord(raw) || typeof raw.root !== "string" || !raw.root) return c.json({ error: "the action names no root", code: "invalid", field: "root" }, 422);
+    if (typeof raw.address !== "string" || !raw.address) return c.json({ error: "the action names no address", code: "invalid", field: "address" }, 422);
+    const root = raw.root.replace(/\/+$/, "");
+    const address = raw.address;
+
+    // The addresses come from terragucci's apps read now, never from what the page last drew.
+    appsCache.delete(repo.root);
+    const apps = await appsOf(repo);
+    if (!apps.ok) return apps.res(c);
+    const target = apps.rows.find((a) => a.root === root);
+    if (!target) return c.json({ error: `${root} is not an app's root: terragucci templates apps lists no app there`, code: "not-an-app", field: "root" }, 422);
+    const offered = target.actions ?? [];
+    const action = offered.find((a) => a.address === address);
+    if (!action) {
+      const known = offered.map((a) => a.address).join(", ") || "none";
+      return c.json({ error: `${target.app}'s templates offer no action ${address} (they offer ${known})`, code: "unknown-action", field: "address", actions: offered.map((a) => a.address) }, 422);
+    }
+    // Ruling E: refused by the engine's name, before anything starts.
+    const engine = actionEngineRefusal(repo, root);
+    if (engine) return c.json({ error: engine, code: "action-engine", field: "root" }, 422);
+
+    if (repo.forge === "gitlab") {
+      const line = gitlabActionLine(root, address);
+      return c.json({ error: "a GitLab repo has no action workflow for behold to dispatch; ask for the action at your shell", code: "request-forge", command: line, remedy: `Run ${line}` }, 422);
+    }
+    if (!repo.forge) return c.json({ error: "behold cannot tell which forge this repo is on; set forge in terragucci.yml", code: "request-forge" }, 422);
+    const forge = repo.forge;
+    const declared = requestWorkflowInputs(repo.root, forge, ACTION_WORKFLOW);
+    if (!declared) {
+      return c.json(
+        {
+          error: `${REQUEST_WORKFLOW_DIRS[forge]}/${ACTION_WORKFLOW} is not committed, so there is no action workflow to dispatch. terragucci writes it only for roots that run Terraform`,
+          code: "no-action-workflow",
+          remedy: "Run terragucci init again with the roots on Terraform 1.14 or newer, and commit the workflow it writes.",
+        },
+        409,
+      );
+    }
+    if (!declared.includes("root") || !declared.includes("address")) {
+      return c.json({ error: `${ACTION_WORKFLOW} takes no root and address inputs`, code: "terragucci-too-old", remedy: "Move the repo to a terragucci release whose action workflow takes root and address, and run terragucci init." }, 409);
+    }
+
+    const inputs: [string, string][] = [
+      ["root", root],
+      ["address", address],
+    ];
+    const name = action.name || actionName(address);
+    const id = nextId();
+    const rec: RequestRecord = { id, kind: "action", app: target.app, template: target.template, version: target.version ?? "", name, root, address, forge, workflow: ACTION_WORKFLOW, dispatchedAt: new Date().toISOString(), state: "dispatched" };
+    const refused = await dispatch(c, repo, forge, { workflow: ACTION_WORKFLOW, inputs, label: `terragucci action ${root} ${name}`, what: `${name} on ${root}`, rec });
+    if (refused) return refused;
+    return c.json(
+      {
+        dispatched: true,
+        id,
+        workflow: ACTION_WORKFLOW,
+        forge,
+        app: target.app,
+        root,
+        address,
+        action: name,
+        ...(rec.run !== undefined ? { run: rec.run } : {}),
+        note: `the run asks for an approval of ${name} on ${root}; once it has, the lifecycle lane shows the digest and the line a person other than you runs: terragucci approve action ${root} --plan <digest>`,
+      },
+      202,
+    );
   });
 }
