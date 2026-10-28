@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "command": "templates",
+  "exit": 0,
+  "status": "ok",
+  "results": [
+    {
+      "template": "acme/bucket/aws",
+      "name": "bucket",
+      "component": "modules/bucket",
+      "address": "registry.example/acme/bucket/aws",
+      "kind": "app",
+      "description": "A private bucket for one app's data",
+      "versions": [
+        { "version": "1.2.0", "attestation": "signed", "time": "2026-10-20T09:00:00.000Z", "commit": "4b825dc642cb6eb9a060e54bf8d69288fbee4904" },
+        { "version": "1.1.0", "attestation": "signed", "time": "2026-10-01T09:00:00.000Z", "commit": "9daeafb9864cf43055ae93beb0afd6c7d144bfa4" }
+      ],
+      "latest": "1.2.0",
+      "fields": [
+        { "name": "bucket_name", "kind": "string", "label": "Bucket name", "required": true, "sensitive": false, "type": "string" },
+        { "name": "retention_days", "kind": "number", "label": "Days to keep objects", "default": 30, "required": false, "sensitive": false, "type": "number" },
+        { "name": "versioned", "kind": "bool", "label": "Keep old versions", "default": false, "required": false, "sensitive": false, "type": "bool" },
+        { "name": "readers", "kind": "list", "of": "string", "label": "Roles that may read", "default": [], "required": false, "sensitive": false, "type": "list(string)" },
+        { "name": "kms_key", "kind": "string", "label": "KMS key", "required": false, "sensitive": true, "type": "string" }
+      ]
+    },
+    {
+      "template": "acme/queue-addon/aws",
+      "name": "queue-addon",
+      "component": "modules/queue-addon",
+      "address": "registry.example/acme/queue-addon/aws",
+      "kind": "addon",
+      "description": "A queue beside an app",
+      "versions": [
+        { "version": "0.3.0", "attestation": "verified", "time": "2026-10-10T09:00:00.000Z", "commit": "1f7a7a472abf3dd9643fd615f6da379c4acb3e3a" }
+      ],
+      "latest": "0.3.0",
+      "fields": []
+    }
+  ]
+}

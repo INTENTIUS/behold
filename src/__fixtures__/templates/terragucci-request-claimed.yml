@@ -1,0 +1,33 @@
+name: terragucci-request
+on:
+  workflow_dispatch:
+    inputs:
+      template:
+        description: The template's address, such as acme/bucket/aws
+        required: true
+        type: string
+      version:
+        description: The template version; empty for its newest one a request may name
+        required: false
+        type: string
+      name:
+        description: "The app's name: a lowercase letter, then lowercase letters, digits and -"
+        required: true
+        type: string
+      claimed_by:
+        description: The person the client says filled the form; the forge does not vouch for it
+        required: false
+        type: string
+      inputs:
+        description: The template's inputs as one JSON object, by name
+        required: false
+        default: "{}"
+        type: string
+permissions:
+  contents: read
+jobs:
+  request:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: terragucci request "$TG_TEMPLATE" --name "$TG_NAME"

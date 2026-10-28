@@ -126,6 +126,11 @@ export const TERRAGUCCI_ALLOWED_WRITES: readonly { method: string; pattern: RegE
   { method: "POST", pattern: /^\/api\/carve\/bridge$/, why: "the carve walkthrough's scratch directory" },
   { method: "POST", pattern: /^\/api\/carve\/observe$/, why: "the carve walkthrough's read of its scratch emulator" },
   { method: "POST", pattern: /^\/api\/carve\/plan$/, why: "the carve walkthrough's read-only plan" },
+  {
+    method: "POST",
+    pattern: /^\/api\/templates\/request$/,
+    why: "dispatches terragucci's request workflow; writes nothing in the tree and holds no apply credential (behold#1035). The handler refuses any repo that is not terragucci with templates set, since this list also guards SQL Yodeler repos",
+  },
 ];
 
 /** Whether a `method` request to `path` is one of TERRAGUCCI_ALLOWED_WRITES. Reads are not writes and are not in it. */
