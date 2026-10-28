@@ -1953,7 +1953,8 @@ The commands behold starts run with behold's own environment, so Deploy (`POST
 /api/apply`, chant's local executor) applies with the credentials of whoever
 started it. On a terragucci repo (a `terragucci.yml` in the served directory or
 above it, up to the git root) behold deploys, approves and applies nothing,
-and the only thing it starts is terragucci's own request workflow (below):
+and the only things it starts are terragucci's own request and rollout
+workflows (below):
 every other POST that deploys, approves or starts a run answers `409` with
 `code: "terragucci"` and names the pipeline (`src/terragucci-repo.ts`, #489), `/api/project` carries `terragucci`
 so the page offers no write, and auto-sync declines. The boundary is an
@@ -1962,8 +1963,9 @@ any path, answers that `409` unless `TERRAGUCCI_ALLOWED_WRITES` names its
 method and route, and that list holds only the exceptions below (the layout
 cache, project open and reveal, demo open, refresh, and the four carve
 steps), plus `POST /api/view`, which moves the open tabs and writes nothing
-(#914), and `POST /api/templates/request`, which dispatches terragucci's
-request workflow (behold#1035). A new write route is refused on a terragucci repo until it is added
+(#914), `POST /api/templates/request`, which dispatches terragucci's
+request workflow (behold#1035), and `POST /api/templates/upgrade`, which
+dispatches its rollout workflow (behold#1036). A new write route is refused on a terragucci repo until it is added
 there. `src/terragucci-repo.test.ts` walks every non-GET route of the real
 app (`app.routes`, built plain, with a carve report and with `--terragucci`)
 and asserts each one is allowlisted or answers 409, and that every allowlist
@@ -2007,8 +2009,9 @@ These are also the only writes a guarded product repo answers: terragucci
 (`terragucci.yml` and its siblings) and SQL Yodeler (`yodel.config.ts`), both
 listed in `TERRAGUCCI_ALLOWED_WRITES`.
 
-`POST /api/templates/request` (behold#1035, `src/templates.ts`) is the one
-start on a terragucci repo, and it writes nothing anywhere. It is on the
+`POST /api/templates/request` (behold#1035, `src/templates.ts`) and
+`POST /api/templates/upgrade` (behold#1036) are the two starts on a terragucci
+repo, and they write nothing anywhere. The request is described first. It is on the
 allowlist, and because the list also guards SQL Yodeler repos the handler
 refuses on its own (`409`, the product's refusal or `code: "no-templates"`)
 unless the served repo is terragucci and its terragucci.yml sets
@@ -2031,6 +2034,28 @@ is planned and reviewed like any other (ruling A of INTENTIUS/chant#4642). The
 follow runs in the runner's single slot, and `GET /api/templates/requests/:id`
 answers the run's end and the pull request's number and URL. `--public`
 refuses both reads (`403`) and the post (`405`).
+
+With `app` in the body (behold#1036) the request asks for an add-on in that
+app's root. The template must be an add-on template (else `422 wrong-kind`),
+the app must be one the repo's own `terragucci templates apps --json` lists
+(`GET /api/templates/apps` answers that output byte for byte), else `422
+not-an-app`, and the add-on's name must not be a module the app's root already
+has (`422 addon-exists`). The dispatch adds the `app` input, and the branch is
+`request/<template>/<app>/<addon>`.
+
+`POST /api/templates/upgrade` takes `{app, version?}`. It reads the apps again
+and takes the module and version from terragucci, never from the caller: the
+app's `template` and its `upgrade` (`422 not-an-app`, `422 no-upgrade` when
+`upgrade` is null, `409 stale-upgrade` when `version` is not it). It refuses
+on its own like the request, then dispatches the committed
+`terragucci-rollout.yml` with `module` and `version` only (`409
+no-rollout-workflow` when it is not committed, `409 terragucci-too-old` when
+it takes neither input), through the same `gh` and Forgejo paths and the same
+runner slot. A person starts it; terragucci's existing rollout opens one pull
+request per wave, and each wave is planned, reviewed and applied by the
+pipeline (ruling D). GitLab's rollout job takes no dispatch inputs, so GitLab
+answers `422 request-forge` with the `npx terragucci rollout` line. `--public`
+refuses the apps read (`403`) and the post (`405`).
 
 `POST /api/layout` (#228) writes **one** file, and not in the served project:
 the hand layout is a per-user cache (#469), `<user cache>/behold/layouts/<key>.json`
