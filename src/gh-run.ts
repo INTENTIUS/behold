@@ -30,15 +30,15 @@ import { ciWorkflowName, type CiPipeline } from "./chant.ts";
 import { pipelineProgress, losePipelineProgress, type PipelineProgressState } from "./ci-run.ts";
 import type { ApplyStatus } from "./apply.ts";
 
-/** One `gh <args>` invocation. Injectable; the default spawns the real CLI. */
-export type GhExec = (args: string[]) => Promise<{ code: number; out: string }>;
+/** One `gh <args>` invocation, in `cwd` when given (the repository `gh` acts on). Injectable; the default spawns the real CLI. */
+export type GhExec = (args: string[], opts?: { cwd?: string }) => Promise<{ code: number; out: string }>;
 
-export const defaultGhExec: GhExec = (args) =>
+export const defaultGhExec: GhExec = (args, opts) =>
   new Promise((resolve) => {
     let out = "";
     let proc;
     try {
-      proc = spawn("gh", args, { stdio: ["ignore", "pipe", "pipe"] });
+      proc = spawn("gh", args, { stdio: ["ignore", "pipe", "pipe"], ...(opts?.cwd ? { cwd: opts.cwd } : {}) });
     } catch {
       resolve({ code: 127, out: "" });
       return;
@@ -203,6 +203,39 @@ export function resolveWorkflow(
 export function pickWorkflow(projectDir: string, pipeline: CiPipeline): WorkflowInfo | undefined {
   const r = resolveWorkflow(projectDir, pipeline);
   return "workflow" in r ? r.workflow : undefined;
+}
+
+/**
+ * `gh workflow run <file> [--ref <ref>] -f <name>=<value>...` (behold#1035):
+ * a named workflow with its dispatch inputs, in the order given. Without a
+ * ref, `gh` dispatches on the repository's default branch.
+ */
+export function workflowRunArgs(file: string, inputs: readonly (readonly [string, string])[], ref?: string): string[] {
+  return ["workflow", "run", file, ...(ref ? ["--ref", ref] : []), ...inputs.flatMap(([k, v]) => ["-f", `${k}=${v}`])];
+}
+
+/** Dispatch a named workflow with inputs through the operator's `gh`, in the repository at `cwd`. */
+export async function dispatchWorkflow(
+  file: string,
+  inputs: readonly (readonly [string, string])[],
+  opts: { cwd?: string; ref?: string; exec?: GhExec } = {},
+): Promise<{ code: number; out: string }> {
+  const exec = opts.exec ?? defaultGhExec;
+  return exec(workflowRunArgs(file, inputs, opts.ref), opts.cwd ? { cwd: opts.cwd } : undefined);
+}
+
+/** The pull request on `branch` (open, closed or merged), from `gh pr list --head`, or undefined when there is none or `gh` fails. */
+export async function pullRequestOn(branch: string, opts: { cwd?: string; exec?: GhExec } = {}): Promise<{ number: number; url?: string } | undefined> {
+  const exec = opts.exec ?? defaultGhExec;
+  const { code, out } = await exec(["pr", "list", "--head", branch, "--state", "all", "--limit", "1", "--json", "number,url"], opts.cwd ? { cwd: opts.cwd } : undefined);
+  if (code !== 0) return undefined;
+  try {
+    const rows = JSON.parse(out) as Array<{ number?: unknown; url?: unknown }>;
+    const r = rows[0];
+    return r && typeof r.number === "number" ? { number: r.number, ...(typeof r.url === "string" ? { url: r.url } : {}) } : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** `gh run list` reduced to the newest run's id for one workflow file. */

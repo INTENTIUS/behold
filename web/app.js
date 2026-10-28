@@ -81,6 +81,7 @@ import {
   totalsText,
   deltaRows,
 } from "./behaviour-scale.js";
+import { startTemplates } from "./templates.js";
 import { addPanelTab, initPanel, setPanelTab, togglePanelCollapsed, isPanelCollapsed, foldPanelOnPhone } from "./panel.js";
 // #254: the carve walkthrough's stepper — everything it DECIDES is a pure
 // function in there; this file owns the fetches, the graph selection, and the
@@ -7460,6 +7461,30 @@ async function initAdopt() {
   if (host.classList.contains("active")) start();
 }
 initAdopt();
+
+// --- behold#1035: apps from a terragucci repo's templates ---------------------
+// The opposite of the guarded-repo rule: drawn only on a terragucci repo whose
+// terragucci.yml sets templates (/api/project's terragucciTemplates). Request
+// dispatches terragucci's request workflow, which opens the pull request in
+// CI; behold writes nothing. Never in a public view, an embed or a static export.
+async function initTemplates() {
+  if (staticMode || publicMode || embedOpts.embed) return;
+  const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
+  if (!project.terragucciTemplates || project.publicMode) return;
+  const host = addPanelTab("templates", "Templates", "Apps this repo can make from a template: fill in a form, and terragucci opens the pull request that adds the app.");
+  if (!host) return;
+  host.id = "tab-templates";
+  let started = false;
+  const start = () => {
+    if (started) return;
+    started = true;
+    startTemplates(host, { fetchJson: (url, init) => fetch(url, init).then((r) => r.json()), events, toast: showToast });
+  };
+  const tab = document.querySelector('#panel-tabs button[data-tab="templates"]');
+  if (tab) tab.addEventListener("click", start);
+  if (host.classList.contains("active")) start();
+}
+initTemplates();
 
 // --- #683: feature flags, on or off per environment ---------------------------
 // The Flags tab reads /api/workspace/flags when it is opened: each flag of the

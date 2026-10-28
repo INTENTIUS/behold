@@ -1,0 +1,49 @@
+---
+title: Apps from templates
+description: The Templates tab lists the templates a terragucci repo offers, and a form for one asks terragucci to open the pull request that adds the app.
+draft: true
+---
+
+When behold serves a terragucci repo whose `terragucci.yml` sets `templates`,
+the panel has a **Templates** tab. It lists the templates the repo's release
+catalog offers, one row each with its title, kind, newest version and that
+version's attestation. A row's **Request** button opens a form with one field
+per input of the template, labelled from its `template.yml`: a text field for
+a string, a number field for a number, a checkbox for a bool and a text area
+with one value per line for a list of strings. A required field is marked, and
+Submit stays off until each one has a value. A sensitive input has no field:
+the app reads it from its secret store.
+
+Submit asks terragucci's request workflow (`terragucci-request.yml`) to run.
+The form says "Requested. terragucci is opening the pull request." and, when
+the run ends, links the pull request it opened on `request/<template>/<name>`.
+A refusal shows its reason code and words. Nothing changes until that pull
+request is reviewed and merged: the pipeline plans it like any other.
+
+The tab is not drawn in a public view, an embed, a static export, or a repo
+without `templates`.
+
+## The two routes
+
+- `GET /api/templates` runs the repo's own `terragucci templates list --json`
+  and answers what it printed. A terragucci without the `templates` command
+  answers `409` with `code: "terragucci-too-old"`.
+- `POST /api/templates/request` takes `{template, version, name, inputs}`.
+  It checks the request against that catalog (a required input left out is
+  `422 missing-input`, a version the catalog no longer offers is
+  `422 not-active`), then dispatches the request workflow with the inputs
+  `template`, `version`, `name` and `inputs`, and answers `202`. On GitHub it
+  runs `gh workflow run terragucci-request.yml` with your own `gh` login. On
+  Forgejo it calls the dispatch API with the token in `FORGEJO_TOKEN`, so
+  start behold with it set. When the workflow declares a `claimed_by` input,
+  behold also passes the person it says filled the form; the requester the
+  pull request records is the run's actor, which the forge vouches for.
+
+behold never runs `terragucci request` itself and writes nothing in the repo.
+The run in CI opens the pull request with the repo's own token.
+
+## GitLab
+
+A GitLab repo has no request workflow. The request answers `422` with
+`code: "request-forge"` and the line to run at your shell instead, such as
+`npx terragucci request acme/bucket/aws --name orders --version 1.2.0 --input bucket_name=orders-data`.
