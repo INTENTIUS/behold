@@ -358,6 +358,23 @@
       #tab-adopt .ad-addr { font-family: var(--font-mono); overflow-wrap: anywhere; }
       #tab-adopt .ad-claimed .ad-status { color: var(--managed); } #tab-adopt .ad-left-out .ad-status { color: var(--foreign); } #tab-adopt .ad-unknown .ad-status { color: var(--degraded); }
       #tab-adopt .ad-refused { color: var(--degraded); }
+      /* behold#1035: the Templates tab (web/templates.js), drawn like Adopt. */
+      #panel-body #tab-templates.active { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--t-caption); }
+      #tab-templates h3 { margin: var(--s3) 0 0; font-size: var(--t-caption); overflow-wrap: anywhere; }
+      #tab-templates .tg-legend { color: var(--muted); overflow-wrap: anywhere; }
+      #tab-templates .tg-refusal { color: var(--degraded); font-weight: 600; overflow-wrap: anywhere; }
+      #tab-templates .ad-card { border-top: 1px solid var(--rule); padding-top: var(--s2); display: flex; flex-direction: column; gap: var(--s1); }
+      #tab-templates .ad-label { font-weight: 600; margin-top: var(--s2); }
+      #tab-templates .ad-row { display: flex; gap: var(--s2); flex-wrap: wrap; margin-top: var(--s2); }
+      #tab-templates .tp-form { display: flex; flex-direction: column; gap: 2px; }
+      #tab-templates .tp-form input[type="text"], #tab-templates .tp-form input[type="number"], #tab-templates .tp-form textarea { font: inherit; max-width: 100%; }
+      #tab-templates .tp-form textarea { min-height: 4em; font-family: var(--font-mono); }
+      #tab-templates .tp-request { align-self: flex-start; }
+      #tab-templates .tp-all { align-self: flex-start; }
+      /* behold#1036: an app's part of the inspect pane (web/template-apps.js). */
+      #inspect-body .tpl-app .tpl-app-fact { margin: 2px 0; overflow-wrap: anywhere; }
+      #inspect-body .tpl-app .tpl-app-buttons { display: flex; gap: var(--s2); flex-wrap: wrap; margin-top: var(--s2); }
+      #inspect-body .tpl-app .tpl-app-result { overflow-wrap: anywhere; }
       #panel-body #tab-local-runs.active { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--t-caption); }
       #tab-local-runs h3 { margin: var(--s3) 0 0; font-size: var(--t-caption); }
       #tab-local-runs .tg-legend { color: var(--muted); overflow-wrap: anywhere; }

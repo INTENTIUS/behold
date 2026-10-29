@@ -24,18 +24,54 @@ const KIND_WORDS = {
   "state-export": "state exported",
   "ephemeral-apply": "ephemeral copy applied",
   "ephemeral-destroy": "ephemeral copy destroyed",
+  "unrecorded-write": "write no run recorded",
+  "agent-run": "agent run",
+  request: "app requested",
+  "action-requested": "action requested",
+  action: "action",
 };
+
+/** behold#1037: an action entry's name, root and address, from its detail, else its gate `<root>:<address>`. */
+export function actionOf(entry) {
+  const d = entry.detail || {};
+  const gate = String(entry.what || "");
+  const address = typeof d.address === "string" ? d.address : gate.slice(gate.indexOf(":") + 1);
+  const root = typeof d.root === "string" ? d.root : gate.endsWith(`:${address}`) ? gate.slice(0, -address.length - 1) : (entry.roots || [])[0] || "";
+  return { name: address.split(".").pop() || address, root, address };
+}
+
+/**
+ * The page of the CI run behind an entry, when the record names its run id
+ * and its ledger commit is on a forge page: `<repo>/actions/runs/<id>`, as
+ * GitHub and Forgejo both lay it out.
+ */
+export function runUrlOf(entry) {
+  const id = entry.run && entry.run.run_id;
+  const url = entry.evidence && entry.evidence.url;
+  if (!id || !/^\d+$/.test(String(id)) || typeof url !== "string") return null;
+  const m = /^(https?:\/\/[^/]+\/[^/]+\/[^/]+)\/commit\/[0-9a-f]+$/i.exec(url);
+  return m ? `${m[1]}/actions/runs/${id}` : null;
+}
 
 /** The tone an entry is drawn in: a refusal or a failure stands out, a wait is pending, the rest is quiet. */
 export function toneOf(entry) {
   if (entry.kind === "refused" || entry.result === "failed" || entry.result === "denied") return "failed";
-  if (entry.result === "waiting" || entry.kind === "approval-requested" || entry.kind === "override-requested") return "wave";
+  if (entry.result === "waiting" || entry.kind === "approval-requested" || entry.kind === "override-requested" || entry.kind === "action-requested") return "wave";
   if (entry.kind.endsWith("-revoked")) return "drift";
   return "ok";
 }
 
-/** One entry as a line: "approved wave-2 by dana · plan 4be1…". */
+/** One entry as a line: "approved wave-2 by dana · plan 4be1…", or for an action "rotate on apps/orders, approved by dana, ok". */
 export function entryLine(entry) {
+  if (entry.kind === "action") {
+    const a = actionOf(entry);
+    return `${a.name} on ${a.root}${entry.who ? `, approved by ${entry.who}` : ""}${entry.result ? `, ${entry.result}` : ""}`;
+  }
+  if (entry.kind === "action-requested") {
+    const a = actionOf(entry);
+    const digest = entry.digest ? ` · plan ${entry.digest.replace(/^(jcs1-)?sha256:/, "").slice(0, 12)}` : "";
+    return `${a.name} on ${a.root} requested${entry.who ? ` by ${entry.who}` : ""}${entry.result ? `, ${entry.result}` : ""}${digest}`;
+  }
   const what = KIND_WORDS[entry.kind] || entry.kind;
   const by = entry.who ? ` by ${entry.who}` : "";
   // Signing is opt-in: an unsigned approval is the normal case and goes unmarked.
@@ -63,6 +99,7 @@ export function laneRows(answer, { root = null, now = new Date() } = {}) {
     const links = [];
     if (e.run && e.run.report) links.push({ text: "report", href: hrefOf(answer, e.run.report) });
     if (e.run && e.run.job_url) links.push({ text: "job", href: e.run.job_url });
+    else if (runUrlOf(e)) links.push({ text: "run", href: runUrlOf(e) });
     if (e.evidence && e.evidence.source === "ledger" && /^https?:\/\//.test(e.evidence.url || "")) links.push({ text: "ledger commit", href: e.evidence.url });
     return {
       id: e.id,

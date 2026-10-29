@@ -21,7 +21,7 @@ import { cssString, hoverCss, hoverFromMessage, hoverLinks, hoverMessage, isLigh
 import { gateCards } from "./workspace-gates.js";
 import { cornerOf, estateLine, hrefOf as tgHref, legend as tgLegend, markLine, rootRows as tgRootRows, waveCards } from "./terragucci.js";
 import { laneElement as tgLane, rootOfCard as tgRootOfCard, historyElement as tgHistoryLane } from "./terragucci-timeline.js";
-import { renderLane } from "./terragucci-lifecycle.js";
+import { gateCardElement, renderLane } from "./terragucci-lifecycle.js";
 import { renderReleases } from "./releases.js";
 import { renderTrunkLane } from "./trunk-lane.js";
 import { startLocalRuns } from "./local-run.js";
@@ -81,6 +81,8 @@ import {
   totalsText,
   deltaRows,
 } from "./behaviour-scale.js";
+import { startTemplates } from "./templates.js";
+import { appFrames, appRows as tplAppRows, frameOf as tplFrameOf, postAction, postUpgrade, renderAppSection } from "./template-apps.js";
 import { addPanelTab, initPanel, setPanelTab, togglePanelCollapsed, isPanelCollapsed, foldPanelOnPhone } from "./panel.js";
 // #254: the carve walkthrough's stepper — everything it DECIDES is a pure
 // function in there; this file owns the fetches, the graph selection, and the
@@ -1273,6 +1275,20 @@ function inspect(node) {
       panel.appendChild(p);
     }
   }
+  // behold#1036: the app this card is part of, and the requests that change it.
+  const tplFrame = tplFrameOf(tplFrames, node.id);
+  if (tplFrame)
+    renderAppSection(panel, tplFrame, tplAppUi, {
+      publicMode,
+      embed: !!embedOpts.embed,
+      staticMode,
+      said: tplSaid[tplFrame.app.app],
+      // behold#1037: the app's actions, their gate cards from chant/lifecycle and their history from the audit record.
+      actionSaid: tplActionSaid[tplFrame.app.app],
+      actionRefusal: tplActionRefusal,
+      lane: tgLifecycle,
+      timeline: tgTimeline,
+    });
   // #681: what the open change set would do to this card, entry by entry.
   const csEntries = csAnswer && csOn ? csEntriesFor(csAnswer, node.id) : [];
   if (csEntries.length) {
@@ -6405,6 +6421,7 @@ function markTerragucciCards() {
     g.append(title, tag);
   }
   drawTgReads(); // #568
+  drawAppFrames(); // behold#1036: a frame's drift count follows the marks
 }
 // --- behold#571: the kiosk frame's popover, root colours and hover links -------
 // The kiosk frames this page bare, with no Inspect pane. Pointing at a card
@@ -7460,6 +7477,132 @@ async function initAdopt() {
   if (host.classList.contains("active")) start();
 }
 initAdopt();
+
+// --- behold#1035: apps from a terragucci repo's templates ---------------------
+// The opposite of the guarded-repo rule: drawn only on a terragucci repo whose
+// terragucci.yml sets templates (/api/project's terragucciTemplates). Request
+// dispatches terragucci's request workflow, which opens the pull request in
+// CI; behold writes nothing. Never in a public view, an embed or a static export.
+async function initTemplates() {
+  if (staticMode || publicMode || embedOpts.embed) return;
+  const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
+  if (!project.terragucciTemplates || project.publicMode) return;
+  tplActionRefusal = project.terragucciActionRefusal || null;
+  const host = addPanelTab("templates", "Templates", "Apps this repo can make from a template: fill in a form, and terragucci opens the pull request that adds the app.");
+  if (!host) return;
+  host.id = "tab-templates";
+  let started = null;
+  const start = () => {
+    started ??= startTemplates(host, { fetchJson: (url, init) => fetch(url, init).then((r) => r.json()), events, toast: showToast });
+    return started;
+  };
+  const tab = document.querySelector('#panel-tabs button[data-tab="templates"]');
+  if (tab) tab.addEventListener("click", start);
+  if (host.classList.contains("active")) start();
+  // behold#1036: an app's Add an add-on opens this tab on its add-on templates.
+  tplOpenAddons = (app) => {
+    setPanelTab("templates");
+    start().ui.forApp(app);
+  };
+  await loadTemplateApps();
+}
+initTemplates();
+
+// --- behold#1036: apps made from templates, framed on the graph ---------------
+// GET /api/templates/apps names each app's root, template and add-ons. Their
+// cards (module.app and each add-on's module) draw inside one frame, titled
+// with the app and its template, whose header counts the cards terragucci's
+// reports mark as drifted. The marks stay on the cards. A card in a frame
+// shows the app's requests in the inspect pane; behold dispatches, the
+// pipeline plans and applies.
+var tplApps = null; // var: render() may draw before this line is reached
+var tplFrames = [];
+var tplSaid = {};
+var tplOpenAddons = null;
+var tplActionSaid = {}; // behold#1037: the last action press's answer, by app
+var tplActionRefusal = null; // ruling E: /api/project's terragucciActionRefusal
+var tplAppUi = {
+  // behold#1037: an action button dispatches terragucci's action workflow; the gate card then shows the approve line for someone else.
+  action: async (app, b) => {
+    if (b.disabled) return;
+    const answer = await postAction((url, init) => fetch(url, init).then((r) => r.json()), b.body);
+    tplActionSaid[app.app] = answer;
+    if (answer && answer.error) showToast(`✗ ${b.label} on ${app.root}: ${answer.error}`, false);
+    else showToast(`▶ ${b.label} on ${app.root} asked for; it waits for someone else's approval`, true);
+    loadTerragucciLane({ fresh: true });
+    const panel = document.getElementById("inspect-body");
+    const shown = panel && panel.dataset.node && lastGraphIr && lastGraphIr.nodes.find((n) => n.id === panel.dataset.node);
+    if (shown) inspect(shown);
+  },
+  gateCard: (card) => gateCardElement(card, { button, copy: copyToClipboard, link: tgLink }),
+  addAddon: (app) => tplOpenAddons && tplOpenAddons(app.app),
+  upgrade: async (app, body) => {
+    const answer = await postUpgrade((url, init) => fetch(url, init).then((r) => r.json()), body);
+    tplSaid[app.app] = answer;
+    if (answer && answer.error) showToast(`✗ upgrade ${app.app}: ${answer.error}`, false);
+    else showToast(`▶ upgrade of ${app.template} to ${body.version} started`, true);
+    const panel = document.getElementById("inspect-body");
+    const shown = panel && panel.dataset.node && lastGraphIr && lastGraphIr.nodes.find((n) => n.id === panel.dataset.node);
+    if (shown) inspect(shown);
+  },
+};
+async function loadTemplateApps() {
+  if (staticMode || publicMode || embedOpts.embed) return;
+  const a = await apiFetch("/api/templates/apps").then((r) => r.json()).catch(() => null);
+  tplApps = a && !a.error ? a : null;
+  drawAppFrames();
+}
+function drawAppFrames() {
+  const svg = document.querySelector("#graph svg");
+  if (!svg) return;
+  for (const old of svg.querySelectorAll("[data-tpl-app]")) old.remove();
+  const apps = tplAppRows(tplApps);
+  if (!apps.length) return void (tplFrames = []);
+  const byId = new Map(((lastGraphIr && lastGraphIr.nodes) || []).map((n) => [n.id, n]));
+  const drawn = [...svg.querySelectorAll("[data-node-id]")].map((g) => g.getAttribute("data-node-id") || "");
+  const nodes = drawn.map((id) => byId.get(id) || { id });
+  tplFrames = appFrames(apps, nodes, { roots: (tgAnswer && !tgAnswer.error && tgAnswer.roots) || [], cards: (tgAnswer && tgAnswer.cards) || {} });
+  const toSvg = svg.getScreenCTM && svg.getScreenCTM();
+  if (!toSvg) return;
+  const inv = toSvg.inverse();
+  const boxOf = (g) => {
+    let b;
+    try {
+      b = g.getBBox();
+    } catch {
+      return null;
+    }
+    const ctm = g.getScreenCTM && g.getScreenCTM();
+    if (!ctm || !b.width) return null;
+    const m = inv.multiply(ctm);
+    const pts = [[b.x, b.y], [b.x + b.width, b.y + b.height]].map(([x, y]) => new DOMPoint(x, y).matrixTransform(m));
+    return { x: Math.min(pts[0].x, pts[1].x), y: Math.min(pts[0].y, pts[1].y), x2: Math.max(pts[0].x, pts[1].x), y2: Math.max(pts[0].y, pts[1].y) };
+  };
+  const NS = "http://www.w3.org/2000/svg";
+  const make = (tag, attrs, text) => {
+    const n = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v));
+    if (text !== undefined) n.textContent = text;
+    return n;
+  };
+  // Under the cards, so a card keeps its pointer and the frame never covers one.
+  let under = svg.querySelector("[data-node-id]");
+  while (under && under.parentNode !== svg) under = under.parentNode;
+  for (const f of tplFrames) {
+    const boxes = f.ids.map((id) => svg.querySelector(`[data-node-id="${CSS.escape(id)}"]`)).filter(Boolean).map(boxOf).filter(Boolean);
+    if (!boxes.length) continue;
+    const pad = 14;
+    const b = { x: Math.min(...boxes.map((x) => x.x)) - pad, y: Math.min(...boxes.map((x) => x.y)) - pad - 22, x2: Math.max(...boxes.map((x) => x.x2)) + pad, y2: Math.max(...boxes.map((x) => x.y2)) + pad };
+    const g = make("g", { "data-tpl-app": f.app.app, "pointer-events": "none" });
+    g.appendChild(make("rect", { x: b.x, y: b.y, width: b.x2 - b.x, height: b.y2 - b.y, rx: 10, fill: "none", stroke: f.drifted ? "var(--frame-degraded, var(--degraded))" : "var(--rule)", "stroke-width": 1.5, "stroke-dasharray": "6 4" }));
+    const title = make("text", { x: b.x + 10, y: b.y + 15, "font-size": 12, "font-weight": 700, fill: "var(--fg)" }, f.title);
+    g.appendChild(title);
+    if (f.drift) g.appendChild(make("text", { x: b.x2 - 10, y: b.y + 15, "text-anchor": "end", "font-size": 12, "font-weight": 700, fill: "var(--frame-degraded, var(--degraded))" }, f.drift));
+    g.appendChild(make("title", {}, `${f.header}\n${f.app.root}: the app and its add-ons are one root, planned and applied together`));
+    if (under) svg.insertBefore(g, under);
+    else svg.appendChild(g);
+  }
+}
 
 // --- #683: feature flags, on or off per environment ---------------------------
 // The Flags tab reads /api/workspace/flags when it is opened: each flag of the
@@ -9912,6 +10055,7 @@ function render(ir, svg, m) {
   syncHealth(m); // #825: and runtime health, with the records out of rotation
   applyLayout(); // #228: last, so the hand-placed deltas ride on top of every other pass
   drawTgReads(); // #568: after the layout, so the reads lines meet the cards where they now sit
+  drawAppFrames(); // behold#1036: and the apps' frames, around the cards where they now sit
   renderDial();
 }
 

@@ -126,6 +126,21 @@ export const TERRAGUCCI_ALLOWED_WRITES: readonly { method: string; pattern: RegE
   { method: "POST", pattern: /^\/api\/carve\/bridge$/, why: "the carve walkthrough's scratch directory" },
   { method: "POST", pattern: /^\/api\/carve\/observe$/, why: "the carve walkthrough's read of its scratch emulator" },
   { method: "POST", pattern: /^\/api\/carve\/plan$/, why: "the carve walkthrough's read-only plan" },
+  {
+    method: "POST",
+    pattern: /^\/api\/templates\/request$/,
+    why: "dispatches terragucci's request workflow; writes nothing in the tree and holds no apply credential (behold#1035). The handler refuses any repo that is not terragucci with templates set, since this list also guards SQL Yodeler repos",
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/templates\/upgrade$/,
+    why: "dispatches terragucci's rollout workflow with an app's template and its upgrade version, which a person starts and the rollout carries wave by wave; writes nothing in the tree and holds no apply credential (behold#1036). The handler refuses any repo that is not terragucci with templates set, as the request's does",
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/templates\/action$/,
+    why: "dispatches terragucci's action workflow with an app's root and one action address its templates offer; the run asks chant's gated request, a person other than the requester approves it, and behold approves and invokes nothing (behold#1037). The handler refuses any repo that is not terragucci with templates set, as the request's does",
+  },
 ];
 
 /** Whether a `method` request to `path` is one of TERRAGUCCI_ALLOWED_WRITES. Reads are not writes and are not in it. */

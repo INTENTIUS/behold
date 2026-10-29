@@ -58,10 +58,16 @@ export const AUDIT_KINDS = [
   "state-export",
   "ephemeral-apply",
   "ephemeral-destroy",
+  // terragucci's later kinds: an unrecorded write, an agent run, a template request, and a day-2 action's request and run (behold#1037).
+  "unrecorded-write",
+  "agent-run",
+  "request",
+  "action-requested",
+  "action",
 ] as const;
 
 /** Kinds whose `what` is a root rather than a gate. */
-const WHAT_IS_ROOT = new Set(["override-requested", "override", "override-revoked", "unlock", "state-export"]);
+const WHAT_IS_ROOT = new Set(["override-requested", "override", "override-revoked", "unlock", "state-export", "unrecorded-write"]);
 
 /** How many entries an answer carries by default, and at most. */
 export const TIMELINE_LIMIT = 200;
@@ -224,9 +230,10 @@ export function parseAudit(text: string, location: string, v: AuditValidator): A
   return out;
 }
 
-/** The roots an entry names itself: `detail.roots` (paths, or objects with a `root`), else `what` for a kind whose `what` is a root. */
+/** The roots an entry names itself: `detail.roots` (paths, or objects with a `root`), `detail.root` (an action's, behold#1037), else `what` for a kind whose `what` is a root. */
 function ownRoots(e: AuditEntry): string[] {
   const roots = new Set<string>();
+  if (str(e.detail?.root)) roots.add(e.detail.root as string);
   const listed = e.detail?.roots;
   if (Array.isArray(listed)) {
     for (const r of listed) {

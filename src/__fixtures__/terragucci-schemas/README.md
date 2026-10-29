@@ -39,3 +39,10 @@ composed run: a pull request's tf-plan `report.json`, wave 1's tf-apply
 `report.json` after a failure part way, and the run views of the run waiting on
 an unknown read, applying, applied and failed part way. Every fixture in both
 directories validates against these schemas.
+
+behold#1037: `audit.schema.json` refreshed again, unchanged, from
+INTENTIUS/terragucci `integration/self-service` at `c5e88fc5` (merge of
+INTENTIUS/terragucci#1310). It adds the kinds `unrecorded-write`, `agent-run`,
+`request`, `action-requested` and `action`, and the evidence source `state`
+with `location` and `version_id`. `../terragucci-audit.jsonl` holds one entry
+of each.

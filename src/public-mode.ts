@@ -103,6 +103,8 @@ const REFUSED_READS: Array<[RegExp, string]> = [
   [/^\/api\/adopt(\/|$)/, "it runs chant workspace promote (which runs choudoufu against the live estate) or plunge stack adopt (against the stack's backend), with behold's own credentials"],
   [/^\/api\/chant\/ci\/local(\/|$)/, "a local run is a job started on this machine, and a public view starts nothing"],
   // behold#978: the catalog is for an agent asking a cap: question; the kiosk never reads it.
+  // behold#1035: the catalog read runs terragucci, and a request's state reads the forge with the operator's login.
+  [/^\/api\/templates(\/|$)/, "it runs terragucci against the repo, and a request is followed with the operator's forge login"],
   [/^\/api\/capabilities$/, "it runs chant, and the public view doesn't read the capability catalog"],
 ];
 

@@ -155,6 +155,17 @@ describe("a terragucci repo refuses every write that deploys, approves or starts
     for (const w of TERRAGUCCI_ALLOWED_WRITES) expect(refusedWrite(w.method, w.pattern.source.replace(/^\^|\$$/g, "").replace(/\\\//g, "/"))).toBeUndefined();
     expect(TERRAGUCCI_REFUSED_WRITES.every((w) => !allowedWrite("POST", w.pattern.source))).toBe(true);
   });
+
+  it("allows the template request, the upgrade and the action dispatch as POSTs, and no other template write (behold#1035, #1036, #1037)", () => {
+    expect(allowedWrite("POST", "/api/templates/request")).toBe(true);
+    expect(allowedWrite("POST", "/api/templates/upgrade")).toBe(true);
+    expect(allowedWrite("POST", "/api/templates/action")).toBe(true);
+    for (const m of ["PUT", "PATCH", "DELETE"]) expect(allowedWrite(m, "/api/templates/upgrade")).toBe(false);
+    for (const m of ["PUT", "PATCH", "DELETE"]) expect(allowedWrite(m, "/api/templates/action")).toBe(false);
+    expect(allowedWrite("POST", "/api/templates/upgrade/x")).toBe(false);
+    expect(allowedWrite("POST", "/api/templates/action/x")).toBe(false);
+    expect(allowedWrite("POST", "/api/templates/approve")).toBe(false);
+  });
 });
 
 describe("a SQL Yodeler repo is guarded the same way (#517)", () => {
