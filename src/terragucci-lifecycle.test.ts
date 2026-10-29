@@ -490,7 +490,8 @@ describe("GET /api/terragucci/lifecycle (#505)", () => {
   const GATE = `apps/orders:${ADDRESS}`;
   const DA = `sha256:${"a".repeat(64)}`;
   const act = (r: object): string => JSON.stringify({ version: 1, op: "tf-action", gate: GATE, ...r });
-  const asked = act({ kind: "pending", timestamp: "2026-10-09T08:00:00Z", expiresAt: "2099-01-01T00:00:00Z", planDigest: DA, runId: "88", request: { kind: "terraform-action", subject: GATE, by: "lee", fields: { address: ADDRESS } } });
+  // chant 0.124.58 drops a request without `at` (gatedRequestOf, chant#4551), so the fixture carries the field terragucci writes.
+  const asked = act({ kind: "pending", timestamp: "2026-10-09T08:00:00Z", expiresAt: "2099-01-01T00:00:00Z", planDigest: DA, runId: "88", request: { kind: "terraform-action", subject: GATE, by: "lee", at: "2026-10-09T08:00:00Z", fields: { address: ADDRESS } } });
 
   it("lists a pending tf-action fact as a waiting action gate with terragucci's approve action line (behold#1037)", async () => {
     const { checkout } = fixture({ files: { ...LANE, "_gates/tf-action.jsonl": asked } });
