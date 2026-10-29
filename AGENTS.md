@@ -2019,8 +2019,7 @@ refuses on its own (`409`, the product's refusal or `code: "no-templates"`)
 unless the served repo is terragucci and its terragucci.yml sets
 `templates`. It checks the request against what the repo's own
 `terragucci templates list --json` printed (`GET /api/templates` answers that
-output byte for byte) and against chant's template-request/v1 when the
-installed chant carries `@intentius/chant/template-request`, then dispatches
+output byte for byte) and against chant's template-request/v1 (`@intentius/chant/template-request`), then dispatches
 the committed `terragucci-request.yml` with the inputs `template`, `version`,
 `name` and `inputs`, plus `claimed_by` (the person behold says filled the
 form) only when that workflow declares the input. On GitHub the dispatch and
