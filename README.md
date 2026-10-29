@@ -1,7 +1,10 @@
 # behold
 
-**A live control plane on [chant](https://github.com/INTENTIUS/chant).** Every
-substrate in one graph, coloured by drift. Then act through delegated, gated Ops.
+**A spec-native control plane for cloud infrastructure.**
+
+Reads what chant records for terragucci and plywood.
+
+Every substrate in one graph, coloured by drift. Then act through delegated, gated Ops.
 
 📖 **[Documentation](https://intentius.io/behold/)** starts with an agent prompt
 that gets you to a running graph without reading anything else first.
