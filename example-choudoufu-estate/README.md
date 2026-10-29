@@ -44,7 +44,7 @@ the monolith's card for it reads *owned by tlmig-sample-team-a*, and
 `/api/choudoufu/split?plan=split.json&receipt=1` says `moved`. Apply team-a
 afterwards to bring its VPC up, and team-b's read resolves.
 
-`chant.workspace.json` pins the terraform lexicon at chant 0.124.54, the
+`chant.workspace.json` pins the terraform lexicon at chant 0.124.58, the
 release behold depends on (`CHANT_RELEASE` in src/chant-release.ts,
 behold#1005), and the demo copy is re-pinned at whichever lexicon is installed
 beside behold. Streaming drift card by card and the drift record overlay need

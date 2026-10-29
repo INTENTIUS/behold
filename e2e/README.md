@@ -73,9 +73,8 @@ files somewhere else, use the scripts' own knobs (`BEHOLD_E2E_WORK`,
 ## Which chant the three-cloud scripts use
 
 multi-engine-demo-e2e.sh and three-cloud-change-set-e2e.sh install the
-example copy's own dependencies, which name chant 0.124.54 from npm, the
-first release with member-outputs (chant#4455) and the pulumi lexicon
-(chant#4453). A copy whose install lacks either fails; nothing is linked in
+example copy's own dependencies, which name chant 0.124.58 from npm (0.124.54 was the first release with
+member-outputs (chant#4455) and the pulumi lexicon (chant#4453)). A copy whose install lacks either fails; nothing is linked in
 (behold#1005 dropped `BEHOLD_E2E_CHANT_LINK`).
 
 ## three-cloud-change-set needs floci 48c6e47

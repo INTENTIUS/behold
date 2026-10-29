@@ -9,10 +9,10 @@
     "change-set": "tsx scripts/front-door.ts plan --out .front-door/change-set.json"
   },
   "dependencies": {
-    "@intentius/chant": "^0.124.54",
-    "@intentius/chant-lexicon-aws": "^0.124.54",
-    "@intentius/chant-lexicon-gcp": "^0.124.54",
-    "@intentius/chant-lexicon-pulumi": "^0.124.54",
-    "@intentius/chant-lexicon-terraform": "^0.124.54"
+    "@intentius/chant": "^0.124.58",
+    "@intentius/chant-lexicon-aws": "^0.124.58",
+    "@intentius/chant-lexicon-gcp": "^0.124.58",
+    "@intentius/chant-lexicon-pulumi": "^0.124.58",
+    "@intentius/chant-lexicon-terraform": "^0.124.58"
   }
 }

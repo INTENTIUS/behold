@@ -57,7 +57,7 @@ describe("the bundled estates' workspace declarations", () => {
   // Terraform output of that name. behold#1000: the aws site is a Pulumi
   // program on plunge, its output a stack output of that name. behold#1005:
   // the two lexicons that supply those kinds are pinned by package at the
-  // chant release CHANT_RELEASE names (src/chant-release.ts, 0.124.54, the
+  // chant release CHANT_RELEASE names (src/chant-release.ts, 0.124.58, which carries the
   // first release with the pulumi lexicon), and the example's package.json
   // depends on that release of each.
   it("example-three-cloud declares dns and three clouds on three engines, each cloud's output named like a dns parameter", () => {
@@ -66,7 +66,7 @@ describe("the bundled estates' workspace declarations", () => {
     expect(decl.members).toEqual(["dns", "aws", "azure", "gcp"].map((n) => ({ name: n, dir: n, kind: kind[n] })));
     const PULUMI_LEXICON = "@intentius/chant-lexicon-pulumi";
     const deps = (JSON.parse(readFileSync(join(REPO, "example-three-cloud", "package.json"), "utf8")) as { dependencies: Record<string, string> }).dependencies;
-    expect(CHANT_RELEASE).toEqual({ version: "0.124.54", released: true });
+    expect(CHANT_RELEASE).toEqual({ version: "0.124.58", released: true });
     expect(decl.pins).toEqual([{ package: TERRAFORM_LEXICON, version: CHANT_RELEASE.version }, { package: PULUMI_LEXICON, version: CHANT_RELEASE.version }]);
     expect(deps[TERRAFORM_LEXICON]).toBe(`^${CHANT_RELEASE.version}`);
     expect(deps[PULUMI_LEXICON]).toBe(`^${CHANT_RELEASE.version}`);

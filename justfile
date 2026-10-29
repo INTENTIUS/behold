@@ -179,7 +179,7 @@ e2e-streamed-drift:
 # that a moved part in any engine refuses whole. Then the three-cloud change
 # set e2e, which reads the same document part by part. Needs Docker and
 # choudoufu (SKIPs with exit 0 without them); the example copy installs chant
-# 0.124.54 from npm. The live run (a real plunge, the emulators,
+# 0.124.58 from npm. The live run (a real plunge, the emulators,
 # `front-door.ts oob-edit <member>`) is the maintainer's.
 e2e-multi-engine:
     bash e2e/multi-engine-demo-e2e.sh

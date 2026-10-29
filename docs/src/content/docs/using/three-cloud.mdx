@@ -53,7 +53,7 @@ When a change to `azure/` creates or replaces the Container App, its address is 
 
 `gcpEndpoint` still reaches `dns` the old way: `build-dns` reads it from what is applied and writes it into the template as a parameter default, and points each health check at the emulator that answers for it (see below).
 
-`member-outputs` and the pulumi lexicon (`@intentius/chant-lexicon-pulumi`) are in chant 0.124.54, the release the example depends on, so `npm ci` in `example-three-cloud` installs them. The workspace pins both lexicons by package at 0.124.54, and chant checks each pin against the installed lexicon.
+`member-outputs` and the pulumi lexicon (`@intentius/chant-lexicon-pulumi`) are in chant 0.124.54, the release the example depends on, so `npm ci` in `example-three-cloud` installs them. The workspace pins both lexicons by package at 0.124.58, and chant checks each pin against the installed lexicon.
 
 ## Turning Azure off
 

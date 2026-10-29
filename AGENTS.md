@@ -91,10 +91,10 @@ contract (`src/workspace-reader.ts`), never chant's library.
 ### The chant release behold follows (behold#1005)
 
 `CHANT_RELEASE` in src/chant-release.ts, `{ version, released }`, names the
-chant release behold's newest reads need. It says `{ version: "0.124.54",
-released: true }`: chant 0.124.54 is on npm, the first release with the
+chant release behold's newest reads need. It says `{ version: "0.124.58",
+released: true }`: chant 0.124.58 is on npm (0.124.54 was the first release with the
 drift record and its stream, the adoption report, `member-outputs` and
-`@intentius/chant-lexicon-pulumi`. `ADOPTION_REPORT_CHANT_FLOOR`,
+`@intentius/chant-lexicon-pulumi`; 0.124.58 adds the self-service modules). `ADOPTION_REPORT_CHANT_FLOOR`,
 `DRIFT_RECORD_CHANT_FLOOR`, `DRIFT_STREAM_CHANT_FLOOR` and
 `LEDGER_ROOT_MEMBER_CHANT_FLOOR` are its `version`, which is chant's
 `NEXT_RELEASE` (INTENTIUS/chant#4480) at the cut. scripts/chant-release.ts
@@ -1917,7 +1917,7 @@ reads azure's `azureEndpoint` and aws's `awsEndpoint` through chant
 are `stackOutput("azure", "azureEndpoint")` and `stackOutput("aws",
 "awsEndpoint")`, and dns lists `terraform` (with `terraform.roots.azure` at
 `../azure`, which is the change signal) and `pulumi`. `member-outputs` and
-the pulumi lexicon are in chant 0.124.54, which the example depends on, and
+the pulumi lexicon are in chant 0.124.54 and newer, and the example depends on 0.124.58, and
 the workspace pins both lexicons by package at that version
 (`CHANT_RELEASE`, src/chant-release.ts); behold's own code does not import
 them, so there is no floor. scripts/front-door.ts loads the pulumi lexicon only for
