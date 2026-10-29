@@ -57,7 +57,7 @@ export async function pages(): Promise<LlmsPage[]> {
 
 export const PREAMBLE = `# behold
 
-> A live control plane on chant (https://intentius.io/chant/). behold draws an estate as one graph coloured by what the live estate holds. It reads the estates of the other INTENTIUS tools as well as chant's. Every view is a read. Each write starts an Op the project committed or a forge workflow, on the credentials behold was started with.
+> A spec-native control plane for cloud infrastructure. behold draws an estate as one graph coloured by what the live estate holds. It reads the estates of the other INTENTIUS tools as well as chant's. Every view is a read. Each write starts an Op the project committed or a forge workflow, on the credentials behold was started with.
 
 An agent driving behold starts with ${SITE}/using/agents/. Every pane is plain JSON over HTTP, and \`GET /api\` lists the routes. An MCP client adds \`npx @intentius/behold mcp <project-dir>\`, a stdio server with four tools: \`capabilities\`, read first, returns chant's capability catalog verbatim (what each \`cap:\` term means, its parameters and its rule); \`ask\` returns chant's search document for a query, verbatim, with the link to the view that draws it; \`show\` moves the person's open tab to a view, its matches lit; and \`shot\` returns a PNG of one with its link. No tool deploys, approves, runs an Op, rolls back or writes. A person new to it starts with ${SITE}/start/run-it/.
 
