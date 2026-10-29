@@ -3,7 +3,7 @@
   "version": "0.31.0",
   "license": "Apache-2.0",
   "type": "module",
-  "description": "behold — a live control plane on chant. See your whole estate (every substrate in one graph), coloured by drift; act through delegated, gated Ops.",
+  "description": "A spec-native control plane for cloud infrastructure.",
   "bin": {
     "behold": "./bin/behold.js"
   },
