@@ -707,6 +707,9 @@ describe("pins chant's ReleaseRecord key union (chant#2045)", () => {
     // artifact digest. Read through `digestKindOf`, which also works on a chant
     // whose ReleaseRecord does not declare it yet.
     digestKind: true,
+    // The ^0.124.58 bump (chant#4595): the version a release is listed by in the
+    // release catalog. Not read here; behold passes the record through.
+    releaseVersion: true,
   };
 
   // Every key chant's ReleaseRecord declares must appear in KEYS: the day the
@@ -719,7 +722,7 @@ describe("pins chant's ReleaseRecord key union (chant#2045)", () => {
 
   it("the pinned key list is the one this test expects — runOrigin is read as chant's own type", () => {
     expect(Object.keys(KEYS).sort()).toEqual([
-      "actor", "admission", "approver", "component", "digest", "digestKind", "env", "flags", "gitSha", "inputDigest", "manifestDigest", "profileOverride", "promotedFrom", "redeploys", "releaseDigest", "restores", "runId", "runOrigin", "timestamp", "version",
+      "actor", "admission", "approver", "component", "digest", "digestKind", "env", "flags", "gitSha", "inputDigest", "manifestDigest", "profileOverride", "promotedFrom", "redeploys", "releaseDigest", "releaseVersion", "restores", "runId", "runOrigin", "timestamp", "version",
     ]);
   });
 });
