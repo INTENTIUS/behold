@@ -9,8 +9,7 @@
  *   `templates` command answers `409 terragucci-too-old`.
  * - `POST /api/templates/request` checks the request against that list (the
  *   version is one a request may name, every required input is there and of
- *   its kind) and against chant's template-request/v1 schema when the
- *   installed chant carries it, then dispatches terragucci's request workflow
+ *   its kind) and against chant's template-request/v1 schema, then dispatches terragucci's request workflow
  *   (`terragucci-request.yml`) with the inputs `template`, `version`, `name`
  *   and `inputs`, plus `claimed_by` when the committed workflow declares it.
  *   On GitHub through the operator's `gh workflow run`; on Forgejo through
@@ -58,6 +57,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { Context, Hono } from "hono";
+import { makeTemplateRequest, validateTemplateRequest } from "@intentius/chant/template-request";
 import { parseYAML } from "@intentius/chant/yaml";
 import type { Broadcaster } from "./events.ts";
 import { FORGEJO_DONE, FORGEJO_TOKEN_ENV, FORGEJO_URL_ENV, ForgejoRepo, originUrl, targetOfOrigin, type Fetch } from "./forgejo-api.ts";
@@ -511,22 +511,6 @@ export function checkRequest(rows: readonly TemplateRow[], body: RequestBody): {
   return { ok: true, row, version };
 }
 
-/** chant's template-request module (chant#4651), when the installed chant carries it. */
-type ChantTemplateRequest = {
-  makeTemplateRequest: (i: Record<string, unknown>) => unknown;
-  validateTemplateRequest: (doc: unknown) => string[];
-};
-
-let chantModule: Promise<ChantTemplateRequest | undefined> | undefined;
-/** The module, or undefined on a chant without it (the published 0.124.54). */
-export function chantTemplateRequest(): Promise<ChantTemplateRequest | undefined> {
-  const name = "@intentius/chant/template-request";
-  chantModule ??= import(/* @vite-ignore */ name)
-    .then((m: Record<string, unknown>) => (typeof m.makeTemplateRequest === "function" && typeof m.validateTemplateRequest === "function" ? (m as unknown as ChantTemplateRequest) : undefined))
-    .catch(() => undefined);
-  return chantModule;
-}
-
 /** The request's or upgrade's state, as `GET /api/templates/requests/:id` answers it. */
 export interface RequestRecord {
   id: string;
@@ -832,23 +816,20 @@ export function templatesRoutes(app: Hono, deps: TemplatesDeps): void {
     const claim = declared.includes("claimed_by") && claimed ? claimed : undefined;
     const kind = body.app !== undefined ? "addon" : "app";
 
-    // chant's template-request/v1, when the installed chant has it: the document the run will build.
-    const chant = await chantTemplateRequest();
-    if (chant) {
-      const doc = chant.makeTemplateRequest({
-        kind,
-        template: row.template,
-        version,
-        app: body.app ?? body.name,
-        ...(body.app !== undefined ? { addon: body.name } : {}),
-        inputs: body.inputs,
-        requestedBy: claimed ?? "behold",
-        ...(claim ? { claimedBy: claim } : {}),
-        via: "form",
-      });
-      const problems = chant.validateTemplateRequest(doc);
-      if (problems.length) return c.json({ error: `the request ${problems[0]}`, code: "invalid", refusals: problems.map((p) => ({ code: "invalid", field: p.split(" ")[0] ?? "", reason: `the request ${p}` })) }, 422);
-    }
+    // chant's template-request/v1: the document the run will build.
+    const doc = makeTemplateRequest({
+      kind,
+      template: row.template,
+      version,
+      app: body.app ?? body.name,
+      ...(body.app !== undefined ? { addon: body.name } : {}),
+      inputs: body.inputs,
+      requestedBy: claimed ?? "behold",
+      ...(claim ? { claimedBy: claim } : {}),
+      via: "form",
+    });
+    const problems = validateTemplateRequest(doc);
+    if (problems.length) return c.json({ error: `the request ${problems[0]}`, code: "invalid", refusals: problems.map((p) => ({ code: "invalid", field: p.split(" ")[0] ?? "", reason: `the request ${p}` })) }, 422);
 
     const inputs: [string, string][] = [
       ["template", row.template],

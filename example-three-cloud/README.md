@@ -77,7 +77,7 @@ The `azure` and `aws` components need a chant with `member-outputs`
 (chant#4455), and the aws member needs `@intentius/chant-lexicon-pulumi`
 (chant#4453). chant 0.124.54 is the first release with both, and this
 directory depends on it: `npm ci` here installs it. The workspace pins the
-terraform and pulumi lexicons by package at 0.124.54, and chant checks each
+terraform and pulumi lexicons by package at 0.124.58, and chant checks each
 pin against the installed lexicon. behold follows the same release through
 `CHANT_RELEASE` (src/chant-release.ts, behold#1005).
 

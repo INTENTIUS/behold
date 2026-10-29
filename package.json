@@ -3,7 +3,7 @@
   "version": "0.30.2",
   "license": "Apache-2.0",
   "type": "module",
-  "description": "behold \u2014 a live control plane on chant. See your whole estate (every substrate in one graph), coloured by drift; act through delegated, gated Ops.",
+  "description": "behold — a live control plane on chant. See your whole estate (every substrate in one graph), coloured by drift; act through delegated, gated Ops.",
   "bin": {
     "behold": "./bin/behold.js"
   },
@@ -50,9 +50,9 @@
   "dependencies": {
     "@cdktn/hcl2json": "^0.24.0",
     "@hono/node-server": "^2.0.5",
-    "@intentius/chant": "^0.124.54",
-    "@intentius/chant-k8s-client": "^0.124.54",
-    "@intentius/chant-lexicon-terraform": "^0.124.54",
+    "@intentius/chant": "^0.124.58",
+    "@intentius/chant-k8s-client": "^0.124.58",
+    "@intentius/chant-lexicon-terraform": "^0.124.58",
     "@intentius/pinhole": "^0.5.0",
     "@modelcontextprotocol/sdk": "1.30.1",
     "ajv": "^8.20.0",
@@ -71,8 +71,8 @@
     }
   },
   "devDependencies": {
-    "@intentius/chant-lexicon-pulumi": "^0.124.54",
-    "@intentius/chant-lexicon-sql": "^0.124.54",
+    "@intentius/chant-lexicon-pulumi": "^0.124.58",
+    "@intentius/chant-lexicon-sql": "^0.124.58",
     "@types/node": "^26.4.1",
     "esbuild": "^0.28.0",
     "playwright": "^1.62.1",

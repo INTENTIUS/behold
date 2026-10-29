@@ -1,9 +1,10 @@
 /**
  * behold#1005: the chant release behold's newest reads need, set in one place.
  *
- * chant 0.124.54 is on npm (0.124.53 was cut and never published). It is the
+ * chant 0.124.58 is on npm. 0.124.54 (0.124.53 was cut and never published) was the
  * first release with the drift record and its stream, the adoption report,
- * `member-outputs` and the pulumi lexicon, and behold depends on it.
+ * `member-outputs` and the pulumi lexicon; 0.124.58 adds the template-request
+ * module and the product actions (chant#4650-4655), and behold depends on it.
  *
  * Everything that names that release reads this constant:
  *
@@ -26,7 +27,7 @@
  * `npx tsx scripts/chant-release.ts --check` fails when a written file
  * disagrees with this line (src/chant-release.test.ts runs it).
  */
-export const CHANT_RELEASE = { version: "0.124.54", released: true } as const;
+export const CHANT_RELEASE = { version: "0.124.58", released: true } as const;
 
 /** The newest chant on npm, the range a dependency keeps while {@link CHANT_RELEASE} is unreleased. */
-export const PUBLISHED_CHANT = "0.124.54";
+export const PUBLISHED_CHANT = "0.124.58";

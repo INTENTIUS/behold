@@ -93,7 +93,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
  * The pulumi lexicon, loaded by the aws plan alone (behold#1005). This
- * directory depends on it (chant 0.124.54), and loading it here, not at the
+ * directory depends on it (chant 0.124.58), and loading it here, not at the
  * top, still lets every other subcommand (apply-azure among them) run in an
  * install that lacks it.
  */

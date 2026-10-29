@@ -4,11 +4,11 @@
   "pins": [
     {
       "package": "@intentius/chant-lexicon-terraform",
-      "version": "0.124.54"
+      "version": "0.124.58"
     },
     {
       "package": "@intentius/chant-lexicon-pulumi",
-      "version": "0.124.54"
+      "version": "0.124.58"
     }
   ],
   "members": [
