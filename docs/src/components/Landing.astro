@@ -1,7 +1,7 @@
 ---
 // The home page's parts. `part="top"` (the default) is the pixel face, which
-// opens the docs, the wordmark, the mark between two gold hairlines, the
-// tagline and one plain sentence; then the picker (Picker.astro), the live
+// opens the docs, then ProductHome (the name, one-liner, starting points and
+// first command); then the picker (Picker.astro), the live
 // demo (data/live.mjs) beside the setup prompt for a coding agent (its one
 // source is src/prompts.ts), and the feature tiles, each one link. `part="next"` is the read-next table under its
 // section heading in index.mdx. One import keeps index.mdx's prose free of
@@ -9,6 +9,7 @@
 import AgentPrompt from './AgentPrompt.astro';
 import LinkRows from './LinkRows.astro';
 import Picker from './Picker.astro';
+import ProductHome from './ProductHome.astro';
 import { setupPrompt } from '../prompts';
 import { LIVE, LIVE_TOOLS } from '../data/live.mjs';
 import { base, docsHref } from '../site';
@@ -32,13 +33,9 @@ const pillars = [
 {part === 'next' && <LinkRows />}
 {part === 'top' && (
 	<>
-		<section class="bh-landing not-content">
-			<a class="hero-link" href={docsHref} aria-label="The docs"><span class="bh-logo hero-logo" aria-hidden="true"></span></a>
-			<h1 class="wordmark">BEHOLD</h1>
-			<span class="rule" aria-hidden="true"><span class="bh-mark"></span></span>
-			<p class="claim">A spec-native control plane for cloud infrastructure.</p>
-			<p class="lede">See every substrate of an estate in one graph that drift colours. Act through the gated Ops you already committed.</p>
-		</section>
+		<ProductHome id="behold">
+			<a slot="art" class="hero-link" href={docsHref} aria-label="The docs"><span class="bh-logo hero-logo" aria-hidden="true"></span></a>
+		</ProductHome>
 		<Picker />
 		<div class="bh-start not-content">
 			<section class="bh-live" aria-labelledby="bh-live-h">
