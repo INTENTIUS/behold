@@ -3,7 +3,7 @@
   "version": "0.31.0",
   "license": "Apache-2.0",
   "type": "module",
-  "description": "A spec-native control plane for cloud infrastructure.",
+  "description": "Visualize and control.",
   "bin": {
     "behold": "./bin/behold.js"
   },

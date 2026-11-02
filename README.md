@@ -1,6 +1,6 @@
 # behold
 
-**A spec-native control plane for cloud infrastructure.**
+**Visualize and control.**
 
 Reads what chant records for terragucci and plywood.
 

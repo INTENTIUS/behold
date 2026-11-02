@@ -18,7 +18,7 @@ export default defineConfig({
 		starlight({
 			title: 'behold',
 			description:
-				'A spec-native control plane for cloud infrastructure.',
+				'Visualize and control.',
 			// The pixel face with glasses and its lens (scripts/brand/), Geist, and
 			// the app's Catppuccin palette as tokens for both themes.
 			customCss: ['./src/styles/custom.css'],
