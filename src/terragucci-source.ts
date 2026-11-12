@@ -18,7 +18,7 @@
  */
 import { spawn } from "node:child_process";
 import { readdir, readFile, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { hasEnvCredentials, S3Error, S3Object, s3FromEnv } from "./s3-object.ts";
 
 export type TerragucciSourceKind = "dir" | "s3" | "http";
@@ -195,8 +195,15 @@ export function terragucciSource(spec: string, opts: { cwd?: string; aws?: AwsRu
     kind: "dir",
     location: dir,
     async read(key) {
+      // A key is a path under the directory and nothing else. A colon (a
+      // forge's host:port, the first segment of its project) is an ordinary
+      // name character here, but on Windows it would name a drive or an
+      // alternate data stream, and terragucci could never have written it there.
+      if (sep === "\\" && key.includes(":")) return undefined;
+      const at = resolve(dir, ...trim(key).split("/"));
+      if (at !== dir && !at.startsWith(dir.endsWith(sep) ? dir : `${dir}${sep}`)) return undefined;
       try {
-        return await readFile(join(dir, ...trim(key).split("/")), "utf8");
+        return await readFile(at, "utf8");
       } catch (e) {
         if ((e as NodeJS.ErrnoException).code === "ENOENT") return undefined;
         throw e;

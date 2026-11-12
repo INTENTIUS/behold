@@ -42,11 +42,11 @@ function checkout(): string {
 }
 const dirname = (p: string): string => p.slice(0, p.lastIndexOf("/"));
 
-function served(opts: { terragucci?: boolean } = { terragucci: true }) {
+function served(opts: { terragucci?: boolean; source?: string } = { terragucci: true }) {
   const dir = checkout();
   const broadcaster = new Broadcaster();
   return createApp(
-    { projectDir: dir, projectDirs: [dir], port: 0, ...(opts.terragucci ? { terragucci: { source: BUCKET } } : {}) },
+    { projectDir: dir, projectDirs: [dir], port: 0, ...(opts.terragucci ? { terragucci: { source: opts.source ?? BUCKET } } : {}) },
     broadcaster,
     new FrameBuffer(),
     new OpRunner({ projectDir: dir, broadcaster, onDone: () => {} }),
@@ -122,8 +122,52 @@ describe("GET /api/terragucci/file (#490)", () => {
     expect(await res.text()).toContain("<html");
   });
 
-  it.each(["../package.json", "github.com/../../etc/passwd.json", "/etc/hosts.txt", "index.js", ""])("refuses %j", async (key) => {
+  it.each([
+    "../package.json",
+    "github.com/../../etc/passwd.json",
+    "/etc/hosts.txt",
+    "index.js",
+    "",
+    // A colon anywhere but a leading host:port segment.
+    "github.com/acme/shop:1/report.html",
+    "forgejo:3000/acme:shop/report.html",
+    "forgejo:3000/acme/report.html:stream",
+    // Not a host:port: a drive letter, an empty or lettered port, an empty host, two colons, a port alone.
+    "C:/Windows/win.ini.txt",
+    "c:3000/acme/report.html",
+    "C:report.html",
+    "forgejo:/acme/report.html",
+    "forgejo:http/acme/report.html",
+    ":3000/acme/report.html",
+    "forgejo::3000/acme/report.html",
+    "forgejo:3000:1/acme/report.html",
+    "forgejo:123456/acme/report.html",
+    "forgejo:3000",
+    "forgejo:3000/report.exe",
+    // Traversal and absolute forms after a host:port.
+    "forgejo:3000/../../etc/passwd.json",
+    "forgejo:3000/./report.html",
+    "forgejo:3000//etc/hosts.txt",
+    "/forgejo:3000/acme/report.html",
+    "forgejo:3000\\..\\..\\etc\\passwd.json",
+    "..:3000/acme/report.html",
+    "-x:3000/acme/report.html",
+  ])("refuses %j", async (key) => {
     expect((await served().request(`/api/terragucci/file?key=${encodeURIComponent(key)}`)).status).toBe(400);
+  });
+
+  // The demo's forge is Forgejo at forgejo:3000, so a project's key starts with the forge's host:port.
+  it("serves a key whose first segment is the forge's host:port", async () => {
+    const bucket = mkdtempSync(join(tmpdir(), "behold-tg-hostport-"));
+    made.push(bucket);
+    const key = "forgejo:3000/terragucci-admin/shop/2026/11/0123456789abcdef0123456789abcdef01234567/tf-apply-wave-1/report.html";
+    mkdirSync(join(bucket, ...key.split("/").slice(0, -1)), { recursive: true });
+    writeFileSync(join(bucket, ...key.split("/")), "<html><body>wave 1</body></html>");
+    const res = await served({ terragucci: true, source: bucket }).request(`/api/terragucci/file?key=${encodeURIComponent(key)}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/html");
+    expect(res.headers.get("content-security-policy")).toContain("sandbox");
+    expect(await res.text()).toBe("<html><body>wave 1</body></html>");
   });
 
   it("answers 404 for a key the source does not hold", async () => {

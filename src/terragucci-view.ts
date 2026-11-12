@@ -32,7 +32,7 @@
  * every behold write route already refuses (#489).
  */
 import { execFileSync } from "node:child_process";
-import { dirname, join, relative, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import type { Hono } from "hono";
 import type { GraphIR } from "@intentius/chant";
 import { composeEstate, estateMembers } from "./estate.ts";
@@ -41,7 +41,8 @@ import { terragucciConfig } from "./terragucci-repo.ts";
 import { readTerragucci, terragucciValidator, TerragucciReadError, type TerragucciRead } from "./terragucci-reports.ts";
 import { joinTerragucci, type CheckoutRoot } from "./terragucci-overlay.ts";
 import { terragucciSource, type AwsRun } from "./terragucci-source.ts";
-import { auditValidator, terragucciTimelineRoute } from "./terragucci-timeline.ts";
+import { auditValidator, terragucciTimelineRoute, type RootRecords } from "./terragucci-timeline.ts";
+import { choudoufuRecordStore } from "./choudoufu-member.ts";
 import { indexProbe, terragucciLaneRoutes, type LaneRouteOptions } from "./terragucci-poll.ts";
 import { runValidator, TerragucciProgress, terragucciProgressRoute } from "./terragucci-progress.ts";
 import { terragucciCyclesRoute, terragucciDemoRoute } from "./terragucci-demo.ts";
@@ -153,8 +154,38 @@ export function servedChoudoufu(dirs: readonly string[]): boolean {
   return false;
 }
 
-/** A key under the source: relative, no `.` or `..` segment, and a report file's extension. */
+/**
+ * Which of the checkout's roots are choudoufu live roots (an `estate.chdf.hcl`
+ * sidecar or a `live { … }` block), and the record store each declares. A
+ * root is the record's path under the checkout; one that is absolute or
+ * climbs out of it is no root of this checkout.
+ */
+export function liveRootRecords(base: string): RootRecords {
+  return (root) => {
+    if (isAbsolute(root) || root.split(/[\\/]/).some((p) => p === ".." || p.includes(":"))) return undefined;
+    return choudoufuRecordStore(join(base, root));
+  };
+}
+
+/** A key under the source: relative, no `.` or `..` segment, no colon, and a report file's extension. */
 const FILE_KEY = /^(?!\/)(?!.*(?:^|\/)\.\.?(?:\/|$))[A-Za-z0-9._~\-/]+\.(html|json|txt|md)$/;
+/**
+ * A project's first segment can be its forge's `host:port` (the demo's Forgejo
+ * is `forgejo:3000`, so its keys are `forgejo:3000/<owner>/<repo>/...`). The
+ * host is at least two characters, so a Windows drive (`C:`) never passes, and
+ * starts and ends alphanumeric, so it is never `.` or `..`.
+ */
+const HOST_PORT = /^([A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]):([0-9]{1,5})$/;
+
+/** Whether `key` is a report file the file route may hand back: {@link FILE_KEY}, after an optional leading `host:port` segment. */
+export function isFileKey(key: string): boolean {
+  const slash = key.indexOf("/");
+  const first = slash < 0 ? key : key.slice(0, slash);
+  if (!first.includes(":")) return FILE_KEY.test(key);
+  const m = HOST_PORT.exec(first);
+  if (!m || slash < 0 || Number(m[2]) < 1 || Number(m[2]) > 65535) return false;
+  return FILE_KEY.test(key.slice(slash + 1));
+}
 const TYPES: Record<string, string> = { html: "text/html; charset=utf-8", json: "application/json", txt: "text/plain; charset=utf-8", md: "text/plain; charset=utf-8" };
 
 /** Register the routes. `dirs()` is asked per request, since a project switch changes what is served. */
@@ -266,12 +297,13 @@ export function terragucciRoutes(app: Hono, opts: TerragucciOptions, dirs: () =>
     ...(opts.otherRepo ? { strict: opts.otherRepo } : {}),
     checkoutProject: () => checkoutProject(repoBase(dirs())),
     validator: () => auditValidator(dirs()),
+    records: () => liveRootRecords(repoBase(dirs())),
     ...(opts.now ? { now: opts.now } : {}),
   });
 
   app.get("/api/terragucci/file", async (c) => {
     const key = new URL(c.req.url).searchParams.get("key") ?? "";
-    if (!FILE_KEY.test(key)) return c.json({ error: `not a report file: ${JSON.stringify(key)}`, code: "terragucci-file" }, 400);
+    if (!isFileKey(key)) return c.json({ error: `not a report file: ${JSON.stringify(key)}`, code: "terragucci-file" }, 400);
     let body: string | undefined;
     try {
       body = await source.read(key);

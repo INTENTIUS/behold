@@ -293,3 +293,51 @@ describe("export carries the timeline (#506)", () => {
     expect(tl.source).not.toContain(dirname(BUCKET));
   });
 });
+
+// An apply's `detail.state_versions` comes from each root's report `state`, which
+// terragucci reads from the root's backend block, `terraform.tfstate` when there
+// is none. A choudoufu live root keeps no state file: its records are in its
+// record store, so the lane names that store, or nothing, never the file.
+describe("state_versions of a choudoufu live root", () => {
+  it("names the record store, or nothing, in place of a state file", async () => {
+    const dir = scratch();
+    const root = (path: string, files: Record<string, string>): void => {
+      mkdirSync(join(dir, path), { recursive: true });
+      for (const [f, text] of Object.entries(files)) writeFileSync(join(dir, path, f), text);
+    };
+    root("estates/orders", { "main.tf": 'terraform {\n  live {\n    estate = "orders"\n    record_store "s3" {\n      bucket = "demo-records"\n    }\n  }\n}\n' });
+    root("estates/net", { "main.tf": 'terraform {\n  live {\n    estate = "net"\n  }\n}\n' });
+    root("estates/cohort", { "estate.chdf.hcl": 'estate = "cohort"\n\nrecord_store "local" {\n  path = ".tofu-records"\n}\n', "main.tf": 'resource "aws_sns_topic" "t" {\n  name = "t"\n}\n' });
+    root("tf/plain", { "main.tf": 'resource "aws_sns_topic" "t" {\n  name = "t"\n}\n' });
+    writeFileSync(join(dir, "terragucci.yml"), "binary: choudoufu\n");
+    mkdirSync(join(dir, ".git"));
+    const base = JSON.parse(readFileSync(KINDS, "utf8").split("\n")[2]!) as AuditEntry;
+    const off = { location: "terraform.tfstate", versioning: "off" };
+    const apply = (id: string, roots: string[]): AuditEntry => ({
+      ...base,
+      id,
+      project: "forgejo:3000/terragucci-admin/shop",
+      detail: { ...base.detail, roots, state_versions: roots.map((r) => ({ root: r, ...off })) },
+    });
+    const source = scratch();
+    writeFileSync(
+      join(source, "audit.jsonl"),
+      [apply("sha256:a1", ["estates/orders", "estates/net", "estates/cohort", "tf/plain", "../../etc"]), { ...apply("sha256:a2", ["estates/net"]), at: "2026-10-08T09:10:00.000Z" }].map((e) => JSON.stringify(e)).join("\n") + "\n",
+    );
+    const broadcaster = new Broadcaster();
+    const app = createApp({ projectDir: dir, projectDirs: [dir], port: 0, terragucci: { source } }, broadcaster, new FrameBuffer(), new OpRunner({ projectDir: dir, broadcaster, onDone: () => {} }));
+    const res = await app.request("/api/terragucci/timeline");
+    expect(res.status).toBe(200);
+    const j = (await res.json()) as ReturnType<typeof timelineAnswer>;
+    expect(j.entries.map((e) => e.id)).toEqual(["sha256:a1", "sha256:a2"]);
+    expect(j.entries[0]!.detail!.state_versions).toEqual([
+      { root: "estates/orders", record_store: "s3" },
+      { root: "estates/cohort", record_store: "local" },
+      { root: "tf/plain", ...off },
+      { root: "../../etc", ...off },
+    ]);
+    // Every row was a live root's with no store named: the field goes, rather than an empty list.
+    expect(j.entries[1]!.detail).not.toHaveProperty("state_versions");
+    expect(j.entries[1]!.detail!.roots).toEqual(["estates/net"]);
+  });
+});

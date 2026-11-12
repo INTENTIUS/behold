@@ -214,6 +214,32 @@ export function isChoudoufuEstate(dir: string): boolean {
   return false;
 }
 
+/** A `record_store "<kind>" {` block, at the start of a line (so a `#` comment is not one). */
+const RECORD_STORE = /^\s*record_store\s+"([A-Za-z0-9_-]+)"\s*\{/m;
+
+/**
+ * What a choudoufu estate root keeps in place of a state file: its record
+ * store's kind (`local`, `s3`, `kubernetes`, ...) when the sidecar or a root
+ * `*.tf` declares one. `{}` when the root is an estate that declares none
+ * (choudoufu then picks the store from its defaults or the backend block,
+ * which this probe does not second-guess). Undefined when `dir` is not a
+ * choudoufu estate. A regex, like {@link isChoudoufuEstate}: behold reads no HCL.
+ */
+export function choudoufuRecordStore(dir: string): { record_store?: string } | undefined {
+  if (!isChoudoufuEstate(dir)) return undefined;
+  for (const f of [ESTATE_SIDECAR, ...tfFiles(dir)]) {
+    let text: string;
+    try {
+      text = readFileSync(join(dir, f), "utf8");
+    } catch {
+      continue;
+    }
+    const m = RECORD_STORE.exec(text);
+    if (m) return { record_store: m[1]! };
+  }
+  return {};
+}
+
 /** `data.aws_vpc.network` → `data.aws_vpc`: the kind a data-source card shows. */
 export function dataSourceKind(from: string): string {
   const parts = from.split(".");

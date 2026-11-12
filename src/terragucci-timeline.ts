@@ -258,8 +258,34 @@ export function reportKey(e: AuditEntry): string | undefined {
 
 const at = (iso: string): number => Date.parse(iso);
 
-/** The entries of `project`, newest first, each with its roots and its run. */
-export function timelineEntries(entries: readonly AuditEntry[], project: string): TimelineEntry[] {
+/** What a root keeps in place of a state file, when it is a choudoufu live root; undefined for any other root. */
+export type RootRecords = (root: string) => { record_store?: string } | undefined;
+
+/**
+ * An apply's `detail.state_versions` with each choudoufu live root's row
+ * replaced. terragucci builds a row from the root's backend block, and a live
+ * root with none reads as `terraform.tfstate`, a state file it does not keep:
+ * its records are in its record store. The row names that store's kind when
+ * the root declares one, and is dropped when it does not; with no row left
+ * the field goes. Any other row stays as the record has it.
+ */
+function liveStateVersions(detail: Record<string, unknown>, records: RootRecords | undefined): Record<string, unknown> {
+  const rows = detail.state_versions;
+  if (!records || !Array.isArray(rows)) return detail;
+  let changed = false;
+  const kept = rows.flatMap((row: unknown) => {
+    const live = isRecord(row) && str(row.root) ? records(row.root) : undefined;
+    if (!live) return [row];
+    changed = true;
+    return live.record_store ? [{ root: (row as { root: string }).root, record_store: live.record_store }] : [];
+  });
+  if (!changed) return detail;
+  const { state_versions: _, ...rest } = detail;
+  return kept.length ? { ...rest, state_versions: kept } : rest;
+}
+
+/** The entries of `project`, newest first, each with its roots and its run. `records` says which roots are choudoufu live roots (see liveStateVersions). */
+export function timelineEntries(entries: readonly AuditEntry[], project: string, records?: RootRecords): TimelineEntry[] {
   const mine = entries.map((e, i) => ({ e, i })).filter(({ e }) => e.project === project);
   const gate = (e: AuditEntry): string => `${e.what}\u0000${e.digest ?? ""}`;
   // The roots and the newest report of each gate and digest, from the entries that name them.
@@ -302,7 +328,7 @@ export function timelineEntries(entries: readonly AuditEntry[], project: string)
         ...(report ? { report } : {}),
       },
       evidence: e.evidence,
-      ...(e.detail ? { detail: e.detail } : {}),
+      ...(e.detail ? { detail: liveStateVersions(e.detail, records) } : {}),
     };
     return { entry, i };
   });
@@ -338,6 +364,8 @@ export interface TimelineOptions {
   /** behold#749: another checkout's request: its own project's lines (matchProject), never `project`'s. */
   strict?: boolean;
   validator?: AuditValidator;
+  /** Which of the checkout's roots are choudoufu live roots, and their record store. */
+  records?: RootRecords;
   now?: Date;
 }
 
@@ -372,7 +400,7 @@ export async function readTimeline(source: TerragucciSource, opts: TimelineOptio
       `Name one with --terragucci-project: ${projects.join(", ")}.`,
     );
   }
-  return { ...base, present: true, project, projects, lines: all.length, entries: project ? timelineEntries(all, project) : [] };
+  return { ...base, present: true, project, projects, lines: all.length, entries: project ? timelineEntries(all, project, opts.records) : [] };
 }
 
 /** The sentence an answer carries when the source has no record. */
@@ -433,6 +461,8 @@ export interface TimelineRouteOptions {
   strict?: () => boolean;
   /** The validator, asked per read. */
   validator?: () => AuditValidator;
+  /** The checkout's choudoufu live roots, asked per read. */
+  records?: () => RootRecords;
   now?: () => Date;
 }
 
@@ -459,6 +489,7 @@ export function terragucciTimelineRoute(app: Hono, source: TerragucciSource, opt
         ...(strict ? { strict } : opts.project ? { project: opts.project } : {}),
         ...(checkout ? { checkoutProject: checkout } : {}),
         ...(opts.validator ? { validator: opts.validator() } : {}),
+        ...(opts.records ? { records: opts.records() } : {}),
         ...(opts.now ? { now: opts.now() } : {}),
       });
       cached = { at: now, key, read: p };
