@@ -452,15 +452,17 @@ The docs' terragucci page says what it shows.
 
 The demo is served at `/`: the live demo's page, else the first listed one.
 `/kiosk` redirects to `/`. The listed demos are the multi-state plan-and-apply
-ones, each at a path of its own (`/choudoufu-compose`, `/terragrunt-choudoufu`,
-`/atmos-choudoufu`, `/chant-compose`); one is listed once its tool has a published cycle
+ones (`choudoufu-compose`, `terragrunt-choudoufu`, `atmos-choudoufu`,
+`chant-compose`); one is listed once its tool has a published cycle
 (`cycles/<tool>/latest.json` beside `demo.json`) or is live, and
-`/api/terragucci/demos` says which. A page shows the demo's live run, or replays
-its latest cycle, under a banner with the example's name, its products, a link to
-its code in INTENTIUS/terragucci, and a switcher when more than one is listed.
+`/api/terragucci/demos` says which. No demo has a page of its own: a tool's
+path (`/choudoufu-compose`, `/terragrunt-choudoufu`, `/atmos-choudoufu`,
+`/chant-compose`) redirects to `/` with a 302, so a link to one lands on
+whichever demo `/` shows. The page shows that demo under a banner with the
+example's name, the act, its products and a link to its code.
 The older tools' URLs (`/terraform`, `/terragrunt`, `/cdk-terrain`, `/choudoufu`,
-`/chant`, and the fan-out pages) redirect to `/`. Any other short path answers
-404 with a link to the front page.
+`/chant`, and the fan-out pages) redirect to `/` too. Any other short path
+answers 404 with a link to the front page.
 
 In a declared workspace, the gates waiting on a person come from
 `chant workspace status <env> --json`, keyed `member/op/gate` the way arugula's
