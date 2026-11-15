@@ -11,7 +11,7 @@ import { startServer, beholdVersion } from "./server.ts";
 import { loadDemoRegistry, missingRequirements, demoTargetDir, loadDemo, type DemoCarve } from "./demos.ts";
 import { resolveChant, runChantRaw } from "./chant.ts";
 import { applyConversion, planConversion } from "./workspace-convert.ts";
-import { ExportRefusal, OPENING_ZOOMS, publishTarget, runExport, settleCountBy, settleNote, settleQueries } from "./export.ts";
+import { ExportRefusal, OPENING_ZOOMS, publishTarget, runExport, runSingleFile, settleCountBy, settleNote, settleQueries } from "./export.ts";
 import { DEFAULT_KEEP, publishSnapshot, resolveCommit, SNAPSHOT_REPORTS_BASE } from "./publish-snapshots.ts";
 import { hasEnvCredentials, S3Object, s3FromEnv } from "./s3-object.ts";
 import { diagnose, formatReport } from "./doctor.ts";
@@ -315,6 +315,12 @@ Options:
                       saved layout to the root, and run chant workspace check.
                       The one doctor that writes (#464).
   --out <dir>         export only: output directory (default ./behold-export).
+                      The bundle holds graph.json, the opening view as a
+                      behold-graph/1 document, at its root.
+  --single-file <path>
+                      export only: write the opening view as one HTML file
+                      (the single-file viewer, behold#1070) and nothing else.
+                      Takes no --out or --publish.
   --no-source         export only: leave each card's source text out of the
                       bundle (a Terraform root's whole file rides on its cards
                       as attrs.source otherwise).
@@ -1185,6 +1191,8 @@ async function runPreview(rest: string[]): Promise<void> {
  * Loom-on-Floci env as `preview --emulator`, for exporting that demo. */
 async function runExportCmd(rest: string[]): Promise<void> {
   let outDir = resolve("behold-export");
+  let outGiven = false;
+  let singleFile: string | undefined;
   let env: string | undefined;
   let name: string | undefined;
   let dirArg: string | undefined;
@@ -1206,7 +1214,10 @@ async function runExportCmd(rest: string[]): Promise<void> {
   let plan = false;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
-    if (a === "--out") outDir = resolve(rest[++i]);
+    if (a === "--out") {
+      outDir = resolve(rest[++i]);
+      outGiven = true;
+    } else if (a === "--single-file") singleFile = rest[++i] ?? "";
     else if (a === "--q") queries.push(rest[++i] ?? "");
     else if (a === "--count-by") countBy = rest[++i] ?? "";
     else if (a === "--plan") plan = true;
@@ -1263,6 +1274,19 @@ async function runExportCmd(rest: string[]): Promise<void> {
     process.exit(2);
   }
 
+  // behold#1071: one file, and nothing else: no bundle to put anywhere.
+  if (singleFile !== undefined) {
+    const bad = !singleFile
+      ? "--single-file needs the path of the file to write"
+      : outGiven || publish !== undefined || terragucci || yodelReport
+        ? "--single-file writes one file and nothing else, so it takes no --out, --publish, --terragucci or --yodel-report"
+        : undefined;
+    if (bad) {
+      process.stderr.write(`behold export: ${bad}\n`);
+      process.exit(2);
+    }
+  }
+
   // #491: checked before anything is captured, so a destination that would
   // be refused costs nothing.
   const destination = publish === undefined ? undefined : publishTarget(publish);
@@ -1306,6 +1330,19 @@ async function runExportCmd(rest: string[]): Promise<void> {
   // declared workspace or a Terraform estate captures what serve draws.
   const target = await serveTarget([projectDir], "export");
   const open = { ...(openEnv !== undefined ? { env: openEnv } : {}), ...(openZoom !== undefined ? { zoom: openZoom } : {}) };
+  if (singleFile !== undefined) {
+    const done = await runSingleFile(
+      { ...target, port: 0, ...(env ? { env } : {}) },
+      resolve(singleFile),
+      { ...(noSource ? { noSource } : {}), ...(Object.keys(open).length ? { open } : {}), ...(settledNote.note ? { note: settledNote.note } : {}) },
+    ).catch((e: unknown) => {
+      if (!(e instanceof ExportRefusal)) throw e;
+      process.stderr.write(`behold export: ${e.message}\n`);
+      process.exit(2);
+    });
+    process.stdout.write(`behold export → ${resolve(singleFile)}\n  ${done.bytes} bytes, ${done.nodes} nodes\n`);
+    return;
+  }
   await runExport(
     {
       ...target,
@@ -1325,6 +1362,7 @@ async function runExportCmd(rest: string[]): Promise<void> {
       ...(settledCountBy.countBy ? { countBy: settledCountBy.countBy } : {}),
       ...(plan ? { plan } : {}),
       ...(destination ? { history: true } : {}),
+      ...(commit && !("error" in commit) ? { rev: commit.sha } : {}),
     },
   ).catch((e: unknown) => {
     if (!(e instanceof ExportRefusal)) throw e;

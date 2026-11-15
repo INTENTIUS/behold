@@ -16,6 +16,17 @@ Pan and zoom, the zoom dial, the inspect pane and the env/tier pickers all work 
 
 Every read endpoint for the whole lens matrix (each env/tier × zoom × radial), rendered in-process by **the same handlers the live server runs**. A snapshot is byte-identical to what live would have shown at that moment.
 
+## The graph as one file
+
+Every export also writes `graph.json` at the bundle root: the opening view at detail 2 as a [`behold-graph/1` document](/behold/using/graph-document/), so a dashboard, a portal or a script can read one URL instead of the snapshots, whose names change with their bytes. It follows `--open-env` (the opening environment's overlay) and `--no-source`, which leaves each card's source text out of it as it does the snapshots. In an estate of several projects every card is in it, not the stacked ones. `manifest.json` names it as `graph` and lists it in `files`, and `--publish` uploads it with the rest of each commit's folder, so it sits at `<prefix>/views/<name>/<commit>/graph.json`.
+
+```sh
+npx behold export . --out ./behold-export
+jq '.nodes | length' ./behold-export/graph.json
+```
+
+Once the single-file viewer is built (behold#1070), the export also writes `behold.html`, the same view as one HTML file that opens from disk. `--single-file <path>` writes only that file, reading just the opening view, for a CI artifact. Until then, `--single-file` stops and says so.
+
 ## With a live overlay
 
 ```sh
