@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { edgeWeights, weightLegend } from "./edge-weight.js";
+import { edgeWeights, weightLegend, WEIGHTS } from "./edge-weight.js";
 
 describe("edgeWeights (#878)", () => {
   const kindOf = new Map([
@@ -64,5 +64,40 @@ describe("edgeWeights over chant's derived edges (behold#1030)", () => {
   it("keeps a declared edge a reference", () => {
     const w = edgeWeights([{ from: "db", to: "group", kind: "ref", viaAttr: "DBSubnetGroupName", origin: "declared" }], new Map());
     expect(w.get("db→group")).toBe("reference");
+  });
+});
+
+describe("edgeWeights over chant's catalog (behold#1080)", () => {
+  const rules = { "k8s:K8s::Apps::Deployment:spec.template.spec.serviceAccountName": { label: "runs as", relation: "reference" } };
+  const joined = { from: "app/web", to: "app/runner", kind: "ref", viaAttr: "spec", origin: "derived", rule: "k8s:K8s::Apps::Deployment:spec.template.spec.serviceAccountName", relation: "reference" };
+
+  it("weighs an edge with a catalog rule as joined, apart from inferred", () => {
+    const guess = { from: "a", to: "b", kind: "ref", origin: "derived", rule: "identity-match:name" };
+    const w = edgeWeights([joined, guess], new Map(), rules);
+    expect(w.get("app/web→app/runner")).toBe("joined");
+    expect(w.get("a→b")).toBe("inferred");
+  });
+
+  it("reads a catalog edge by its relation when the graph carries no rule table", () => {
+    expect(edgeWeights([joined], new Map()).get("app/web→app/runner")).toBe("joined");
+    expect(edgeWeights([{ ...joined, relation: undefined }], new Map()).get("app/web→app/runner")).toBe("inferred");
+  });
+
+  it("weighs the edge to a placeholder dangling and each edge of an ambiguous reference ambiguous", () => {
+    const w = edgeWeights(
+      [
+        { from: "h", to: "dangling:x", kind: "ref", dangling: true, rule: "r" },
+        { from: "h", to: "c1", kind: "ref", ambiguous: { of: 2, rule: "r", value: "v" }, rule: "r" },
+        { from: "h", to: "c2", kind: "ref", ambiguous: { of: 2, rule: "r", value: "v" }, rule: "r" },
+      ],
+      new Map(),
+    );
+    expect([...w.values()]).toEqual(["dangling", "ambiguous", "ambiguous"]);
+  });
+
+  it("gives each its legend row even when it is the only weight drawn", () => {
+    expect(weightLegend(new Map([["a→b", "joined"]])).map((r) => [r.weight, r.title, r.count])).toEqual([["joined", WEIGHTS.joined, 1]]);
+    expect(weightLegend(new Map([["a→b", "dangling"], ["c→d", "ambiguous"], ["c→e", "ambiguous"]])).map((r) => [r.weight, r.count])).toEqual([["dangling", 1], ["ambiguous", 2]]);
+    expect(WEIGHTS.joined).toBe("joined: exact match by rule");
   });
 });

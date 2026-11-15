@@ -53,6 +53,21 @@ export const WORKSPACE_DETAIL_CHANT_FLOOR = "0.124.35";
  * to a workspace, through the k8s, helm and aws lexicons' workspace-kinds.json (INTENTIUS/chant#3179, behold#1056). The workspace pins
  * the lexicon at a release that carries it. */
 export const WORKSPACE_KINDS_CHANT_FLOOR = "0.124.49";
+/** The first chant whose `workspace graph <dir> --discover` reads a directory with no declaration: the kinds' probes find the members
+ * and the document carries `discovered[]`, one entry per claimed directory (INTENTIUS/chant#5095, behold#1079). chant#5095 is on chant's
+ * main after the 0.124.97 freeze, so the first release with it is 0.124.98 (chant's `NEXT_RELEASE` at that cut). A literal and not
+ * `CHANT_RELEASE.version`: behold's pinned release is older, and moving it is a maintainer step after 0.124.98 is on npm. Below it
+ * behold reads a folder as it always did, and never sends `--discover`, which an older chant rejects as an unknown flag. */
+export const WORKSPACE_DISCOVER_CHANT_FLOOR = "0.124.98";
+/** The first chant whose `workspace graph` runs every lexicon's reference catalog over the composed nodes
+ * (INTENTIUS/chant#5097, behold#1080): a derived edge carries `rule`, `relation`, `grain` and `member`, `dangling[]` gains `rule`,
+ * `targetKind`, `through` and `cluster`, `ambiguous[]` lists a reference that names several nodes, and `catalog` lists the rules.
+ * The rules of #5098 (secrets), #5099 (cloud identity), #5100 (Helm), #5101 (the cluster join) and #5102 (ApplicationSet) ride the
+ * same fields. chant's own floors for them are `WORKSPACE_GRAPH_CATALOG_FLOOR`, `WORKSPACE_GRAPH_CLUSTER_JOIN_FLOOR` and
+ * `WORKSPACE_GRAPH_APPLICATION_SET_FLOOR`, each `NEXT_RELEASE` (packages/core/src/release-floors.ts), which is 0.124.98 and is not
+ * on npm yet (0.124.97 is the newest). This waits for 0.124.98. Below it behold draws what it always drew: its own passes, the
+ * dangling note and the guessed cluster anchor. */
+export const REFERENCE_CATALOG_CHANT_FLOOR = "0.124.98";
 /** The first chant whose intent document carries `why` (INTENTIUS/chant#3312). */
 export const WHY_CHANT_FLOOR = "0.102.0";
 /** The chant that ships `chant operator log` (chant#2029). */
@@ -250,6 +265,8 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "workspace read contract", floor: WORKSPACE_CHANT_FLOOR, adds: "chant workspace (contract 1)" },
   { read: "workspace graph detail", floor: WORKSPACE_DETAIL_CHANT_FLOOR, adds: "workspace graph --detail reaches each member (chant#4228)", degraded: "a detail tier is read from the member's own chant graph, which draws nothing for a kustomize or Argo member" },
   { read: "kubernetes, helm and cloudformation members", floor: WORKSPACE_KINDS_CHANT_FLOOR, adds: "the kustomize, argo-app, flux-kustomization, helm-chart and cloudformation member kinds (chant#3179)", degraded: "a member of one of those kinds draws nothing" },
+  { read: "a folder with no declaration, by its kinds' probes", floor: WORKSPACE_DISCOVER_CHANT_FLOOR, adds: "chant workspace graph <dir> --discover, with the discovered list (chant#5095, behold#1079)", degraded: "a folder with no declaration is read as it always was: a Terraform folder by behold's own reader, and a Kubernetes or Helm folder not at all" },
+  { read: "reference catalog", floor: REFERENCE_CATALOG_CHANT_FLOOR, adds: "workspace graph runs each lexicon's reference catalog: derived edges with their rule, dangling and ambiguous references, the cluster join (chant#5097, chant#5101, behold#1080)", degraded: "the graph draws no joined edges, placeholder cards or ambiguous references, and anchors a cluster the way it did before" },
   { read: "why", floor: WHY_CHANT_FLOOR, adds: "graph --intent writes a why (chant#3312)" },
   { read: "carve status", floor: CARVE_STATUS_FLOOR, adds: "chant carve status (chant#2038)" },
   { read: "operator log", floor: OPERATOR_LOG_FLOOR, adds: "chant operator log (chant#2029)" },

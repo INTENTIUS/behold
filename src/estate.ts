@@ -31,6 +31,7 @@ import { memberKindOf, memberKindSpec, type MemberKind } from "./member-kind.ts"
 import { CLUSTER_SCOPED } from "./zoom-notes.ts";
 import { choudoufuWorkspaceVia } from "./choudoufu-workspace.ts";
 import { bareFolderMemberName } from "./terraform-member.ts";
+import { discoveredVia } from "./discover-read.ts";
 import { CONTRACT_READ_KINDS, pulumiWorkspaceVia, servedLookup, unreadableMemberIr, unreadableMembers, workspaceVia, WorkspaceMemberError, type MemberLookup } from "./workspace.ts";
 
 // ---------------------------------------------------------------------------
@@ -140,6 +141,8 @@ const memberViaFor = (dir: string, lookup: MemberLookup = servedLookup()): Membe
   // #994: a pulumi member has no read but the contract's, so no fallback.
   const declared = lookup.memberOf(dir);
   const ws = lookup.ws;
+  // behold#1079: a member chant found in a folder with no declaration takes its part of the folder's one discovery document. Its kind is whatever chant's kinds supply, so the list below does not gate it.
+  if (declared && ws?.discovered) return discoveredVia(declared, ws, own);
   if (!declared || !ws || !CONTRACT_READ_KINDS.has(declared.kind)) return own;
   if (declared.kind === "pulumi") return pulumiWorkspaceVia(declared, ws.root);
   return declared.kind === "choudoufu" ? choudoufuWorkspaceVia(declared, ws.root) : workspaceVia(declared, ws.root, own);

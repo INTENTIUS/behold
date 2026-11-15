@@ -1,0 +1,36 @@
+# Components for the test apps. `prod-network` and `platform-shared` name a
+# root in example-terraform-estate's graph.json; `unrelated` carries no
+# annotation, so it gets no tab.
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: prod-network
+  description: Names the prod root of the example Terraform estate
+  annotations:
+    behold.intentius.io/roots: prod
+spec:
+  type: service
+  lifecycle: production
+  owner: guests
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: platform-shared
+  description: Names the platform root, through the Terraform workspace annotation
+  annotations:
+    terraform/workspaces: platform
+spec:
+  type: service
+  lifecycle: production
+  owner: guests
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: unrelated
+  description: No behold annotation, so no Infrastructure tab
+spec:
+  type: service
+  lifecycle: production
+  owner: guests

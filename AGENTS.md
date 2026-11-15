@@ -77,6 +77,52 @@ a scheduled read: it holds a slot in the read budget, has the read deadline,
 and stops when the request does. `serve --hud <url>` (or `BEHOLD_HUD_URL`)
 links a proposed decision to its review in hud.
 
+## A folder with no declaration, read by its kinds' probes (behold#1079)
+
+`chant workspace graph <dir> --discover` (INTENTIUS/chant#5095) finds the members
+of a directory that has no `chant.workspace.json`: the kinds' probes claim
+directories, a directory a local `module` source calls or that sits inside
+another member is not a member of its own, and two kinds claiming one directory
+at the same precedence is a tie that is not read. The document is a contract 1
+graph with one more field, `discovered[]`, one entry per claimed directory
+(`dir`, `member`, `kind`, `source`, `probe`, `outcome`, `claims`, `note`).
+Member names are the lowercased path with runs of characters a name cannot
+hold turned to `-`, and `.` is `root`, so node ids and `member=` links in a
+discovered folder carry those names, not the folder's name.
+
+src/discover-read.ts reads it through `src/workspace-reader.ts`, one chant call
+per folder, and `readGraph` (src/read-graph.ts, signature unchanged) turns the
+document into the `Workspace` a declaration would give. Each member then takes
+its part of that one document (`discoveredVia`), so the estate code composes a
+discovered folder exactly as it composes a declared workspace, including an
+unreadable member drawn as a box with chant's reason. The note names each tied
+directory and counts the directories left out as modules or inside a member.
+A list of one path is read as that folder, which is how the server hands it
+over; `behold serve`, `behold shot` and the server treat a folder this applies
+to as an estate (`discoverAppliesToList`). The overlay, search and the other
+per-member reads still go to the folder as they did.
+
+The floor is `WORKSPACE_DISCOVER_CHANT_FLOOR`, 0.124.98 (src/chant-floors.ts):
+chant#5095 is on chant's main after the 0.124.97 freeze. Below it, or when the
+chant's version is unknown, nothing here runs and a folder is read as before.
+`CHANT_RELEASE` (src/chant-release.ts) is not moved by this: that is a
+maintainer step once 0.124.98 is on npm.
+
+Which folders go through it is a measured choice, not "all of them". On the
+`infra/` tree of a Kubernetes project checkout (52 Terraform roots, 2
+CloudFormation templates, 1 manifests directory), behold's own Terraform reader
+takes 3.5 s cold and 72 ms on a reread, because one chant reads one generated
+project naming every root. `--discover` runs a reader per member: 44 s cold,
+6.8 s on chant's member cache, 55 members. So the default (`auto`) discovers a
+folder behold cannot draw (no member kind claims it: Kubernetes, Helm) or draws
+only half of (a Terraform or choudoufu folder that also holds Kubernetes or
+Helm files), and leaves a Terraform or choudoufu folder with none on its own
+reader. A chant project is never discovered. `BEHOLD_DISCOVER=always|never|auto`
+overrides it. Because the Terraform scratch project (`behold-tf-*`) stays the
+reader for those folders, and the plan read, choudoufu, behaviour and search
+(`behold-tfws-*`) write it too, `writeTerraformScratchProject` and its tests
+stay.
+
 ## Chant version floors (behold#691)
 
 behold shells each project's own chant, so a read can reach a chant that
@@ -128,6 +174,44 @@ mask modules, the investigation templates come from
 `@intentius/chant/lifecycle/index-diff`, and `behold index` calls chant's
 `runCloudIndex` statically. src/value-match.ts stays until the pulumi
 lexicon has a `referenceCatalog` (chant#4535's note on behold#1005).
+
+## chant's reference catalog (behold#1080)
+
+A declared workspace read by a chant at `REFERENCE_CATALOG_CHANT_FLOOR`
+(0.124.98, the release that carries INTENTIUS/chant#5097; 0.124.97 is on npm
+today) gets one more read: `chant workspace graph <root>` for the whole
+workspace, at the tier the members are read at (src/reference-catalog.ts,
+cached under the workspace's source stamp). A read of one member cannot see a
+reference into another, so the per-member reads' `dangling` entries that carry
+a `rule` are replaced by this read's, and its derived edges, `dangling[]`,
+`ambiguous[]` and `catalog.rules` go on the composed IR (`ir.catalog`). The
+floor is checked first; below it nothing is sent and the estate is composed as
+before. `readGraph` does this, after behold's own edge passes and before the
+cluster anchor.
+
+src/catalog-draw.ts draws it, after the stacking (`graphView` and the estate
+branch of `/api/graph` call `drawCatalog`). A catalog edge is weighed "joined"
+(web/edge-weight.js, `isCatalogEdge`), apart from "inferred", and the weight
+and the rule are stamped on the SVG's edge (`data-edge-weight`,
+`data-edge-rule`) with inline strokes, so a static export keeps them. A
+dangling reference whose rule is not containment is a dashed placeholder card
+(kind of the `targetKind`, lexicon `behold`, `attrs._placeholder` the value, one
+per member, kind and value), and an ambiguous one is a dotted edge to each
+candidate with `viaAttr` "one of N". The picture ends with the key; the answer's
+`meta.catalogLegend` has the same rows for the page, which hides the in-SVG one
+and draws its own. The graph document keeps `rule`, the one field: chant's rule
+id on a joined edge, and the reference's rule on the placeholder and ambiguous
+edges.
+
+The cluster anchor (src/cluster-anchor.ts) reads the join: a member whose
+Applications name a cluster Secret that chant joins to one cluster resource
+anchors its objects to that cluster only; a Secret with no match, two matches,
+or a member that reaches several clusters anchors nothing and puts the reason
+in the note (`ir.anchorNotes`). A member without a cluster Secret keeps the
+guess. The fixtures are `chant workspace graph --discover --json` recorded
+from a chant checkout at the catalog and its rules (e2e/fixtures/
+reference-catalog), the tests src/catalog-draw.test.ts and
+src/catalog-route.test.ts.
 
 ## A pipeline's numbers, from Prometheus (behold#571)
 

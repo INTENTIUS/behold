@@ -125,6 +125,9 @@ function estateOfBox(ir: GraphIR, boxes: Record<string, string[]> | undefined): 
  * way.
  */
 export function cardLabel(node: Pick<IRNode, "id" | "kind" | "lexicon" | "attrs">, box?: string): string | undefined {
+  // behold#1080: a dangling reference's placeholder is titled with the value it names.
+  const placeholder = node.attrs?._placeholder;
+  if (typeof placeholder === "string" && placeholder) return placeholder;
   const choudoufu = node.lexicon === CHOUDOUFU_LEXICON;
   const terraform = isTerraformCard(node);
   if (!choudoufu && !terraform) return undefined;

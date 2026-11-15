@@ -1,0 +1,470 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/graph/v1/graph.schema.json",
+  "contract": 1,
+  "chant": "0.124.34",
+  "at": null,
+  "plantable": {
+    "plantable": false,
+    "box": null,
+    "reason": {
+      "code": "box-none",
+      "message": "no member's box block declares services, so there is no box to plant"
+    }
+  },
+  "version": 1,
+  "workspace": {
+    "name": "fx-three",
+    "root": "/work/estate",
+    "repo": null
+  },
+  "members": [
+    {
+      "name": "a",
+      "dir": "a",
+      "kind": "terraform",
+      "status": "composed",
+      "reason": null,
+      "chant": "0.124.34",
+      "irVersion": 1,
+      "live": false,
+      "cached": false,
+      "stamp": "sha256:9dbb9d189df49f3511557d8869a4a7fd4221e122567450861a56df3e51035e72",
+      "meta": {
+        "lint": {
+          "errors": 0,
+          "warnings": 0,
+          "findings": []
+        }
+      },
+      "box": null
+    },
+    {
+      "name": "app",
+      "dir": "app",
+      "kind": "manifests",
+      "status": "composed",
+      "reason": null,
+      "chant": "0.124.34",
+      "irVersion": 1,
+      "live": false,
+      "cached": false,
+      "stamp": "sha256:b50e6114a973ba40b081d13e70debb3c9b61af8f8a9b516a94e5964592f93489",
+      "meta": {
+        "k8sMember": {
+          "kind": "manifests",
+          "objects": 3
+        },
+        "lint": {
+          "errors": 0,
+          "warnings": 8,
+          "findings": [
+            {
+              "ruleId": "WK8102",
+              "severity": "warning",
+              "message": "[runner] ServiceAccount \"runner\" has no metadata.labels — add labels for organizational purposes",
+              "file": "chant.config.json",
+              "line": 1,
+              "column": 1,
+              "entity": "runner"
+            },
+            {
+              "ruleId": "WK8102",
+              "severity": "warning",
+              "message": "[ghost] ServiceAccount \"ghost\" has no metadata.labels — add labels for organizational purposes",
+              "file": "chant.config.json",
+              "line": 1,
+              "column": 1,
+              "entity": "ghost"
+            },
+            {
+              "ruleId": "WK8102",
+              "severity": "warning",
+              "message": "[web] Deployment \"web\" has no metadata.labels — add labels for organizational purposes",
+              "file": "chant.config.json",
+              "line": 1,
+              "column": 1,
+              "entity": "web"
+            },
+            {
+              "ruleId": "WK8105",
+              "severity": "warning",
+              "message": "[web] Container \"web\" in Deployment \"web\" has no explicit imagePullPolicy — set it to \"Always\", \"IfNotPresent\", or \"Never\"",
+              "file": "chant.config.json",
+              "line": 1,
+              "column": 1,
+              "entity": "web"
+            },
+            {
+              "ruleId": "WK8201",
+              "severity": "warning",
+              "message": "[web] Container \"web\" in Deployment \"web\" is missing resource limits for cpu, memory",
+              "file": "chant.config.json",
+              "line": 1,
+              "column": 1,
+              "entity": "web"
+            },
+            {
+              "ruleId": "WK8203",
+              "severity": "warning",
+              "message": "[web] Container \"web\" in Deployment \"web\" does not set readOnlyRootFilesystem: true — set it to reduce the attack surface",
+              "file": "chant.config.json",
+              "line": 1,
+              "column": 1,
+              "entity": "web"
+            },
+            {
+              "ruleId": "WK8204",
+              "severity": "warning",
+              "message": "[web] Container \"web\" in Deployment \"web\" does not set runAsNonRoot: true — set it at container or pod level",
+              "file": "chant.config.json",
+              "line": 1,
+              "column": 1,
+              "entity": "web"
+            },
+            {
+              "ruleId": "WK8205",
+              "severity": "warning",
+              "message": "[web] Container \"web\" in Deployment \"web\" does not drop ALL capabilities — add securityContext.capabilities.drop: [\"ALL\"]",
+              "file": "chant.config.json",
+              "line": 1,
+              "column": 1,
+              "entity": "web"
+            },
+            {
+              "ruleId": "WK8302",
+              "severity": "info",
+              "message": "[web] Deployment \"web\" has 1 replica(s) — consider at least 2 for high availability",
+              "file": "chant.config.json",
+              "line": 1,
+              "column": 1,
+              "entity": "web"
+            }
+          ]
+        }
+      },
+      "box": null
+    },
+    {
+      "name": "b",
+      "dir": "b",
+      "kind": "terraform",
+      "status": "composed",
+      "reason": null,
+      "chant": "0.124.34",
+      "irVersion": 1,
+      "live": false,
+      "cached": false,
+      "stamp": "sha256:5d729ef4eb3ab4ea77bbfb85c38a3f2a54203a72b9ba6b7894bd19fca427571d",
+      "meta": {
+        "lint": {
+          "errors": 0,
+          "warnings": 0,
+          "findings": []
+        }
+      },
+      "box": null
+    }
+  ],
+  "nodes": [
+    {
+      "id": "a/a/google_service_account.runner",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "google_service_account.runner",
+        "type": "google_service_account",
+        "name": "runner",
+        "file": "main.tf",
+        "root": "a",
+        "source": "resource \"google_service_account\" \"runner\" {\n  account_id = \"runner\"\n  project    = \"proj\"\n}\n",
+        "line": 1,
+        "mode": "state",
+        "lockFile": false
+      },
+      "member": "a"
+    },
+    {
+      "id": "app/app/deploymentWeb",
+      "kind": "K8s::Apps::Deployment",
+      "lexicon": "k8s",
+      "attrs": {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment"
+      },
+      "member": "app"
+    },
+    {
+      "id": "app/app/serviceAccountGhost",
+      "kind": "K8s::Core::ServiceAccount",
+      "lexicon": "k8s",
+      "attrs": {
+        "apiVersion": "v1",
+        "kind": "ServiceAccount"
+      },
+      "member": "app"
+    },
+    {
+      "id": "app/app/serviceAccountRunner",
+      "kind": "K8s::Core::ServiceAccount",
+      "lexicon": "k8s",
+      "attrs": {
+        "apiVersion": "v1",
+        "kind": "ServiceAccount"
+      },
+      "member": "app"
+    },
+    {
+      "id": "b/b/google_service_account.runner",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "google_service_account.runner",
+        "type": "google_service_account",
+        "name": "runner",
+        "file": "main.tf",
+        "root": "b",
+        "source": "resource \"google_service_account\" \"runner\" {\n  account_id = \"runner\"\n  project    = \"proj\"\n}\n",
+        "line": 1,
+        "mode": "state",
+        "lockFile": false
+      },
+      "member": "b"
+    }
+  ],
+  "edges": [
+    {
+      "from": "app/app/deploymentWeb",
+      "to": "app/app/serviceAccountRunner",
+      "kind": "ref",
+      "viaAttr": "spec",
+      "grain": "property",
+      "origin": "derived",
+      "rule": "k8s:K8s::Apps::Deployment:spec.template.spec.serviceAccountName",
+      "relation": "reference",
+      "member": "app"
+    }
+  ],
+  "groups": {
+    "byMember": {
+      "a": [
+        "a/a/google_service_account.runner"
+      ],
+      "app": [
+        "app/app/deploymentWeb",
+        "app/app/serviceAccountGhost",
+        "app/app/serviceAccountRunner"
+      ],
+      "b": [
+        "b/b/google_service_account.runner"
+      ]
+    },
+    "byLexicon": {
+      "k8s": [
+        "app/app/deploymentWeb",
+        "app/app/serviceAccountGhost",
+        "app/app/serviceAccountRunner"
+      ],
+      "terraform": [
+        "a/a/google_service_account.runner",
+        "b/b/google_service_account.runner"
+      ]
+    },
+    "byStack": {
+      "a/a": [
+        "a/a/google_service_account.runner"
+      ],
+      "app/k8s": [
+        "app/app/deploymentWeb",
+        "app/app/serviceAccountGhost",
+        "app/app/serviceAccountRunner"
+      ],
+      "b/b": [
+        "b/b/google_service_account.runner"
+      ]
+    }
+  },
+  "exports": [],
+  "imports": [],
+  "links": [],
+  "collectors": [],
+  "records": [],
+  "dangling": [
+    {
+      "from": "app/app/deploymentWeb",
+      "kind": "ref",
+      "path": "metadata.namespace",
+      "value": "web",
+      "member": "app",
+      "rule": "k8s:K8s::Apps::Deployment:metadata.namespace",
+      "targetKind": "K8s::Core::Namespace"
+    },
+    {
+      "from": "app/app/serviceAccountGhost",
+      "kind": "ref",
+      "path": "metadata.annotations[\"iam.gke.io/gcp-service-account\"]",
+      "value": "ghost@proj.iam.gserviceaccount.com",
+      "member": "app",
+      "rule": "k8s:K8s::Core::ServiceAccount:metadata.annotations[\"iam.gke.io/gcp-service-account\"]",
+      "targetKind": "google_service_account"
+    },
+    {
+      "from": "app/app/serviceAccountGhost",
+      "kind": "ref",
+      "path": "metadata.namespace",
+      "value": "web",
+      "member": "app",
+      "rule": "k8s:K8s::Core::ServiceAccount:metadata.namespace",
+      "targetKind": "K8s::Core::Namespace"
+    },
+    {
+      "from": "app/app/serviceAccountRunner",
+      "kind": "ref",
+      "path": "metadata.namespace",
+      "value": "web",
+      "member": "app",
+      "rule": "k8s:K8s::Core::ServiceAccount:metadata.namespace",
+      "targetKind": "K8s::Core::Namespace"
+    }
+  ],
+  "ambiguous": [
+    {
+      "from": "app/app/serviceAccountRunner",
+      "member": "app",
+      "rule": "k8s:K8s::Core::ServiceAccount:metadata.annotations[\"iam.gke.io/gcp-service-account\"]",
+      "path": "metadata.annotations[\"iam.gke.io/gcp-service-account\"]",
+      "value": "runner@proj.iam.gserviceaccount.com",
+      "candidates": [
+        "a/a/google_service_account.runner",
+        "b/b/google_service_account.runner"
+      ]
+    }
+  ],
+  "catalog": {
+    "lexicons": [
+      "k8s",
+      "terraform"
+    ],
+    "members": [
+      "a",
+      "app",
+      "b"
+    ],
+    "rules": {
+      "k8s:K8s::Apps::Deployment:metadata.namespace": {
+        "lexicon": "k8s",
+        "from": "K8s::Apps::Deployment",
+        "path": "metadata.namespace",
+        "relation": "containment",
+        "label": "in namespace",
+        "targetKinds": [
+          "K8s::Core::Namespace"
+        ]
+      },
+      "k8s:K8s::Apps::Deployment:spec.template.spec.serviceAccountName": {
+        "lexicon": "k8s",
+        "from": "K8s::Apps::Deployment",
+        "path": "spec.template.spec.serviceAccountName",
+        "relation": "reference",
+        "label": "runs as",
+        "targetKinds": [
+          "K8s::Core::ServiceAccount"
+        ]
+      },
+      "k8s:K8s::Core::ServiceAccount:metadata.annotations[\"iam.gke.io/gcp-service-account\"]": {
+        "lexicon": "k8s",
+        "from": "K8s::Core::ServiceAccount",
+        "path": "metadata.annotations[\"iam.gke.io/gcp-service-account\"]",
+        "relation": "reference",
+        "label": "acts as",
+        "targetKinds": [
+          "google_service_account"
+        ]
+      },
+      "k8s:K8s::Core::ServiceAccount:metadata.namespace": {
+        "lexicon": "k8s",
+        "from": "K8s::Core::ServiceAccount",
+        "path": "metadata.namespace",
+        "relation": "containment",
+        "label": "in namespace",
+        "targetKinds": [
+          "K8s::Core::Namespace"
+        ]
+      }
+    }
+  },
+  "discovered": [
+    {
+      "dir": "a",
+      "member": "a",
+      "kind": "terraform",
+      "source": "@intentius/chant-lexicon-terraform",
+      "probe": {
+        "anyFile": [
+          "*.tf"
+        ]
+      },
+      "claims": [
+        {
+          "kind": "terraform",
+          "precedence": 400,
+          "source": "@intentius/chant-lexicon-terraform"
+        }
+      ],
+      "outcome": "member",
+      "note": null
+    },
+    {
+      "dir": "app",
+      "member": "app",
+      "kind": "manifests",
+      "source": "@intentius/chant-lexicon-k8s",
+      "probe": {
+        "anyDocument": {
+          "in": [
+            "*.yaml",
+            "*.yml"
+          ],
+          "match": [
+            {
+              "/apiVersion": [
+                "*"
+              ],
+              "/kind": [
+                "*"
+              ]
+            }
+          ]
+        }
+      },
+      "claims": [
+        {
+          "kind": "manifests",
+          "precedence": 305,
+          "source": "@intentius/chant-lexicon-k8s"
+        }
+      ],
+      "outcome": "member",
+      "note": null
+    },
+    {
+      "dir": "b",
+      "member": "b",
+      "kind": "terraform",
+      "source": "@intentius/chant-lexicon-terraform",
+      "probe": {
+        "anyFile": [
+          "*.tf"
+        ]
+      },
+      "claims": [
+        {
+          "kind": "terraform",
+          "precedence": 400,
+          "source": "@intentius/chant-lexicon-terraform"
+        }
+      ],
+      "outcome": "member",
+      "note": null
+    }
+  ]
+}

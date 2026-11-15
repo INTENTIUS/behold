@@ -6,6 +6,7 @@
  * src/overlay.ts. behold owns the live data + the server + (later) the
  * temporal/action layers around this.
  */
+import { stampCatalogSvg } from "./catalog-draw.ts";
 import { ATTRS_ZOOM, attributeFields } from "./attribute-fields.ts";
 import {
   layoutIr,
@@ -512,7 +513,8 @@ export function renderGraph(
     ...(boxes ? { groups: layout.groups } : {}),
     ...(opts.theme ? { theme: opts.theme as never } : {}),
   });
-  return { svg: face.restore(svg) };
+  // behold#1080: the catalog's joined edges, placeholder cards and dotted edges, marked, and their key.
+  return { svg: stampCatalogSvg(face.restore(svg), irIn) };
 }
 
 /** A pipeline box's title (#555), per `byPipeline` key: the `name` attribute
