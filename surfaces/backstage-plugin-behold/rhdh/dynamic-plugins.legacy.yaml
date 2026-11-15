@@ -1,0 +1,28 @@
+# Red Hat Developer Hub releases that still run the legacy frontend host, where
+# a frontend plugin is wired by hand. The entity tab is the Infrastructure
+# route at /infrastructure; its content mounts on the mount point named in
+# entityTabs. isBeholdAvailable keeps the tab empty for components no behold
+# annotation picks a slice for.
+#
+# The key under dynamicPlugins.frontend is the plugin's scalprum.name, which
+# the export derives from the package name: intentius.backstage-plugin-behold.
+plugins:
+  - package: oci://ghcr.io/intentius/backstage-plugin-behold:0.1.0!intentius-backstage-plugin-behold
+    enabled: true
+    pluginConfig:
+      dynamicPlugins:
+        frontend:
+          intentius.backstage-plugin-behold:
+            entityTabs:
+              - path: /infrastructure
+                title: Infrastructure
+                mountPoint: entity.page.infrastructure
+            mountPoints:
+              - mountPoint: entity.page.infrastructure/cards
+                importName: EntityInfrastructureContent
+                config:
+                  layout:
+                    gridColumn: '1 / -1'
+                  if:
+                    anyOf:
+                      - isBeholdAvailable

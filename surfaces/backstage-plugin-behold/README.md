@@ -92,6 +92,71 @@ import { EntityInfrastructureContent, isBeholdAvailable } from '@intentius/backs
 </EntityLayout.Route>
 ```
 
+## Red Hat Developer Hub
+
+Red Hat Developer Hub (RHDH) loads the plugin as a dynamic plugin, packaged as
+an OCI image. The derived package the export writes (`@intentius/backstage-plugin-behold-dynamic`)
+lives only inside that image and does not go to npm.
+
+    npm run export-dynamic     # writes dist-dynamic/
+    npm run package-dynamic    # exports again and builds the image; IMAGE=<ref> sets the tag
+
+Both run `@red-hat-developer-hub/cli`, pinned to 2.2.1, the release that
+rhdh-plugin-export-overlays names for RHDH next. `RHDH_CLI_VERSION` picks
+another. `package-dynamic` needs docker (`CONTAINER_TOOL=podman` for podman).
+`.github/workflows/backstage-plugin-release.yml` runs the same two steps and
+pushes `ghcr.io/intentius/backstage-plugin-behold:<version>` on a
+`backstage-plugin-behold-v<version>` tag.
+
+RHDH 2.x runs the new frontend system, so the `./alpha` export does the
+wiring: the Infrastructure tab registers itself as an entity-content extension.
+Install and enable it with `rhdh/dynamic-plugins.yaml`, and merge
+`rhdh/app-config.yaml` for the `behold:` settings.
+
+A host that still runs RHDH's legacy frontend wires the tab by hand with an
+entity tab and a mount point. `rhdh/dynamic-plugins.legacy.yaml` has that
+configuration, using the root export (`EntityInfrastructureContent` and
+`isBeholdAvailable`). It has not been run against a legacy host; see
+"Compatibility" below.
+
+### Compatibility
+
+The `@backstage/*` dependency ranges start at what Backstage 1.54.9 ships, the
+release RHDH next and 2.1 are built on, and the CI matrix installs the plugin
+against 1.54.9 and 1.56.5 (`scripts/pin-backstage.mjs`, then `tsc`, the tests
+and the build). RHDH 1.10 (Backstage 1.49.4) and 1.9 (1.45.3) are older than
+that range and are not covered. RHDH's next release after 2.1 targets Backstage
+1.58, which no range here has been tried against yet.
+
+### Checking it in RHDH
+
+This loads the image into the RHDH container the way a deployment does, with
+a throwaway registry on a docker network, and drives the tab headless:
+
+    docker network create behold-rhdh
+    docker run -d --name behold-registry --network behold-rhdh -p 127.0.0.1:5005:5000 registry:2
+    IMAGE=localhost:5005/behold-plugin:0.1.0 npm run package-dynamic
+    docker push localhost:5005/behold-plugin:0.1.0
+    mkdir -p /tmp/behold-export && cp fixtures/example-terraform-estate.graph.json /tmp/behold-export/graph.json
+    node e2e/serve-export.mjs /tmp/behold-export 4801 &
+    docker run -d --name behold-rhdh --network behold-rhdh -p 127.0.0.1:7007:7007 \
+      -v "$PWD/e2e/rhdh/app-config.yaml:/opt/app-root/src/app-config.yaml" \
+      -v "$PWD/fixtures/catalog-info.yaml:/opt/app-root/src/catalog-info.yaml" \
+      -v "$PWD/e2e/rhdh/dynamic-plugins.test.yaml:/opt/app-root/src/dynamic-plugins.yaml" \
+      -v "$PWD/e2e/rhdh/registries.conf:/etc/containers/registries.conf.d/behold.conf" \
+      --entrypoint /bin/bash quay.io/rhdh-community/rhdh:next -c 'set -ex; R=/opt/app-root/src/dynamic-plugins-root; mkdir -p $R; /opt/app-root/src/install-dynamic-plugins.sh $R; exec node packages/backend --config /opt/app-root/src/app-config.yaml --config /opt/app-root/src/dynamic-plugins.yaml --config $R/app-config.dynamic-plugins.yaml'
+    BACKSTAGE_URL=http://localhost:7007 node e2e/backstage-e2e.mjs
+
+The backend log says `nfs-module-filter: ... kept [alpha]` when the host takes
+the new-frontend-system export.
+
+## Other hosts
+
+Spotify Portal runs the new frontend system only, so it takes the `./alpha`
+export and nothing in `rhdh/`. Roadie runs custom plugins on its Growth plan;
+the package is a standard Backstage plugin that Roadie can build into a
+tenant.
+
 ## Layout and what moves
 
 This folder lives in the behold repository until a `behold-surfaces`
@@ -131,7 +196,21 @@ Playwright from behold's own dependencies.
 Maintainer steps, in order. Nothing here is done.
 
 1. Publish `@intentius/backstage-plugin-behold` to npm (`npm run build`, then
-   `npm publish`; the package's `publishConfig` points at `dist/`).
-2. Add the plugin to Backstage's plugin directory with a pull request to
-   backstage/backstage (an outside repository) and package it for Red Hat
-   Developer Hub (behold#1077).
+   `npm publish`; the package's `publishConfig` points at `dist/`). Both the
+   directory and the overlays workspace need the package on npm.
+2. Push the tag `backstage-plugin-behold-v<version>`. The workflow builds the
+   dynamic plugin and pushes the OCI image to ghcr.io; make the package public
+   in the GitHub organisation's package settings.
+3. Open a pull request to backstage/backstage that adds `listing/behold.yaml`
+   as `microsite/data/plugins/behold.yaml` and `listing/behold.svg` as
+   `microsite/static/img/behold.svg`. Set `addedDate` to the day of the pull
+   request, and run `node ./scripts/verify-plugin-directory.js` in the fork
+   first. The check also requires `status: active`, which the directory's own
+   guide does not mention.
+4. Open a pull request to redhat-developer/rhdh-plugin-export-overlays on
+   `main` that adds a `workspaces/behold/` folder with `source.json` (repo
+   `https://github.com/INTENTIUS/behold`, a pinned `repo-ref`, `repo-flat`
+   true), `plugins-list.yaml` naming `surfaces/backstage-plugin-behold`, a `metadata/` Package entity and a CODEOWNERS entry.
+   The package's own scope is outside the three the overlays discover on npm,
+   so it must be added by hand.
+5. Later, once there is demand: a proposal to backstage/community-plugins.

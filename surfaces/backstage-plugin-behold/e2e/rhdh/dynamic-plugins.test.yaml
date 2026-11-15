@@ -1,0 +1,7 @@
+# The plugin from a local registry (see the README), plus the guest sign-in
+# module so the headless browser can enter without an identity provider.
+plugins:
+  - package: oci://behold-registry:5000/behold-plugin:0.1.0!intentius-backstage-plugin-behold
+    enabled: true
+  - package: oci://ghcr.io/redhat-developer/rhdh-plugin-export-overlays/backstage-plugin-auth-backend-module-guest-provider:bs_1.54.9__0.2.22
+    enabled: true
