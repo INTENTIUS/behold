@@ -8,15 +8,16 @@
  * `-o <file>`.
  *
  * A new format is one more entry in `GRAPH_FORMATS`, and the CLI takes its
- * flag from the entry's name (`--json`, `--ir`). The SVG painter (#1061) and
- * the Mermaid emitter (#1060) are listed in `PENDING_FORMATS` until they
- * apply, so their flags already answer with what to use meanwhile instead of
- * an unknown-flag error. A cut (#1067's `cutDocument` in src/graph-cut.ts,
+ * flag from the entry's name (`--json`, `--ir`, `--mermaid`). The SVG
+ * painter (#1061) is listed in `PENDING_FORMATS` until it applies, so its flag
+ * already answers with what to use meanwhile instead of an unknown-flag error. A cut (#1067's `cutDocument` in src/graph-cut.ts,
  * #1059's changed cut) works on the document: the CLI hands it to a format
  * as `cut`, and `graphDocument` applies it before the format prints, so a
  * format that reads the document needs nothing of its own for it.
  */
 import type { GraphDocument } from "./graph-document.ts";
+import { toMermaid } from "./graph-mermaid.ts";
+import type { Forge } from "./mermaid-budgets.ts";
 import type { GraphView } from "./graph-view.ts";
 import { toDocument, type ToDocumentOptions } from "./to-document.ts";
 
@@ -26,6 +27,8 @@ export interface GraphFormatInput {
   document: ToDocumentOptions;
   /** Keep `attrs.source` on the cards (`--source`). */
   source: boolean;
+  /** For `mermaid`: the forge whose character budget the diagram fits (src/mermaid-budgets.ts). Default github. */
+  forge?: Forge;
   /** A cut over the document, applied before a document format prints. None is the whole graph. */
   cut?: (doc: GraphDocument) => GraphDocument;
 }
@@ -86,12 +89,16 @@ const json = (v: unknown): string => `${JSON.stringify(v, null, 2)}\n`;
 export const GRAPH_FORMATS: readonly GraphFormat[] = [
   { name: "json", summary: "the behold-graph/1 document (the default)", emit: (input) => json(graphDocument(input)) },
   { name: "ir", summary: "the unversioned {ir, meta} snapshot /api/graph answers, without its SVG", emit: (input) => json(graphSnapshot(input)) },
+  {
+    name: "mermaid",
+    summary: "a Mermaid flowchart within a forge's character budget (--forge gitlab|github|forgejo, default github)",
+    emit: (input) => toMermaid(graphDocument(input), input.forge ? { forge: input.forge } : {}),
+  },
 ];
 
 /** Formats whose flag is reserved for an emitter that has not applied yet, and what to use meanwhile. */
 export const PENDING_FORMATS: Readonly<Record<string, string>> = {
   svg: "the SVG painter for behold graph is not in this version; `behold export` writes the pictures meanwhile",
-  mermaid: "the Mermaid emitter for behold graph is not in this version; --json gives the nodes and edges meanwhile",
 };
 
 export function graphFormat(name: string): GraphFormat | undefined {

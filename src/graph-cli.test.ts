@@ -54,12 +54,16 @@ describe("behold graph, arguments (#1058)", () => {
     expect((await graph([".", "--frobnicate"])).err).toContain("unknown option --frobnicate");
   });
 
-  it("answers --svg and --mermaid with what to use until their emitters apply", async () => {
-    for (const f of ["--svg", "--mermaid"]) {
-      const r = await graph([".", f]);
-      expect(r.code).toBe(2);
-      expect(r.err).toContain("not in this version");
-    }
+  it("answers --svg with what to use until its painter applies", async () => {
+    const r = await graph([".", "--svg"]);
+    expect(r.code).toBe(2);
+    expect(r.err).toContain("not in this version");
+  });
+
+  it("takes --forge with --mermaid only, and one of the three forges (#1060)", async () => {
+    expect((await graph([".", "--mermaid", "--forge", "bitbucket"])).err).toContain("--forge takes gitlab, github, forgejo");
+    expect((await graph([".", "--mermaid", "--forge"])).code).toBe(2);
+    expect((await graph([".", "--json", "--forge", "gitlab"])).err).toContain("--forge goes with --mermaid");
   });
 
   it("refuses a path that is not a directory", async () => {
@@ -101,6 +105,19 @@ describe("behold graph on a folder of .tf files (#1058)", () => {
     // --every-card turns off stacking, so it draws at least as many cards.
     const every = JSON.parse((await graph([dir, "--ir", "--every-card"])).out) as typeof snap;
     expect(every.ir.nodes.length).toBeGreaterThan(snap.ir.nodes.length);
+  });
+
+  it.skipIf(gate)("--mermaid prints a flowchart within the forge's budget, the same on two runs (#1060)", { timeout: 240_000 }, async () => {
+    const dir = bareEstate();
+    const gitlab = await graph([dir, "--mermaid", "--forge", "gitlab"]);
+    expect(gitlab.code).toBe(0);
+    expect(gitlab.out.startsWith("flowchart TD\n")).toBe(true);
+    expect(gitlab.out.length).toBeLessThanOrEqual(2_000);
+    expect(gitlab.out).not.toContain(dir);
+    expect((await graph([dir, "--mermaid", "--forge", "gitlab"])).out).toBe(gitlab.out);
+    const github = await graph([dir, "--mermaid"]);
+    expect(github.out.length).toBeGreaterThanOrEqual(gitlab.out.length);
+    expect(github.out).not.toContain("not shown");
   });
 
   it.skipIf(gate)("-o writes the file and prints nothing on stdout", { timeout: 240_000 }, async () => {

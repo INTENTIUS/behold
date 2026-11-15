@@ -1477,12 +1477,32 @@ reader ignores what it does not know; `checkGraphDocument` refuses any other
 [--every-card]` reads a directory and prints it, with no server, no browser
 and no write but the `-o` file (src/graph-cli.ts). `--json`, the default, is
 the `behold-graph/1` document; `--ir` is the unversioned `{ir, meta}` that
-`/api/graph` answers, without its SVG. `--svg` and `--mermaid` are reserved
-for their emitters (#1061, #1060) and exit 2 until they apply. Exit 1 is a
+`/api/graph` answers, without its SVG. `--mermaid [--forge gitlab|github|forgejo]`
+is a flowchart that fits that forge's character budget (below); `--svg` is
+reserved for its painter (#1061) and exits 2 until it applies. Exit 1 is a
 directory chant would not read (its refusal and remedy on stderr), exit 2 a
 usage error. No output holds an absolute path: both go through
 `documentOptions`' scrubber, and `attrs.source` is left out without
 `--source`.
+
+The Mermaid writer (#1060) is `toMermaid(doc, { forge })` in
+src/graph-mermaid.ts, over a `behold-graph/1` document, so a cut applies first.
+Ids are `n<index>` and `g<index>` over the sorted ids, one label line per card,
+boxes as subgraphs, inferred edges dotted, labels quoted and escaped with
+Mermaid entity codes. A document with a plan's `change` or a cut's `seed` gets
+four `classDef` lines: added (`create`), changed (`update`, `replace`), removed
+(`delete`) and neighbour (a card in the cut that is neither a seed nor changed).
+Over the budget it drops neighbours first, then whole boxes (those with the
+fewest changed cards first), and ends with a `N cards not shown` card; it never
+returns text over the budget. The budgets are one table, `FORGE_BUDGETS` in
+src/mermaid-budgets.ts: gitlab 2,000 characters, github and forgejo 20,000 and
+250 edges, a whole comment under 60,000. Each row has `confirmed: false` until
+the live check (e2e/forge-limits, #1065) records the forge's real figures; that
+check's result is an edit to the row. `forgeComment` builds the comment body
+(marker, count line, fenced diagram) and posts the per-root table from
+`rootTable` instead when the diagram had to leave cards out or the comment
+would reach its limit; the action (#1062) and the MCP text fallback (#1073)
+use these.
 
 The read is `graphView(dir, opts)` (src/graph-view.ts): `readGraph`, then the
 lenses `/api/graph` runs over an estate's source picture: the plan when
