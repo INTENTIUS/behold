@@ -30,7 +30,7 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { GraphIR } from "@intentius/chant";
 import { envOverridesFor, resolveChant, type GraphOptions } from "./chant.ts";
-import { CI_REPORT_URL_CHANT_FLOOR } from "./chant-floors.ts";
+import { CI_REPORT_URL_CHANT_FLOOR, WORKSPACE_DETAIL_CHANT_FLOOR } from "./chant-floors.ts";
 import type { MemberVia } from "./member-ir.ts";
 import { meetsFloor } from "./floor.ts";
 import { attachLintFindings } from "./terraform-lint.ts";
@@ -318,9 +318,9 @@ export function unreadableMemberIr(m: WorkspaceMember): GraphIR {
   } as unknown as GraphIR;
 }
 
-/** Graph options the workspace read carries today; anything else goes to the member's own `chant graph`. */
+/** Graph options the workspace read carries today; anything else goes to the member's own `chant graph`. A detail tier is carried (behold#1056) when the chant passes it on to its members: {@link workspaceVia} checks that. */
 export function workspaceGraphTakes(opts: GraphOptions): boolean {
-  return opts.detail === undefined && !opts.lens && !opts.up && !opts.down && !opts.namespace;
+  return !opts.lens && !opts.up && !opts.down && !opts.namespace;
 }
 
 // ---------------------------------------------------------------------------
@@ -453,11 +453,12 @@ export function workspaceGraphArgs(root: string, member: string, opts: GraphOpti
   if (opts.live) args.push("--live");
   if (opts.overlay) args.push("--overlay");
   if (opts.traffic) args.push("--traffic", opts.traffic);
+  if (opts.detail !== undefined) args.push("--detail", String(opts.detail));
   return args;
 }
 
-/** Kinds chant reads through `workspace graph`. A choudoufu member's roster, rungs and cross-estate references still come from choudoufu: src/choudoufu-workspace.ts says why (#465). A pulumi member is read through it and nothing else: {@link pulumiWorkspaceVia} (behold#994). */
-export const CONTRACT_READ_KINDS = new Set(["chant", "terraform", "choudoufu", "pulumi"]);
+/** Kinds chant reads through `workspace graph`. The kustomize, argo-app, flux-kustomization, helm-chart and cloudformation kinds are the k8s, helm and aws lexicons' (behold#1056): their nodes carry only `apiVersion` and `kind` until a detail tier is passed, and the path edges of src/estate-edges.ts need `spec`, which comes at detail 3. A kustomize member needs `kustomize` or `kubectl` on PATH and a helm-chart member needs `helm`; chant says on the member's meta when it could not render. A choudoufu member's roster, rungs and cross-estate references still come from choudoufu: src/choudoufu-workspace.ts says why (#465). A pulumi member is read through it and nothing else: {@link pulumiWorkspaceVia} (behold#994). */
+export const CONTRACT_READ_KINDS = new Set(["chant", "terraform", "choudoufu", "pulumi", "kustomize", "argo-app", "flux-kustomization", "helm-chart", "cloudformation"]);
 
 /** Why a pulumi member has no live read, as the overlay's `_unobserved` says it. */
 export const PULUMI_NO_LIVE_READ =
@@ -477,6 +478,8 @@ export function workspaceVia(member: WorkspaceMember, root: string, fallback: Me
     },
     read: async (dir, opts) => {
       if (!workspaceGraphTakes(opts)) return fallback.read(dir, opts);
+      // A chant below the floor rejects --detail, so that read stays on the member's own chant graph.
+      if (opts.detail !== undefined && !meetsFloor(resolveChant(root).version, WORKSPACE_DETAIL_CHANT_FLOOR)) return fallback.read(dir, opts);
       const doc = await rootReader(root, envOverridesFor(opts)).read("graph", workspaceGraphArgs(root, member.name, opts));
       return memberIrFromGraphDocument(doc, member.name);
     },

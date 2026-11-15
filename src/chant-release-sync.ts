@@ -13,6 +13,9 @@ import { CHANT_RELEASE, PUBLISHED_CHANT } from "./chant-release.ts";
 
 const TERRAFORM = "@intentius/chant-lexicon-terraform";
 const PULUMI = "@intentius/chant-lexicon-pulumi";
+const K8S = "@intentius/chant-lexicon-k8s";
+/** The k8s lexicon and the two it depends on, held at the release exactly: their peer ranges on chant move with every release, so a range here would let a fresh resolve pull a newer lexicon and a newer chant with it (behold#1056). */
+const K8S_SET = [K8S, "@intentius/chant-lexicon-otel", "@intentius/chant-lexicon-prometheus"];
 
 export interface ChantRelease {
   version: string;
@@ -89,13 +92,14 @@ const EDITS: { file: string; edit: Edit }[] = [
   { file: "example-terraform-estate/chant.workspace.json", edit: (d, r) => ({ ...d, pins: pinAt(d.pins as Pin[], TERRAFORM, chantVersion(r)) }) },
   { file: "example-choudoufu-estate/chant.workspace.json", edit: (d, r) => ({ ...d, pins: pinAt(d.pins as Pin[], TERRAFORM, chantVersion(r)) }) },
   { file: "e2e/fixtures/pulumi-workspace/chant.workspace.json", edit: (d, r) => ({ ...d, pins: pinAt(d.pins as Pin[], PULUMI, chantVersion(r)) }) },
+  { file: "e2e/fixtures/k8s-workspace/chant.workspace.json", edit: (d, r) => ({ ...d, pins: pinAt(d.pins as Pin[], K8S, chantVersion(r)) }) },
   // behold's own chant dependencies.
   {
     file: "package.json",
     edit: (d, r) => ({
       ...d,
       dependencies: setDeps(d.dependencies as Json, ["@intentius/chant", "@intentius/chant-k8s-client", TERRAFORM], chantRange(r)),
-      devDependencies: setDeps(d.devDependencies as Json, ["@intentius/chant-lexicon-sql", PULUMI], chantRange(r)),
+      devDependencies: { ...setDeps(d.devDependencies as Json, ["@intentius/chant-lexicon-sql", PULUMI], chantRange(r)), ...setDeps(d.devDependencies as Json, K8S_SET, chantVersion(r)) },
     }),
   },
 ];

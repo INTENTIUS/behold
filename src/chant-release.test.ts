@@ -30,10 +30,11 @@ describe("CHANT_RELEASE (behold#1005)", () => {
     expect(pin("example-terraform-estate/chant.workspace.json", "@intentius/chant-lexicon-terraform")).toBe(want);
     expect(pin("example-choudoufu-estate/chant.workspace.json", "@intentius/chant-lexicon-terraform")).toBe(want);
     expect(pin("e2e/fixtures/pulumi-workspace/chant.workspace.json", "@intentius/chant-lexicon-pulumi")).toBe(want);
+    expect(pin("e2e/fixtures/k8s-workspace/chant.workspace.json", "@intentius/chant-lexicon-k8s")).toBe(want);
     const pins = (r: { version: string; released: boolean }) =>
       Object.fromEntries(chantReleaseFiles(REPO, r).filter((f) => f.file.endsWith("chant.workspace.json") && f.file !== "example-three-cloud/chant.workspace.json").map((f) => [f.file, (JSON.parse(f.want) as { pins: { version?: string }[] }).pins[0].version]));
-    expect(Object.values(pins({ version: "0.124.99", released: false }))).toEqual([PUBLISHED_CHANT, PUBLISHED_CHANT, PUBLISHED_CHANT]);
-    expect(Object.values(pins({ version: "0.124.99", released: true }))).toEqual(["0.124.99", "0.124.99", "0.124.99"]);
+    expect(Object.values(pins({ version: "0.124.99", released: false }))).toEqual([PUBLISHED_CHANT, PUBLISHED_CHANT, PUBLISHED_CHANT, PUBLISHED_CHANT]);
+    expect(Object.values(pins({ version: "0.124.99", released: true }))).toEqual(["0.124.99", "0.124.99", "0.124.99", "0.124.99"]);
   });
 
   // The README's install line for the terraform reader names behold's own range.

@@ -71,6 +71,9 @@
     }
   },
   "devDependencies": {
+    "@intentius/chant-lexicon-k8s": "0.124.58",
+    "@intentius/chant-lexicon-otel": "0.124.58",
+    "@intentius/chant-lexicon-prometheus": "0.124.58",
     "@intentius/chant-lexicon-pulumi": "^0.124.58",
     "@intentius/chant-lexicon-sql": "^0.124.58",
     "@types/node": "^26.4.1",
