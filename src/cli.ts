@@ -27,6 +27,7 @@ import { setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
 import { readCarveReport } from "./carve-lens.ts";
 import { HCL_PARSER_PKG } from "./terraform-member.ts";
 import { runShot } from "./shot-cli.ts";
+import { runGraph } from "./graph-cli.ts";
 import { runMcp } from "./mcp.ts";
 import { runIndex } from "./behold-index.ts";
 import { listCheckouts, type RepoTarget, type ViewRepos } from "./view-repos.ts";
@@ -61,6 +62,8 @@ Usage:
                 [--width <px>] [--height <px>] [--link-base <url>] [--view <k=v&...>]
                 [--publish <remote>[/<branch>]]   (behold shot --help)
   behold mcp [project-dir] [--url <serve> | --port <n>]   (behold mcp --help)
+  behold graph [dir] [--json | --ir] [-o <file>] [--detail 0..3] [--source] [--every-card]
+                (behold graph --help)
   behold index <aws|azure|gcp|kubernetes> [--account|--subscription|--project|--cluster <id>]
                 [--regions <r,…>] [--types <t,…>] [--tag <k=v>]… [--endpoint <url>] [--store <spec>] [--json]
                 (behold index --help)
@@ -108,6 +111,12 @@ Usage:
           project to the current directory; pass a dir for someone else's, and
           --env for that project's live overlay. Bring the estate up first (e.g.
           behold preview, or your creds/env) so the snapshot reflects live state.
+
+  graph   Read a directory into behold's graph and print it, with no server:
+          the behold-graph/1 document by default (--json), or the {ir, meta}
+          snapshot /api/graph answers (--ir). The same command is the
+          behold-graph bin of @intentius/behold-graph, a smaller install
+          for a CI job or an editor.
 
   index   Read one cloud account, subscription, project or cluster with no
           project, type it through chant, add derived edges, and write one
@@ -394,6 +403,11 @@ export async function run(argv: string[]): Promise<void> {
   if (cmd === "shot") {
     // Exit at once: the app a shot starts in-process may leave timers behind it.
     process.exit(await runShot(rest));
+  }
+
+  if (cmd === "graph") {
+    // behold#1058: reads files and prints; it starts no server.
+    process.exit(await runGraph(rest, { version: beholdVersion() }));
   }
 
   if (cmd === "index") {

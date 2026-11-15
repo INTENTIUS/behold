@@ -1471,6 +1471,64 @@ byte-identical JSON. Within `behold-graph/1` fields are only added and a
 reader ignores what it does not know; `checkGraphDocument` refuses any other
 `behold-graph/<n>` by name.
 
+## The graph from the command line: `behold graph` (#1058)
+
+`behold graph [dir] [--json | --ir] [-o <file>] [--detail 0..3] [--source]
+[--every-card]` reads a directory and prints it, with no server, no browser
+and no write but the `-o` file (src/graph-cli.ts). `--json`, the default, is
+the `behold-graph/1` document; `--ir` is the unversioned `{ir, meta}` that
+`/api/graph` answers, without its SVG. `--mermaid [--forge gitlab|github|forgejo]`
+is a flowchart that fits that forge's character budget (below); `--svg` is
+reserved for its painter (#1061) and exits 2 until it applies. Exit 1 is a
+directory chant would not read (its refusal and remedy on stderr), exit 2 a
+usage error. No output holds an absolute path: both go through
+`documentOptions`' scrubber, and `attrs.source` is left out without
+`--source`.
+
+The Mermaid writer (#1060) is `toMermaid(doc, { forge })` in
+src/graph-mermaid.ts, over a `behold-graph/1` document, so a cut applies first.
+Ids are `n<index>` and `g<index>` over the sorted ids, one label line per card,
+boxes as subgraphs, inferred edges dotted, labels quoted and escaped with
+Mermaid entity codes. A document with a plan's `change` or a cut's `seed` gets
+four `classDef` lines: added (`create`), changed (`update`, `replace`), removed
+(`delete`) and neighbour (a card in the cut that is neither a seed nor changed).
+Over the budget it drops neighbours first, then whole boxes (those with the
+fewest changed cards first), and ends with a `N cards not shown` card; it never
+returns text over the budget. The budgets are one table, `FORGE_BUDGETS` in
+src/mermaid-budgets.ts: gitlab 2,000 characters, github and forgejo 20,000 and
+250 edges, a whole comment under 60,000. Each row has `confirmed: false` until
+the live check (e2e/forge-limits, #1065) records the forge's real figures; that
+check's result is an edit to the row. `forgeComment` builds the comment body
+(marker, count line, fenced diagram) and posts the per-root table from
+`rootTable` instead when the diagram had to leave cards out or the comment
+would reach its limit; the action (#1062) and the MCP text fallback (#1073)
+use these.
+
+The read is `graphView(dir, opts)` (src/graph-view.ts): `readGraph`, then the
+lenses `/api/graph` runs over an estate's source picture: the plan when
+`terraformPlan` is passed (the server's setting, as an argument), collapse,
+stacking alike cards (`--every-card` turns it off), and the note, joined by
+`viewNote`. The route calls `shapeEstate` and `viewNote` from the same module,
+and src/graph-view.test.ts holds the view equal to the route's answer. The
+logical and components lenses, the traffic prediction (it reads per-user
+settings) and the SVG stay in the route. An output format is one entry in
+`GRAPH_FORMATS` (src/graph-formats.ts); a cut is a function over the document
+that the CLI hands a format as `cut`.
+
+The same command is the `behold-graph` bin of `@intentius/behold-graph`,
+built from this repo into packages/graph by `npm run build:graph` (part of
+`npm run build`). Its entry is src/graph-package.ts, which exports `readGraph`,
+`graphView`, the formats, `toDocument` and the document types. Its
+dependencies are packages/graph/budget.json's allowlist, at behold's own
+ranges and version (a test holds both). `npm run check:graph-package` (CI runs
+it after the build) packs it, installs the tarball into an empty directory,
+prints the installed size, and fails above the budget, on a dependency not on
+the allowlist, or when `npm ls --all` names hono, `@hono/node-server`, the MCP
+SDK or the Kubernetes client. The first measurement was 127 MB and 55
+packages, against 238 MB and 162 for behold; the budget is 140 MB and 60.
+Most of it is chant itself (73 MB) and the TypeScript compiler chant loads
+configs with (23 MB). Publishing the package is the maintainer's step.
+
 ## Over MCP: `behold mcp` (#916)
 
 `behold mcp [project-dir] [--url <serve> | --port <n>]` is a stdio MCP server

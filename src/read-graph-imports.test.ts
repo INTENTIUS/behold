@@ -12,6 +12,13 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ENTRY = join(HERE, "read-graph.ts");
+// behold#1058: the package's entry points, which add the view, the formats,
+// the CLI and the graph document to the read.
+const PACKAGE_ENTRIES = [join(HERE, "graph-package.ts"), join(HERE, "graph-bin.ts")];
+// What the package's install budget refuses (packages/graph/budget.json): the
+// server's HTTP stack, the MCP SDK and the Kubernetes client.
+const isServerOnly = (spec: string): boolean =>
+  isHono(spec) || spec.startsWith("@modelcontextprotocol/") || spec.startsWith("@kubernetes/client-node") || spec === "@intentius/chant-k8s-client";
 const SPECIFIER = /(?:^|[^\w.])(?:import|export)\s*(?:type\s+)?(?:[^'"`;]*?\sfrom\s*)?["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)/g;
 const isHono = (spec: string): boolean => spec === "hono" || spec.startsWith("hono/") || spec.startsWith("@hono/");
 const packageOf = (spec: string): string => (spec.startsWith("@") ? spec.split("/").slice(0, 2).join("/") : spec.split("/")[0]!);
@@ -19,10 +26,10 @@ const PACKAGE_NAME = /^(@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*$/;
 // Comments name modules in prose ("import ... from" in a sentence); only code counts.
 const code = (text: string): string => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
-function moduleGraph(entry: string): { files: Map<string, string[]>; packages: Set<string> } {
+function moduleGraph(...entries: string[]): { files: Map<string, string[]>; packages: Set<string> } {
   const files = new Map<string, string[]>();
   const packages = new Set<string>();
-  const queue = [entry];
+  const queue = [...entries];
   while (queue.length) {
     const file = queue.pop()!;
     if (files.has(file)) continue;
@@ -71,5 +78,25 @@ describe("src/read-graph.ts loads no hono (#1057)", () => {
     });
     expect(packages.has("hono")).toBe(false);
     expect(dependsOnHono).toEqual([]);
+  });
+});
+
+describe("@intentius/behold-graph's entry points load no server code (#1058)", () => {
+  const { files } = moduleGraph(...PACKAGE_ENTRIES);
+
+  it("walks the view, the formats and the document", () => {
+    for (const m of ["read-graph.ts", "graph-view.ts", "graph-formats.ts", "graph-cli.ts", "to-document.ts", "graph-document-context.ts"]) {
+      expect([...files.keys()].some((f) => f.endsWith(`/${m}`)), m).toBe(true);
+    }
+  });
+
+  it("imports no hono, MCP SDK or Kubernetes client at run time, and never server.ts or mcp.ts", () => {
+    // A type-only import is erased by the build, so it is not a run-time load.
+    const runtime = (file: string): string[] =>
+      [...code(readFileSync(file, "utf8")).matchAll(SPECIFIER)].filter((m) => !/^\W*(?:import|export)\s+type\s/.test(m[0].replace(/^[^\w]*/, ""))).map((m) => (m[1] ?? m[2])!);
+    const offenders = [...files.keys()].flatMap((file) => runtime(file).filter(isServerOnly).map((s) => `${file.slice(HERE.length + 1)} imports ${s}`));
+    // src/k8s-target.ts loads the Kubernetes client lazily, inside a try, and only for a kube context; the package leaves it out.
+    expect(offenders.filter((o) => !o.startsWith("k8s-target.ts imports @intentius/chant-k8s-client"))).toEqual([]);
+    for (const m of ["server.ts", "mcp.ts", "cli.ts"]) expect([...files.keys()].some((f) => f.endsWith(`/${m}`)), m).toBe(false);
   });
 });
