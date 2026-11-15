@@ -86,7 +86,13 @@ describe("an export under a webview content security policy (#1068)", () => {
         if (/content security policy/i.test(m.text())) violations.push(m.text());
       });
       await page.goto(url, { waitUntil: "domcontentloaded" });
-      await page.waitForFunction(CARDS + " > 0", undefined, { timeout: 30_000 }).catch(() => undefined);
+      // Poll from here with page.evaluate. waitForFunction compiles its predicate
+      // inside the page, which the policy refuses as eval, so under the policy it
+      // threw at once and the count was read before the graph drew.
+      for (const until = Date.now() + 30_000; Date.now() < until; ) {
+        if ((await page.evaluate(CARDS)) > 0) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
       const cards: number = await page.evaluate(CARDS);
       await page.close();
       return { cards, violations, requests };
