@@ -27,7 +27,7 @@
  * `npx tsx scripts/chant-release.ts --check` fails when a written file
  * disagrees with this line (src/chant-release.test.ts runs it).
  */
-export const CHANT_RELEASE = { version: "0.124.58", released: true } as const;
+export const CHANT_RELEASE = { version: "0.124.98", released: true } as const;
 
 /** The newest chant on npm, the range a dependency keeps while {@link CHANT_RELEASE} is unreleased. */
 export const PUBLISHED_CHANT = "0.124.58";

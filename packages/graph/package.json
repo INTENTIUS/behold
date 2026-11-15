@@ -21,8 +21,8 @@
   },
   "dependencies": {
     "@cdktn/hcl2json": "^0.24.0",
-    "@intentius/chant": "^0.124.58",
-    "@intentius/chant-lexicon-terraform": "^0.124.58",
+    "@intentius/chant": "^0.124.98",
+    "@intentius/chant-lexicon-terraform": "^0.124.98",
     "@intentius/pinhole": "^0.6.0",
     "ajv": "^8.20.0"
   },

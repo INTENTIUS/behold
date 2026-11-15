@@ -8,7 +8,7 @@
   },
   "attributes": {
     "status": 200,
-    "sha256": "a818f7e5bff32603ed163a9702dacda831d81553e691c96de1fcff58f0ed7de1",
+    "sha256": "498386cf4c1de358e1c12f14e377d5d03f862f5b258081051836462bb2f49797",
     "nodes": 36,
     "edges": 36,
     "note": "2 roots — prod, platform; skipped backends (no resource, data or module block — nothing to draw), modules/service (called as a module, never applied on its own); showing the estate — 4 terraform blocks, 1 provider not drawn · alike: 28 cards stacked into 5, 2 cards carry a count instead of its lines (click a stack to see its cards)"
@@ -29,7 +29,7 @@
   },
   "logical": {
     "status": 200,
-    "sha256": "70c9ac818584290747f19d7817cc6d9fca340844f3e8e47809c8b6670e2cf222",
+    "sha256": "2a34311f7367bdaedd13dd16c9505ed7581d814e9e538700fd611059b34acf51",
     "nodes": 37,
     "edges": 31,
     "note": "2 roots — prod, platform; skipped backends (no resource, data or module block — nothing to draw), modules/service (called as a module, never applied on its own); showing the estate — 13 variables, 9 outputs, 4 terraform blocks, 1 provider not drawn (outputs and variables appear at detail 3 — ⌘K → attributes)"

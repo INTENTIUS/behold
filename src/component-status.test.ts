@@ -710,6 +710,11 @@ describe("pins chant's ReleaseRecord key union (chant#2045)", () => {
     // The ^0.124.58 bump (chant#4595): the version a release is listed by in the
     // release catalog. Not read here; behold passes the record through.
     releaseVersion: true,
+    // The ^0.124.98 bump: a run that found its inputs unchanged names the release
+    // it matched (`unchangedSince`), and the inputs chant normalized before it
+    // compared them (`normalizedInputs`). Not read here; behold passes the record through.
+    unchangedSince: true,
+    normalizedInputs: true,
   };
 
   // Every key chant's ReleaseRecord declares must appear in KEYS: the day the
@@ -722,7 +727,7 @@ describe("pins chant's ReleaseRecord key union (chant#2045)", () => {
 
   it("the pinned key list is the one this test expects — runOrigin is read as chant's own type", () => {
     expect(Object.keys(KEYS).sort()).toEqual([
-      "actor", "admission", "approver", "component", "digest", "digestKind", "env", "flags", "gitSha", "inputDigest", "manifestDigest", "profileOverride", "promotedFrom", "redeploys", "releaseDigest", "releaseVersion", "restores", "runId", "runOrigin", "timestamp", "version",
+      "actor", "admission", "approver", "component", "digest", "digestKind", "env", "flags", "gitSha", "inputDigest", "manifestDigest", "normalizedInputs", "profileOverride", "promotedFrom", "redeploys", "releaseDigest", "releaseVersion", "restores", "runId", "runOrigin", "timestamp", "unchangedSince", "version",
     ]);
   });
 });
