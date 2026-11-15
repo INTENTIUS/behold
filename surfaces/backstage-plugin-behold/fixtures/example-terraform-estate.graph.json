@@ -1,0 +1,1156 @@
+{
+  "schema": "behold-graph/1",
+  "generator": {
+    "behold": "0.31.0",
+    "chant": "0.124.58"
+  },
+  "origin": {
+    "dir": "example-terraform-estate"
+  },
+  "cut": {
+    "kind": "whole"
+  },
+  "nodes": [
+    {
+      "id": "prod/prod/aws_internet_gateway.main",
+      "title": "prod/aws_internet_gateway.main",
+      "subtitle": "terraform",
+      "kind": "aws_internet_gateway",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/network.tf",
+      "line": 9,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_internet_gateway.main",
+        "type": "aws_internet_gateway",
+        "name": "main",
+        "file": "network.tf",
+        "root": "prod",
+        "source": "resource \"aws_vpc\" \"main\" {\n  cidr_block           = var.vpc_cidr\n  enable_dns_hostnames = true\n  enable_dns_support   = true\n\n  tags = { Name = \"${var.name}-vpc\" }\n}\n\nresource \"aws_internet_gateway\" \"main\" {\n  vpc_id = aws_vpc.main.id\n\n  tags = { Name = \"${var.name}-igw\" }\n}\n\nresource \"aws_subnet\" \"public_a\" {\n  vpc_id                  = aws_vpc.main.id\n  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 0)\n  availability_zone       = \"${var.region}a\"\n  map_public_ip_on_launch = true\n\n  tags = { Name = \"${var.name}-public-a\" }\n}\n\nresource \"aws_subnet\" \"public_b\" {\n  vpc_id                  = aws_vpc.main.id\n  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 1)\n  availability_zone       = \"${var.region}b\"\n  map_public_ip_on_launch = true\n\n  tags = { Name = \"${var.name}-public-b\" }\n}\n\nresource \"aws_subnet\" \"private_a\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = cidrsubnet(var.vpc_cidr, 8, 10)\n  availability_zone = \"${var.region}a\"\n\n  tags = { Name = \"${var.name}-private-a\" }\n}\n\nresource \"aws_route_table\" \"public\" {\n  vpc_id = aws_vpc.main.id\n\n  route {\n    cidr_block = \"0.0.0.0/0\"\n    gateway_id = aws_internet_gateway.main.id\n  }\n\n  tags = { Name = \"${var.name}-public\" }\n}\n\nresource \"aws_route_table_association\" \"public_a\" {\n  subnet_id      = aws_subnet.public_a.id\n  route_table_id = aws_route_table.public.id\n}\n\nresource \"aws_route_table_association\" \"public_b\" {\n  subnet_id      = aws_subnet.public_b.id\n  route_table_id = aws_route_table.public.id\n}\n\nresource \"aws_security_group\" \"edge\" {\n  name        = \"${var.name}-edge\"\n  description = \"Ingress for the public tier.\"\n  vpc_id      = aws_vpc.main.id\n\n  ingress {\n    from_port   = 443\n    to_port     = 443\n    protocol    = \"tcp\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n",
+        "line": 9,
+        "mode": "state",
+        "lockFile": false,
+        "block": "resource"
+      }
+    },
+    {
+      "id": "prod/prod/aws_route_table_association.public_a",
+      "title": "prod/aws_route_table_association.public_a",
+      "subtitle": "terraform",
+      "kind": "aws_route_table_association",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/network.tf",
+      "line": 52,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_route_table_association.public_a",
+        "type": "aws_route_table_association",
+        "name": "public_a",
+        "file": "network.tf",
+        "root": "prod",
+        "source": "resource \"aws_vpc\" \"main\" {\n  cidr_block           = var.vpc_cidr\n  enable_dns_hostnames = true\n  enable_dns_support   = true\n\n  tags = { Name = \"${var.name}-vpc\" }\n}\n\nresource \"aws_internet_gateway\" \"main\" {\n  vpc_id = aws_vpc.main.id\n\n  tags = { Name = \"${var.name}-igw\" }\n}\n\nresource \"aws_subnet\" \"public_a\" {\n  vpc_id                  = aws_vpc.main.id\n  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 0)\n  availability_zone       = \"${var.region}a\"\n  map_public_ip_on_launch = true\n\n  tags = { Name = \"${var.name}-public-a\" }\n}\n\nresource \"aws_subnet\" \"public_b\" {\n  vpc_id                  = aws_vpc.main.id\n  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 1)\n  availability_zone       = \"${var.region}b\"\n  map_public_ip_on_launch = true\n\n  tags = { Name = \"${var.name}-public-b\" }\n}\n\nresource \"aws_subnet\" \"private_a\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = cidrsubnet(var.vpc_cidr, 8, 10)\n  availability_zone = \"${var.region}a\"\n\n  tags = { Name = \"${var.name}-private-a\" }\n}\n\nresource \"aws_route_table\" \"public\" {\n  vpc_id = aws_vpc.main.id\n\n  route {\n    cidr_block = \"0.0.0.0/0\"\n    gateway_id = aws_internet_gateway.main.id\n  }\n\n  tags = { Name = \"${var.name}-public\" }\n}\n\nresource \"aws_route_table_association\" \"public_a\" {\n  subnet_id      = aws_subnet.public_a.id\n  route_table_id = aws_route_table.public.id\n}\n\nresource \"aws_route_table_association\" \"public_b\" {\n  subnet_id      = aws_subnet.public_b.id\n  route_table_id = aws_route_table.public.id\n}\n\nresource \"aws_security_group\" \"edge\" {\n  name        = \"${var.name}-edge\"\n  description = \"Ingress for the public tier.\"\n  vpc_id      = aws_vpc.main.id\n\n  ingress {\n    from_port   = 443\n    to_port     = 443\n    protocol    = \"tcp\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n",
+        "line": 52,
+        "mode": "state",
+        "lockFile": false,
+        "block": "resource"
+      }
+    },
+    {
+      "id": "prod/prod/aws_route_table_association.public_b",
+      "title": "prod/aws_route_table_association.public_b",
+      "subtitle": "terraform",
+      "kind": "aws_route_table_association",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/network.tf",
+      "line": 57,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_route_table_association.public_b",
+        "type": "aws_route_table_association",
+        "name": "public_b",
+        "file": "network.tf",
+        "root": "prod",
+        "source": "resource \"aws_vpc\" \"main\" {\n  cidr_block           = var.vpc_cidr\n  enable_dns_hostnames = true\n  enable_dns_support   = true\n\n  tags = { Name = \"${var.name}-vpc\" }\n}\n\nresource \"aws_internet_gateway\" \"main\" {\n  vpc_id = aws_vpc.main.id\n\n  tags = { Name = \"${var.name}-igw\" }\n}\n\nresource \"aws_subnet\" \"public_a\" {\n  vpc_id                  = aws_vpc.main.id\n  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 0)\n  availability_zone       = \"${var.region}a\"\n  map_public_ip_on_launch = true\n\n  tags = { Name = \"${var.name}-public-a\" }\n}\n\nresource \"aws_subnet\" \"public_b\" {\n  vpc_id                  = aws_vpc.main.id\n  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 1)\n  availability_zone       = \"${var.region}b\"\n  map_public_ip_on_launch = true\n\n  tags = { Name = \"${var.name}-public-b\" }\n}\n\nresource \"aws_subnet\" \"private_a\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = cidrsubnet(var.vpc_cidr, 8, 10)\n  availability_zone = \"${var.region}a\"\n\n  tags = { Name = \"${var.name}-private-a\" }\n}\n\nresource \"aws_route_table\" \"public\" {\n  vpc_id = aws_vpc.main.id\n\n  route {\n    cidr_block = \"0.0.0.0/0\"\n    gateway_id = aws_internet_gateway.main.id\n  }\n\n  tags = { Name = \"${var.name}-public\" }\n}\n\nresource \"aws_route_table_association\" \"public_a\" {\n  subnet_id      = aws_subnet.public_a.id\n  route_table_id = aws_route_table.public.id\n}\n\nresource \"aws_route_table_association\" \"public_b\" {\n  subnet_id      = aws_subnet.public_b.id\n  route_table_id = aws_route_table.public.id\n}\n\nresource \"aws_security_group\" \"edge\" {\n  name        = \"${var.name}-edge\"\n  description = \"Ingress for the public tier.\"\n  vpc_id      = aws_vpc.main.id\n\n  ingress {\n    from_port   = 443\n    to_port     = 443\n    protocol    = \"tcp\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n",
+        "line": 57,
+        "mode": "state",
+        "lockFile": false,
+        "block": "resource"
+      }
+    },
+    {
+      "id": "prod/prod/aws_route_table.public",
+      "title": "prod/aws_route_table.public",
+      "subtitle": "terraform",
+      "kind": "aws_route_table",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/network.tf",
+      "line": 41,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_route_table.public",
+        "type": "aws_route_table",
+        "name": "public",
+        "file": "network.tf",
+        "root": "prod",
+        "source": "resource \"aws_vpc\" \"main\" {\n  cidr_block           = var.vpc_cidr\n  enable_dns_hostnames = true\n  enable_dns_support   = true\n\n  tags = { Name = \"${var.name}-vpc\" }\n}\n\nresource \"aws_internet_gateway\" \"main\" {\n  vpc_id = aws_vpc.main.id\n\n  tags = { Name = \"${var.name}-igw\" }\n}\n\nresource \"aws_subnet\" \"public_a\" {\n  vpc_id                  = aws_vpc.main.id\n  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 0)\n  availability_zone       = \"${var.region}a\"\n  map_public_ip_on_launch = true\n\n  tags = { Name = \"${var.name}-public-a\" }\n}\n\nresource \"aws_subnet\" \"public_b\" {\n  vpc_id                  = aws_vpc.main.id\n  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 1)\n  availability_zone       = \"${var.region}b\"\n  map_public_ip_on_launch = true\n\n  tags = { Name = \"${var.name}-public-b\" }\n}\n\nresource \"aws_subnet\" \"private_a\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = cidrsubnet(var.vpc_cidr, 8, 10)\n  availability_zone = \"${var.region}a\"\n\n  tags = { Name = \"${var.name}-private-a\" }\n}\n\nresource \"aws_route_table\" \"public\" {\n  vpc_id = aws_vpc.main.id\n\n  route {\n    cidr_block = \"0.0.0.0/0\"\n    gateway_id = aws_internet_gateway.main.id\n  }\n\n  tags = { Name = \"${var.name}-public\" }\n}\n\nresource \"aws_route_table_association\" \"public_a\" {\n  subnet_id      = aws_subnet.public_a.id\n  route_table_id = aws_route_table.public.id\n}\n\nresource \"aws_route_table_association\" \"public_b\" {\n  subnet_id      = aws_subnet.public_b.id\n  route_table_id = aws_route_table.public.id\n}\n\nresource \"aws_security_group\" \"edge\" {\n  name        = \"${var.name}-edge\"\n  description = \"Ingress for the public tier.\"\n  vpc_id      = aws_vpc.main.id\n\n  ingress {\n    from_port   = 443\n    to_port     = 443\n    protocol    = \"tcp\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n",
+        "line": 41,
+        "mode": "state",
+        "lockFile": false,
+        "block": "resource"
+      }
+    },
+    {
+      "id": "prod/prod/aws_s3_bucket_public_access_block.artifacts",
+      "title": "prod/aws_s3_bucket_public_access_block.artifacts",
+      "subtitle": "terraform",
+      "kind": "aws_s3_bucket_public_access_block",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/storage.tf",
+      "line": 13,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_s3_bucket_public_access_block.artifacts",
+        "type": "aws_s3_bucket_public_access_block",
+        "name": "artifacts",
+        "file": "storage.tf",
+        "root": "prod",
+        "source": "resource \"aws_s3_bucket\" \"artifacts\" {\n  bucket = \"${var.name}-artifacts\"\n}\n\nresource \"aws_s3_bucket_versioning\" \"artifacts\" {\n  bucket = aws_s3_bucket.artifacts.id\n\n  versioning_configuration {\n    status = \"Enabled\"\n  }\n}\n\nresource \"aws_s3_bucket_public_access_block\" \"artifacts\" {\n  bucket = aws_s3_bucket.artifacts.id\n\n  block_public_acls       = true\n  block_public_policy     = true\n  ignore_public_acls      = true\n  restrict_public_buckets = true\n}\n\nresource \"aws_s3_bucket_server_side_encryption_configuration\" \"artifacts\" {\n  bucket = aws_s3_bucket.artifacts.id\n\n  rule {\n    apply_server_side_encryption_by_default {\n      sse_algorithm     = \"aws:kms\"\n      kms_master_key_id = data.aws_kms_key.estate.arn\n    }\n  }\n}\n",
+        "line": 13,
+        "mode": "state",
+        "lockFile": false,
+        "block": "resource"
+      }
+    },
+    {
+      "id": "prod/prod/aws_s3_bucket_server_side_encryption_configuration.artifacts",
+      "title": "prod/aws_s3_bucket_server_side_encryption_configuration.artifacts",
+      "subtitle": "terraform",
+      "kind": "aws_s3_bucket_server_side_encryption_configuration",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/storage.tf",
+      "line": 22,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_s3_bucket_server_side_encryption_configuration.artifacts",
+        "type": "aws_s3_bucket_server_side_encryption_configuration",
+        "name": "artifacts",
+        "file": "storage.tf",
+        "root": "prod",
+        "source": "resource \"aws_s3_bucket\" \"artifacts\" {\n  bucket = \"${var.name}-artifacts\"\n}\n\nresource \"aws_s3_bucket_versioning\" \"artifacts\" {\n  bucket = aws_s3_bucket.artifacts.id\n\n  versioning_configuration {\n    status = \"Enabled\"\n  }\n}\n\nresource \"aws_s3_bucket_public_access_block\" \"artifacts\" {\n  bucket = aws_s3_bucket.artifacts.id\n\n  block_public_acls       = true\n  block_public_policy     = true\n  ignore_public_acls      = true\n  restrict_public_buckets = true\n}\n\nresource \"aws_s3_bucket_server_side_encryption_configuration\" \"artifacts\" {\n  bucket = aws_s3_bucket.artifacts.id\n\n  rule {\n    apply_server_side_encryption_by_default {\n      sse_algorithm     = \"aws:kms\"\n      kms_master_key_id = data.aws_kms_key.estate.arn\n    }\n  }\n}\n",
+        "line": 22,
+        "mode": "state",
+        "lockFile": false,
+        "block": "resource"
+      }
+    },
+    {
+      "id": "prod/prod/aws_s3_bucket_versioning.artifacts",
+      "title": "prod/aws_s3_bucket_versioning.artifacts",
+      "subtitle": "terraform",
+      "kind": "aws_s3_bucket_versioning",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/storage.tf",
+      "line": 5,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_s3_bucket_versioning.artifacts",
+        "type": "aws_s3_bucket_versioning",
+        "name": "artifacts",
+        "file": "storage.tf",
+        "root": "prod",
+        "source": "resource \"aws_s3_bucket\" \"artifacts\" {\n  bucket = \"${var.name}-artifacts\"\n}\n\nresource \"aws_s3_bucket_versioning\" \"artifacts\" {\n  bucket = aws_s3_bucket.artifacts.id\n\n  versioning_configuration {\n    status = \"Enabled\"\n  }\n}\n\nresource \"aws_s3_bucket_public_access_block\" \"artifacts\" {\n  bucket = aws_s3_bucket.artifacts.id\n\n  block_public_acls       = true\n  block_public_policy     = true\n  ignore_public_acls      = true\n  restrict_public_buckets = true\n}\n\nresource \"aws_s3_bucket_server_side_encryption_configuration\" \"artifacts\" {\n  bucket = aws_s3_bucket.artifacts.id\n\n  rule {\n    apply_server_side_encryption_by_default {\n      sse_algorithm     = \"aws:kms\"\n      kms_master_key_id = data.aws_kms_key.estate.arn\n    }\n  }\n}\n",
+        "line": 5,
+        "mode": "state",
+        "lockFile": false,
+        "block": "resource"
+      }
+    },
+    {
+      "id": "prod/prod/aws_s3_bucket.artifacts",
+      "title": "prod/aws_s3_bucket.artifacts",
+      "subtitle": "terraform",
+      "kind": "aws_s3_bucket",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/storage.tf",
+      "line": 1,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_s3_bucket.artifacts",
+        "type": "aws_s3_bucket",
+        "name": "artifacts",
+        "file": "storage.tf",
+        "root": "prod",
+        "source": "resource \"aws_s3_bucket\" \"artifacts\" {\n  bucket = \"${var.name}-artifacts\"\n}\n\nresource \"aws_s3_bucket_versioning\" \"artifacts\" {\n  bucket = aws_s3_bucket.artifacts.id\n\n  versioning_configuration {\n    status = \"Enabled\"\n  }\n}\n\nresource \"aws_s3_bucket_public_access_block\" \"artifacts\" {\n  bucket = aws_s3_bucket.artifacts.id\n\n  block_public_acls       = true\n  block_public_policy     = true\n  ignore_public_acls      = true\n  restrict_public_buckets = true\n}\n\nresource \"aws_s3_bucket_server_side_encryption_configuration\" \"artifacts\" {\n  bucket = aws_s3_bucket.artifacts.id\n\n  rule {\n    apply_server_side_encryption_by_default {\n      sse_algorithm     = \"aws:kms\"\n      kms_master_key_id = data.aws_kms_key.estate.arn\n    }\n  }\n}\n",
+        "line": 1,
+        "mode": "state",
+        "lockFile": false,
+        "block": "resource"
+      }
+    },
+    {
+      "id": "prod/prod/aws_security_group.edge",
+      "title": "prod/aws_security_group.edge",
+      "subtitle": "terraform",
+      "kind": "aws_security_group",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/network.tf",
+      "line": 62,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_security_group.edge",
+        "type": "aws_security_group",
+        "name": "edge",
+        "file": "network.tf",
+        "root": "prod",
+        "source": "resource \"aws_vpc\" \"main\" {\n  cidr_block           = var.vpc_cidr\n  enable_dns_hostnames = true\n  enable_dns_support   = true\n\n  tags = { Name = \"${var.name}-vpc\" }\n}\n\nresource \"aws_internet_gateway\" \"main\" {\n  vpc_id = aws_vpc.main.id\n\n  tags = { Name = \"${var.name}-igw\" }\n}\n\nresource \"aws_subnet\" \"public_a\" {\n  vpc_id                  = aws_vpc.main.id\n  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 0)\n  availability_zone       = \"${var.region}a\"\n  map_public_ip_on_launch = true\n\n  tags = { Name = \"${var.name}-public-a\" }\n}\n\nresource \"aws_subnet\" \"public_b\" {\n  vpc_id                  = aws_vpc.main.id\n  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 1)\n  availability_zone       = \"${var.region}b\"\n  map_public_ip_on_launch = true\n\n  tags = { Name = \"${var.name}-public-b\" }\n}\n\nresource \"aws_subnet\" \"private_a\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = cidrsubnet(var.vpc_cidr, 8, 10)\n  availability_zone = \"${var.region}a\"\n\n  tags = { Name = \"${var.name}-private-a\" }\n}\n\nresource \"aws_route_table\" \"public\" {\n  vpc_id = aws_vpc.main.id\n\n  route {\n    cidr_block = \"0.0.0.0/0\"\n    gateway_id = aws_internet_gateway.main.id\n  }\n\n  tags = { Name = \"${var.name}-public\" }\n}\n\nresource \"aws_route_table_association\" \"public_a\" {\n  subnet_id      = aws_subnet.public_a.id\n  route_table_id = aws_route_table.public.id\n}\n\nresource \"aws_route_table_association\" \"public_b\" {\n  subnet_id      = aws_subnet.public_b.id\n  route_table_id = aws_route_table.public.id\n}\n\nresource \"aws_security_group\" \"edge\" {\n  name        = \"${var.name}-edge\"\n  description = \"Ingress for the public tier.\"\n  vpc_id      = aws_vpc.main.id\n\n  ingress {\n    from_port   = 443\n    to_port     = 443\n    protocol    = \"tcp\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n",
+        "line": 62,
+        "mode": "state",
+        "lockFile": false,
+        "block": "resource"
+      }
+    },
+    {
+      "id": "prod/prod/aws_subnet.private_a",
+      "title": "prod/aws_subnet.private_a",
+      "subtitle": "terraform",
+      "kind": "aws_subnet",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/network.tf",
+      "line": 33,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_subnet.private_a",
+        "type": "aws_subnet",
+        "name": "private_a",
+        "file": "network.tf",
+        "root": "prod",
+        "source": "resource \"aws_vpc\" \"main\" {\n  cidr_block           = var.vpc_cidr\n  enable_dns_hostnames = true\n  enable_dns_support   = true\n\n  tags = { Name = \"${var.name}-vpc\" }\n}\n\nresource \"aws_internet_gateway\" \"main\" {\n  vpc_id = aws_vpc.main.id\n\n  tags = { Name = \"${var.name}-igw\" }\n}\n\nresource \"aws_subnet\" \"public_a\" {\n  vpc_id                  = aws_vpc.main.id\n  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 0)\n  availability_zone       = \"${var.region}a\"\n  map_public_ip_on_launch = true\n\n  tags = { Name = \"${var.name}-public-a\" }\n}\n\nresource \"aws_subnet\" \"public_b\" {\n  vpc_id                  = aws_vpc.main.id\n  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 1)\n  availability_zone       = \"${var.region}b\"\n  map_public_ip_on_launch = true\n\n  tags = { Name = \"${var.name}-public-b\" }\n}\n\nresource \"aws_subnet\" \"private_a\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = cidrsubnet(var.vpc_cidr, 8, 10)\n  availability_zone = \"${var.region}a\"\n\n  tags = { Name = \"${var.name}-private-a\" }\n}\n\nresource \"aws_route_table\" \"public\" {\n  vpc_id = aws_vpc.main.id\n\n  route {\n    cidr_block = \"0.0.0.0/0\"\n    gateway_id = aws_internet_gateway.main.id\n  }\n\n  tags = { Name = \"${var.name}-public\" }\n}\n\nresource \"aws_route_table_association\" \"public_a\" {\n  subnet_id      = aws_subnet.public_a.id\n  route_table_id = aws_route_table.public.id\n}\n\nresource \"aws_route_table_association\" \"public_b\" {\n  subnet_id      = aws_subnet.public_b.id\n  route_table_id = aws_route_table.public.id\n}\n\nresource \"aws_security_group\" \"edge\" {\n  name        = \"${var.name}-edge\"\n  description = \"Ingress for the public tier.\"\n  vpc_id      = aws_vpc.main.id\n\n  ingress {\n    from_port   = 443\n    to_port     = 443\n    protocol    = \"tcp\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n",
+        "line": 33,
+        "mode": "state",
+        "lockFile": false,
+        "block": "resource"
+      }
+    },
+    {
+      "id": "prod/prod/aws_subnet.public_a",
+      "title": "prod/aws_subnet.public_a",
+      "subtitle": "terraform",
+      "kind": "aws_subnet",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/network.tf",
+      "line": 15,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_subnet.public_a",
+        "type": "aws_subnet",
+        "name": "public_a",
+        "file": "network.tf",
+        "root": "prod",
+        "source": "resource \"aws_vpc\" \"main\" {\n  cidr_block           = var.vpc_cidr\n  enable_dns_hostnames = true\n  enable_dns_support   = true\n\n  tags = { Name = \"${var.name}-vpc\" }\n}\n\nresource \"aws_internet_gateway\" \"main\" {\n  vpc_id = aws_vpc.main.id\n\n  tags = { Name = \"${var.name}-igw\" }\n}\n\nresource \"aws_subnet\" \"public_a\" {\n  vpc_id                  = aws_vpc.main.id\n  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 0)\n  availability_zone       = \"${var.region}a\"\n  map_public_ip_on_launch = true\n\n  tags = { Name = \"${var.name}-public-a\" }\n}\n\nresource \"aws_subnet\" \"public_b\" {\n  vpc_id                  = aws_vpc.main.id\n  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 1)\n  availability_zone       = \"${var.region}b\"\n  map_public_ip_on_launch = true\n\n  tags = { Name = \"${var.name}-public-b\" }\n}\n\nresource \"aws_subnet\" \"private_a\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = cidrsubnet(var.vpc_cidr, 8, 10)\n  availability_zone = \"${var.region}a\"\n\n  tags = { Name = \"${var.name}-private-a\" }\n}\n\nresource \"aws_route_table\" \"public\" {\n  vpc_id = aws_vpc.main.id\n\n  route {\n    cidr_block = \"0.0.0.0/0\"\n    gateway_id = aws_internet_gateway.main.id\n  }\n\n  tags = { Name = \"${var.name}-public\" }\n}\n\nresource \"aws_route_table_association\" \"public_a\" {\n  subnet_id      = aws_subnet.public_a.id\n  route_table_id = aws_route_table.public.id\n}\n\nresource \"aws_route_table_association\" \"public_b\" {\n  subnet_id      = aws_subnet.public_b.id\n  route_table_id = aws_route_table.public.id\n}\n\nresource \"aws_security_group\" \"edge\" {\n  name        = \"${var.name}-edge\"\n  description = \"Ingress for the public tier.\"\n  vpc_id      = aws_vpc.main.id\n\n  ingress {\n    from_port   = 443\n    to_port     = 443\n    protocol    = \"tcp\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n",
+        "line": 15,
+        "mode": "state",
+        "lockFile": false,
+        "block": "resource"
+      }
+    },
+    {
+      "id": "prod/prod/aws_subnet.public_b",
+      "title": "prod/aws_subnet.public_b",
+      "subtitle": "terraform",
+      "kind": "aws_subnet",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/network.tf",
+      "line": 24,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_subnet.public_b",
+        "type": "aws_subnet",
+        "name": "public_b",
+        "file": "network.tf",
+        "root": "prod",
+        "source": "resource \"aws_vpc\" \"main\" {\n  cidr_block           = var.vpc_cidr\n  enable_dns_hostnames = true\n  enable_dns_support   = true\n\n  tags = { Name = \"${var.name}-vpc\" }\n}\n\nresource \"aws_internet_gateway\" \"main\" {\n  vpc_id = aws_vpc.main.id\n\n  tags = { Name = \"${var.name}-igw\" }\n}\n\nresource \"aws_subnet\" \"public_a\" {\n  vpc_id                  = aws_vpc.main.id\n  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 0)\n  availability_zone       = \"${var.region}a\"\n  map_public_ip_on_launch = true\n\n  tags = { Name = \"${var.name}-public-a\" }\n}\n\nresource \"aws_subnet\" \"public_b\" {\n  vpc_id                  = aws_vpc.main.id\n  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 1)\n  availability_zone       = \"${var.region}b\"\n  map_public_ip_on_launch = true\n\n  tags = { Name = \"${var.name}-public-b\" }\n}\n\nresource \"aws_subnet\" \"private_a\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = cidrsubnet(var.vpc_cidr, 8, 10)\n  availability_zone = \"${var.region}a\"\n\n  tags = { Name = \"${var.name}-private-a\" }\n}\n\nresource \"aws_route_table\" \"public\" {\n  vpc_id = aws_vpc.main.id\n\n  route {\n    cidr_block = \"0.0.0.0/0\"\n    gateway_id = aws_internet_gateway.main.id\n  }\n\n  tags = { Name = \"${var.name}-public\" }\n}\n\nresource \"aws_route_table_association\" \"public_a\" {\n  subnet_id      = aws_subnet.public_a.id\n  route_table_id = aws_route_table.public.id\n}\n\nresource \"aws_route_table_association\" \"public_b\" {\n  subnet_id      = aws_subnet.public_b.id\n  route_table_id = aws_route_table.public.id\n}\n\nresource \"aws_security_group\" \"edge\" {\n  name        = \"${var.name}-edge\"\n  description = \"Ingress for the public tier.\"\n  vpc_id      = aws_vpc.main.id\n\n  ingress {\n    from_port   = 443\n    to_port     = 443\n    protocol    = \"tcp\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n",
+        "line": 24,
+        "mode": "state",
+        "lockFile": false,
+        "block": "resource"
+      }
+    },
+    {
+      "id": "prod/prod/aws_vpc.main",
+      "title": "prod/aws_vpc.main",
+      "subtitle": "terraform",
+      "kind": "aws_vpc",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/network.tf",
+      "line": 1,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_vpc.main",
+        "type": "aws_vpc",
+        "name": "main",
+        "file": "network.tf",
+        "root": "prod",
+        "source": "resource \"aws_vpc\" \"main\" {\n  cidr_block           = var.vpc_cidr\n  enable_dns_hostnames = true\n  enable_dns_support   = true\n\n  tags = { Name = \"${var.name}-vpc\" }\n}\n\nresource \"aws_internet_gateway\" \"main\" {\n  vpc_id = aws_vpc.main.id\n\n  tags = { Name = \"${var.name}-igw\" }\n}\n\nresource \"aws_subnet\" \"public_a\" {\n  vpc_id                  = aws_vpc.main.id\n  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 0)\n  availability_zone       = \"${var.region}a\"\n  map_public_ip_on_launch = true\n\n  tags = { Name = \"${var.name}-public-a\" }\n}\n\nresource \"aws_subnet\" \"public_b\" {\n  vpc_id                  = aws_vpc.main.id\n  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 1)\n  availability_zone       = \"${var.region}b\"\n  map_public_ip_on_launch = true\n\n  tags = { Name = \"${var.name}-public-b\" }\n}\n\nresource \"aws_subnet\" \"private_a\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = cidrsubnet(var.vpc_cidr, 8, 10)\n  availability_zone = \"${var.region}a\"\n\n  tags = { Name = \"${var.name}-private-a\" }\n}\n\nresource \"aws_route_table\" \"public\" {\n  vpc_id = aws_vpc.main.id\n\n  route {\n    cidr_block = \"0.0.0.0/0\"\n    gateway_id = aws_internet_gateway.main.id\n  }\n\n  tags = { Name = \"${var.name}-public\" }\n}\n\nresource \"aws_route_table_association\" \"public_a\" {\n  subnet_id      = aws_subnet.public_a.id\n  route_table_id = aws_route_table.public.id\n}\n\nresource \"aws_route_table_association\" \"public_b\" {\n  subnet_id      = aws_subnet.public_b.id\n  route_table_id = aws_route_table.public.id\n}\n\nresource \"aws_security_group\" \"edge\" {\n  name        = \"${var.name}-edge\"\n  description = \"Ingress for the public tier.\"\n  vpc_id      = aws_vpc.main.id\n\n  ingress {\n    from_port   = 443\n    to_port     = 443\n    protocol    = \"tcp\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n",
+        "line": 1,
+        "mode": "state",
+        "lockFile": false,
+        "block": "resource"
+      }
+    },
+    {
+      "id": "prod/prod/data.aws_caller_identity.current",
+      "title": "prod/data.aws_caller_identity.current",
+      "subtitle": "terraform",
+      "kind": "aws_caller_identity",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/data.tf",
+      "line": 1,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "data.aws_caller_identity.current",
+        "type": "aws_caller_identity",
+        "name": "current",
+        "file": "data.tf",
+        "root": "prod",
+        "source": "data \"aws_caller_identity\" \"current\" {}\n\ndata \"aws_region\" \"current\" {}\n\n# The cross-root read, and what behold does with it.\n#\n# `platform` declares this key and its alias; this root reads it back by alias\n# rather than by a reference Terraform could resolve, because the two roots are\n# applied separately and neither is a module of the other. That is how a real\n# multi-root estate is wired, and it is also why NO EDGE is drawn between them:\n# both ends carry the same unresolved `${var.name}` interpolation, so a match\n# would be a coincidence of variable naming rather than a stated relationship.\n# behold measured that and refused it (INTENTIUS/behold#381). What you get\n# instead is this card, saying exactly what it reads — which is a claim the\n# estate actually makes.\ndata \"aws_kms_key\" \"estate\" {\n  key_id = \"alias/${var.name}-estate\"\n}\n",
+        "line": 1,
+        "mode": "state",
+        "lockFile": false,
+        "block": "data"
+      }
+    },
+    {
+      "id": "prod/prod/data.aws_iam_policy.boundary",
+      "title": "prod/data.aws_iam_policy.boundary",
+      "subtitle": "terraform",
+      "kind": "aws_iam_policy",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/services.tf",
+      "line": 19,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "data.aws_iam_policy.boundary",
+        "type": "aws_iam_policy",
+        "name": "boundary",
+        "file": "services.tf",
+        "root": "prod",
+        "source": "module \"checkout\" {\n  source = \"../../modules/service\"\n\n  name            = \"${var.name}-checkout\"\n  subnet_ids      = [aws_subnet.private_a.id]\n  boundary_arn    = data.aws_iam_policy.boundary.arn\n  log_kms_key_arn = data.aws_kms_key.estate.arn\n}\n\nmodule \"ledger\" {\n  source = \"../../modules/service\"\n\n  name            = \"${var.name}-ledger\"\n  subnet_ids      = [aws_subnet.private_a.id]\n  boundary_arn    = data.aws_iam_policy.boundary.arn\n  log_kms_key_arn = data.aws_kms_key.estate.arn\n}\n\ndata \"aws_iam_policy\" \"boundary\" {\n  name = \"${var.name}-boundary\"\n}\n",
+        "line": 19,
+        "mode": "state",
+        "lockFile": false,
+        "block": "data"
+      }
+    },
+    {
+      "id": "prod/prod/data.aws_kms_key.estate",
+      "title": "prod/data.aws_kms_key.estate",
+      "subtitle": "terraform",
+      "kind": "aws_kms_key",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/data.tf",
+      "line": 16,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "data.aws_kms_key.estate",
+        "type": "aws_kms_key",
+        "name": "estate",
+        "file": "data.tf",
+        "root": "prod",
+        "source": "data \"aws_caller_identity\" \"current\" {}\n\ndata \"aws_region\" \"current\" {}\n\n# The cross-root read, and what behold does with it.\n#\n# `platform` declares this key and its alias; this root reads it back by alias\n# rather than by a reference Terraform could resolve, because the two roots are\n# applied separately and neither is a module of the other. That is how a real\n# multi-root estate is wired, and it is also why NO EDGE is drawn between them:\n# both ends carry the same unresolved `${var.name}` interpolation, so a match\n# would be a coincidence of variable naming rather than a stated relationship.\n# behold measured that and refused it (INTENTIUS/behold#381). What you get\n# instead is this card, saying exactly what it reads — which is a claim the\n# estate actually makes.\ndata \"aws_kms_key\" \"estate\" {\n  key_id = \"alias/${var.name}-estate\"\n}\n",
+        "line": 16,
+        "mode": "state",
+        "lockFile": false,
+        "block": "data"
+      }
+    },
+    {
+      "id": "prod/prod/data.aws_region.current",
+      "title": "prod/data.aws_region.current",
+      "subtitle": "terraform",
+      "kind": "aws_region",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/data.tf",
+      "line": 3,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "data.aws_region.current",
+        "type": "aws_region",
+        "name": "current",
+        "file": "data.tf",
+        "root": "prod",
+        "source": "data \"aws_caller_identity\" \"current\" {}\n\ndata \"aws_region\" \"current\" {}\n\n# The cross-root read, and what behold does with it.\n#\n# `platform` declares this key and its alias; this root reads it back by alias\n# rather than by a reference Terraform could resolve, because the two roots are\n# applied separately and neither is a module of the other. That is how a real\n# multi-root estate is wired, and it is also why NO EDGE is drawn between them:\n# both ends carry the same unresolved `${var.name}` interpolation, so a match\n# would be a coincidence of variable naming rather than a stated relationship.\n# behold measured that and refused it (INTENTIUS/behold#381). What you get\n# instead is this card, saying exactly what it reads — which is a claim the\n# estate actually makes.\ndata \"aws_kms_key\" \"estate\" {\n  key_id = \"alias/${var.name}-estate\"\n}\n",
+        "line": 3,
+        "mode": "state",
+        "lockFile": false,
+        "block": "data"
+      }
+    },
+    {
+      "id": "prod/prod/module.checkout",
+      "title": "prod/module.checkout",
+      "subtitle": "terraform",
+      "kind": "module",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/services.tf",
+      "line": 1,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "module.checkout",
+        "file": "services.tf",
+        "root": "prod",
+        "source": "module \"checkout\" {\n  source = \"../../modules/service\"\n\n  name            = \"${var.name}-checkout\"\n  subnet_ids      = [aws_subnet.private_a.id]\n  boundary_arn    = data.aws_iam_policy.boundary.arn\n  log_kms_key_arn = data.aws_kms_key.estate.arn\n}\n\nmodule \"ledger\" {\n  source = \"../../modules/service\"\n\n  name            = \"${var.name}-ledger\"\n  subnet_ids      = [aws_subnet.private_a.id]\n  boundary_arn    = data.aws_iam_policy.boundary.arn\n  log_kms_key_arn = data.aws_kms_key.estate.arn\n}\n\ndata \"aws_iam_policy\" \"boundary\" {\n  name = \"${var.name}-boundary\"\n}\n",
+        "line": 1,
+        "mode": "state",
+        "lockFile": false,
+        "block": "module"
+      }
+    },
+    {
+      "id": "prod/prod/module.checkout/aws_cloudwatch_log_group.this",
+      "title": "prod/module.checkout/aws_cloudwatch_log_group.this",
+      "subtitle": "terraform",
+      "kind": "aws_cloudwatch_log_group",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/main.tf",
+      "line": 29,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_cloudwatch_log_group.this",
+        "type": "aws_cloudwatch_log_group",
+        "name": "this",
+        "file": "main.tf",
+        "root": "prod",
+        "source": "resource \"aws_iam_role\" \"this\" {\n  name                 = \"${var.name}-role\"\n  permissions_boundary = var.boundary_arn\n\n  assume_role_policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect    = \"Allow\"\n      Principal = { Service = \"ecs-tasks.amazonaws.com\" }\n      Action    = \"sts:AssumeRole\"\n    }]\n  })\n}\n\nresource \"aws_iam_role_policy\" \"this\" {\n  name = \"${var.name}-inline\"\n  role = aws_iam_role.this.id\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect   = \"Allow\"\n      Action   = [\"sqs:ReceiveMessage\", \"sqs:DeleteMessage\", \"sqs:GetQueueAttributes\"]\n      Resource = aws_sqs_queue.work.arn\n    }]\n  })\n}\n\nresource \"aws_cloudwatch_log_group\" \"this\" {\n  name              = \"/service/${var.name}\"\n  retention_in_days = 14\n  kms_key_id        = var.log_kms_key_arn\n}\n\nresource \"aws_sqs_queue\" \"work\" {\n  name                       = \"${var.name}-work\"\n  visibility_timeout_seconds = 60\n  redrive_policy = jsonencode({\n    deadLetterTargetArn = aws_sqs_queue.dead.arn\n    maxReceiveCount     = 5\n  })\n}\n\nresource \"aws_sqs_queue\" \"dead\" {\n  name = \"${var.name}-dead\"\n}\n\nresource \"aws_security_group\" \"task\" {\n  name        = \"${var.name}-task\"\n  description = \"Egress only; the task reaches the queue and the log group.\"\n\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n",
+        "line": 29,
+        "mode": "state",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "prod/prod/module.checkout/aws_iam_role_policy.this",
+      "title": "prod/module.checkout/aws_iam_role_policy.this",
+      "subtitle": "terraform",
+      "kind": "aws_iam_role_policy",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/main.tf",
+      "line": 15,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_iam_role_policy.this",
+        "type": "aws_iam_role_policy",
+        "name": "this",
+        "file": "main.tf",
+        "root": "prod",
+        "source": "resource \"aws_iam_role\" \"this\" {\n  name                 = \"${var.name}-role\"\n  permissions_boundary = var.boundary_arn\n\n  assume_role_policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect    = \"Allow\"\n      Principal = { Service = \"ecs-tasks.amazonaws.com\" }\n      Action    = \"sts:AssumeRole\"\n    }]\n  })\n}\n\nresource \"aws_iam_role_policy\" \"this\" {\n  name = \"${var.name}-inline\"\n  role = aws_iam_role.this.id\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect   = \"Allow\"\n      Action   = [\"sqs:ReceiveMessage\", \"sqs:DeleteMessage\", \"sqs:GetQueueAttributes\"]\n      Resource = aws_sqs_queue.work.arn\n    }]\n  })\n}\n\nresource \"aws_cloudwatch_log_group\" \"this\" {\n  name              = \"/service/${var.name}\"\n  retention_in_days = 14\n  kms_key_id        = var.log_kms_key_arn\n}\n\nresource \"aws_sqs_queue\" \"work\" {\n  name                       = \"${var.name}-work\"\n  visibility_timeout_seconds = 60\n  redrive_policy = jsonencode({\n    deadLetterTargetArn = aws_sqs_queue.dead.arn\n    maxReceiveCount     = 5\n  })\n}\n\nresource \"aws_sqs_queue\" \"dead\" {\n  name = \"${var.name}-dead\"\n}\n\nresource \"aws_security_group\" \"task\" {\n  name        = \"${var.name}-task\"\n  description = \"Egress only; the task reaches the queue and the log group.\"\n\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n",
+        "line": 15,
+        "mode": "state",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "prod/prod/module.checkout/aws_iam_role.this",
+      "title": "prod/module.checkout/aws_iam_role.this",
+      "subtitle": "terraform",
+      "kind": "aws_iam_role",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/main.tf",
+      "line": 1,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_iam_role.this",
+        "type": "aws_iam_role",
+        "name": "this",
+        "file": "main.tf",
+        "root": "prod",
+        "source": "resource \"aws_iam_role\" \"this\" {\n  name                 = \"${var.name}-role\"\n  permissions_boundary = var.boundary_arn\n\n  assume_role_policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect    = \"Allow\"\n      Principal = { Service = \"ecs-tasks.amazonaws.com\" }\n      Action    = \"sts:AssumeRole\"\n    }]\n  })\n}\n\nresource \"aws_iam_role_policy\" \"this\" {\n  name = \"${var.name}-inline\"\n  role = aws_iam_role.this.id\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect   = \"Allow\"\n      Action   = [\"sqs:ReceiveMessage\", \"sqs:DeleteMessage\", \"sqs:GetQueueAttributes\"]\n      Resource = aws_sqs_queue.work.arn\n    }]\n  })\n}\n\nresource \"aws_cloudwatch_log_group\" \"this\" {\n  name              = \"/service/${var.name}\"\n  retention_in_days = 14\n  kms_key_id        = var.log_kms_key_arn\n}\n\nresource \"aws_sqs_queue\" \"work\" {\n  name                       = \"${var.name}-work\"\n  visibility_timeout_seconds = 60\n  redrive_policy = jsonencode({\n    deadLetterTargetArn = aws_sqs_queue.dead.arn\n    maxReceiveCount     = 5\n  })\n}\n\nresource \"aws_sqs_queue\" \"dead\" {\n  name = \"${var.name}-dead\"\n}\n\nresource \"aws_security_group\" \"task\" {\n  name        = \"${var.name}-task\"\n  description = \"Egress only; the task reaches the queue and the log group.\"\n\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n",
+        "line": 1,
+        "mode": "state",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "prod/prod/module.checkout/aws_security_group.task",
+      "title": "prod/module.checkout/aws_security_group.task",
+      "subtitle": "terraform",
+      "kind": "aws_security_group",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/main.tf",
+      "line": 48,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_security_group.task",
+        "type": "aws_security_group",
+        "name": "task",
+        "file": "main.tf",
+        "root": "prod",
+        "source": "resource \"aws_iam_role\" \"this\" {\n  name                 = \"${var.name}-role\"\n  permissions_boundary = var.boundary_arn\n\n  assume_role_policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect    = \"Allow\"\n      Principal = { Service = \"ecs-tasks.amazonaws.com\" }\n      Action    = \"sts:AssumeRole\"\n    }]\n  })\n}\n\nresource \"aws_iam_role_policy\" \"this\" {\n  name = \"${var.name}-inline\"\n  role = aws_iam_role.this.id\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect   = \"Allow\"\n      Action   = [\"sqs:ReceiveMessage\", \"sqs:DeleteMessage\", \"sqs:GetQueueAttributes\"]\n      Resource = aws_sqs_queue.work.arn\n    }]\n  })\n}\n\nresource \"aws_cloudwatch_log_group\" \"this\" {\n  name              = \"/service/${var.name}\"\n  retention_in_days = 14\n  kms_key_id        = var.log_kms_key_arn\n}\n\nresource \"aws_sqs_queue\" \"work\" {\n  name                       = \"${var.name}-work\"\n  visibility_timeout_seconds = 60\n  redrive_policy = jsonencode({\n    deadLetterTargetArn = aws_sqs_queue.dead.arn\n    maxReceiveCount     = 5\n  })\n}\n\nresource \"aws_sqs_queue\" \"dead\" {\n  name = \"${var.name}-dead\"\n}\n\nresource \"aws_security_group\" \"task\" {\n  name        = \"${var.name}-task\"\n  description = \"Egress only; the task reaches the queue and the log group.\"\n\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n",
+        "line": 48,
+        "mode": "state",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "prod/prod/module.checkout/aws_sqs_queue.dead",
+      "title": "prod/module.checkout/aws_sqs_queue.dead",
+      "subtitle": "terraform",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/main.tf",
+      "line": 44,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_sqs_queue.dead",
+        "type": "aws_sqs_queue",
+        "name": "dead",
+        "file": "main.tf",
+        "root": "prod",
+        "source": "resource \"aws_iam_role\" \"this\" {\n  name                 = \"${var.name}-role\"\n  permissions_boundary = var.boundary_arn\n\n  assume_role_policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect    = \"Allow\"\n      Principal = { Service = \"ecs-tasks.amazonaws.com\" }\n      Action    = \"sts:AssumeRole\"\n    }]\n  })\n}\n\nresource \"aws_iam_role_policy\" \"this\" {\n  name = \"${var.name}-inline\"\n  role = aws_iam_role.this.id\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect   = \"Allow\"\n      Action   = [\"sqs:ReceiveMessage\", \"sqs:DeleteMessage\", \"sqs:GetQueueAttributes\"]\n      Resource = aws_sqs_queue.work.arn\n    }]\n  })\n}\n\nresource \"aws_cloudwatch_log_group\" \"this\" {\n  name              = \"/service/${var.name}\"\n  retention_in_days = 14\n  kms_key_id        = var.log_kms_key_arn\n}\n\nresource \"aws_sqs_queue\" \"work\" {\n  name                       = \"${var.name}-work\"\n  visibility_timeout_seconds = 60\n  redrive_policy = jsonencode({\n    deadLetterTargetArn = aws_sqs_queue.dead.arn\n    maxReceiveCount     = 5\n  })\n}\n\nresource \"aws_sqs_queue\" \"dead\" {\n  name = \"${var.name}-dead\"\n}\n\nresource \"aws_security_group\" \"task\" {\n  name        = \"${var.name}-task\"\n  description = \"Egress only; the task reaches the queue and the log group.\"\n\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n",
+        "line": 44,
+        "mode": "state",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "prod/prod/module.checkout/aws_sqs_queue.work",
+      "title": "prod/module.checkout/aws_sqs_queue.work",
+      "subtitle": "terraform",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/main.tf",
+      "line": 35,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_sqs_queue.work",
+        "type": "aws_sqs_queue",
+        "name": "work",
+        "file": "main.tf",
+        "root": "prod",
+        "source": "resource \"aws_iam_role\" \"this\" {\n  name                 = \"${var.name}-role\"\n  permissions_boundary = var.boundary_arn\n\n  assume_role_policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect    = \"Allow\"\n      Principal = { Service = \"ecs-tasks.amazonaws.com\" }\n      Action    = \"sts:AssumeRole\"\n    }]\n  })\n}\n\nresource \"aws_iam_role_policy\" \"this\" {\n  name = \"${var.name}-inline\"\n  role = aws_iam_role.this.id\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect   = \"Allow\"\n      Action   = [\"sqs:ReceiveMessage\", \"sqs:DeleteMessage\", \"sqs:GetQueueAttributes\"]\n      Resource = aws_sqs_queue.work.arn\n    }]\n  })\n}\n\nresource \"aws_cloudwatch_log_group\" \"this\" {\n  name              = \"/service/${var.name}\"\n  retention_in_days = 14\n  kms_key_id        = var.log_kms_key_arn\n}\n\nresource \"aws_sqs_queue\" \"work\" {\n  name                       = \"${var.name}-work\"\n  visibility_timeout_seconds = 60\n  redrive_policy = jsonencode({\n    deadLetterTargetArn = aws_sqs_queue.dead.arn\n    maxReceiveCount     = 5\n  })\n}\n\nresource \"aws_sqs_queue\" \"dead\" {\n  name = \"${var.name}-dead\"\n}\n\nresource \"aws_security_group\" \"task\" {\n  name        = \"${var.name}-task\"\n  description = \"Egress only; the task reaches the queue and the log group.\"\n\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n",
+        "line": 35,
+        "mode": "state",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "prod/prod/module.ledger",
+      "title": "prod/module.ledger",
+      "subtitle": "terraform",
+      "kind": "module",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/services.tf",
+      "line": 10,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "module.ledger",
+        "file": "services.tf",
+        "root": "prod",
+        "source": "module \"checkout\" {\n  source = \"../../modules/service\"\n\n  name            = \"${var.name}-checkout\"\n  subnet_ids      = [aws_subnet.private_a.id]\n  boundary_arn    = data.aws_iam_policy.boundary.arn\n  log_kms_key_arn = data.aws_kms_key.estate.arn\n}\n\nmodule \"ledger\" {\n  source = \"../../modules/service\"\n\n  name            = \"${var.name}-ledger\"\n  subnet_ids      = [aws_subnet.private_a.id]\n  boundary_arn    = data.aws_iam_policy.boundary.arn\n  log_kms_key_arn = data.aws_kms_key.estate.arn\n}\n\ndata \"aws_iam_policy\" \"boundary\" {\n  name = \"${var.name}-boundary\"\n}\n",
+        "line": 10,
+        "mode": "state",
+        "lockFile": false,
+        "block": "module"
+      }
+    },
+    {
+      "id": "prod/prod/module.ledger/aws_cloudwatch_log_group.this",
+      "title": "prod/module.ledger/aws_cloudwatch_log_group.this",
+      "subtitle": "terraform",
+      "kind": "aws_cloudwatch_log_group",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/main.tf",
+      "line": 29,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_cloudwatch_log_group.this",
+        "type": "aws_cloudwatch_log_group",
+        "name": "this",
+        "file": "main.tf",
+        "root": "prod",
+        "source": "resource \"aws_iam_role\" \"this\" {\n  name                 = \"${var.name}-role\"\n  permissions_boundary = var.boundary_arn\n\n  assume_role_policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect    = \"Allow\"\n      Principal = { Service = \"ecs-tasks.amazonaws.com\" }\n      Action    = \"sts:AssumeRole\"\n    }]\n  })\n}\n\nresource \"aws_iam_role_policy\" \"this\" {\n  name = \"${var.name}-inline\"\n  role = aws_iam_role.this.id\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect   = \"Allow\"\n      Action   = [\"sqs:ReceiveMessage\", \"sqs:DeleteMessage\", \"sqs:GetQueueAttributes\"]\n      Resource = aws_sqs_queue.work.arn\n    }]\n  })\n}\n\nresource \"aws_cloudwatch_log_group\" \"this\" {\n  name              = \"/service/${var.name}\"\n  retention_in_days = 14\n  kms_key_id        = var.log_kms_key_arn\n}\n\nresource \"aws_sqs_queue\" \"work\" {\n  name                       = \"${var.name}-work\"\n  visibility_timeout_seconds = 60\n  redrive_policy = jsonencode({\n    deadLetterTargetArn = aws_sqs_queue.dead.arn\n    maxReceiveCount     = 5\n  })\n}\n\nresource \"aws_sqs_queue\" \"dead\" {\n  name = \"${var.name}-dead\"\n}\n\nresource \"aws_security_group\" \"task\" {\n  name        = \"${var.name}-task\"\n  description = \"Egress only; the task reaches the queue and the log group.\"\n\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n",
+        "line": 29,
+        "mode": "state",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "prod/prod/module.ledger/aws_iam_role_policy.this",
+      "title": "prod/module.ledger/aws_iam_role_policy.this",
+      "subtitle": "terraform",
+      "kind": "aws_iam_role_policy",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/main.tf",
+      "line": 15,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_iam_role_policy.this",
+        "type": "aws_iam_role_policy",
+        "name": "this",
+        "file": "main.tf",
+        "root": "prod",
+        "source": "resource \"aws_iam_role\" \"this\" {\n  name                 = \"${var.name}-role\"\n  permissions_boundary = var.boundary_arn\n\n  assume_role_policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect    = \"Allow\"\n      Principal = { Service = \"ecs-tasks.amazonaws.com\" }\n      Action    = \"sts:AssumeRole\"\n    }]\n  })\n}\n\nresource \"aws_iam_role_policy\" \"this\" {\n  name = \"${var.name}-inline\"\n  role = aws_iam_role.this.id\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect   = \"Allow\"\n      Action   = [\"sqs:ReceiveMessage\", \"sqs:DeleteMessage\", \"sqs:GetQueueAttributes\"]\n      Resource = aws_sqs_queue.work.arn\n    }]\n  })\n}\n\nresource \"aws_cloudwatch_log_group\" \"this\" {\n  name              = \"/service/${var.name}\"\n  retention_in_days = 14\n  kms_key_id        = var.log_kms_key_arn\n}\n\nresource \"aws_sqs_queue\" \"work\" {\n  name                       = \"${var.name}-work\"\n  visibility_timeout_seconds = 60\n  redrive_policy = jsonencode({\n    deadLetterTargetArn = aws_sqs_queue.dead.arn\n    maxReceiveCount     = 5\n  })\n}\n\nresource \"aws_sqs_queue\" \"dead\" {\n  name = \"${var.name}-dead\"\n}\n\nresource \"aws_security_group\" \"task\" {\n  name        = \"${var.name}-task\"\n  description = \"Egress only; the task reaches the queue and the log group.\"\n\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n",
+        "line": 15,
+        "mode": "state",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "prod/prod/module.ledger/aws_iam_role.this",
+      "title": "prod/module.ledger/aws_iam_role.this",
+      "subtitle": "terraform",
+      "kind": "aws_iam_role",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/main.tf",
+      "line": 1,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_iam_role.this",
+        "type": "aws_iam_role",
+        "name": "this",
+        "file": "main.tf",
+        "root": "prod",
+        "source": "resource \"aws_iam_role\" \"this\" {\n  name                 = \"${var.name}-role\"\n  permissions_boundary = var.boundary_arn\n\n  assume_role_policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect    = \"Allow\"\n      Principal = { Service = \"ecs-tasks.amazonaws.com\" }\n      Action    = \"sts:AssumeRole\"\n    }]\n  })\n}\n\nresource \"aws_iam_role_policy\" \"this\" {\n  name = \"${var.name}-inline\"\n  role = aws_iam_role.this.id\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect   = \"Allow\"\n      Action   = [\"sqs:ReceiveMessage\", \"sqs:DeleteMessage\", \"sqs:GetQueueAttributes\"]\n      Resource = aws_sqs_queue.work.arn\n    }]\n  })\n}\n\nresource \"aws_cloudwatch_log_group\" \"this\" {\n  name              = \"/service/${var.name}\"\n  retention_in_days = 14\n  kms_key_id        = var.log_kms_key_arn\n}\n\nresource \"aws_sqs_queue\" \"work\" {\n  name                       = \"${var.name}-work\"\n  visibility_timeout_seconds = 60\n  redrive_policy = jsonencode({\n    deadLetterTargetArn = aws_sqs_queue.dead.arn\n    maxReceiveCount     = 5\n  })\n}\n\nresource \"aws_sqs_queue\" \"dead\" {\n  name = \"${var.name}-dead\"\n}\n\nresource \"aws_security_group\" \"task\" {\n  name        = \"${var.name}-task\"\n  description = \"Egress only; the task reaches the queue and the log group.\"\n\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n",
+        "line": 1,
+        "mode": "state",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "prod/prod/module.ledger/aws_security_group.task",
+      "title": "prod/module.ledger/aws_security_group.task",
+      "subtitle": "terraform",
+      "kind": "aws_security_group",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/main.tf",
+      "line": 48,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_security_group.task",
+        "type": "aws_security_group",
+        "name": "task",
+        "file": "main.tf",
+        "root": "prod",
+        "source": "resource \"aws_iam_role\" \"this\" {\n  name                 = \"${var.name}-role\"\n  permissions_boundary = var.boundary_arn\n\n  assume_role_policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect    = \"Allow\"\n      Principal = { Service = \"ecs-tasks.amazonaws.com\" }\n      Action    = \"sts:AssumeRole\"\n    }]\n  })\n}\n\nresource \"aws_iam_role_policy\" \"this\" {\n  name = \"${var.name}-inline\"\n  role = aws_iam_role.this.id\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect   = \"Allow\"\n      Action   = [\"sqs:ReceiveMessage\", \"sqs:DeleteMessage\", \"sqs:GetQueueAttributes\"]\n      Resource = aws_sqs_queue.work.arn\n    }]\n  })\n}\n\nresource \"aws_cloudwatch_log_group\" \"this\" {\n  name              = \"/service/${var.name}\"\n  retention_in_days = 14\n  kms_key_id        = var.log_kms_key_arn\n}\n\nresource \"aws_sqs_queue\" \"work\" {\n  name                       = \"${var.name}-work\"\n  visibility_timeout_seconds = 60\n  redrive_policy = jsonencode({\n    deadLetterTargetArn = aws_sqs_queue.dead.arn\n    maxReceiveCount     = 5\n  })\n}\n\nresource \"aws_sqs_queue\" \"dead\" {\n  name = \"${var.name}-dead\"\n}\n\nresource \"aws_security_group\" \"task\" {\n  name        = \"${var.name}-task\"\n  description = \"Egress only; the task reaches the queue and the log group.\"\n\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n",
+        "line": 48,
+        "mode": "state",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "prod/prod/module.ledger/aws_sqs_queue.dead",
+      "title": "prod/module.ledger/aws_sqs_queue.dead",
+      "subtitle": "terraform",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/main.tf",
+      "line": 44,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_sqs_queue.dead",
+        "type": "aws_sqs_queue",
+        "name": "dead",
+        "file": "main.tf",
+        "root": "prod",
+        "source": "resource \"aws_iam_role\" \"this\" {\n  name                 = \"${var.name}-role\"\n  permissions_boundary = var.boundary_arn\n\n  assume_role_policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect    = \"Allow\"\n      Principal = { Service = \"ecs-tasks.amazonaws.com\" }\n      Action    = \"sts:AssumeRole\"\n    }]\n  })\n}\n\nresource \"aws_iam_role_policy\" \"this\" {\n  name = \"${var.name}-inline\"\n  role = aws_iam_role.this.id\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect   = \"Allow\"\n      Action   = [\"sqs:ReceiveMessage\", \"sqs:DeleteMessage\", \"sqs:GetQueueAttributes\"]\n      Resource = aws_sqs_queue.work.arn\n    }]\n  })\n}\n\nresource \"aws_cloudwatch_log_group\" \"this\" {\n  name              = \"/service/${var.name}\"\n  retention_in_days = 14\n  kms_key_id        = var.log_kms_key_arn\n}\n\nresource \"aws_sqs_queue\" \"work\" {\n  name                       = \"${var.name}-work\"\n  visibility_timeout_seconds = 60\n  redrive_policy = jsonencode({\n    deadLetterTargetArn = aws_sqs_queue.dead.arn\n    maxReceiveCount     = 5\n  })\n}\n\nresource \"aws_sqs_queue\" \"dead\" {\n  name = \"${var.name}-dead\"\n}\n\nresource \"aws_security_group\" \"task\" {\n  name        = \"${var.name}-task\"\n  description = \"Egress only; the task reaches the queue and the log group.\"\n\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n",
+        "line": 44,
+        "mode": "state",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "prod/prod/module.ledger/aws_sqs_queue.work",
+      "title": "prod/module.ledger/aws_sqs_queue.work",
+      "subtitle": "terraform",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "example-terraform-estate/envs/prod/main.tf",
+      "line": 35,
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": {
+        "address": "aws_sqs_queue.work",
+        "type": "aws_sqs_queue",
+        "name": "work",
+        "file": "main.tf",
+        "root": "prod",
+        "source": "resource \"aws_iam_role\" \"this\" {\n  name                 = \"${var.name}-role\"\n  permissions_boundary = var.boundary_arn\n\n  assume_role_policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect    = \"Allow\"\n      Principal = { Service = \"ecs-tasks.amazonaws.com\" }\n      Action    = \"sts:AssumeRole\"\n    }]\n  })\n}\n\nresource \"aws_iam_role_policy\" \"this\" {\n  name = \"${var.name}-inline\"\n  role = aws_iam_role.this.id\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect   = \"Allow\"\n      Action   = [\"sqs:ReceiveMessage\", \"sqs:DeleteMessage\", \"sqs:GetQueueAttributes\"]\n      Resource = aws_sqs_queue.work.arn\n    }]\n  })\n}\n\nresource \"aws_cloudwatch_log_group\" \"this\" {\n  name              = \"/service/${var.name}\"\n  retention_in_days = 14\n  kms_key_id        = var.log_kms_key_arn\n}\n\nresource \"aws_sqs_queue\" \"work\" {\n  name                       = \"${var.name}-work\"\n  visibility_timeout_seconds = 60\n  redrive_policy = jsonencode({\n    deadLetterTargetArn = aws_sqs_queue.dead.arn\n    maxReceiveCount     = 5\n  })\n}\n\nresource \"aws_sqs_queue\" \"dead\" {\n  name = \"${var.name}-dead\"\n}\n\nresource \"aws_security_group\" \"task\" {\n  name        = \"${var.name}-task\"\n  description = \"Egress only; the task reaches the queue and the log group.\"\n\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n",
+        "line": 35,
+        "mode": "state",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "platform/platform/aws_cloudwatch_log_group.audit",
+      "title": "platform/aws_cloudwatch_log_group.audit",
+      "subtitle": "terraform",
+      "kind": "aws_cloudwatch_log_group",
+      "lexicon": "terraform",
+      "box": "stack:platform",
+      "file": "example-terraform-estate/platform/kms.tf",
+      "line": 12,
+      "detail__member": "platform",
+      "detail__root": "platform",
+      "attrs": {
+        "address": "aws_cloudwatch_log_group.audit",
+        "type": "aws_cloudwatch_log_group",
+        "name": "audit",
+        "file": "kms.tf",
+        "root": "platform",
+        "source": "resource \"aws_kms_key\" \"estate\" {\n  description             = \"Estate-wide key: artifact encryption and log group encryption.\"\n  deletion_window_in_days = 14\n  enable_key_rotation     = true\n}\n\nresource \"aws_kms_alias\" \"estate\" {\n  name          = \"alias/${var.name}-estate\"\n  target_key_id = aws_kms_key.estate.key_id\n}\n\nresource \"aws_cloudwatch_log_group\" \"audit\" {\n  name              = \"/${var.name}/audit\"\n  retention_in_days = var.log_retention_days\n  kms_key_id        = aws_kms_key.estate.arn\n}\n",
+        "line": 12,
+        "mode": "state",
+        "lockFile": false,
+        "block": "resource"
+      }
+    },
+    {
+      "id": "platform/platform/aws_iam_policy.boundary",
+      "title": "platform/aws_iam_policy.boundary",
+      "subtitle": "terraform",
+      "kind": "aws_iam_policy",
+      "lexicon": "terraform",
+      "box": "stack:platform",
+      "file": "example-terraform-estate/platform/iam.tf",
+      "line": 3,
+      "detail__member": "platform",
+      "detail__root": "platform",
+      "attrs": {
+        "address": "aws_iam_policy.boundary",
+        "type": "aws_iam_policy",
+        "name": "boundary",
+        "file": "iam.tf",
+        "root": "platform",
+        "source": "# The permissions boundary every service role in the estate attaches. Declared\n# once here; each environment root reads it back by name as a data source.\nresource \"aws_iam_policy\" \"boundary\" {\n  name        = \"${var.name}-boundary\"\n  description = \"Ceiling for every role the service module creates.\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect   = \"Allow\"\n        Action   = [\"s3:GetObject\", \"s3:PutObject\", \"logs:PutLogEvents\", \"sqs:*\"]\n        Resource = \"*\"\n      },\n      {\n        Effect   = \"Deny\"\n        Action   = [\"iam:*\", \"organizations:*\"]\n        Resource = \"*\"\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role\" \"deploy\" {\n  name = \"${var.name}-deploy\"\n\n  assume_role_policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect    = \"Allow\"\n      Principal = { Service = \"codebuild.amazonaws.com\" }\n      Action    = \"sts:AssumeRole\"\n    }]\n  })\n}\n\nresource \"aws_iam_role_policy_attachment\" \"deploy_boundary\" {\n  role       = aws_iam_role.deploy.name\n  policy_arn = aws_iam_policy.boundary.arn\n}\n",
+        "line": 3,
+        "mode": "state",
+        "lockFile": false,
+        "block": "resource"
+      }
+    },
+    {
+      "id": "platform/platform/aws_iam_role_policy_attachment.deploy_boundary",
+      "title": "platform/aws_iam_role_policy_attachment.deploy_boundary",
+      "subtitle": "terraform",
+      "kind": "aws_iam_role_policy_attachment",
+      "lexicon": "terraform",
+      "box": "stack:platform",
+      "file": "example-terraform-estate/platform/iam.tf",
+      "line": 37,
+      "detail__member": "platform",
+      "detail__root": "platform",
+      "attrs": {
+        "address": "aws_iam_role_policy_attachment.deploy_boundary",
+        "type": "aws_iam_role_policy_attachment",
+        "name": "deploy_boundary",
+        "file": "iam.tf",
+        "root": "platform",
+        "source": "# The permissions boundary every service role in the estate attaches. Declared\n# once here; each environment root reads it back by name as a data source.\nresource \"aws_iam_policy\" \"boundary\" {\n  name        = \"${var.name}-boundary\"\n  description = \"Ceiling for every role the service module creates.\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect   = \"Allow\"\n        Action   = [\"s3:GetObject\", \"s3:PutObject\", \"logs:PutLogEvents\", \"sqs:*\"]\n        Resource = \"*\"\n      },\n      {\n        Effect   = \"Deny\"\n        Action   = [\"iam:*\", \"organizations:*\"]\n        Resource = \"*\"\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role\" \"deploy\" {\n  name = \"${var.name}-deploy\"\n\n  assume_role_policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect    = \"Allow\"\n      Principal = { Service = \"codebuild.amazonaws.com\" }\n      Action    = \"sts:AssumeRole\"\n    }]\n  })\n}\n\nresource \"aws_iam_role_policy_attachment\" \"deploy_boundary\" {\n  role       = aws_iam_role.deploy.name\n  policy_arn = aws_iam_policy.boundary.arn\n}\n",
+        "line": 37,
+        "mode": "state",
+        "lockFile": false,
+        "block": "resource"
+      }
+    },
+    {
+      "id": "platform/platform/aws_iam_role.deploy",
+      "title": "platform/aws_iam_role.deploy",
+      "subtitle": "terraform",
+      "kind": "aws_iam_role",
+      "lexicon": "terraform",
+      "box": "stack:platform",
+      "file": "example-terraform-estate/platform/iam.tf",
+      "line": 24,
+      "detail__member": "platform",
+      "detail__root": "platform",
+      "attrs": {
+        "address": "aws_iam_role.deploy",
+        "type": "aws_iam_role",
+        "name": "deploy",
+        "file": "iam.tf",
+        "root": "platform",
+        "source": "# The permissions boundary every service role in the estate attaches. Declared\n# once here; each environment root reads it back by name as a data source.\nresource \"aws_iam_policy\" \"boundary\" {\n  name        = \"${var.name}-boundary\"\n  description = \"Ceiling for every role the service module creates.\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect   = \"Allow\"\n        Action   = [\"s3:GetObject\", \"s3:PutObject\", \"logs:PutLogEvents\", \"sqs:*\"]\n        Resource = \"*\"\n      },\n      {\n        Effect   = \"Deny\"\n        Action   = [\"iam:*\", \"organizations:*\"]\n        Resource = \"*\"\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role\" \"deploy\" {\n  name = \"${var.name}-deploy\"\n\n  assume_role_policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect    = \"Allow\"\n      Principal = { Service = \"codebuild.amazonaws.com\" }\n      Action    = \"sts:AssumeRole\"\n    }]\n  })\n}\n\nresource \"aws_iam_role_policy_attachment\" \"deploy_boundary\" {\n  role       = aws_iam_role.deploy.name\n  policy_arn = aws_iam_policy.boundary.arn\n}\n",
+        "line": 24,
+        "mode": "state",
+        "lockFile": false,
+        "block": "resource"
+      }
+    },
+    {
+      "id": "platform/platform/aws_kms_alias.estate",
+      "title": "platform/aws_kms_alias.estate",
+      "subtitle": "terraform",
+      "kind": "aws_kms_alias",
+      "lexicon": "terraform",
+      "box": "stack:platform",
+      "file": "example-terraform-estate/platform/kms.tf",
+      "line": 7,
+      "detail__member": "platform",
+      "detail__root": "platform",
+      "attrs": {
+        "address": "aws_kms_alias.estate",
+        "type": "aws_kms_alias",
+        "name": "estate",
+        "file": "kms.tf",
+        "root": "platform",
+        "source": "resource \"aws_kms_key\" \"estate\" {\n  description             = \"Estate-wide key: artifact encryption and log group encryption.\"\n  deletion_window_in_days = 14\n  enable_key_rotation     = true\n}\n\nresource \"aws_kms_alias\" \"estate\" {\n  name          = \"alias/${var.name}-estate\"\n  target_key_id = aws_kms_key.estate.key_id\n}\n\nresource \"aws_cloudwatch_log_group\" \"audit\" {\n  name              = \"/${var.name}/audit\"\n  retention_in_days = var.log_retention_days\n  kms_key_id        = aws_kms_key.estate.arn\n}\n",
+        "line": 7,
+        "mode": "state",
+        "lockFile": false,
+        "block": "resource"
+      }
+    },
+    {
+      "id": "platform/platform/aws_kms_key.estate",
+      "title": "platform/aws_kms_key.estate",
+      "subtitle": "terraform",
+      "kind": "aws_kms_key",
+      "lexicon": "terraform",
+      "box": "stack:platform",
+      "file": "example-terraform-estate/platform/kms.tf",
+      "line": 1,
+      "detail__member": "platform",
+      "detail__root": "platform",
+      "attrs": {
+        "address": "aws_kms_key.estate",
+        "type": "aws_kms_key",
+        "name": "estate",
+        "file": "kms.tf",
+        "root": "platform",
+        "source": "resource \"aws_kms_key\" \"estate\" {\n  description             = \"Estate-wide key: artifact encryption and log group encryption.\"\n  deletion_window_in_days = 14\n  enable_key_rotation     = true\n}\n\nresource \"aws_kms_alias\" \"estate\" {\n  name          = \"alias/${var.name}-estate\"\n  target_key_id = aws_kms_key.estate.key_id\n}\n\nresource \"aws_cloudwatch_log_group\" \"audit\" {\n  name              = \"/${var.name}/audit\"\n  retention_in_days = var.log_retention_days\n  kms_key_id        = aws_kms_key.estate.arn\n}\n",
+        "line": 1,
+        "mode": "state",
+        "lockFile": false,
+        "block": "resource"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "prod/prod/aws_internet_gateway.main->prod/prod/aws_vpc.main:ref:vpc_id",
+      "source": "prod/prod/aws_internet_gateway.main",
+      "target": "prod/prod/aws_vpc.main",
+      "kind": "ref",
+      "inferred": false,
+      "via": "vpc_id"
+    },
+    {
+      "id": "prod/prod/aws_route_table_association.public_a->prod/prod/aws_route_table.public:ref:route_table_id",
+      "source": "prod/prod/aws_route_table_association.public_a",
+      "target": "prod/prod/aws_route_table.public",
+      "kind": "ref",
+      "inferred": false,
+      "via": "route_table_id"
+    },
+    {
+      "id": "prod/prod/aws_route_table_association.public_a->prod/prod/aws_subnet.public_a:ref:subnet_id",
+      "source": "prod/prod/aws_route_table_association.public_a",
+      "target": "prod/prod/aws_subnet.public_a",
+      "kind": "ref",
+      "inferred": false,
+      "via": "subnet_id"
+    },
+    {
+      "id": "prod/prod/aws_route_table_association.public_b->prod/prod/aws_route_table.public:ref:route_table_id",
+      "source": "prod/prod/aws_route_table_association.public_b",
+      "target": "prod/prod/aws_route_table.public",
+      "kind": "ref",
+      "inferred": false,
+      "via": "route_table_id"
+    },
+    {
+      "id": "prod/prod/aws_route_table_association.public_b->prod/prod/aws_subnet.public_b:ref:subnet_id",
+      "source": "prod/prod/aws_route_table_association.public_b",
+      "target": "prod/prod/aws_subnet.public_b",
+      "kind": "ref",
+      "inferred": false,
+      "via": "subnet_id"
+    },
+    {
+      "id": "prod/prod/aws_route_table.public->prod/prod/aws_internet_gateway.main:ref:route",
+      "source": "prod/prod/aws_route_table.public",
+      "target": "prod/prod/aws_internet_gateway.main",
+      "kind": "ref",
+      "inferred": false,
+      "via": "route"
+    },
+    {
+      "id": "prod/prod/aws_route_table.public->prod/prod/aws_vpc.main:ref:vpc_id",
+      "source": "prod/prod/aws_route_table.public",
+      "target": "prod/prod/aws_vpc.main",
+      "kind": "ref",
+      "inferred": false,
+      "via": "vpc_id"
+    },
+    {
+      "id": "prod/prod/aws_s3_bucket_public_access_block.artifacts->prod/prod/aws_s3_bucket.artifacts:ref:bucket",
+      "source": "prod/prod/aws_s3_bucket_public_access_block.artifacts",
+      "target": "prod/prod/aws_s3_bucket.artifacts",
+      "kind": "ref",
+      "inferred": false,
+      "via": "bucket"
+    },
+    {
+      "id": "prod/prod/aws_s3_bucket_server_side_encryption_configuration.artifacts->prod/prod/aws_s3_bucket.artifacts:ref:bucket",
+      "source": "prod/prod/aws_s3_bucket_server_side_encryption_configuration.artifacts",
+      "target": "prod/prod/aws_s3_bucket.artifacts",
+      "kind": "ref",
+      "inferred": false,
+      "via": "bucket"
+    },
+    {
+      "id": "prod/prod/aws_s3_bucket_server_side_encryption_configuration.artifacts->prod/prod/data.aws_kms_key.estate:ref:rule",
+      "source": "prod/prod/aws_s3_bucket_server_side_encryption_configuration.artifacts",
+      "target": "prod/prod/data.aws_kms_key.estate",
+      "kind": "ref",
+      "inferred": false,
+      "via": "rule"
+    },
+    {
+      "id": "prod/prod/aws_s3_bucket_versioning.artifacts->prod/prod/aws_s3_bucket.artifacts:ref:bucket",
+      "source": "prod/prod/aws_s3_bucket_versioning.artifacts",
+      "target": "prod/prod/aws_s3_bucket.artifacts",
+      "kind": "ref",
+      "inferred": false,
+      "via": "bucket"
+    },
+    {
+      "id": "prod/prod/aws_security_group.edge->prod/prod/aws_vpc.main:ref:vpc_id",
+      "source": "prod/prod/aws_security_group.edge",
+      "target": "prod/prod/aws_vpc.main",
+      "kind": "ref",
+      "inferred": false,
+      "via": "vpc_id"
+    },
+    {
+      "id": "prod/prod/aws_subnet.private_a->prod/prod/aws_vpc.main:ref:vpc_id",
+      "source": "prod/prod/aws_subnet.private_a",
+      "target": "prod/prod/aws_vpc.main",
+      "kind": "ref",
+      "inferred": false,
+      "via": "vpc_id"
+    },
+    {
+      "id": "prod/prod/aws_subnet.public_a->prod/prod/aws_vpc.main:ref:vpc_id",
+      "source": "prod/prod/aws_subnet.public_a",
+      "target": "prod/prod/aws_vpc.main",
+      "kind": "ref",
+      "inferred": false,
+      "via": "vpc_id"
+    },
+    {
+      "id": "prod/prod/aws_subnet.public_b->prod/prod/aws_vpc.main:ref:vpc_id",
+      "source": "prod/prod/aws_subnet.public_b",
+      "target": "prod/prod/aws_vpc.main",
+      "kind": "ref",
+      "inferred": false,
+      "via": "vpc_id"
+    },
+    {
+      "id": "prod/prod/module.checkout/aws_iam_role_policy.this->prod/prod/module.checkout/aws_iam_role.this:ref:role",
+      "source": "prod/prod/module.checkout/aws_iam_role_policy.this",
+      "target": "prod/prod/module.checkout/aws_iam_role.this",
+      "kind": "ref",
+      "inferred": false,
+      "via": "role"
+    },
+    {
+      "id": "prod/prod/module.checkout/aws_iam_role_policy.this->prod/prod/module.checkout/aws_sqs_queue.work:ref:policy",
+      "source": "prod/prod/module.checkout/aws_iam_role_policy.this",
+      "target": "prod/prod/module.checkout/aws_sqs_queue.work",
+      "kind": "ref",
+      "inferred": false,
+      "via": "policy"
+    },
+    {
+      "id": "prod/prod/module.checkout/aws_sqs_queue.work->prod/prod/module.checkout/aws_sqs_queue.dead:ref:redrive_policy",
+      "source": "prod/prod/module.checkout/aws_sqs_queue.work",
+      "target": "prod/prod/module.checkout/aws_sqs_queue.dead",
+      "kind": "ref",
+      "inferred": false,
+      "via": "redrive_policy"
+    },
+    {
+      "id": "prod/prod/module.checkout->prod/prod/aws_subnet.private_a:ref:subnet_ids",
+      "source": "prod/prod/module.checkout",
+      "target": "prod/prod/aws_subnet.private_a",
+      "kind": "ref",
+      "inferred": false,
+      "via": "subnet_ids"
+    },
+    {
+      "id": "prod/prod/module.checkout->prod/prod/data.aws_iam_policy.boundary:ref:boundary_arn",
+      "source": "prod/prod/module.checkout",
+      "target": "prod/prod/data.aws_iam_policy.boundary",
+      "kind": "ref",
+      "inferred": false,
+      "via": "boundary_arn"
+    },
+    {
+      "id": "prod/prod/module.checkout->prod/prod/data.aws_kms_key.estate:ref:log_kms_key_arn",
+      "source": "prod/prod/module.checkout",
+      "target": "prod/prod/data.aws_kms_key.estate",
+      "kind": "ref",
+      "inferred": false,
+      "via": "log_kms_key_arn"
+    },
+    {
+      "id": "prod/prod/module.ledger/aws_iam_role_policy.this->prod/prod/module.ledger/aws_iam_role.this:ref:role",
+      "source": "prod/prod/module.ledger/aws_iam_role_policy.this",
+      "target": "prod/prod/module.ledger/aws_iam_role.this",
+      "kind": "ref",
+      "inferred": false,
+      "via": "role"
+    },
+    {
+      "id": "prod/prod/module.ledger/aws_iam_role_policy.this->prod/prod/module.ledger/aws_sqs_queue.work:ref:policy",
+      "source": "prod/prod/module.ledger/aws_iam_role_policy.this",
+      "target": "prod/prod/module.ledger/aws_sqs_queue.work",
+      "kind": "ref",
+      "inferred": false,
+      "via": "policy"
+    },
+    {
+      "id": "prod/prod/module.ledger/aws_sqs_queue.work->prod/prod/module.ledger/aws_sqs_queue.dead:ref:redrive_policy",
+      "source": "prod/prod/module.ledger/aws_sqs_queue.work",
+      "target": "prod/prod/module.ledger/aws_sqs_queue.dead",
+      "kind": "ref",
+      "inferred": false,
+      "via": "redrive_policy"
+    },
+    {
+      "id": "prod/prod/module.ledger->prod/prod/aws_subnet.private_a:ref:subnet_ids",
+      "source": "prod/prod/module.ledger",
+      "target": "prod/prod/aws_subnet.private_a",
+      "kind": "ref",
+      "inferred": false,
+      "via": "subnet_ids"
+    },
+    {
+      "id": "prod/prod/module.ledger->prod/prod/data.aws_iam_policy.boundary:ref:boundary_arn",
+      "source": "prod/prod/module.ledger",
+      "target": "prod/prod/data.aws_iam_policy.boundary",
+      "kind": "ref",
+      "inferred": false,
+      "via": "boundary_arn"
+    },
+    {
+      "id": "prod/prod/module.ledger->prod/prod/data.aws_kms_key.estate:ref:log_kms_key_arn",
+      "source": "prod/prod/module.ledger",
+      "target": "prod/prod/data.aws_kms_key.estate",
+      "kind": "ref",
+      "inferred": false,
+      "via": "log_kms_key_arn"
+    },
+    {
+      "id": "platform/platform/aws_cloudwatch_log_group.audit->platform/platform/aws_kms_key.estate:ref:kms_key_id",
+      "source": "platform/platform/aws_cloudwatch_log_group.audit",
+      "target": "platform/platform/aws_kms_key.estate",
+      "kind": "ref",
+      "inferred": false,
+      "via": "kms_key_id"
+    },
+    {
+      "id": "platform/platform/aws_iam_role_policy_attachment.deploy_boundary->platform/platform/aws_iam_policy.boundary:ref:policy_arn",
+      "source": "platform/platform/aws_iam_role_policy_attachment.deploy_boundary",
+      "target": "platform/platform/aws_iam_policy.boundary",
+      "kind": "ref",
+      "inferred": false,
+      "via": "policy_arn"
+    },
+    {
+      "id": "platform/platform/aws_iam_role_policy_attachment.deploy_boundary->platform/platform/aws_iam_role.deploy:ref:role",
+      "source": "platform/platform/aws_iam_role_policy_attachment.deploy_boundary",
+      "target": "platform/platform/aws_iam_role.deploy",
+      "kind": "ref",
+      "inferred": false,
+      "via": "role"
+    },
+    {
+      "id": "platform/platform/aws_kms_alias.estate->platform/platform/aws_kms_key.estate:ref:target_key_id",
+      "source": "platform/platform/aws_kms_alias.estate",
+      "target": "platform/platform/aws_kms_key.estate",
+      "kind": "ref",
+      "inferred": false,
+      "via": "target_key_id"
+    }
+  ],
+  "groups": [
+    {
+      "id": "stack:prod",
+      "title": "prod",
+      "kind": "stack"
+    },
+    {
+      "id": "stack:platform",
+      "title": "platform",
+      "kind": "stack"
+    }
+  ],
+  "notes": [
+    {
+      "kind": "view",
+      "text": "1 root — prod; 1 root — platform; showing the estate — 13 variables, 9 outputs, 4 terraform blocks, 1 provider not drawn (outputs and variables appear at detail 3 — ⌘K → attributes)",
+      "short": "1 root · 1 root · 27 blocks not drawn"
+    }
+  ]
+}
