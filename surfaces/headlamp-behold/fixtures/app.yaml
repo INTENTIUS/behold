@@ -1,0 +1,5 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata: {name: shop, namespace: shop}
+spec:
+  source: {repoURL: "https://github.com/acme/shop.git", path: deploy, targetRevision: main}

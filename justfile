@@ -251,3 +251,12 @@ demo-host-check:
 # what disagrees and writes nothing.
 chant-release *args:
     npx tsx scripts/chant-release.ts {{args}}
+
+# The Headlamp plugin in surfaces/headlamp-behold (#1084): typecheck, lint,
+# tests, build and the checksum in artifacthub-pkg.yml. `just headlamp-e2e`
+# runs it against a scratch k3d cluster and leaves the cluster for you to remove.
+headlamp-plugin:
+    cd surfaces/headlamp-behold && npm ci && npm run tsc && npm run lint && npm test && npm run build && node scripts/package.mjs --check
+
+headlamp-e2e:
+    bash surfaces/headlamp-behold/e2e/headlamp-e2e.sh

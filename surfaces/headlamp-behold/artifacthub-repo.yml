@@ -1,0 +1,7 @@
+# Artifact Hub repository metadata. The repositoryID and the owner are filled
+# in by the maintainer when the repository is added on artifacthub.io, and the
+# same file carries the Verified Publisher request.
+repositoryID: ""
+owners:
+  - name: INTENTIUS
+    email: ""
