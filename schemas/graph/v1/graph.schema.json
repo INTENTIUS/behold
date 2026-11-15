@@ -63,6 +63,7 @@
         "lexicon": { "type": "string" },
         "box": { "type": "string", "description": "The id of the innermost group the card is drawn in." },
         "file": { "$ref": "#/$defs/relativePath", "description": "The declaring file, relative to the repository root. Absent when behold cannot place it there." },
+        "seed": { "type": "boolean", "description": "In an 'around' cut, true on the cards the cut was asked for." },
         "line": { "type": "integer", "minimum": 1 },
         "change": { "type": "string", "description": "What a plan would do to it (create, update, replace, delete), when a plan was read and it changes." },
         "status": { "$ref": "#/$defs/status" },
