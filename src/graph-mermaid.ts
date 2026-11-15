@@ -67,13 +67,15 @@ function classOf(n: GraphDocumentNode, marked: boolean): ChangeClass | undefined
     if (c === "delete" || c === "removed") return "removed";
     return "changed";
   }
+  // A changed cut (#1059) marks its cards with `diff`.
+  if (n.diff) return n.diff;
   if (marked && !n.seed) return "neighbour";
   return undefined;
 }
 
-/** True when the document marks some cards apart from the rest: a plan's changes, or a cut's seeds. */
+/** True when the document marks some cards apart from the rest: a plan's changes, a cut's seeds, or a changed cut's `diff`. */
 function isMarked(doc: GraphDocument): boolean {
-  return doc.nodes.some((n) => n.change || n.seed);
+  return doc.nodes.some((n) => n.change || n.seed || n.diff);
 }
 
 function byId<T extends { id: string }>(a: T, b: T): number {
@@ -237,7 +239,7 @@ export function mermaidDiagram(doc: GraphDocument, opts: MermaidOptions = {}): M
     const key = unitOf(n);
     const u = units.get(key) ?? { key, ids: [], marked: 0 };
     u.ids.push(n.id);
-    if (n.change || n.seed) u.marked++;
+    if (n.change || n.seed || (n.diff && n.diff !== "neighbour")) u.marked++;
     units.set(key, u);
   }
   const order = [...units.values()].sort((a, b) => b.marked - a.marked || a.ids.length - b.ids.length || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));

@@ -5,6 +5,7 @@ import { GRAPH_DOCUMENT_SCHEMA, type GraphDocument, type GraphDocumentNode } fro
 import { escapeLabel, forgeComment, mermaidDiagram, rootTable, toMermaid } from "./graph-mermaid.ts";
 import { FORGE_BUDGETS, type ForgeBudget } from "./mermaid-budgets.ts";
 import { cutDocument } from "./graph-cut.ts";
+import { cutChanged } from "./graph-changed.ts";
 import { toDocument, type GraphSnapshot } from "./to-document.ts";
 
 // behold#1060: the Mermaid writer and its per-forge budgets.
@@ -132,6 +133,26 @@ describe("toMermaid (#1060)", () => {
     const text = toMermaid(r.document);
     expect(text).toContain('["aws_security_group_rule.ingress_5"]\n');
     expect(text).toMatch(/\["aws_security_group_rule\.ingress_4"\]:::neighbour/);
+  });
+
+  it("paints a changed cut by each card's diff (#1059)", () => {
+    const before = fortyCards();
+    const after = fortyCards();
+    const id = (r: number, i: number) => `root${r}/aws_security_group_rule.ingress_${i}`;
+    after.nodes = after.nodes.filter((n) => n.id !== id(2, 4));
+    after.nodes.push(node(id(0, 20), { title: "aws_security_group_rule.ingress_20", box: "stack:root0" }));
+    after.nodes.find((n) => n.id === id(0, 2))!.attrs = { port: 22 };
+    const doc = cutChanged(before, after, { base: "main", head: "HEAD", depth: 1 });
+    const text = toMermaid(doc);
+    expect(text).toMatch(/\["aws_security_group_rule\.ingress_20"\]:::added/);
+    expect(text).toMatch(/\["aws_security_group_rule\.ingress_4"\]:::removed/);
+    expect(text).toMatch(/\["aws_security_group_rule\.ingress_2"\]:::changed/);
+    expect(text).toContain(":::neighbour");
+    expect(text).toContain("classDef added");
+    const table = rootTable(doc);
+    expect(table).toContain("| Added | Changed | Removed |");
+    expect(table).toMatch(/\| root-0 \| \d+ \| 1 \| 1 \| 0 \|/);
+    expect(table).toMatch(/\| root-2 \| \d+ \| 0 \| 0 \| 1 \|/);
   });
 
   it("escapes labels so none can open a tag, a link or a string", () => {
