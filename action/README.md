@@ -1,4 +1,7 @@
-# behold changed cut (GitHub Action)
+# behold changed cut (GitHub Action, with GitLab and Forgejo variants)
+
+The sections below are the GitHub Action. "GitLab" and "Forgejo" further down
+cover the same picture on those forges (INTENTIUS/behold#1064).
 
 On each pull request this action draws the resources the pull request changed,
 and their neighbours, as Mermaid in the job summary and in one comment that it
@@ -118,6 +121,76 @@ marker comment on that one pull request. It does not read a fork's
 The behold install in the first workflow runs `npm install` of
 `@intentius/behold-graph` from the registry, not from the pull request.
 
+## GitLab
+
+GitLab has no action marketplace, so the same code runs from a CI template,
+`gitlab/behold.gitlab-ci.yml`. A merge request pipeline runs
+`src/main.mjs read` and `report` in a `node:24` job, writes the same SVG, JSON
+and comment text, and keeps one note per marker: it lists the merge request's
+notes, skips system notes, edits the one that carries `<!-- behold:changed -->`
+and otherwise creates it (`src/gitlab.mjs`). Packaging the template as a CI/CD
+Catalog component is not done; see "Waiting on the maintainer".
+
+Setup:
+
+1. Create a project access token (Settings, Access tokens) with the `api`
+   scope and the Reporter role. `CI_JOB_TOKEN` is not used: whether it may
+   create notes is not documented.
+2. Store it as a CI/CD variable `BEHOLD_GITLAB_TOKEN`, masked, not protected
+   (a protected variable is withheld from pipelines of unprotected branches).
+3. Include the template pinned to a commit and give the same commit as
+   `BEHOLD_ACTION_REF`; the job fetches the action's source at that commit.
+
+```yaml
+include:
+  - remote: https://raw.githubusercontent.com/INTENTIUS/behold/<sha>/action/gitlab/behold.gitlab-ci.yml
+variables:
+  BEHOLD_ACTION_REF: <sha>
+```
+
+GitLab refuses a Mermaid block over 2,000 characters, and a page whose blocks
+total more, and shows the source as text behind a Display button. The note
+therefore uses the `gitlab` row of `FORGE_BUDGETS`: one block that fits, else
+the count line, the per-root table and a link to the SVG in the job's
+artifacts (`<job url>/artifacts/file/behold-changed/changed.svg`). The same
+cut is one diagram on GitHub. A cut that folds to a table has no SVG to link.
+The job log carries the text a job summary would, since GitLab has no summary
+page, and `artifacts:expose_as` lists the artifact folder in the merge request
+widget.
+
+A merge request from a fork. GitLab runs it in the fork's project by default,
+where this template's variables do not exist and the job does not start. When
+a project runs fork pipelines in the parent project, the source project id
+differs from the target's; the job then makes no API call, writes the log and
+artifacts, and posts no note. There is no second job that posts for it, so a
+fork's merge request gets no note until a maintainer runs the job on a branch
+of the project.
+
+## Forgejo
+
+Forgejo Actions runs the GitHub Action as it is, through `forge: forgejo`
+(auto-detected from `FORGEJO_ACTIONS`). The comment goes to
+`/api/v1/repos/<owner>/<repo>/issues/<n>/comments` with the `token` scheme,
+paged 50 at a time (`src/forgejo.mjs`), and the job summary is written to
+`FORGEJO_STEP_SUMMARY` or `GITHUB_STEP_SUMMARY`, whichever the runner gives.
+`forgejo/behold.yml` is the workflow to copy. It sets `upload: "false"` and
+uploads `out-dir` with `forgejo/upload-artifact` (the v4 build that does not
+refuse a Forgejo server), because `actions/upload-artifact` and its
+`archive: false` are not available there; artifacts are zipped and are listed
+on the run page.
+
+The `forgejo` row of `FORGE_BUDGETS` is the provisional 20,000 characters and
+250 edges until the live check (#1065) records what a Forgejo instance
+renders. Gitea's default `MERMAID_MAX_SOURCE_CHARACTERS` is 50,000; Forgejo's
+is not documented.
+
+A fork's pull request. Forgejo gives it a read-only token and no secrets, so
+the job writes the summary and uploads the artifacts and makes no API call.
+Forgejo has no `workflow_run` event, so there is no second workflow to post
+the comment, and `mode: post-comment` refuses to run there. Posting for forks
+would need `pull_request_target`, which runs with a write token; that is a
+separate design and is not built here.
+
 ## Tests
 
 `action/test/action.test.ts` runs under the repository's vitest. It builds a
@@ -126,13 +199,15 @@ answers every GitHub call from `action/test/fixtures` (bodies shaped after the
 REST documentation: comment lists with a `Link` header, create, edit, a 403,
 a pull request, event payloads). A call with no recorded answer fails the
 test, so nothing reaches the network and nothing is posted to a real pull
-request.
+request. `action/test/forges.test.ts` does the same for GitLab (`gitlab-*`
+fixtures, merge request notes, CI variables) and Forgejo (`forgejo-*`
+fixtures, Gitea-shaped comments and event payloads).
 
 ## What moves
 
 When `behold-action` exists, move the whole `action/` folder to its root:
 
-- `action.yml`, `src/` and `README.md`
+- `action.yml`, `src/`, `gitlab/`, `forgejo/` and `README.md`
 - `test/` and its `fixtures/`, plus the vitest entry that runs them. The tests
   import `../../src/graph-package.ts` and `../../src/terraform-member.ts` from
   behold; in the new repository they import `@intentius/behold-graph` and run
@@ -150,3 +225,29 @@ and `@intentius/behold-graph` itself.
 - the test-repository runs that the issue's Done-when names: a pull request
   that changes two resources, a second push, and a fork pull request through
   the two workflows above
+- GitLab test project (#1064). On a GitLab instance or gitlab.com: create a
+  project holding a copy of `action/test`'s two-commit Terraform layout (any
+  `.tf` files); create a project access token (`api`, Reporter) and store it as
+  `BEHOLD_GITLAB_TOKEN`; commit the include above with a real `BEHOLD_ACTION_REF`;
+  open a merge request that changes two resources and check one note with a
+  rendered block and the widget link; push again and check the note is edited,
+  not added; open a second merge request that changes 55 or more resources and
+  check the table, the SVG link and no block shown as text; with a second
+  account, fork the project, open a merge request from the fork and check that
+  the job posts nothing. Record on the issue whether `CI_JOB_TOKEN` can create a
+  note (`POST` with `JOB-TOKEN`), whether `expose_as` accepts the folder, the
+  rendered Mermaid limit actually applied, and that
+  `.../artifacts/file/behold-changed/changed.svg` opens.
+- Forgejo test instance (#1064). On a Forgejo 17 instance with a runner (label
+  `docker`): create a repository, copy `forgejo/behold.yml` to
+  `.forgejo/workflows/`, and put a copy of the `action/` folder where its
+  `uses` line points; open a pull request that changes two resources and check
+  the summary, one comment, and the artifact on the run page; push again and
+  check the comment is edited; check which of `FORGEJO_API_URL`,
+  `FORGEJO_RUN_NUMBER` and `FORGEJO_STEP_SUMMARY` the runner really sets; check
+  the Actions token may comment (repository Actions settings, default token
+  permissions); open a pull request from a fork and check no comment and no
+  error; record the Mermaid block size the instance renders so the `forgejo`
+  row of `FORGE_BUDGETS` can be confirmed.
+- packaging `gitlab/behold.gitlab-ci.yml` as a CI/CD Catalog component, which
+  needs the repository on a GitLab instance

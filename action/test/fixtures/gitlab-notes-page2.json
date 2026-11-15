@@ -1,0 +1,37 @@
+[
+  {
+    "id": 3302,
+    "type": null,
+    "body": "<!-- another-tool -->\nplan summary",
+    "attachment": null,
+    "author": {"id": 2002, "username": "project_4242_bot_1c2d3e", "name": "behold", "state": "active", "locked": false, "avatar_url": "https://gitlab.example.com/avatar/bot", "web_url": "https://gitlab.example.com/project_4242_bot_1c2d3e"},
+    "created_at": "2026-11-10T09:00:00.000Z",
+    "updated_at": "2026-11-10T09:00:00.000Z",
+    "system": false,
+    "noteable_id": 8801,
+    "noteable_type": "MergeRequest",
+    "project_id": 4242,
+    "resolvable": false,
+    "confidential": false,
+    "internal": false,
+    "noteable_iid": 7
+  }
+,
+  {
+    "id": 3303,
+    "type": null,
+    "body": "<!-- behold:changed -->\n**behold:** 1 changed, in 1 root\n",
+    "attachment": null,
+    "author": {"id": 2002, "username": "project_4242_bot_1c2d3e", "name": "behold", "state": "active", "locked": false, "avatar_url": "https://gitlab.example.com/avatar/bot", "web_url": "https://gitlab.example.com/project_4242_bot_1c2d3e"},
+    "created_at": "2026-11-10T09:00:00.000Z",
+    "updated_at": "2026-11-10T09:00:00.000Z",
+    "system": false,
+    "noteable_id": 8801,
+    "noteable_type": "MergeRequest",
+    "project_id": 4242,
+    "resolvable": false,
+    "confidential": false,
+    "internal": false,
+    "noteable_iid": 7
+  }
+]

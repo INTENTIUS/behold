@@ -19,6 +19,12 @@ inputs:
   github-token:
     description: Token for the comment. A fork's pull_request run has a read-only one, and the action then leaves the comment to the workflow_run job.
     default: ${{ github.token }}
+  forge:
+    description: "github, forgejo or auto. auto picks forgejo when the runner sets FORGEJO_ACTIONS and github otherwise. GitLab has no action marketplace; it uses gitlab/behold.gitlab-ci.yml, which runs the same code."
+    default: auto
+  api-url:
+    description: API base URL when the forge's own variable is wrong for the job, for example a Forgejo instance behind a proxy.
+    default: ""
   base:
     description: Base commit. Default is the pull request's base sha.
     default: ""
@@ -94,6 +100,7 @@ runs:
       run: node "$GITHUB_ACTION_PATH/src/main.mjs" read
       env:
         INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_FORGE: ${{ inputs.forge }}
         INPUT_BASE: ${{ inputs.base }}
         INPUT_HEAD: ${{ inputs.head }}
         INPUT_PATH: ${{ inputs.path }}
@@ -138,6 +145,8 @@ runs:
       run: node "$GITHUB_ACTION_PATH/src/main.mjs" report
       env:
         INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_FORGE: ${{ inputs.forge }}
+        BEHOLD_API_URL: ${{ inputs.api-url }}
         INPUT_COMMENT: ${{ inputs.comment }}
         INPUT_MARKER: ${{ inputs.marker }}
         INPUT_OUTPUT_DIR: ${{ steps.read.outputs.out-dir }}
@@ -150,5 +159,6 @@ runs:
       run: node "$GITHUB_ACTION_PATH/src/main.mjs" post
       env:
         INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_FORGE: ${{ inputs.forge }}
         INPUT_MARKER: ${{ inputs.marker }}
         INPUT_HANDOFF_DIR: ${{ inputs.handoff-dir }}
