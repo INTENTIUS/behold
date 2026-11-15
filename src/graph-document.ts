@@ -70,6 +70,10 @@ export interface GraphDocumentNode {
   box?: string;
   /** In a cut (`around`, #1067): true on the cards the cut was asked for. */
   seed?: boolean;
+  /** In a `changed` cut (#1059): what happened to the card between the two revisions, or `neighbour` for a card kept for being near one that did. */
+  diff?: "added" | "removed" | "changed" | "neighbour";
+  /** On a `changed` card: the attribute keys whose values differ between the revisions. */
+  changedAttrs?: string[];
   /** The declaring file, relative to the repository root. Absent when behold cannot place it there. */
   file?: string;
   /** Line in {@link file}, when the reader knows it. */
@@ -111,6 +115,8 @@ export interface GraphDocumentEdge {
   rule?: string;
   /** The consumer-side attribute the reference flows through. */
   via?: string;
+  /** In a `changed` cut (#1059): `added` or `removed` when the edge exists in one revision only. */
+  diff?: "added" | "removed";
 }
 
 /** A box cards are drawn in. */

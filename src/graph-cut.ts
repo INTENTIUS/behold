@@ -45,7 +45,7 @@ function expand(doc: GraphDocument, id: string, nodeIds: ReadonlySet<string>): s
   return doc.nodes.filter((n) => inside(n.box)).map((n) => n.id);
 }
 
-// Seam: `behold graph --around <id>[,<id>...] [--depth n] [--up | --down]` calls cutDocument and exits non-zero on `ok: false`. It waits on #1058 (the CLI).
+// `behold graph --around <id>[,<id>...] [--depth n] [--up | --down]` (src/graph-cli.ts) calls cutDocument and exits 1 on `ok: false`. `cutChanged` (src/graph-changed.ts) takes its neighbours from it too.
 /**
  * Cut `doc` to `ids` and what they reach within `depth` hops. An id the
  * document holds neither as a card nor as a box makes the result `ok: false`

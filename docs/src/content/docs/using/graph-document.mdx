@@ -70,6 +70,14 @@ npx @intentius/behold-graph ./infra --detail 3 -o graph.json
 
 `@intentius/behold-graph` is the same command and a `readGraph` library in a package of its own, for a CI job or an editor extension that cannot carry behold's whole install. `--source` keeps the cards' source text. `--ir` prints the unversioned `{ir, meta}` snapshot instead of the document.
 
+## Cuts
+
+A document can hold part of the graph. `cut.kind` says which: `whole`, `around` (`behold graph --around <id>`, the cards within `--depth` hops of the ids named) or `changed` (`behold graph --changed <base>..<head>`).
+
+A `changed` cut reads the directory at two commits, with no plan and no state, and keeps what differs. Each card carries `diff`: `added`, `removed`, `changed` (with `changedAttrs`, the attribute keys that differ) or `neighbour`, a card within `--depth` hops of one that changed, in either commit. An edge present in one commit only carries `diff` too. The comparison leaves out where a block sits in a file (`file`, `line`, `attrs.source`), so a commit that only reformats a file changes no card. It is read at `--detail 3` unless you pass another, since a card holds no attributes below that.
+
+Past `--budget` cards the cut folds, and its notes say so: first the neighbours become a `changed-folded` count per box, then, if the changed cards alone are over the budget, the cards go and one `changed-table` note per box counts what was added, removed and changed. `cut.folded` is `neighbours` or `table`.
+
 ## As a Mermaid diagram
 
 `--mermaid` prints the graph as a Mermaid flowchart short enough for a comment on a forge. `--forge` picks the character budget it fits: `gitlab` (2,000 characters), `github` (the default) or `forgejo` (20,000 characters and 250 edges each). The github and forgejo figures are provisional until the forge-limits check in `e2e/forge-limits` confirms them.

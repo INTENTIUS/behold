@@ -64,6 +64,8 @@
         "box": { "type": "string", "description": "The id of the innermost group the card is drawn in." },
         "file": { "$ref": "#/$defs/relativePath", "description": "The declaring file, relative to the repository root. Absent when behold cannot place it there." },
         "seed": { "type": "boolean", "description": "In an 'around' cut, true on the cards the cut was asked for." },
+        "diff": { "enum": ["added", "removed", "changed", "neighbour"], "description": "In a 'changed' cut, what happened to the card between the two revisions, or neighbour for a card kept for being near one that did." },
+        "changedAttrs": { "type": "array", "items": { "type": "string" }, "description": "On a changed card, the attribute keys whose values differ between the revisions." },
         "line": { "type": "integer", "minimum": 1 },
         "change": { "type": "string", "description": "What a plan would do to it (create, update, replace, delete), when a plan was read and it changes." },
         "status": { "$ref": "#/$defs/status" },
@@ -89,7 +91,8 @@
         "kind": { "type": "string", "description": "The graph IR's edge kind: ref, needs, calls, triggers, includes, extends, or one added later." },
         "inferred": { "type": "boolean", "description": "True when behold or chant joined the two rather than a reader stating it." },
         "rule": { "type": "string", "description": "On an inferred edge, the join that drew it: behold:<pass>, or chant's catalog rule." },
-        "via": { "type": "string", "description": "The consumer-side attribute the reference flows through." }
+        "via": { "type": "string", "description": "The consumer-side attribute the reference flows through." },
+        "diff": { "enum": ["added", "removed"], "description": "In a 'changed' cut, set when the edge exists in one revision only." }
       }
     },
     "group": {

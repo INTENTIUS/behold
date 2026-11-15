@@ -10,8 +10,10 @@
  * A new format is one more entry in `GRAPH_FORMATS`, and the CLI takes its
  * flag from the entry's name (`--json`, `--ir`, `--mermaid`). The SVG
  * painter (#1061) is listed in `PENDING_FORMATS` until it applies, so its flag
- * already answers with what to use meanwhile instead of an unknown-flag error. A cut (#1067's `cutDocument` in src/graph-cut.ts,
- * #1059's changed cut) works on the document: the CLI hands it to a format
+ * already answers with what to use meanwhile instead of an unknown-flag error.
+ * A cut (#1067's `cutDocument` in src/graph-cut.ts for `--around`, #1059's
+ * `cutChanged` in src/graph-changed.ts for `--changed`) works on the document:
+ * the CLI hands it to a format
  * as `cut`, and `graphDocument` applies it before the format prints, so a
  * format that reads the document needs nothing of its own for it.
  */

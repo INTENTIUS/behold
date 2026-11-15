@@ -159,6 +159,21 @@ Neither holds an absolute path, and a card's source text is left out unless
 you pass `--source`. A root that does not parse is one card in the output, as
 it is in the browser.
 
+Two cuts print part of the graph. `--changed <base>..<head>` keeps what
+changed between two commits (cards added, removed or changed, marked `diff` in
+the document) and the cards within `--depth` hops of them (default 1), read
+from `git archive` into a temporary directory, so the checkout is not touched
+and a shallow clone works once both commits are fetched. A commit that only
+reformats a file changes no card. Past `--budget` cards (default 60) the
+neighbours fold into a count per box, then the cut becomes a table of counts.
+`--around <id>[,<id>...]` keeps the named cards or boxes and what is within
+`--depth` hops, `--up` or `--down` for one direction.
+
+```sh
+npx @intentius/behold graph ./infra --changed origin/main...HEAD -o cut.json
+npx @intentius/behold graph ./infra --around prod/prod/aws_vpc.main --depth 2
+```
+
 The same command ships on its own as `@intentius/behold-graph`
 (`npx @intentius/behold-graph ./infra`), a smaller install with none of the
 server's dependencies; packages/graph/README.md has its budget.
