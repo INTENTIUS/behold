@@ -40,7 +40,9 @@ jobs:
       # The OIDC token npm exchanges for a publish credential. `contents: read`
       # is inherited from the top; both are needed and neither is enough alone.
       id-token: write
-      contents: read
+      # contents: write lets the last step create the GitHub release the
+      # Marketplace listing of the root action.yml sits on (#1063).
+      contents: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
@@ -167,3 +169,17 @@ jobs:
           tar xzf "$archive" mcp-publisher
           ./mcp-publisher login github-oidc
           ./mcp-publisher publish
+      # The GitHub release for this tag. The Marketplace lists the root action.yml
+      # from a release, so each behold release is one the maintainer can tick
+      # "Publish this Action to the GitHub Marketplace" on (#1063). A re-run that
+      # finds the release already there leaves it alone.
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "$GITHUB_REF_NAME already has a release, skipping"
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --generate-notes
+          fi

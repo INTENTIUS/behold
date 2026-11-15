@@ -56,9 +56,8 @@ GitHub Actions" pages, read on 2026-11-15:
 
 1. Cut a behold release as usual with `just release`. The first release with
    the root `action.yml` is `behold-v0.33.0`.
-2. Make sure the tag has a GitHub release. `.github/workflows/release.yml`
-   publishes to npm and the MCP Registry on a `behold-v*` tag and creates no
-   GitHub release, so create one for the tag if it is missing.
+2. `.github/workflows/release.yml` publishes to npm and the MCP Registry on
+   the `behold-v*` tag, then creates the GitHub release for it.
 3. On that release page choose Edit and tick "Publish this Action to the
    GitHub Marketplace". Choose Code review as the primary category and
    Reporting as the secondary one, then update the release.
