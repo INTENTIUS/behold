@@ -1,0 +1,92 @@
+---
+title: A component's graph in TechDocs
+description: Show behold's graph on a Backstage TechDocs page, as an image that needs no change to Backstage and as a live frame once an admin allows the host.
+---
+
+A component's docs page can carry its graph. Backstage TechDocs builds the page with MkDocs and sanitizes the HTML before it draws it, so what survives depends on how the instance is set up. This page gives two ways in: an image that works on an unchanged instance, and a live frame of the [hosted export](/behold/using/pages/) that needs one admin change.
+
+Both were checked in a local TechDocs preview built with `techdocs-cli serve` (CLI 1.14.1, `mkdocs-techdocs-core`) for a sample component. The sanitizer and publisher behaviour below is read from the Backstage source and docs.
+
+## What TechDocs lets through
+
+- TechDocs runs the page through DOMPurify. It strips `script` and forbids `style`.
+- An `iframe` is removed unless `techdocs.sanitizer.allowedIframeHosts` is set and the host of its `src` is in the list. The match is exact against the URL's host, so a port is part of it (`localhost:8081`, not `localhost`).
+- The TechDocs publisher serves any file whose extension contains `htm`, `xml` or `svg` as `text/plain`. A `graph.svg` kept beside the page therefore does not draw in an `<img>`, and the export cannot be served from TechDocs itself. It has to be hosted elsewhere.
+- The Backstage backend sets a content security policy when it serves the app. Its defaults are `img-src 'self' data:`, and no `frame-src`, which falls back to `default-src 'self'`. A production instance can refuse an image or a frame from another host until `backend.csp` lists it. The `techdocs-cli` preview app does not apply that policy, so a page that renders there still needs the check on your own instance.
+
+## Without changing Backstage: an image
+
+Write the component's cut as a static SVG with [`behold graph --svg`](/behold/using/graph-document/#as-an-svg-file), turn it into a PNG, and keep the PNG in the component's `docs/` folder. MkDocs copies it into the site, TechDocs serves `.png` with the right type, and the image is on the same origin as the page.
+
+```sh
+npx @intentius/behold graph . --around prod/prod/aws_s3_bucket.artifacts --depth 2 \
+  --svg --theme light -o graph.svg
+rsvg-convert -w 1400 graph.svg -o docs/graph/artifacts.png
+```
+
+`--around` takes the ids of the cards to centre on (see [the graph document](/behold/using/graph-document/) for the ids, or read them from `graph.json`), and `--depth` is how many hops to keep. Leave `--around` off for the whole graph. Then in `docs/index.md`:
+
+```md
+![The artifacts bucket and what is attached to it](graph/artifacts.png)
+```
+
+A graph small enough to embed can skip the file: put the SVG in the page as a `data:` URI, which DOMPurify keeps on an `img` and which the default `img-src` allows.
+
+```md
+![The artifacts bucket](data:image/svg+xml;base64,PHN2Zy...)
+```
+
+The picture is as fresh as the last time the command ran, so run it in the component's own CI before the docs build, or commit the file with the change it draws.
+
+## With one admin line: a live frame
+
+Publish the export with the [Pages workflow](/behold/using/pages/) (or any static host), then allow its host in the Backstage `app-config.yaml`:
+
+```yaml
+techdocs:
+  sanitizer:
+    allowedIframeHosts:
+      - OWNER.github.io
+```
+
+On an instance that sets `backend.csp`, add the same host to `frame-src` (and keep `'self'` in it):
+
+```yaml
+backend:
+  csp:
+    frame-src: ["'self'", 'https://OWNER.github.io']
+```
+
+Then put the frame in the page:
+
+```html
+<iframe src="https://OWNER.github.io/REPO/?embed=1&bare=1&theme=light&member=prod"
+        title="artifacts-service graph" width="100%" height="520"
+        style="border:1px solid #ccc" loading="lazy"></iframe>
+```
+
+The view parameters are the ones the export already reads:
+
+- `embed=1&bare=1` draws the graph alone, with no side panel, inspect pane or buttons.
+- `theme=light` or `theme=dark` sets the colours for this frame only. Pick the one that matches your Backstage theme.
+- `member=<name>` shows one member of a [declared workspace](/behold/using/workspace/), such as a Terraform root, and nothing else. `focus=<box>` brings the named box forward and leaves the others in view, so for one component use `member`.
+
+If the host is not allowed, TechDocs removes the whole `iframe` and the page shows the rest. Put the image from the section above under the frame and the page still shows the graph:
+
+```md
+<iframe ...></iframe>
+
+![The same graph as an image](graph/artifacts.png)
+```
+
+In the local check the page with the host allow-listed drew the frame and the image, and the same page without the line drew the image alone.
+
+## A frame of the one-file viewer
+
+When the export writes `behold.html` (the single-file viewer, behold#1070), a component's roots can be framed from `graph.json` with `behold.html?src=graph.json&focus=<root box>`. The viewer reads `src` only from its own origin, so it has to be served from the same site as the `graph.json` it opens. This form is not in a release yet, so use `member` until it is.
+
+## Hosting the export
+
+GitHub Pages and an S3 static website host serve the export as ordinary static files, and the export adds no frame restrictions of its own. Neither was tested as a frame host here, and a CDN, a bucket policy or the host's own settings can add `X-Frame-Options` or `frame-ancestors`, so open the frame once from your Backstage origin after you publish. A host that sets `frame-ancestors` has to list the Backstage origin.
+
+The export is a snapshot: the frame shows the graph as of the last publish. Setting this up in a Backstage plugin or an MkDocs plugin is not part of this recipe.

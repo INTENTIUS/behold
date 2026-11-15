@@ -96,6 +96,7 @@ export default defineConfig({
 						{ label: 'Export a snapshot', slug: 'using/export' },
 						{ label: 'The graph document', slug: 'using/graph-document' },
 						{ label: 'Publish to GitHub Pages', slug: 'using/pages' },
+						{ label: 'A graph in TechDocs', slug: 'using/techdocs' },
 						{ label: 'Open in behold from Argo CD', slug: 'using/argocd-link' },
 						{ label: 'Outside the cluster in Argo CD', slug: 'using/argocd-extension' },
 						{ label: 'Draw the graph in Grafana', slug: 'using/grafana' },
