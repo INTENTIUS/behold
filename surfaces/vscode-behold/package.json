@@ -1,0 +1,84 @@
+{
+  "name": "behold",
+  "displayName": "behold: infrastructure graph",
+  "description": "Draw the open workspace's infrastructure from its files, in a panel beside the editor. A click on a card opens its file.",
+  "version": "0.1.0",
+  "publisher": "intentius",
+  "license": "Apache-2.0",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/INTENTIUS/behold.git",
+    "directory": "surfaces/vscode-behold"
+  },
+  "bugs": {
+    "url": "https://github.com/INTENTIUS/behold/issues"
+  },
+  "homepage": "https://github.com/INTENTIUS/behold/tree/main/surfaces/vscode-behold#readme",
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "terraform",
+    "opentofu",
+    "infrastructure",
+    "graph",
+    "chant"
+  ],
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "extensionKind": [
+    "workspace"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onCommand:behold.showGraph",
+    "workspaceContains:**/*.tf"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "behold runs chant over the folder it draws, so it reads only workspaces you trust."
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "behold reads the workspace's files from disk."
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "behold.showGraph",
+        "title": "Show infrastructure graph",
+        "category": "behold"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "behold.showGraph",
+          "when": "explorerResourceIsFolder",
+          "group": "navigation@99"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "tsc": "tsc --noEmit",
+    "build": "node scripts/build.mjs",
+    "test": "vitest run",
+    "test:vscode": "node scripts/test-vscode.mjs",
+    "package": "node scripts/package.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/vscode": "~1.90.0",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^4.1.1",
+    "esbuild": "^0.28.1",
+    "typescript": "^5.9.0",
+    "vitest": "^4.0.0"
+  }
+}

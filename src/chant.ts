@@ -286,6 +286,8 @@ export interface ChantResolution extends Partial<ChantPackage> {
  * resolution `runChantRaw` uses, exposed so `behold doctor` reports the same
  * answer the server acts on rather than probing separately (#236). */
 export function resolveChant(projectDir?: string): ChantResolution {
+  const forced = process.env.BEHOLD_CHANT_BIN?.trim();
+  if (forced) return { source: "path", bin: forced, ...forcedChantPackage(forced) };
   const own = chantPackageFrom(createRequire(import.meta.url));
   if (projectDir) {
     const fromProject = chantPackageFrom(createRequire(join(resolve(projectDir), "noop.js")));
@@ -299,6 +301,25 @@ export function resolveChant(projectDir?: string): ChantResolution {
   }
   if (own) return { source: "behold", ...own };
   return { source: "path", bin: "chant" };
+}
+
+/**
+ * `BEHOLD_CHANT_BIN` names the chant to run, for a host that carries its own
+ * (the VS Code extension, which has no `node` on PATH to run `bin/chant` with).
+ * A `.js`, `.mjs` or `.cjs` file is run by this process's own runtime
+ * (`spawnChant`); the package it sits in, when it is `@intentius/chant`, gives
+ * the root and version the floors read.
+ */
+function forcedChantPackage(bin: string): Partial<ChantPackage> {
+  for (let dir = dirname(resolve(bin)); ; dir = dirname(dir)) {
+    try {
+      const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as { name?: string; version?: string };
+      if (pkg.name === "@intentius/chant") return { root: dir, ...(pkg.version ? { version: pkg.version } : {}) };
+    } catch {
+      // keep walking up
+    }
+    if (dirname(dir) === dir) return {};
+  }
 }
 
 /** behold's declared `@intentius/chant` floor — the caret range in its own
@@ -417,9 +438,13 @@ function spawnChant(
     // Read workers own a process group: killing only npx leaves tsx/Node alive.
     // Writes retain their existing lifetime and process behavior.
     const grouped = !!signal && process.platform !== "win32";
-    const proc = spawn(bin, args, {
+    // A script (`BEHOLD_CHANT_BIN`) runs under this process's own runtime; in an
+    // Electron host that is the host binary, which acts as Node with this variable.
+    const script = /\.[cm]?js$/.test(bin);
+    const baseEnv = envOverride ? (signal ? envOverride : { ...process.env, ...envOverride }) : undefined;
+    const proc = spawn(script ? process.execPath : bin, script ? [bin, ...args] : args, {
       ...(projectDir ? { cwd: projectDir } : {}),
-      ...(envOverride ? { env: signal ? envOverride : { ...process.env, ...envOverride } } : {}),
+      ...(script ? { env: { ...(baseEnv ?? process.env), ELECTRON_RUN_AS_NODE: "1" } } : baseEnv ? { env: baseEnv } : {}),
       ...(grouped ? { detached: true } : {}),
       stdio: ["ignore", "pipe", "pipe"],
     });

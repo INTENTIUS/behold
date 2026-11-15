@@ -17,7 +17,9 @@
  *
  * Messages in: `behold:graph { document, icons? }`, `behold:theme { theme?,
  * vars? }` and `behold:view { node?, focus? }`. Out: `behold:ready` once,
- * and `behold:select { id, kind, file }` when a card or a box is picked.
+ * `behold:select { id, kind, file }` when a card or a box is picked,
+ * `behold:drawn { cards }` after each draw and `behold:refused { error }` when
+ * a document is not drawn (#1072: an editor host reports the one and tests the other).
  */
 import type { VendoredIcon } from "../icon-svg.ts";
 

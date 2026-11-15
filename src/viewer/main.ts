@@ -152,6 +152,7 @@ function boot(): void {
     const checked = checkGraphDocument(value);
     if (!checked.ok) {
       set({ state: "refused", error: checked.error });
+      transport.send({ type: "behold:refused", error: checked.error });
       return say(checked.error);
     }
     if (extraIcons) icons = { ...icons, ...extraIcons };
@@ -162,6 +163,7 @@ function boot(): void {
     if (mine !== drawing) return; // a newer document arrived while this one was laid out
     if (!r.ok) {
       set({ state: "refused", error: r.error, where: r.where });
+      transport.send({ type: "behold:refused", error: r.error });
       return say(r.error);
     }
     shown = checked.document;
@@ -169,6 +171,7 @@ function boot(): void {
     say("");
     applyView();
     set({ state: "drawn", cards: r.cards, where: r.where, layoutMs: r.ms, firstPaintMs: Math.round(performance.now() - t0), error: undefined });
+    transport.send({ type: "behold:drawn", cards: r.cards });
   }
 
   function applyView() {
