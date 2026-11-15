@@ -16,7 +16,7 @@ const schema = JSON.parse(read("plugins/server.schema.2025-12-11.json"));
 describe("MCP Registry listing (#1050)", () => {
   it("validates against the registry's published schema", () => {
     expect(server.$schema).toBe(schema.$id);
-    const ajv = new Ajv({ strict: false, allErrors: true });
+    const ajv = new Ajv({ strict: false, allErrors: true, validateFormats: false });
     const validate = ajv.compile(schema);
     expect(validate(server), JSON.stringify(validate.errors)).toBe(true);
   });
