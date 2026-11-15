@@ -11,7 +11,9 @@
  *   - `Helm::Chart` / `Helm::Release` → the Helm wheel
  *
  * Provenance, licences and the pinned upstream revisions are in THIRD_PARTY.md;
- * `scripts/vendor-icons.mjs` re-fetches the corpus.
+ * `scripts/vendor-icons.mjs` re-fetches the corpus. The painter reads it from
+ * src/icons.generated.ts, which `npm run generate:icons` writes from web/icons
+ * (#1069), so this module reads no file and bundles for a browser.
  *
  * `src/render.ts` registers these two functions as pinhole presentation packs
  * (`registerPack`, pinhole 0.3.0 #95), which is what puts the marks on every
@@ -22,9 +24,7 @@
  * One mark also carries a contrast plate (#246) — see {@link PLATE_FILL}.
  */
 
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { VENDORED_ICONS } from "./icons.generated.ts";
 
 /**
  * A glyph carrying its own geometry. `colored: true` tells the painter to emit
@@ -37,30 +37,7 @@ export interface PackGlyph {
   viewBox: string;
 }
 
-/** `src/..` in dev and `dist/..` in the published bundle both land on the package root. */
-const ICON_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "web", "icons");
-
 const cache = new Map<string, PackGlyph>();
-
-/**
- * Drop the namespace prefixes the body can no longer resolve. A vendored file
- * declares `xmlns:inkscape`/`xmlns:sodipodi`/`xmlns:xlink` on its root `<svg>`,
- * and that root is exactly what {@link loadIcon} throws away — so every
- * surviving `inkscape:*` attribute becomes an unbound prefix in the document
- * pinhole splices the body into, and the whole SVG stops being well-formed XML.
- * The browser's HTML parser shrugs; an `image/svg+xml` consumer (a downloaded
- * `↓ SVG` export, a snapshot opened directly) does not.
- *
- * `inkscape:*`/`sodipodi:*` are editor state — Inkscape's own parametrics live
- * alongside the real `d`, so dropping them is lossless. `xlink:href` is a live
- * reference (the Argo mark's `<use>`), rewritten to the plain SVG 2 `href`
- * every current browser resolves.
- */
-function unprefix(body: string): string {
-  return body
-    .replace(/\s(?:inkscape|sodipodi):[\w-]+\s*=\s*(["'])[\s\S]*?\1/g, "")
-    .replace(/\sxlink:href\s*=/g, " href=");
-}
 
 /**
  * The opaque ground painted under a plated mark (#246).
@@ -137,21 +114,15 @@ function plate(glyph: PackGlyph): PackGlyph {
   return { ...glyph, body: `${ground}<g transform="${inset}">${glyph.body}</g>` };
 }
 
-/** Read a vendored SVG and split it into its viewBox and its inner markup. */
+/** A vendored icon's viewBox and inner markup (src/icon-svg.ts split it at build time). */
 export function loadIcon(rel: string): PackGlyph {
   const hit = cache.get(rel);
   if (hit) return hit;
 
-  const raw = readFileSync(join(ICON_ROOT, `${rel}.svg`), "utf8");
-  const open = raw.indexOf("<svg");
-  const openEnd = raw.indexOf(">", open);
-  const close = raw.lastIndexOf("</svg");
-  if (open < 0 || openEnd < 0 || close < 0) throw new Error(`malformed vendored icon: ${rel}.svg`);
+  const icon = Object.hasOwn(VENDORED_ICONS, rel) ? VENDORED_ICONS[rel] : undefined;
+  if (!icon) throw new Error(`no vendored icon: ${rel}.svg (run \`npm run generate:icons\` after adding one to web/icons)`);
 
-  const viewBox = /\bviewBox\s*=\s*(["'])(.*?)\1/.exec(raw.slice(open, openEnd))?.[2];
-  if (!viewBox) throw new Error(`vendored icon has no viewBox: ${rel}.svg`);
-
-  const bare: PackGlyph = { body: unprefix(raw.slice(openEnd + 1, close).trim()), colored: true, viewBox };
+  const bare: PackGlyph = { body: icon.body, colored: true, viewBox: icon.viewBox };
   const glyph = PLATED.has(rel) ? plate(bare) : bare;
   cache.set(rel, glyph);
   return glyph;

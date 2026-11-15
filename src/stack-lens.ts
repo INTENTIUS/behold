@@ -21,7 +21,7 @@
 import type { GraphIR, IREdge, IRNode } from "@intentius/chant";
 import { isWired } from "../web/edge-weight.js";
 import { SUMMARY_LEXICON, summaryStatus } from "./collapse-lens.ts";
-import { CHOUDOUFU_LEXICON } from "./choudoufu-member.ts";
+import { CHOUDOUFU_LEXICON } from "./choudoufu-card.ts";
 import { TERRAFORM_LEXICON } from "./terraform-lens.ts";
 
 /** Lexicons whose cards are titled from `attrs.address` (./card-face.ts). */

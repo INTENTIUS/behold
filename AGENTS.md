@@ -2260,6 +2260,16 @@ live here, with the enforceable ones enforced.
   from the environment and run under `e2e/lib/safe-env.sh`, which keeps real
   cloud credentials out of reach and fails on a real-cloud rejection in the
   log; e2e/README.md has the variables (behold#1032).
+- The painter bundles for a browser (#1069). `src/render.ts` and what it
+  imports take no Node built-in: `npm run check:browser-bundle` bundles it
+  with esbuild for `--platform=browser`, fails naming the import chain to any
+  `node:` import, and prints the minified and gzipped sizes; CI runs it. A
+  constant or card rule the painter needs from a module that reads disk or
+  spawns lives in a module of its own (src/card-marks.ts,
+  src/choudoufu-card.ts, src/carve-state.ts) and is re-exported from the old
+  one. The icons come from src/icons.generated.ts: after a vendor script
+  changes `web/icons`, run `npm run generate:icons` (`npm run check:icons`
+  and src/generate-icons.test.ts fail until you do).
 - **The local gate** is `just check` (tsc, tests, build). The tests never read
   the caller's environment (behold#1013): src/test-env.ts, vitest's setup
   file, removes CHOUDOUFU_BIN, PLUNGE_BIN and the other variables behold

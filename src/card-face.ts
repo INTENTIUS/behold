@@ -60,7 +60,7 @@
  */
 import type { GraphIR, IRNode } from "@intentius/chant";
 import type { NodeOverride } from "@intentius/pinhole";
-import { CHOUDOUFU_LEXICON, choudoufuCardFields } from "./choudoufu-member.ts";
+import { CHOUDOUFU_LEXICON, choudoufuCardFields } from "./choudoufu-card.ts";
 import { isTerraformCard } from "./terraform-lens.ts";
 
 /** The three SVG attributes pinhole stamps a node id onto. */
