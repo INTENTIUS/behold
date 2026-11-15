@@ -25,6 +25,7 @@
  */
 
 import { VENDORED_ICONS } from "./icons.generated.ts";
+import type { VendoredIcon } from "./icon-svg.ts";
 
 /**
  * A glyph carrying its own geometry. `colored: true` tells the painter to emit
@@ -114,12 +115,54 @@ function plate(glyph: PackGlyph): PackGlyph {
   return { ...glyph, body: `${ground}<g transform="${inset}">${glyph.body}</g>` };
 }
 
+/**
+ * The icons a host handed over (behold#1070). The single-file viewer is built
+ * without src/icons.generated.ts, which is most of the painter's size, and
+ * takes the icons a document needs from whoever gives it the document
+ * ({@link recordIcons} works them out). Once any are given, an icon that is
+ * not among them falls through to pinhole's keyword glyph instead of
+ * throwing, since a host may give none at all.
+ */
+const supplied: Record<string, VendoredIcon> = {};
+let partial = false;
+
+/** Add icons to the table the packs read, by the same keys as src/icons.generated.ts. */
+export function supplyIcons(icons: Readonly<Record<string, VendoredIcon>>): void {
+  partial = true;
+  for (const [rel, icon] of Object.entries(icons)) {
+    if (icon && typeof icon.body === "string" && typeof icon.viewBox === "string") supplied[rel] = { body: icon.body, viewBox: icon.viewBox };
+  }
+}
+
+let recording: Map<string, VendoredIcon> | undefined;
+
+/** Run `fn` and return, beside its value, every vendored icon it painted: what a host hands the viewer with a document. */
+export function recordIcons<T>(fn: () => T): { value: T; icons: Record<string, VendoredIcon> } {
+  const seen = new Map<string, VendoredIcon>();
+  const outer = recording;
+  recording = seen;
+  try {
+    const value = fn();
+    return { value, icons: Object.fromEntries([...seen].sort((a, b) => (a[0] < b[0] ? -1 : 1))) };
+  } finally {
+    recording = outer;
+  }
+}
+
+/** {@link loadIcon}, or undefined when the viewer was not given that icon. */
+export function iconOrFallthrough(rel: string): PackGlyph | undefined {
+  if (partial && !Object.hasOwn(VENDORED_ICONS, rel) && !Object.hasOwn(supplied, rel)) return undefined;
+  return loadIcon(rel);
+}
+
 /** A vendored icon's viewBox and inner markup (src/icon-svg.ts split it at build time). */
 export function loadIcon(rel: string): PackGlyph {
+  const vendored = Object.hasOwn(VENDORED_ICONS, rel) ? VENDORED_ICONS[rel] : Object.hasOwn(supplied, rel) ? supplied[rel] : undefined;
+  if (vendored && recording) recording.set(rel, vendored);
   const hit = cache.get(rel);
   if (hit) return hit;
 
-  const icon = Object.hasOwn(VENDORED_ICONS, rel) ? VENDORED_ICONS[rel] : undefined;
+  const icon = vendored;
   if (!icon) throw new Error(`no vendored icon: ${rel}.svg (run \`npm run generate:icons\` after adding one to web/icons)`);
 
   const bare: PackGlyph = { body: icon.body, colored: true, viewBox: icon.viewBox };
@@ -181,15 +224,15 @@ const HELM_MARK_KINDS = new Set(["Helm::Chart", "Helm::Release"]);
 /** The icon for a `k8s` lexicon kind, or undefined to fall through. */
 export function k8sIconFor(kind: string): PackGlyph | undefined {
   for (const [prefix, rel] of K8S_MARK_BY_PREFIX) {
-    if (kind.startsWith(prefix)) return loadIcon(rel);
+    if (kind.startsWith(prefix)) return iconOrFallthrough(rel);
   }
   const stem = K8S_ICON_BY_KIND[kind];
-  return stem ? loadIcon(`k8s/${stem}`) : undefined;
+  return stem ? iconOrFallthrough(`k8s/${stem}`) : undefined;
 }
 
 /** The icon for a `helm` lexicon kind, or undefined to fall through. */
 export function helmIconFor(kind: string): PackGlyph | undefined {
-  return HELM_MARK_KINDS.has(kind) ? loadIcon("cncf/helm") : undefined;
+  return HELM_MARK_KINDS.has(kind) ? iconOrFallthrough("cncf/helm") : undefined;
 }
 
 /** Every kind this module answers for — the test's enumeration, and the docs'. */

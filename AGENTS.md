@@ -1529,6 +1529,61 @@ packages, against 238 MB and 162 for behold; the budget is 140 MB and 60.
 Most of it is chant itself (73 MB) and the TypeScript compiler chant loads
 configs with (23 MB). Publishing the package is the maintainer's step.
 
+## The single-file viewer (#1070)
+
+`npm run build:viewer` (scripts/build-viewer.mts) writes
+`dist/behold-viewer/`: `index.html` (no inline script), `viewer.js` (a
+classic script), `viewer.mjs` (the same as an ES module), `viewer.css`, a
+stand-in `graph.js`, and `viewer.html` with the script and the styles
+inlined, for an MCP resource or an unzipped artifact. It draws a
+`behold-graph/1` document with the painter `/api/graph` uses: the document is
+turned back into the IR (src/viewer/document-ir.ts, a card's box walked up to
+its stack, pipeline, wave and container) and painted by `paintDocument`
+(src/viewer/paint.ts), with the same box badges. The source is src/viewer/.
+
+The document comes, in this order, from a `behold:graph {document, icons?}`
+message, from `window.__BEHOLD_GRAPH__` (graph.js, the only form that works
+from `file://`), or from `?src=<same-origin path>`. Options come from the
+query string and from `window.__BEHOLD_VIEWER__`, the query winning:
+`theme` (light, dark, blueprint, aws; absent, `prefers-color-scheme`),
+`node`, `focus` (box keys or ids), `host` (the parent's origin), `transport`
+(post, vscode, mcp, none) and `src`. In: `behold:theme {theme?, vars?}` (CSS
+custom properties only) and `behold:view {node?, focus?}`. Out:
+`behold:ready`, then `behold:select {id, kind, file}` per pick.
+src/viewer/transport.ts has the three hosts: a parent page (`postMessage` to
+`host` only, and only its messages read), a VS Code webview
+(`acquireVsCodeApi`, called once), and an MCP Apps view (JSON-RPC:
+`ui/initialize`, the document from `ui/notifications/tool-result`'s
+`structuredContent`, the theme from the host context, a pick sent as
+`ui/update-model-context`). With no `transport`, a page with
+`acquireVsCodeApi` is VS Code, one with `host` is a parent page, and a
+framed page with neither is MCP Apps.
+
+The layout runs in a Web Worker: the script starts itself as the worker,
+from its own URL or, inlined, from its own text, and paints on the page when
+no worker starts (index.html opened from `file://`). A document with no
+boxes above `FLAT_LIMIT` cards is refused with the reason, since one flat
+layout grows far faster than the card count. The page sets
+`data-behold-viewer` on `<html>` (`waiting`, `drawing`, `drawn`, `refused`)
+and `window.__BEHOLD_VIEWER_STATE__` (cards, where it laid out, time to first
+paint).
+
+The vendored icon table is left out of the build: it is 544 KB of the 684 KB
+painter. A host hands over the icons its document uses, as
+`window.__BEHOLD_ICONS__` or the message's `icons`; `graphScript(doc)`
+(src/viewer/graph-script.ts) writes a graph.js with both, and
+`documentIcons(doc)` finds the icons by painting the document once with the
+full table (`recordIcons` in src/icon-packs.ts). Once a host supplies icons,
+an icon it did not supply falls through to pinhole's keyword glyph
+(`supplyIcons`). The build fails above 300 KB minified or 100 KB gzipped for
+`viewer.js` or `viewer.mjs`, above 1 MB for the directory, on any Node
+built-in in the bundle, and when `viewer.js` names `EventSource` or
+`WebSocket`. On pinhole 0.5.0 it fails on the four `node:` imports in
+pinhole's root (#1069), which pinhole 0.6.0 removes.
+src/viewer/viewer-browser.test.ts opens it in headless Chrome from `file://`
+and under `default-src 'none'; script-src 'self'; style-src 'self'
+'unsafe-inline'`, and skips while pinhole is 0.5.0.
+
 ## Over MCP: `behold mcp` (#916)
 
 `behold mcp [project-dir] [--url <serve> | --port <n>]` is a stdio MCP server
