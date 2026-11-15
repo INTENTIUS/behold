@@ -95,7 +95,7 @@ describe("ask with resource", () => {
 
 describe("the tool list", () => {
   it("is unchanged, and still passes the write-word guard", () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(["ask", "show", "shot", "capabilities"]);
+    expect(TOOLS.map((t) => t.name)).toEqual(["ask", "show", "shot", "capabilities", "graph", "graph_document"]);
     expect(() => assertNoWrites(TOOLS)).not.toThrow();
     const ask = TOOLS.find((t) => t.name === "ask")!;
     expect(Object.keys(ask.inputSchema.properties)).toEqual(expect.arrayContaining(["query", "cypher", "params", "resource", "template", "inputs"]));
