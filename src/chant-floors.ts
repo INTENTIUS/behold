@@ -46,6 +46,13 @@ export const ORG_SCOPE_CHANT_FLOOR = "0.124.47";
 export const EXECUTOR_CHANT_FLOOR = "0.124.47";
 /** The first chant that writes contract 1. An older one has no `workspace` command at all. */
 export const WORKSPACE_CHANT_FLOOR = "0.81.0";
+/** The first chant whose `workspace graph` passes `--detail` on to its members, so a composed read can be asked for a detail tier
+ * (INTENTIUS/chant#4228, behold#1056). An older one rejects the flag outright (chant#1127), so it is never sent there. */
+export const WORKSPACE_DETAIL_CHANT_FLOOR = "0.124.35";
+/** The first chant that supplies the member kinds `kustomize`, `argo-app`, `flux-kustomization`, `helm-chart`, `cloudformation` and `cdk`
+ * to a workspace, through the k8s, helm and aws lexicons' workspace-kinds.json (INTENTIUS/chant#3179, behold#1056). The workspace pins
+ * the lexicon at a release that carries it. */
+export const WORKSPACE_KINDS_CHANT_FLOOR = "0.124.49";
 /** The first chant whose intent document carries `why` (INTENTIUS/chant#3312). */
 export const WHY_CHANT_FLOOR = "0.102.0";
 /** The chant that ships `chant operator log` (chant#2029). */
@@ -241,6 +248,8 @@ export interface ChantFloor {
  * one entry per new read. */
 export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "workspace read contract", floor: WORKSPACE_CHANT_FLOOR, adds: "chant workspace (contract 1)" },
+  { read: "workspace graph detail", floor: WORKSPACE_DETAIL_CHANT_FLOOR, adds: "workspace graph --detail reaches each member (chant#4228)", degraded: "a detail tier is read from the member's own chant graph, which draws nothing for a kustomize or Argo member" },
+  { read: "kubernetes, helm and cloudformation members", floor: WORKSPACE_KINDS_CHANT_FLOOR, adds: "the kustomize, argo-app, flux-kustomization, helm-chart and cloudformation member kinds (chant#3179)", degraded: "a member of one of those kinds draws nothing" },
   { read: "why", floor: WHY_CHANT_FLOOR, adds: "graph --intent writes a why (chant#3312)" },
   { read: "carve status", floor: CARVE_STATUS_FLOOR, adds: "chant carve status (chant#2038)" },
   { read: "operator log", floor: OPERATOR_LOG_FLOOR, adds: "chant operator log (chant#2029)" },

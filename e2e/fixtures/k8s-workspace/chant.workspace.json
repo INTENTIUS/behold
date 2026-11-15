@@ -1,0 +1,22 @@
+{
+  "name": "k8s-workspace",
+  "schema": 1,
+  "pins": [
+    {
+      "package": "@intentius/chant-lexicon-k8s",
+      "version": "0.124.58"
+    }
+  ],
+  "members": [
+    {
+      "name": "web",
+      "dir": "apps/web",
+      "kind": "kustomize"
+    },
+    {
+      "name": "web-app",
+      "dir": "argocd/web-app",
+      "kind": "argo-app"
+    }
+  ]
+}

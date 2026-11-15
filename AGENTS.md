@@ -45,6 +45,16 @@ draws nothing. A declaration with `members: []` (terragucci writes one for its
 gates) declares nothing to draw, so serve, export and doctor read the
 directory as they would without one, and say so (#489). `.behold.json`'s `members` are ignored beside a declaration;
 `behold doctor --fix` writes the declaration for an estate that has only them.
+A `kustomize`, `argo-app`, `flux-kustomization`, `helm-chart` or `cloudformation`
+member is read the same way (#1056), and the detail tier of a read is passed on
+as `--detail` (chant 0.124.35, `WORKSPACE_DETAIL_CHANT_FLOOR`). The kinds come
+from the k8s, helm and aws lexicons the workspace pins (chant 0.124.49,
+`WORKSPACE_KINDS_CHANT_FLOOR`). At chant's default detail a k8s node carries only
+`apiVersion` and `kind`; the Argo and Flux path edges of src/estate-edges.ts need
+`spec`, which comes at detail 3. A lens, `up`, `down` and a namespace stay on the
+member's own `chant graph`. A kustomize member needs `kustomize` or `kubectl` on
+PATH and a helm-chart member needs `helm`. The fixture is
+e2e/fixtures/k8s-workspace and the test src/k8s-member.test.ts.
 Several directories on the command line (`behold serve a b c`) stay the loose
 view behold composes itself.
 
