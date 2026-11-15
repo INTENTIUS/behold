@@ -1310,6 +1310,7 @@ async function runExportCmd(rest: string[]): Promise<void> {
       ...(settledQueries.queries ? { queries: settledQueries.queries } : {}),
       ...(settledCountBy.countBy ? { countBy: settledCountBy.countBy } : {}),
       ...(plan ? { plan } : {}),
+      ...(destination ? { history: true } : {}),
     },
   ).catch((e: unknown) => {
     if (!(e instanceof ExportRefusal)) throw e;

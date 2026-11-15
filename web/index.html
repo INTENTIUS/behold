@@ -9,20 +9,7 @@
          applyTheme() keeps what it last painted under behold.theme.paint; this
          applies that record when it belongs to the stored theme. A blocked or
          empty store leaves the default as it is. -->
-    <script>
-      // The kiosk's frame (?bare=1) paints nothing until its theme is applied, so the kiosk's own ground shows through:
-      // the stylesheet's default --bg is white, and a first load with no stored paint flashed it over a dark pane.
-      try { if (/[?&]bare=1(&|$)/.test(location.search)) document.documentElement.style.setProperty("--bg", "transparent"); } catch (e) { /* the default paints */ }
-      try {
-        var beholdTheme = localStorage.getItem("behold.theme");
-        var beholdPaint = beholdTheme && JSON.parse(localStorage.getItem("behold.theme.paint") || "null");
-        if (beholdPaint && beholdPaint.name === beholdTheme && beholdPaint.vars) {
-          var beholdRoot = document.documentElement;
-          for (var k in beholdPaint.vars) if (k.slice(0, 2) === "--") beholdRoot.style.setProperty(k, beholdPaint.vars[k]);
-          if (beholdPaint.scheme) beholdRoot.style.setProperty("color-scheme", beholdPaint.scheme);
-        }
-      } catch (e) { /* private mode or a bad record: the default paints */ }
-    </script>
+    <script src="./theme-paint.js"></script>
     <title>behold</title>
     <!-- #393: "nothing in the browser console" includes the 404 every page
          load has always fetched for itself. behold ships no icon file and its
@@ -1204,11 +1191,6 @@
     <div id="palette"><div class="box"><input id="pal-input" placeholder="type a command, or an address…   (Esc to close)" autocomplete="off"><div id="pal-list"></div></div></div>
     <script type="module" src="./app.js"></script>
     <!-- behold#725: the shared beat paused in a hidden tab, and the shared tooltip for the graph's badges. -->
-    <script type="module">
-      import { installMotion } from "./motion.js";
-      import { installTooltips } from "./tooltip.js";
-      installMotion();
-      installTooltips(document);
-    </script>
+    <script type="module" src="./boot-motion.js"></script>
   </body>
 </html>
