@@ -94,6 +94,7 @@ export default defineConfig({
 						{ label: 'Feature flags on the graph', slug: 'using/flags' },
 						{ label: 'Collision marks', slug: 'using/collisions' },
 						{ label: 'Export a snapshot', slug: 'using/export' },
+						{ label: 'Open in behold from Argo CD', slug: 'using/argocd-link' },
 						{ label: 'The three-cloud demo', slug: 'using/three-cloud' },
 						{ label: 'Driving it from an agent', slug: 'using/agents' },
 					],
