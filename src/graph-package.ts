@@ -17,3 +17,5 @@ export { graphUsage, runGraph, type GraphCliIO } from "./graph-cli.ts";
 export { toDocument, type DocumentMember, type GraphSnapshot, type ToDocumentOptions } from "./to-document.ts";
 export { documentOptions, documentScrubber, repositoryRoot, type DocumentReadContext } from "./graph-document-context.ts";
 export * from "./graph-document.ts";
+export { escapeLabel, forgeComment, mermaidDiagram, rootTable, toMermaid, type ForgeComment, type MermaidOptions, type MermaidResult } from "./graph-mermaid.ts";
+export { DEFAULT_FORGE, FORGES, FORGE_BUDGETS, isForge, type Forge, type ForgeBudget } from "./mermaid-budgets.ts";

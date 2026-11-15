@@ -70,6 +70,16 @@ npx @intentius/behold-graph ./infra --detail 3 -o graph.json
 
 `@intentius/behold-graph` is the same command and a `readGraph` library in a package of its own, for a CI job or an editor extension that cannot carry behold's whole install. `--source` keeps the cards' source text. `--ir` prints the unversioned `{ir, meta}` snapshot instead of the document.
 
+## As a Mermaid diagram
+
+`--mermaid` prints the graph as a Mermaid flowchart short enough for a comment on a forge. `--forge` picks the character budget it fits: `gitlab` (2,000 characters), `github` (the default) or `forgejo` (20,000 characters and 250 edges each). The github and forgejo figures are provisional until the forge-limits check in `e2e/forge-limits` confirms them.
+
+```sh
+npx @intentius/behold graph ./infra --mermaid --forge gitlab
+```
+
+Boxes are subgraphs, inferred edges are dotted, and a document with a plan's changes or a cut's seeds paints its cards as added, changed, removed or neighbour. When the graph does not fit, neighbours are dropped first, then whole boxes, and the last card says how many cards are not shown. The output is never over the budget, and two runs on the same input print the same text.
+
 ## Versions
 
 Within `behold-graph/1`, fields are only ever added. A reader ignores the fields it does not know. A change a reader could not ignore becomes `behold-graph/2`, and a reader written for version 1 should refuse it rather than draw it.
