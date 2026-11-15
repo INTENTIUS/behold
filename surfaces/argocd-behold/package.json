@@ -1,0 +1,26 @@
+{
+  "name": "argocd-behold",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Outside the cluster: behold's placeholder cards for what an Argo CD Application and its resources name, as a UI extension for Argo CD 3.5 and later",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "tsc": "tsc --noEmit",
+    "test": "vitest run",
+    "package": "node scripts/package.mjs"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "~5.6.2",
+    "vitest": "^3.0.0"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/INTENTIUS/behold",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/INTENTIUS/behold.git",
+    "directory": "surfaces/argocd-behold"
+  }
+}

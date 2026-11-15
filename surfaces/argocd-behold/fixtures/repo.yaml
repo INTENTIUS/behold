@@ -1,0 +1,81 @@
+# A git repository served inside the cluster, so the Application has a real
+# source and the run needs no outside repository. The init container makes a
+# repo from the ConfigMap and git daemon serves it on 9418.
+apiVersion: v1
+kind: Namespace
+metadata: {name: gitsrv}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: shop-deploy, namespace: gitsrv}
+data:
+  serviceaccount.yaml: |
+    apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: checkout
+      namespace: shop
+      annotations:
+        eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/checkout
+  deployment.yaml: |
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: web
+      namespace: shop
+    spec:
+      replicas: 1
+      selector: {matchLabels: {app: web}}
+      template:
+        metadata: {labels: {app: web}}
+        spec:
+          serviceAccountName: checkout
+          containers:
+          - name: web
+            image: nginx:alpine
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: gitsrv, namespace: gitsrv}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: gitsrv}}
+  template:
+    metadata: {labels: {app: gitsrv}}
+    spec:
+      initContainers:
+      - name: make
+        image: alpine/git:latest
+        command: [sh, -c]
+        args:
+        - |
+          set -e
+          git config --global user.email e2e@example.com
+          git config --global user.name e2e
+          git init -q -b main /work
+          mkdir /work/deploy && cp /src/* /work/deploy/
+          cd /work && git add . && git commit -q -m shop
+          git clone -q --bare /work /srv/shop.git
+        volumeMounts:
+        - {name: src, mountPath: /src}
+        - {name: srv, mountPath: /srv}
+      containers:
+      - name: daemon
+        image: alpine/git:latest
+        command: [sh, -c]
+        args: ["apk add --no-cache git-daemon >/dev/null && exec git daemon --export-all --base-path=/srv --reuseaddr --listen=0.0.0.0 --verbose"]
+        ports: [{containerPort: 9418}]
+        volumeMounts:
+        - {name: srv, mountPath: /srv}
+      volumes:
+      - name: src
+        configMap: {name: shop-deploy}
+      - name: srv
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: gitsrv, namespace: gitsrv}
+spec:
+  selector: {app: gitsrv}
+  ports: [{port: 9418}]

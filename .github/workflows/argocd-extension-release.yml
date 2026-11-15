@@ -1,0 +1,45 @@
+name: argocd-extension-release
+
+# Builds the Argo CD UI extension in surfaces/argocd-behold and attaches its
+# tarball and checksums.txt to a GitHub release. argocd-extension-installer
+# downloads both from the release URLs (EXTENSION_URL and
+# EXTENSION_CHECKSUM_URL) and refuses a tarball that does not match.
+#
+# Tag: argocd-behold-v<version> (distinct from the behold-v* npm tags).
+on:
+  push:
+    tags: ["argocd-behold-v*"]
+  # Rehearse the build without publishing.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: surfaces/argocd-behold
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run tsc
+      - run: npm test
+      - run: npm run build
+      - run: npm run package
+      - name: The tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/argocd-behold-v')
+        run: test "${GITHUB_REF_NAME#argocd-behold-v}" = "$(node -p "require('./package.json').version")"
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/argocd-behold-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "Argo CD UI extension ${GITHUB_REF_NAME#argocd-behold-v}" release/*.tar.gz release/checksums.txt

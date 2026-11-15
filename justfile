@@ -260,3 +260,13 @@ headlamp-plugin:
 
 headlamp-e2e:
     bash surfaces/headlamp-behold/e2e/headlamp-e2e.sh
+
+# The Argo CD UI extension in surfaces/argocd-behold (#1085): typecheck, tests,
+# build and the tarball. `just argocd-extension-e2e` installs full Argo CD at a
+# pinned release on a scratch k3d cluster (behold-argocd-ui) and leaves it for
+# you to remove.
+argocd-extension:
+    cd surfaces/argocd-behold && npm ci && npm run tsc && npm test && npm run build && npm run package
+
+argocd-extension-e2e:
+    bash surfaces/argocd-behold/e2e/argocd-e2e.sh
