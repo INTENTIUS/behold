@@ -43,4 +43,6 @@ jobs:
       # directory; fails above packages/graph/budget.json or on a refused package.
       - name: graph package budget
         run: npm run check:graph-package
+      - name: the painter bundles for a browser
+        run: npm run check:browser-bundle
 
