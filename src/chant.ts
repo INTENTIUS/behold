@@ -542,9 +542,10 @@ export class ChantCliError extends Error {
   }
 }
 
-async function runChantJson<T>(args: string[], projectDir?: string, envOverride?: Record<string, string>): Promise<T> {
+async function runChantJson<T>(args: string[], projectDir?: string, envOverride?: Record<string, string>, onStderr?: (stderr: string) => void): Promise<T> {
   const { code, stdout, stderr } = await runChantRaw(args, projectDir, envOverride);
   if (code !== 0) throw new ChantCliError(args, code, stderr);
+  if (onStderr && stderr.trim()) onStderr(stderr);
   return JSON.parse(stdout) as T;
 }
 
@@ -767,9 +768,11 @@ export function graphArgs(src: string, format: "ir" | "layout", opts: GraphOptio
  * `graphPath` so a multi-stack project's picked stack resolves the right
  * source, same as the tier/target lenses already thread into `graphFlags`/
  * `envOverridesFor` below. */
-export async function graphIr(projectDir: string, opts: GraphOptions = {}): Promise<GraphIR> {
+export async function graphIr(projectDir: string, opts: GraphOptions = {}, onStderr?: (stderr: string) => void): Promise<GraphIR> {
   const src = await graphPath(projectDir, opts);
-  const ir = await runChantJson<GraphIR>(graphArgs(src, "ir", opts, false), projectDir, envOverridesFor(opts));
+  // `onStderr` hears what chant wrote to stderr on a read that succeeded. A
+  // Terraform root chant could not parse is only said there (behold#1053).
+  const ir = await runChantJson<GraphIR>(graphArgs(src, "ir", opts, false), projectDir, envOverridesFor(opts), onStderr);
   // chant#2058: chant joins Ops from the git root, so a project sharing a
   // repository with other chant projects graphs their Ops too. Dropped here,
   // at the one read every entity graph goes through, and named on the note.
