@@ -1,0 +1,208 @@
+---
+title: Publish to GitHub Pages
+description: A workflow that publishes behold export to GitHub Pages on each push to main, and refuses on a private repository unless told otherwise.
+---
+
+A link to the graph that outlasts a pull request needs a URL. This workflow runs [`behold export`](/behold/using/export/) on each push to `main` and deploys the result to GitHub Pages, so a README, a chat message or another tool can point at the same address every time.
+
+Copy the file below to `.github/workflows/behold-pages.yml` (it is also in this repository as `templates/github-pages.yml`), and set Settings > Pages > Source to "GitHub Actions". The first push to `main` publishes the site.
+
+```yaml title=".github/workflows/behold-pages.yml"
+# Publish `behold export` to GitHub Pages on each push to main.
+# Copy to .github/workflows/behold-pages.yml. Settings > Pages > Source must
+# be "GitHub Actions". Docs: https://intentius.github.io/behold/using/pages/
+name: behold-pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      allow-private-repo:
+        description: Publish although this repository is private or internal (the site is public on most plans)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# One deployment at a time; a newer push waits for the one running.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  # Directory to export, relative to the repository root.
+  PROJECT_DIR: .
+  # Sub-folder of the site to write the export into, for a repository whose
+  # Pages site holds something else too. Empty puts it at the site root.
+  SITE_PATH: ""
+  # Leave each card's source text out of the published bundle.
+  NO_SOURCE: "true"
+  # A command to run in PROJECT_DIR before the export, such as "npm ci", when
+  # the estate needs its own chant and lexicons installed.
+  INSTALL_COMMAND: ""
+  # The behold release to run. Pin it (for example 0.31.0) for a stable site.
+  BEHOLD_VERSION: latest
+  # A private or internal repository is refused unless this is "true". The
+  # dispatch input or the repository variable BEHOLD_ALLOW_PRIVATE_REPO sets it.
+  ALLOW_PRIVATE_REPO: ${{ inputs.allow-private-repo || vars.BEHOLD_ALLOW_PRIVATE_REPO || 'false' }}
+  # Pages refuses a site above 1 GB. Checked in kilobytes, before the upload.
+  MAX_SITE_KB: "1000000"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Refuse a private repository
+        env:
+          VISIBILITY: ${{ github.event.repository.visibility }}
+          IS_PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          set -eu
+          public=false
+          if [ "$VISIBILITY" = public ]; then public=true
+          elif [ -z "$VISIBILITY" ] && [ "$IS_PRIVATE" = false ]; then public=true
+          fi
+          if [ "$public" = true ]; then
+            echo "Repository is public."
+            exit 0
+          fi
+          if [ "$ALLOW_PRIVATE_REPO" = true ]; then
+            echo "::warning::This repository is not public and allow-private-repo is set. The Pages site is public on the internet unless the organisation is on Enterprise Cloud with private Pages."
+            exit 0
+          fi
+          echo "::error::Refusing to publish: this repository is ${VISIBILITY:-not public}, and its GitHub Pages site would be public on the internet (private Pages needs an organisation on Enterprise Cloud). Set the allow-private-repo input, or the repository variable BEHOLD_ALLOW_PRIVATE_REPO to true, to publish anyway."
+          exit 1
+
+      - name: Check the site path
+        run: |
+          set -eu
+          case "$SITE_PATH" in
+            /*|*..*) echo "::error::SITE_PATH must be a relative path without '..': $SITE_PATH"; exit 1 ;;
+          esac
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+
+      - name: Install the estate
+        if: env.INSTALL_COMMAND != ''
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: bash -c "$INSTALL_COMMAND"
+
+      - name: Export
+        run: |
+          set -eu
+          out="$PWD/_site"
+          if [ -n "$SITE_PATH" ]; then out="$out/$SITE_PATH"; fi
+          flags=""
+          if [ "$NO_SOURCE" = true ]; then flags="--no-source"; fi
+          cd "$PROJECT_DIR"
+          npx --yes "@intentius/behold@$BEHOLD_VERSION" export . $flags --out "$out"
+
+      - name: Check the size
+        run: |
+          set -eu
+          kb=$(du -sk _site | cut -f1)
+          echo "Site size: ${kb} KB (limit ${MAX_SITE_KB} KB)"
+          if [ "$kb" -gt "$MAX_SITE_KB" ]; then
+            echo "::error::The site is ${kb} KB, above GitHub Pages' 1 GB limit."
+            exit 1
+          fi
+
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
+      - name: Job summary
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          {
+            echo "### behold export published"
+            echo
+            echo "Site: ${PAGE_URL}${SITE_PATH:+$SITE_PATH/}"
+          } >> "$GITHUB_STEP_SUMMARY"
+```
+
+## A private repository is refused
+
+On most plans a Pages site is public on the internet, whatever the repository's visibility. Pages on a private repository needs a Pro, Team or Enterprise plan, and a site that only the organisation can read needs an organisation on Enterprise Cloud with private Pages turned on.
+
+So the first step of the job reads the event's repository visibility, and when it is `private` or `internal` (or missing from the event), the job fails before anything is exported or uploaded:
+
+```text
+Refusing to publish: this repository is private, and its GitHub Pages site would be public on the internet ...
+```
+
+Two ways to publish anyway, once you know who can open the site:
+
+- run the workflow by hand and tick `allow-private-repo`;
+- set the repository variable `BEHOLD_ALLOW_PRIVATE_REPO` to `true`, which a push to `main` also honours.
+
+With either set, the step prints a warning and the job carries on.
+
+## Source text stays out
+
+The template exports with `--no-source`, so no Terraform root's source text is in the published snapshots. A Pages site is read by anyone with the URL, and a state of the graph is enough for most links. To check it, put a distinctive comment in a `.tf` file, export the way the workflow does, and search the folder:
+
+```sh
+npx behold export . --no-source --out _site
+grep -r "my-marker-comment" _site || echo "no source text in the bundle"
+```
+
+Set `NO_SOURCE: "false"` in the workflow to publish the source text with the graph.
+
+## A repository that already uses Pages
+
+A repository has one Pages site and each deployment replaces it. If the docs already publish there, export into a sub-folder with `SITE_PATH` and build both into `_site` in the same job, docs first:
+
+```yaml
+env:
+  SITE_PATH: estate
+```
+
+The export then opens at `https://OWNER.github.io/REPO/estate/`. The export fetches its files relative to its own address, so it works under a sub-path. Add your docs build step before the Export step and have it write to `_site`, and keep the upload at `path: _site`.
+
+## Limits
+
+A Pages site is capped at 1 GB and a deployment times out after 10 minutes. The template fails the job when `_site` is above `MAX_SITE_KB` (about 1 GB), before the upload, and gives each job a 10 minute timeout. A large estate fits: a Terraform tree of about a hundred directories (the infra folder of a large public repository) exported with `--no-source` took 3 minutes 38 seconds on a laptop and wrote 35 MB, 31 MB of it snapshots.
+
+## An estate that needs its own chant
+
+`behold export` reads the estate with the project's own chant. Set `INSTALL_COMMAND` (for example `npm ci`) to run in `PROJECT_DIR` before the export. A Terraform-only repository needs nothing.
+
+## GitLab Pages
+
+GitLab publishes the `public` folder of a job named `pages`:
+
+```yaml
+pages:
+  image: node:24
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - npx --yes @intentius/behold export . --no-source --out public
+    - echo "Published at $CI_PAGES_URL"
+  artifacts:
+    paths:
+      - public
+```
+
+Check the project's Pages access setting before the first run, as with the GitHub workflow: the snippet does not read it.
