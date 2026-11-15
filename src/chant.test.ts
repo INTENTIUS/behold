@@ -615,6 +615,53 @@ describe("runChantRaw — env override reaches the spawn", () => {
   });
 });
 
+// #1072: a host with no `node` on PATH (the VS Code extension) names a chant
+// script, and the spawn runs it with this process's own runtime.
+describe("BEHOLD_CHANT_BIN", () => {
+  beforeEach(() => vi.mocked(spawnMock).mockReset());
+  afterEach(() => {
+    delete process.env.BEHOLD_CHANT_BIN;
+  });
+  const chantRoot = (): string => {
+    const root = mkdtempSync(join(tmpdir(), "behold-chant-bin-"));
+    mkdirSync(join(root, "dist", "cli"), { recursive: true });
+    writeFileSync(join(root, "package.json"), JSON.stringify({ name: "@intentius/chant", version: "9.8.7" }));
+    writeFileSync(join(root, "dist", "cli", "main.js"), "");
+    return join(root, "dist", "cli", "main.js");
+  };
+
+  it("resolves to the named file, with the version of the chant package around it", () => {
+    const bin = chantRoot();
+    process.env.BEHOLD_CHANT_BIN = bin;
+    const res = resolveChant("/proj");
+    expect(res.bin).toBe(bin);
+    expect(res.version).toBe("9.8.7");
+    expect(res.source).toBe("path");
+  });
+
+  it("runs a .js file as `<this runtime> <file> <args>` with ELECTRON_RUN_AS_NODE, leaving the rest of the environment", async () => {
+    const bin = chantRoot();
+    process.env.BEHOLD_CHANT_BIN = bin;
+    vi.mocked(spawnMock).mockReturnValue(fakeProc(0, "{}"));
+    await runChantRaw(["graph", "src", "--format", "ir"], "/proj");
+    const [cmd, args, opts] = vi.mocked(spawnMock).mock.calls[0]! as unknown as [string, string[], { env?: NodeJS.ProcessEnv }];
+    expect(cmd).toBe(process.execPath);
+    expect(args).toEqual([bin, "graph", "src", "--format", "ir"]);
+    expect(opts.env?.ELECTRON_RUN_AS_NODE).toBe("1");
+    expect(opts.env?.PATH).toBe(process.env.PATH);
+  });
+
+  it("spawns anything else as before", async () => {
+    process.env.BEHOLD_CHANT_BIN = "/opt/chant/bin/chant";
+    vi.mocked(spawnMock).mockReturnValue(fakeProc(0, "{}"));
+    await runChantRaw(["graph", "src"], "/proj");
+    const [cmd, args, opts] = vi.mocked(spawnMock).mock.calls[0]! as unknown as [string, string[], { env?: NodeJS.ProcessEnv }];
+    expect(cmd).toBe("/opt/chant/bin/chant");
+    expect(args).toEqual(["graph", "src"]);
+    expect(opts.env?.ELECTRON_RUN_AS_NODE).toBeUndefined();
+  });
+});
+
 describe("stripAnsi", () => {
   it("removes ANSI colour escapes", () => {
     expect(stripAnsi("\x1b[31merror\x1b[0m: broken")).toBe("error: broken");
