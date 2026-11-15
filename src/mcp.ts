@@ -40,13 +40,15 @@
  */
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { CallToolRequestSchema, ListResourcesRequestSchema, ListToolsRequestSchema, ReadResourceRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { GraphToolError, graphText, readGraphCut, viewQuery, type GraphCutRead, type GraphCutRequest } from "./mcp-graph.ts";
 import { findServe, realDir, within } from "./serve-registry.ts";
 import { DEFAULT_LINK_BASE, localCapabilities, localGraph, localSearch, shotFromArgs } from "./shot-cli.ts";
+import { APP_MIME, loadViewer, VIEWER_URI, type ViewerSource } from "./viewer-resource.ts";
 import type { ShotRefusalBody, ShotRequest, ShotResult } from "./shot.ts";
 
 /** The serve `behold serve` starts when no port is given. */
@@ -80,6 +82,8 @@ export interface Tool {
   description: string;
   inputSchema: InputSchema;
   annotations: ToolAnnotations;
+  /** `_meta` as tools/list sends it: MCP Apps names its view and who may call the tool here (behold#1073). */
+  _meta?: Record<string, unknown>;
   run(args: Record<string, unknown>, ctx: Context): Promise<CallToolResult>;
 }
 
@@ -194,6 +198,8 @@ export interface Context {
   localCapabilities(): Promise<{ status: number; text: string }>;
   /** behold#1027: GET /api/graphdb/<path> with no serve (src/shot-cli.ts `localGraph`). Absent: the real one. */
   localGraph?(path: GraphPath, query: URLSearchParams): Promise<{ status: number; body: Record<string, unknown> }>;
+  /** behold#1073: read a directory into a cut `behold-graph/1` document, in this process. Absent: `readGraphCut`. */
+  readGraphCut?(req: GraphCutRequest): Promise<GraphCutRead>;
 }
 
 /** The graph pane's routes `ask` reaches (src/graph-db/pane.ts). */
@@ -376,6 +382,43 @@ async function graphRoute(ctx: Context, path: GraphPath, q: URLSearchParams): Pr
   }
   const local = ctx.localGraph ?? ((p: GraphPath, query: URLSearchParams) => localGraph(ctx.projectDir, p, query));
   return local(path, q);
+}
+
+const GRAPH_PROPS: Record<string, Prop> = {
+  dir: { type: "string", description: "A folder inside the project to read, relative to it (default: the project folder)." },
+  around: { type: "string", description: "Comma-separated card or box ids to cut around (a root such as a Terraform root, or a card id from the roots table), with what is within depth hops of them." },
+  changed: { type: "string", description: "A revision range, <base>..<head> or <base>...<head> (from the merge base): cut to what changed between the two commits and the cards within depth hops." },
+  depth: { type: "integer", description: "Hops from the cards around names, or from what changed (default 1).", minimum: 0, maximum: 10 },
+  direction: { type: "string", description: "With around: up follows what the cards depend on, down what depends on them (default both).", enum: ["up", "down"] },
+};
+
+/** The request a graph call makes, with `dir` held inside the project. */
+function graphRequest(a: Record<string, unknown>, ctx: Context): { rel: string; req: GraphCutRequest } {
+  const dir = realDir(resolve(ctx.projectDir, typeof a.dir === "string" && a.dir ? a.dir : "."));
+  if (!within(ctx.projectDir, dir)) throw new ToolError(`dir ${String(a.dir)} is outside the project ${ctx.projectDir}; graph reads folders inside it`, { code: "outside-project" });
+  if (!existsSync(dir) || !statSync(dir).isDirectory()) throw new ToolError(`dir ${String(a.dir)} is not a folder in the project`, { code: "not-a-directory" });
+  const around = typeof a.around === "string" ? a.around.split(",").map((x) => x.trim()).filter(Boolean) : undefined;
+  if (typeof a.around === "string" && !around?.length) throw new ToolError("around is empty: give one or more ids, comma separated");
+  const rel = relative(ctx.projectDir, dir).split(sep).join("/") || ".";
+  return {
+    rel,
+    req: {
+      dir,
+      ...(around ? { around } : {}),
+      ...(typeof a.changed === "string" && a.changed ? { changed: a.changed } : {}),
+      ...(a.depth !== undefined ? { depth: a.depth as number } : {}),
+      ...(a.direction === "up" || a.direction === "down" ? { direction: a.direction } : {}),
+    },
+  };
+}
+
+async function readCut(ctx: Context, req: GraphCutRequest): Promise<GraphCutRead> {
+  try {
+    return await (ctx.readGraphCut ?? ((r) => readGraphCut(r, version())))(req);
+  } catch (e) {
+    if (e instanceof GraphToolError) throw new ToolError(e.message, e.body);
+    throw e;
+  }
 }
 
 export const TOOLS: Tool[] = [
@@ -569,6 +612,51 @@ export const TOOLS: Tool[] = [
       return { ...("error" in body || status !== 200 ? { isError: true } : {}), content: [{ type: "text", text }] };
     },
   },
+  {
+    name: "graph",
+    description:
+      "Draw the repository as a graph, or a cut of it. A host that renders MCP Apps shows the interactive view inline; every other host gets this answer: " +
+      "how many roots, cards and edges, the cut asked for, a Mermaid diagram when it fits (else a table of roots with card counts), and a link to the running behold serve at that view. " +
+      "The answer holds no document JSON, and no card list when the diagram does not fit. For a big estate ask again with around, a root or card id from the table, to see one part. " +
+      "Reads the files and git objects in this process; it needs no serve and no chant search. dir is a folder inside the project (default: the project). " +
+      "around takes comma-separated card or box ids and cuts to them and what is within depth hops (default 1); direction up follows what they depend on, down what depends on them. " +
+      "changed takes <base>..<head> (or <base>...<head> from the merge base) and cuts to what changed between the two commits, each card marked added, removed, changed or neighbour. around and changed are two cuts: give one.",
+    inputSchema: { type: "object", properties: GRAPH_PROPS, additionalProperties: false },
+    annotations: READ_ONLY,
+    // The flat key is the form hosts read before MCP Apps settled on `ui.resourceUri`; both name the same view.
+    _meta: { ui: { resourceUri: VIEWER_URI }, "ui/resourceUri": VIEWER_URI },
+    async run(a, ctx) {
+      const { rel, req } = graphRequest(a, ctx);
+      const read = await readCut(ctx, req);
+      const serve = await ctx.findServe();
+      const q = new URLSearchParams(viewQuery(req, read.document)).toString();
+      const base = serve?.ours ? serve.url : DEFAULT_LINK_BASE;
+      const link = { url: `${base}/${q ? `?${q}` : ""}`, serving: serve?.ours === true, command: serveCommand(ctx.projectDir) };
+      const text = graphText({ dir: rel, request: req, read, link });
+      // What the view asks graph_document for: the request, never the cards.
+      const view: Record<string, unknown> = { dir: rel, ...(req.around ? { around: req.around.join(",") } : {}), ...(req.changed ? { changed: req.changed } : {}), ...(req.depth !== undefined ? { depth: req.depth } : {}), ...(req.direction ? { direction: req.direction } : {}) };
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: { view, roots: read.whole.roots, cards: read.document.nodes.length, edges: read.document.edges.length, wholeCards: read.whole.cards, wholeEdges: read.whole.edges, link: link.url },
+      };
+    },
+  },
+  {
+    name: "graph_document",
+    description:
+      "For the graph view only, not for a model: the behold-graph/1 document of a graph call, taking the same arguments, so the view can draw it. The model is never offered this tool, and its answer never enters the conversation.",
+    inputSchema: { type: "object", properties: GRAPH_PROPS, additionalProperties: false },
+    annotations: READ_ONLY,
+    _meta: { ui: { visibility: ["app"] } },
+    async run(a, ctx) {
+      const { req } = graphRequest(a, ctx);
+      const read = await readCut(ctx, req);
+      return {
+        content: [{ type: "text", text: `behold-graph/1 document for the view: ${read.document.nodes.length} cards, ${read.document.edges.length} edges.` }],
+        structuredContent: { document: read.document },
+      };
+    },
+  },
 ];
 
 /** Answer one tools/call: a listed tool with its own arguments, or a refusal. */
@@ -611,12 +699,16 @@ export interface McpOptions {
   localShot?: (req: ShotRequest) => Promise<ShotResult>;
   localSearch?: Context["localSearch"];
   localCapabilities?: Context["localCapabilities"];
+  /** For tests: the read behind `graph`, and the viewer page. */
+  readGraphCut?: Context["readGraphCut"];
+  viewer?: ViewerSource;
 }
 
 export const INSTRUCTIONS =
   "behold draws a Terraform or chant estate in the person's browser. Read capabilities first: chant's capability catalog, what each cap: term means and asks. " +
   "ask returns chant's answer to an estate question (its search document, verbatim, plus the link to the view); " +
   "then use show to move the person's open behold tab to the matches, or shot to get a PNG of them and the link. " +
+  "graph draws the repository, or a cut of it (around a root or card, or what changed between two commits): an interactive view in a host that renders MCP Apps, and a summary, a Mermaid diagram or a table of roots, and a link in every other. " +
   "Nothing here deploys, approves, runs an Op, rolls back or writes; a person does that.";
 
 /** The server, on any transport. */
@@ -625,7 +717,7 @@ export async function serveMcp(o: McpOptions, transport: Transport): Promise<Ser
   assertNoWrites(tools);
   const projectDir = realDir(o.projectDir);
   const fetch: Fetch = o.fetch ?? ((url, init) => globalThis.fetch(url, init));
-  const server = new Server({ name: "behold", version: version() }, { capabilities: { tools: {} }, instructions: INSTRUCTIONS });
+  const server = new Server({ name: "behold", version: version() }, { capabilities: { tools: {}, resources: {} }, instructions: INSTRUCTIONS });
   const ctx: Context = {
     projectDir,
     projectGiven: o.projectGiven ?? true,
@@ -636,10 +728,19 @@ export async function serveMcp(o: McpOptions, transport: Transport): Promise<Ser
     localShot: o.localShot ?? ((req) => shotFromArgs({ req, projectDir, linkBase: DEFAULT_LINK_BASE })),
     localSearch: o.localSearch ?? ((query) => localSearch(projectDir, query)),
     localCapabilities: o.localCapabilities ?? (() => localCapabilities(projectDir)),
+    ...(o.readGraphCut ? { readGraphCut: o.readGraphCut } : {}),
   };
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, annotations: t.annotations })),
+    tools: tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, annotations: t.annotations, ...(t._meta ? { _meta: t._meta } : {}) })),
   }));
+  // behold#1073: the view the graph tool names (MCP Apps). One resource, read from the viewer build or its placeholder.
+  server.setRequestHandler(ListResourcesRequestSchema, async () => ({
+    resources: [{ uri: VIEWER_URI, name: "behold graph viewer", description: "The interactive graph view the graph tool draws in a host that renders MCP Apps.", mimeType: APP_MIME }],
+  }));
+  server.setRequestHandler(ReadResourceRequestSchema, async (req) => {
+    if (req.params.uri !== VIEWER_URI) throw new Error(`there is no resource ${req.params.uri}; behold serves ${VIEWER_URI}`);
+    return { contents: [{ uri: VIEWER_URI, mimeType: APP_MIME, text: (o.viewer ?? loadViewer()).html }] };
+  });
   server.setRequestHandler(CallToolRequestSchema, async (req) => callTool(tools, req.params.name, req.params.arguments, ctx));
   await server.connect(transport);
   return server;
@@ -647,11 +748,14 @@ export async function serveMcp(o: McpOptions, transport: Transport): Promise<Ser
 
 export const MCP_USAGE = `Usage: behold mcp [project-dir] [--url <serve> | --port <n>]
 
-  A stdio MCP server with four tools: capabilities returns chant's
+  A stdio MCP server with five tools: capabilities returns chant's
   capability catalog, verbatim, to read first; ask returns chant's search
   document for a query, verbatim, with the link to the view that draws it;
   show moves the open behold tab to a view; shot returns a PNG of one with
-  its link.
+  its link; graph draws the repository, or a cut of it, as an interactive view
+  in a host that renders MCP Apps (the ui://behold/viewer resource) and as a
+  summary with a Mermaid diagram and a link in every other. A sixth tool,
+  graph_document, is for the view only and is hidden from the model.
   ask also takes cypher, a read-only Cypher query over the graph pane's
   database (needs the optional peer @ladybugdb/core), or resource, a name,
   id, address or cloud id to resolve, with a template to run on it.

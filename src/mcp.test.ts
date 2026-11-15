@@ -81,8 +81,8 @@ const textOf = (r: CallToolResult): string => (r.content.find((c) => c.type === 
 const jsonOf = (r: CallToolResult): Record<string, unknown> => JSON.parse(textOf(r)) as Record<string, unknown>;
 
 describe("the tools behold mcp serves", () => {
-  it("are ask, show, shot and capabilities, and nothing else: a new tool fails here until it is read for writes and listed", () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(["ask", "show", "shot", "capabilities"]);
+  it("are ask, show, shot, capabilities, graph and the view-only graph_document, and nothing else: a new tool fails here until it is read for writes and listed", () => {
+    expect(TOOLS.map((t) => t.name)).toEqual(["ask", "show", "shot", "capabilities", "graph", "graph_document"]);
   });
 
   it("each lists every argument, takes no other, carries annotations, and is never destructive", () => {
@@ -103,7 +103,7 @@ describe("the tools behold mcp serves", () => {
   });
 
   it("each search tool's description says which chant search options it takes and which it doesn't, and to read the catalog first", () => {
-    for (const t of TOOLS.filter((t) => t.name !== "capabilities")) {
+    for (const t of TOOLS.filter((t) => ["ask", "show", "shot"].includes(t.name))) {
       expect(t.description).toContain("--live --env");
       expect(t.description).toContain("--snapshot");
       expect(t.description).toContain("--explain");
@@ -378,7 +378,7 @@ describe("over the protocol", () => {
     const client = new Client({ name: "test-agent", version: "1" });
     await client.connect(clientSide);
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name)).toEqual(["ask", "show", "shot", "capabilities"]);
+    expect(tools.map((t) => t.name)).toEqual(["ask", "show", "shot", "capabilities", "graph", "graph_document"]);
     expect(tools[0].annotations).toMatchObject({ destructiveHint: false });
     expect(client.getInstructions()).toContain("Read capabilities first");
     const r = (await client.callTool({ name: "show", arguments: { node: "a" } })) as CallToolResult;
@@ -399,7 +399,8 @@ describe("a thin client", () => {
     // The registry finds a serve; shot-cli starts behold's own app for a shot with no serve, and the
     // browser reaches that app over HTTP too. Nothing else of behold's: no server.ts, view-url.js,
     // view-move.ts, chant.ts or shot.ts at run time.
-    expect(local.sort()).toEqual(["./serve-registry.ts", "./shot-cli.ts"]);
+    // behold#1073: graph reads the directory it is asked about, not a serve's state (src/mcp-graph.ts), and serves the viewer page (src/viewer-resource.ts).
+    expect(local.sort()).toEqual(["./mcp-graph.ts", "./serve-registry.ts", "./shot-cli.ts", "./viewer-resource.ts"]);
     expect(src).not.toMatch(/child_process|spawn\(|execFile/);
     expect(src).not.toMatch(/\bapp\.request\(/);
   });

@@ -1532,7 +1532,7 @@ configs with (23 MB). Publishing the package is the maintainer's step.
 ## Over MCP: `behold mcp` (#916)
 
 `behold mcp [project-dir] [--url <serve> | --port <n>]` is a stdio MCP server
-with four tools, all clients of a running serve's HTTP API. An agent reads
+with five tools for an agent (and a sixth for a view), most of them clients of a running serve's HTTP API; `graph` (#1073, below) reads the directory itself. An agent reads
 `capabilities` first (#926): it calls `GET /api/capabilities` and returns
 chant's capability catalog, the read contract's `capabilities` document
 (`chant search --capabilities --json`, INTENTIUS/chant#4375), byte for byte.
@@ -1549,6 +1549,24 @@ followed by a text block `{link, state, serve}`. They take `query`, `env`,
 `snapshot`, `member`, `zoom`, `focus` and `node`; `shot` also takes `width`
 and `height`. The answers are chant's: behold passes chant's documents
 through and computes none of its own.
+
+`graph` (#1073) draws the repository, or a cut of it, and takes `dir` (a folder
+inside the project), `around` (comma-separated card or box ids, or a box title
+or Terraform root as the roots table prints it), `changed` (`<base>..<head>`),
+`depth` and `direction`. It reads in this process with the calls `behold graph`
+makes (`src/mcp-graph.ts`) and answers in text for every host: the counts, the
+cut, a Mermaid block when it fits (`MCP_MERMAID_BUDGET`, nine thousand
+characters) or a table of roots when it does not, and a link to the running
+serve at the card or box asked for, else the line that starts one. The whole
+text stays under `TEXT_CHARS` (18,000), well under Claude Code's 10,000-token
+warning, and holds no document JSON. `_meta.ui.resourceUri` names
+`ui://behold/viewer` (MIME type `text/html;profile=mcp-app`, MCP Apps spec
+2026-01-26), which `resources/read` serves from `src/viewer-resource.ts`:
+`dist/behold-viewer/viewer.html` (#1070's `npm run build:viewer`) when it is in
+the package, else a page saying the view is not in this build. The view gets
+its document from `graph_document`, a tool with `_meta.ui.visibility: ["app"]`
+that takes `graph`'s arguments (`structuredContent.view` of a `graph` result
+is exactly those), so the cards never enter the model's context.
 
 It finds the serve through `--url`/`--port`, then the per-user registry at
 `<os.tmpdir()>/behold/serves/<pid>.json` (`{url, pid, projectDir, version,
