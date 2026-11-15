@@ -59,6 +59,17 @@ The node and edge field names are the ones Grafana's node graph panel reads (`id
 - Every edge's `source` and `target` is a node in the same document. An inferred edge carries `rule`, the join that drew it.
 - No field holds an absolute path, and a card's source text (`attrs.source`) is left out unless it was asked for.
 
+## From the command line
+
+`behold graph <dir>` prints the document for a directory, with no server:
+
+```sh
+npx @intentius/behold graph ./infra > graph.json
+npx @intentius/behold-graph ./infra --detail 3 -o graph.json
+```
+
+`@intentius/behold-graph` is the same command and a `readGraph` library in a package of its own, for a CI job or an editor extension that cannot carry behold's whole install. `--source` keeps the cards' source text. `--ir` prints the unversioned `{ir, meta}` snapshot instead of the document.
+
 ## Versions
 
 Within `behold-graph/1`, fields are only ever added. A reader ignores the fields it does not know. A change a reader could not ignore becomes `behold-graph/2`, and a reader written for version 1 should refuse it rather than draw it.

@@ -179,6 +179,7 @@ import { DRIFT_RECORD_CHANT_FLOOR, floorFor, floorMet, floorRefusal, LEDGER_ROOT
 import { memberBlockGraph } from "./choudoufu-workspace.ts";
 import { allowedHostsFrom, guardRequest } from "./request-guard.ts";
 import { readGraph } from "./read-graph.ts";
+import { shapeEstate, viewNote } from "./graph-view.ts";
 import { applyMemberPasses, memberKindOf, memberKindSpec, memberPassNote, servesAsEstate, type MemberPassRun } from "./member-kind.ts";
 import { TerraformReadError, terraformMemberWorkspace, terraformReaderState, terraformVia } from "./terraform-member.ts";
 import { addInstanceCards } from "./instance-cards.ts";
@@ -3481,18 +3482,14 @@ export function createApp(
           },
         });
       }
-      if (multi && collapse) {
-        const shut = collapseBoxes(ir);
-        ir = shut.ir;
-        collapsedNote = collapseNote(shut.collapsed);
-      }
       // #877: cards of one kind in a box stack into one, and a card many
       // merely refer to carries the count instead of the lines. An estate's
-      // default; `?alike=0` draws every card.
-      if (multi && !components && new URL(c.req.url).searchParams.get("alike") !== "0") {
-        const stacked = stackAlike(ir);
-        ir = stacked.ir;
-        collapsedNote = [collapsedNote, stackNote(stacked)].filter(Boolean).join(" · ") || undefined;
+      // default; `?alike=0` draws every card. behold#1058: the same call
+      // `graphView` (src/graph-view.ts) makes for the CLI.
+      if (multi) {
+        const shaped = shapeEstate(ir, { collapse, alike: !components && new URL(c.req.url).searchParams.get("alike") !== "0" });
+        ir = shaped.ir;
+        collapsedNote = shaped.note;
       }
       // The count badges (#393 C) ride on every estate render, collapsed or
       // not: a box of 301 cards has to be able to say so at "fit".
@@ -3556,16 +3553,17 @@ export function createApp(
       // When it is not consulted (an estate, or a note above took its place),
       // the count is added here, read from the expanded IR like the rest.
       const danglingClause = (ownNote || multi) && srcZoom !== "components" && srcZoom !== "logical" ? danglingNote(expanded) : undefined;
-      const srcNote =
-        [
-          ownNote || (multi ? undefined : notesFor(srcZoom, expanded, srcCompositeEdgesAttached, undefined, opts.detail ?? 2, cdNote)),
-          danglingClause,
-          collapsedNote,
-        ]
-          .filter(Boolean)
-          .join(" · ") || undefined;
-      const srcNoteShort =
-        tf.noteShort || sameNote ? [estateLensNote, tf.noteShort ?? tf.note, cdNote, sameNote, planNote, danglingClause, collapsedNote].filter(Boolean).join(" · ") : undefined;
+      // behold#1058: joined by `viewNote` (src/graph-view.ts), which the CLI's view calls too.
+      const { note: srcNote, noteShort: srcNoteShort } = viewNote({
+        lens: estateLensNote,
+        pass: tf,
+        lexicon: cdNote,
+        sameZoom: sameNote,
+        plan: planNote,
+        dangling: danglingClause,
+        shaped: collapsedNote,
+        ...(multi ? {} : { fallback: () => notesFor(srcZoom, expanded, srcCompositeEdgesAttached, undefined, opts.detail ?? 2, cdNote) }),
+      });
       return c.json({
         ir,
         svg,
@@ -3577,7 +3575,7 @@ export function createApp(
           // #393 item 7: the strip's form of the same note, when there is a
           // shorter true one. Absent means "the note fits" — the SPA shows
           // `note` then.
-          ...(srcNoteShort && srcNoteShort !== srcNote ? { noteShort: srcNoteShort } : {}),
+          ...(srcNoteShort ? { noteShort: srcNoteShort } : {}),
           // The picked tier/target (M2, #54), echoed back so the SPA can keep
           // its header's axes display in sync with what it's actually looking
           // at, not just the launch-time value. null when neither was picked.

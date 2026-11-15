@@ -30,6 +30,12 @@ test:
 build:
     npm run build
 
+# behold#1058: pack @intentius/behold-graph, install it into an empty
+# directory, print its size, and fail above packages/graph/budget.json or when
+# the install holds a refused package. CI runs it after the build.
+graph-package:
+    npm run check:graph-package
+
 # tsc + tests + build — the fast local gate.
 check: tsc test build
 

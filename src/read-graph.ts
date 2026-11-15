@@ -46,6 +46,7 @@
  * - `run`: what the member kinds' passes did, which is what their notes are
  *   written from. A caller that re-ran the passes would get an empty run back,
  *   so it is handed over instead.
+ * - `workspace`: the declared workspace read (or given), absent when loose.
  * - `meta`: `estate`, the number of members read, and `note`/`noteShort`, the
  *   member kinds' own lines (the roots a Terraform folder has, what it skipped,
  *   what this detail leaves out).
@@ -87,6 +88,8 @@ export interface ReadGraphResult {
   members: { name: string; dir: string; kind: MemberKind }[];
   run: MemberPassRun;
   meta: { estate: number; note?: string; noteShort?: string };
+  /** The declared workspace the members were read from; absent for a loose read. */
+  workspace?: Workspace;
 }
 
 /** A declaration chant would not read, with chant's own reason. */
@@ -140,6 +143,7 @@ export async function readGraph(dir: string | readonly string[], opts: ReadGraph
     ir,
     members,
     run,
+    ...(workspace ? { workspace } : {}),
     meta: { estate: dirs.length, ...(note.note ? { note: note.note } : {}), ...(note.noteShort ? { noteShort: note.noteShort } : {}) },
   };
 }

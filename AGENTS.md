@@ -1471,6 +1471,44 @@ byte-identical JSON. Within `behold-graph/1` fields are only added and a
 reader ignores what it does not know; `checkGraphDocument` refuses any other
 `behold-graph/<n>` by name.
 
+## The graph from the command line: `behold graph` (#1058)
+
+`behold graph [dir] [--json | --ir] [-o <file>] [--detail 0..3] [--source]
+[--every-card]` reads a directory and prints it, with no server, no browser
+and no write but the `-o` file (src/graph-cli.ts). `--json`, the default, is
+the `behold-graph/1` document; `--ir` is the unversioned `{ir, meta}` that
+`/api/graph` answers, without its SVG. `--svg` and `--mermaid` are reserved
+for their emitters (#1061, #1060) and exit 2 until they apply. Exit 1 is a
+directory chant would not read (its refusal and remedy on stderr), exit 2 a
+usage error. No output holds an absolute path: both go through
+`documentOptions`' scrubber, and `attrs.source` is left out without
+`--source`.
+
+The read is `graphView(dir, opts)` (src/graph-view.ts): `readGraph`, then the
+lenses `/api/graph` runs over an estate's source picture: the plan when
+`terraformPlan` is passed (the server's setting, as an argument), collapse,
+stacking alike cards (`--every-card` turns it off), and the note, joined by
+`viewNote`. The route calls `shapeEstate` and `viewNote` from the same module,
+and src/graph-view.test.ts holds the view equal to the route's answer. The
+logical and components lenses, the traffic prediction (it reads per-user
+settings) and the SVG stay in the route. An output format is one entry in
+`GRAPH_FORMATS` (src/graph-formats.ts); a cut is a function over the document
+that the CLI hands a format as `cut`.
+
+The same command is the `behold-graph` bin of `@intentius/behold-graph`,
+built from this repo into packages/graph by `npm run build:graph` (part of
+`npm run build`). Its entry is src/graph-package.ts, which exports `readGraph`,
+`graphView`, the formats, `toDocument` and the document types. Its
+dependencies are packages/graph/budget.json's allowlist, at behold's own
+ranges and version (a test holds both). `npm run check:graph-package` (CI runs
+it after the build) packs it, installs the tarball into an empty directory,
+prints the installed size, and fails above the budget, on a dependency not on
+the allowlist, or when `npm ls --all` names hono, `@hono/node-server`, the MCP
+SDK or the Kubernetes client. The first measurement was 127 MB and 55
+packages, against 238 MB and 162 for behold; the budget is 140 MB and 60.
+Most of it is chant itself (73 MB) and the TypeScript compiler chant loads
+configs with (23 MB). Publishing the package is the maintainer's step.
+
 ## Over MCP: `behold mcp` (#916)
 
 `behold mcp [project-dir] [--url <serve> | --port <n>]` is a stdio MCP server

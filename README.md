@@ -143,6 +143,26 @@ To colour the graph by what is actually deployed, name an environment with
 for one specific demo project. `behold demo` and `serve --local` supersede it for
 every purpose; it is kept for compatibility and is not documented further.</sub>
 
+## Print the graph: `behold graph`
+
+`behold graph [dir]` reads a directory and prints its graph, with no server
+and no browser. A CI job, an editor or a script can take the output as it is.
+
+```sh
+npx @intentius/behold graph ./infra --json | jq '.nodes | length'
+npx @intentius/behold graph ./infra --ir -o graph.json --detail 3
+```
+
+`--json` (the default) prints the `behold-graph/1` document. `--ir` prints the
+unversioned `{ir, meta}` snapshot that `/api/graph` answers, without its SVG.
+Neither holds an absolute path, and a card's source text is left out unless
+you pass `--source`. A root that does not parse is one card in the output, as
+it is in the browser.
+
+The same command ships on its own as `@intentius/behold-graph`
+(`npx @intentius/behold-graph ./infra`), a smaller install with none of the
+server's dependencies; packages/graph/README.md has its budget.
+
 ## Export and host: a shareable, interactive snapshot
 
 `behold export` freezes whatever estate you're looking at into a **self-contained
