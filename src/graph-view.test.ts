@@ -76,18 +76,16 @@ describe("the install stays lean (#1058)", () => {
     devDependencies: Record<string, string>;
   };
 
-  it("lists the Kubernetes client and the MCP SDK as optional peers, kept in devDependencies for the tests", () => {
-    for (const name of ["@intentius/chant-k8s-client", "@modelcontextprotocol/sdk"]) {
-      expect(root.dependencies[name], name).toBeUndefined();
-      expect(root.peerDependencies[name], name).toBeDefined();
-      expect(root.peerDependenciesMeta[name]?.optional, name).toBe(true);
-      expect(root.devDependencies[name], name).toBeDefined();
-    }
+  it("lists the Kubernetes client as an optional peer, kept in devDependencies for the tests", () => {
+    const name = "@intentius/chant-k8s-client";
+    expect(root.dependencies[name], name).toBeUndefined();
+    expect(root.peerDependencies[name], name).toBeDefined();
+    expect(root.peerDependenciesMeta[name]?.optional, name).toBe(true);
+    expect(root.devDependencies[name], name).toBeDefined();
   });
 
-  it("keeps hono as a normal dependency", () => {
-    expect(root.dependencies.hono).toBeDefined();
-    expect(root.dependencies["@hono/node-server"]).toBeDefined();
+  it("keeps hono and the MCP SDK as normal dependencies, so plain `npx @intentius/behold mcp` works", () => {
+    for (const name of ["hono", "@hono/node-server", "@modelcontextprotocol/sdk"]) expect(root.dependencies[name], name).toBeDefined();
   });
 
   it("loads the MCP server only when `behold mcp` runs", () => {

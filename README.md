@@ -176,23 +176,19 @@ npx @intentius/behold graph ./infra --around prod/prod/aws_vpc.main --depth 2
 ```
 
 `npx @intentius/behold graph ./infra` is a lean install. The Kubernetes client
-and the MCP SDK are optional peers, so `npm install` does not fetch them;
-see "Optional installs" below.
+is an optional peer, so `npm install` does not fetch it;
+see "Optional install" below.
 
-### Optional installs
+### Optional install: the Kubernetes client
 
-`@intentius/behold` keeps two packages out of a plain `npm install`, as optional
-peers. Each is loaded only by the command that needs it, and when it is missing
-that command stops with one line naming what to install.
+`@intentius/chant-k8s-client` (it brings `@kubernetes/client-node`, 63 MB) is an
+optional peer of `@intentius/behold`, so a plain `npm install` does not fetch it.
+It is loaded only to read a kubeconfig: the server's context lookups, the
+kubectl context pills and `behold doctor`. When it is missing those paths stop
+with one line naming it. Install it with `npm i @intentius/chant-k8s-client`.
 
-- `@intentius/chant-k8s-client` (it brings `@kubernetes/client-node`, 63 MB) reads
-  kubeconfigs and clusters: `behold graph --context`, the kubectl context pills
-  and the in-cluster paths. Install it with `npm i @intentius/chant-k8s-client`.
-- `@modelcontextprotocol/sdk` serves `behold mcp`. Install it with
-  `npm i @modelcontextprotocol/sdk`, or run
-  `npx -p @intentius/behold -p @modelcontextprotocol/sdk behold mcp`.
-
-`behold graph` on a Terraform folder, `serve` and `export` need neither.
+`behold graph` on a Terraform folder, `serve`, `export` and `behold mcp` do not
+need it.
 
 ## Export and host: a shareable, interactive snapshot
 

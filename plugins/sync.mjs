@@ -26,7 +26,7 @@ const json = (v) => JSON.stringify(v, null, 2) + "\n";
 
 const mcpConfig = {
   mcpServers: {
-    behold: { command: "npx", args: ["-y", "-p", `@intentius/behold@${version}`, "-p", "@modelcontextprotocol/sdk@1.30.1", "behold", "mcp"] },
+    behold: { command: "npx", args: ["-y", `@intentius/behold@${version}`, "mcp"] },
   },
 };
 
@@ -71,7 +71,7 @@ put(
   `# behold for Claude Code\n\n${listing.paragraph}\n\n` +
     `## Install\n\n` +
     "```\nclaude plugin marketplace add INTENTIUS/behold\nclaude plugin install behold@behold\n```\n\n" +
-    `The plugin registers the \`behold\` MCP server (\`npx -p @intentius/behold@${version} -p @modelcontextprotocol/sdk@1.30.1 behold mcp\`) and adds one skill, ` +
+    `The plugin registers the \`behold\` MCP server (\`npx @intentius/behold@${version} mcp\`) and adds one skill, ` +
     `\`open-in-behold\`, which starts \`${listing.command}\` in the background and prints the URL. ` +
     `Claude Code does not render MCP App views, so the graph opens in a browser tab.\n\n` +
     `## Try it\n\nIn a folder of Terraform, ask Claude to open the repo in behold.\n`,
@@ -122,7 +122,7 @@ put(
     `## Install\n\n` +
     `Install behold from the Cursor Marketplace. To try it from a clone of this repository, copy ` +
     "\`plugins/cursor\` to \`~/.cursor/plugins/local/behold\` and run Developer: Reload Window.\n\n" +
-    `The plugin registers the \`behold\` MCP server (\`npx -p @intentius/behold@${version} -p @modelcontextprotocol/sdk@1.30.1 behold mcp\`) and adds one skill, ` +
+    `The plugin registers the \`behold\` MCP server (\`npx @intentius/behold@${version} mcp\`) and adds one skill, ` +
     `\`open-in-behold\`, which starts \`${listing.command}\` in the background and prints the URL. ` +
     `The server's tools are \`ask\`, \`show\`, \`shot\` and \`capabilities\`; they return text and a link, ` +
     `so the graph opens in a browser tab.\n\n` +

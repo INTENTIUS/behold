@@ -116,7 +116,7 @@ Usage:
   graph   Read a directory into behold's graph and print it, with no server:
           the behold-graph/1 document by default (--json), or the {ir, meta}
           snapshot /api/graph answers (--ir). A lean install:
-          the Kubernetes client (--context) is an optional peer.
+          the Kubernetes client is an optional peer.
 
   index   Read one cloud account, subscription, project or cluster with no
           project, type it through chant, add derived edges, and write one
@@ -428,7 +428,7 @@ export async function run(argv: string[]): Promise<void> {
       ({ runMcp } = await import("./mcp.ts"));
     } catch (err) {
       if ((err as { code?: string }).code !== "ERR_MODULE_NOT_FOUND") throw err;
-      process.stderr.write("behold mcp needs @modelcontextprotocol/sdk; install it with npm i @modelcontextprotocol/sdk, or run npx -p @intentius/behold -p @modelcontextprotocol/sdk behold mcp\n");
+      process.stderr.write("behold mcp needs @modelcontextprotocol/sdk, which is not installed; reinstall @intentius/behold\n");
       process.exit(1);
     }
     process.exit(await runMcp(rest));

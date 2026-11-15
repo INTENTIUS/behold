@@ -1641,13 +1641,12 @@ There is no separate package. `npm run build` also writes `dist/index.js` from
 src/graph-package.ts, the library the action and the VS Code extension use
 (`readGraph`, `graphView`, the formats, `toDocument` and the document types);
 src/read-graph-imports.test.ts holds that module graph free of hono, the MCP
-SDK and the Kubernetes client. `@intentius/chant-k8s-client` and
-`@modelcontextprotocol/sdk` are optional peers (and devDependencies, for the
+SDK and the Kubernetes client. `@intentius/chant-k8s-client` is an optional peer (and a devDependency, for the
 tests): `src/k8s-target.ts` loads the client with a dynamic import and throws
 `K8sClientMissingError`, and `src/cli.ts` imports `./mcp.ts` only for `behold mcp`.
 The build splits chunks (`--splitting`) so the SDK import sits in the mcp chunk,
-not at the top of dist/cli.js. The plugin `.mcp.json` files run
-`npx -y -p @intentius/behold@<version> -p @modelcontextprotocol/sdk@1.30.1 behold mcp`.
+not at the top of dist/cli.js. The MCP SDK is a normal dependency, so the plain
+`npx @intentius/behold mcp` of the registry entry and the plugins works.
 
 ## The single-file viewer (#1070)
 

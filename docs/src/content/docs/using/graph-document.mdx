@@ -68,7 +68,7 @@ npx @intentius/behold graph ./infra > graph.json
 npx @intentius/behold graph ./infra --detail 3 -o graph.json
 ```
 
-`@intentius/behold` installs without the Kubernetes client and the MCP SDK, which are optional peers, so a CI job can run `npx @intentius/behold graph ./infra` on a Terraform folder with a small install. `--context` reads a cluster instead and needs the client: `npm i @intentius/chant-k8s-client` next to behold (or `npx -p @intentius/behold -p @intentius/chant-k8s-client behold graph --context <name>`). Without it the command stops with one line naming that package. `--source` keeps the cards' source text. `--ir` prints the unversioned `{ir, meta}` snapshot instead of the document.
+`@intentius/behold` installs without the Kubernetes client, an optional peer, so a CI job can run `npx @intentius/behold graph ./infra` on a Terraform folder with a small install. `--context` reads a cluster instead and needs the client: `npm i @intentius/chant-k8s-client` next to behold (or `npx -p @intentius/behold -p @intentius/chant-k8s-client behold graph --context <name>`). Without it the command stops with one line naming that package. `--source` keeps the cards' source text. `--ir` prints the unversioned `{ir, meta}` snapshot instead of the document.
 
 ## Cuts
 
