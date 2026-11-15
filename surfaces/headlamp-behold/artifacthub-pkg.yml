@@ -22,6 +22,6 @@ provider:
   name: INTENTIUS
 annotations:
   headlamp/plugin/archive-url: "https://github.com/INTENTIUS/behold/releases/download/headlamp-behold-v0.1.0/headlamp-behold-0.1.0.tar.gz"
-  headlamp/plugin/archive-checksum: "2f87d0b6968f3dcb3a9e6a4d9ca4214537f6dfe68a33ffbeb604726f3363eb1d"
+  headlamp/plugin/archive-checksum: "42ed9a3d015dca5c2dfc6cfdcb164d32c72484bc2627c94780325cf19a32ecd9"
   headlamp/plugin/version-compat: ">=0.30.0"
   headlamp/plugin/distro-compat: "in-cluster,web,docker-desktop,desktop"

@@ -42,7 +42,12 @@ export function tarball() {
     Buffer.alloc((512 - (body.length % 512)) % 512),
     Buffer.alloc(1024),
   ];
-  return gzipSync(Buffer.concat(parts), { level: 9 });
+  // Stored blocks (level 0) and an "unknown" OS byte (255) in the gzip header:
+  // compressed deflate output and the OS byte both differ between a Mac and a
+  // Linux runner, so these keep the archive's bytes, and its checksum, the same everywhere.
+  const gz = gzipSync(Buffer.concat(parts), { level: 0 });
+  gz[9] = 255;
+  return gz;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
