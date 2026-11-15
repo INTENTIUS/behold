@@ -1,0 +1,119 @@
+# Copy to .github/workflows/forge-limits.yml in a public test repo, together
+# with gen.mjs at forge-limits/gen.mjs (behold#1065). See README.md.
+name: forge-limits
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number the comment and attach probes post to
+        required: true
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # One job per fixture, so each gets its own 1 MiB job summary.
+  summary:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        name:
+          - info
+          - edges-50
+          - edges-200
+          - edges-499
+          - edges-500
+          - edges-501
+          - edges-1000
+          - chars-1000
+          - chars-2000
+          - chars-2001
+          - chars-10000
+          - chars-20000
+          - chars-49000
+          - chars-50000
+          - chars-50001
+          - chars-60000
+    steps:
+      - uses: actions/checkout@v4
+      - run: node forge-limits/gen.mjs out
+      - name: Write the diagram to the job summary
+        run: |
+          {
+            echo "### ${{ matrix.name }}"
+            echo
+            cat "out/comments/${{ matrix.name }}.md"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Posts every fixture as its own comment and records the HTTP result.
+  comment:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ inputs.pr }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: node forge-limits/gen.mjs out
+      - name: Post comments
+        run: |
+          {
+            echo "| fixture | characters | HTTP | message |"
+            echo "| --- | --- | --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for f in out/comments/*.md out/bodies/*.txt; do
+            name=$(basename "$f"); chars=$(wc -m < "$f" | tr -d ' ')
+            set +e
+            res=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -F "body=@$f" -i 2>&1)
+            set -e
+            status=$(printf '%s' "$res" | head -1 | awk '{print $2}')
+            msg=$(printf '%s' "$res" | grep -o '"message":"[^"]*"' | head -1 || true)
+            html=$(printf '%s' "$res" | grep -o '"html_url":"[^"]*"' | head -1 || true)
+            echo "| $name | $chars | ${status:-none} | ${msg:-$html} |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+  # gh pr comment --attach with the workflow token.
+  attach:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: node forge-limits/gen.mjs out
+      - name: Attach an SVG and a PNG
+        run: |
+          gh --version | tee -a "$GITHUB_STEP_SUMMARY"
+          for ext in svg png; do
+            set +e
+            res=$(gh pr comment "${{ inputs.pr }}" --body "attach probe $ext" --attach "out/attach/probe.$ext#probe $ext" 2>&1)
+            code=$?
+            set -e
+            printf '\n- %s: exit %s: %s\n' "$ext" "$code" "$res" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+  # Open this from a fork. The summary shows whether it was written, and the
+  # comment call shows what the read-only token does.
+  fork:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Summary and comment on a pull_request run
+        run: |
+          echo "### fork probe" >> "$GITHUB_STEP_SUMMARY"
+          echo "head repo: ${{ github.event.pull_request.head.repo.full_name }}" >> "$GITHUB_STEP_SUMMARY"
+          printf '```mermaid\nflowchart TD\n  a --> b\n```\n' >> "$GITHUB_STEP_SUMMARY"
+          set +e
+          res=$(gh pr comment "${{ github.event.pull_request.number }}" --body "fork probe" 2>&1)
+          echo "comment exit $?: $res" >> "$GITHUB_STEP_SUMMARY"
