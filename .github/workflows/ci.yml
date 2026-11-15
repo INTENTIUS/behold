@@ -30,6 +30,8 @@ jobs:
       # behold#1063: the tree behold-action should hold builds from action/ alone.
       - name: action tree
         run: node scripts/action-tree.mjs --check
+      - name: the viewer builds within its size budget
+        run: npm run build:viewer
       - name: plugin files are in sync
         run: node plugins/sync.mjs --check
       - name: validate the Claude Code plugin and marketplace
