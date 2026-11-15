@@ -1,0 +1,62 @@
+# behold changed cut for GitLab merge requests (INTENTIUS/behold#1064).
+#
+# Include it, pinning a commit, and set BEHOLD_ACTION_REF to the same commit:
+#
+#   include:
+#     - remote: https://raw.githubusercontent.com/INTENTIUS/behold/<sha>/action/gitlab/behold.gitlab-ci.yml
+#   variables:
+#     BEHOLD_ACTION_REF: <sha>
+#
+# Settings, all in action/README.md under "GitLab":
+#   BEHOLD_GITLAB_TOKEN  a project access token with the api scope, stored as a
+#                        masked CI/CD variable. Without it the job still draws
+#                        the cut into its log and artifacts and posts nothing.
+#   BEHOLD_ACTION_REF    a commit of the action's repository. Required.
+#
+# This runs the same src/ as the GitHub Action. A merge request from a fork
+# gets no API call at all: see mergeRequestOf in src/gitlab.mjs.
+
+.behold-variables:
+  variables:
+    BEHOLD_ACTION_REPO: https://github.com/INTENTIUS/behold.git
+    BEHOLD_ACTION_REF: ""
+    BEHOLD_VERSION: latest
+    BEHOLD_PATH: .
+    BEHOLD_MARKER: "behold:changed"
+    BEHOLD_OUT: behold-changed
+    # The cut reads two commits out of git; a full clone has both.
+    GIT_DEPTH: "0"
+
+behold:changed:
+  extends: .behold-variables
+  stage: test
+  image: node:24
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - |
+      if [ -z "$BEHOLD_ACTION_REF" ]; then
+        echo "Set BEHOLD_ACTION_REF to the commit of $BEHOLD_ACTION_REPO that this template came from." >&2
+        exit 1
+      fi
+    - git init -q /tmp/behold-action
+    - git -C /tmp/behold-action fetch -q --depth 1 "$BEHOLD_ACTION_REPO" "$BEHOLD_ACTION_REF"
+    - git -C /tmp/behold-action checkout -q FETCH_HEAD
+    - |
+      export RUNNER_TEMP=/tmp
+      export INPUT_FORGE=gitlab
+      export INPUT_PATH="$BEHOLD_PATH"
+      export INPUT_MARKER="$BEHOLD_MARKER"
+      export INPUT_BEHOLD_VERSION="$BEHOLD_VERSION"
+      export INPUT_OUTPUT_DIR="$CI_PROJECT_DIR/$BEHOLD_OUT"
+      mkdir -p "$INPUT_OUTPUT_DIR"
+      [ -n "$BEHOLD_GITLAB_TOKEN" ] || export INPUT_COMMENT=false
+      node /tmp/behold-action/action/src/main.mjs read
+      node /tmp/behold-action/action/src/main.mjs report
+  artifacts:
+    # The merge request widget links this folder. Whether `expose_as` takes a
+    # folder is a live check on the maintainer's list, in the behold repository.
+    expose_as: behold changed cut
+    paths:
+      - behold-changed/
+    when: always

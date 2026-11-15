@@ -1,0 +1,28 @@
+# behold changed cut on a Forgejo pull request (INTENTIUS/behold#1064).
+# Copy to .forgejo/workflows/behold.yml. It runs the GitHub Action as it is,
+# with the artifact steps swapped for Forgejo's own, because actions/upload-artifact
+# v4 and later refuse a Forgejo server and `archive: false` needs them.
+#
+# Pin every `uses` to a commit once you have chosen the versions.
+name: behold
+on: pull_request
+
+jobs:
+  draw:
+    runs-on: docker
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: behold
+        uses: https://github.com/INTENTIUS/behold-action@v1
+        with:
+          forge: forgejo
+          upload: "false"
+          github-token: ${{ github.token }}
+      - uses: https://code.forgejo.org/forgejo/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
+        if: always() && steps.behold.outputs.out-dir != ''
+        with:
+          name: behold-changed
+          path: ${{ steps.behold.outputs.out-dir }}
+          if-no-files-found: ignore

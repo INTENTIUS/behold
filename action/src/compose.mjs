@@ -85,12 +85,12 @@ export function commentBody(behold, doc, { marker, footer = "", forge = "github"
 }
 
 /** The job summary: the comment body without its marker, and the artifact links. */
-export function jobSummary(body, { artifacts = [], fork = false, commentNote = "" } = {}) {
+export function jobSummary(body, { artifacts = [], fork = false, commentNote = "", forge } = {}) {
   const lines = body.text.replace(/^<!--[^>]*-->\n/, "").trimEnd();
   const links = artifacts.filter((a) => a.url).map((a) => `- [${a.label}](${a.url})`);
-  const out = [`## behold: what this pull request changes`, "", lines, ""];
+  const out = [`## ${forge?.summaryTitle ?? "behold: what this pull request changes"}`, "", lines, ""];
   if (links.length) out.push("Artifacts:", "", ...links, "");
-  if (fork) out.push("This run is from a fork, so the token is read-only and the comment is posted by the workflow_run job instead.", "");
+  if (fork) out.push(forge?.forkNote ?? "This run is from a fork, so the token is read-only and the comment is posted by the workflow_run job instead.", "");
   if (commentNote) out.push(commentNote, "");
   return `${out.join("\n")}\n`;
 }

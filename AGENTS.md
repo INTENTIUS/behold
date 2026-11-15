@@ -1515,6 +1515,43 @@ settings) and the SVG stay in the route. An output format is one entry in
 `GRAPH_FORMATS` (src/graph-formats.ts); a cut is a function over the document
 that the CLI hands a format as `cut`.
 
+### A bare cluster: `behold graph --context <name>` (#1083)
+
+`behold graph --context <name> [--kubeconfig <file>] [--namespace a,b]
+[--types t,u] [--allow-exec-plugin]` draws the cluster a kubeconfig context
+points at, with no chant project and no directory (src/read-cluster.ts).
+`--kubeconfig` alone reads that file's current context; without it the file is
+the first path in `KUBECONFIG`, then `~/.kube/config`. There is no reader of
+behold's own. `readCluster` calls chant's `indexCloud` (the cloud lister
+`behold index kubernetes` runs: API discovery, then a paged LIST per kind, read
+allowlist only) with the `none` store, so no index version and no file is
+written, and hands the result to `readComposed` (src/read-graph.ts), the passes
+`readGraph` runs over a directory's estate. `readGraph` still reads no
+kubeconfig. Cards are boxed by namespace (cluster-scoped objects in `cluster`)
+and take the ids `<namespace>/<Kind>/<name>`; an edge to an object the read did
+not list is dropped and counted in the note. What the objects name outside the
+cluster (web/outside-refs.js, #1082) is added as cards in a box called Outside
+the cluster. `behold serve` does not take a context yet.
+
+Credentials: a token, a token file or a client certificate. A user that
+authenticates through an exec plugin (the GKE, EKS and AKS tools write these)
+is refused with exit 2, naming the context, before chant is loaded and before
+any request. `--allow-exec-plugin` runs the plugin once (src/kube-exec.ts, the
+ExecCredential protocol, no terminal) and reads with the credential it prints.
+An `auth-provider` user is always refused. Whether the switch should be on by
+default is the maintainer's ruling and is open.
+
+The live read masks every key matching /secret/i, which chant's typing then
+shows as `[REDACTED]`. On chant 0.124.58 an ExternalSecret's
+`spec.secretStoreRef` is masked whole, so its store and provider draw no card
+and the note says so (chant#5116 keeps such reference fields readable). An Argo
+CD cluster Secret's name and server are masked too, and chant#5116 decides
+whether they show. behold draws what the lister returns under either answer.
+`BEHOLD_K3D_TESTS=1 npx vitest run src/read-cluster-live.test.ts` runs the
+live test on a k3d cluster named `behold-read-cluster-<pid>`, deleted afterward
+unless `BEHOLD_K3D_KEEP=1`; `BEHOLD_EXPECT_5116=1` makes its reference test
+fail instead of skip.
+
 The same command is the `behold-graph` bin of `@intentius/behold-graph`,
 built from this repo into packages/graph by `npm run build:graph` (part of
 `npm run build`). Its entry is src/graph-package.ts, which exports `readGraph`,

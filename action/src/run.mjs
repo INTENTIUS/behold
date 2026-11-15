@@ -11,17 +11,19 @@ import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { commentBody, jobSummary, SUMMARY_LIMIT_BYTES } from "./compose.mjs";
-import { findComment, githubClient, updateIfPresent, upsertComment } from "./github.mjs";
+import { detectForge, forgeAdapter, pullRequestOf } from "./forge.mjs";
+import { findComment, githubClient, upsertComment } from "./github.mjs";
 
 export const DEFAULT_MARKER = "behold:changed";
-/** GitHub's comment ceiling is reported as 65,536; stay under 60,000 as FORGE_BUDGETS.github does (e2e/forge-limits/README.md). */
+/** GitHub's comment ceiling is reported as 65,536; stay under 60,000 as FORGE_BUDGETS.github does in behold's forge limits. */
 const COMMENT_CHARS = 60_000;
 
 /** Inputs from the environment the composite action sets (`INPUT_<NAME>`). */
 export function readInputs(env) {
   const get = (k, d = "") => (env[`INPUT_${k}`] ?? "").trim() || d;
   return {
-    token: get("GITHUB_TOKEN") || env.GITHUB_TOKEN || "",
+    token: get("GITHUB_TOKEN") || env.GITHUB_TOKEN || env.BEHOLD_GITLAB_TOKEN || "",
+    forge: get("FORGE", "auto"),
     base: get("BASE"),
     head: get("HEAD"),
     path: get("PATH", "."),
@@ -38,34 +40,24 @@ export function readInputs(env) {
   };
 }
 
-/** The pull request the run belongs to, from the event payload. */
-export function pullRequestOf(env, readFile = (p) => readFileSync(p, "utf8")) {
-  if (!env.GITHUB_EVENT_PATH) return undefined;
-  let event;
-  try {
-    event = JSON.parse(readFile(env.GITHUB_EVENT_PATH));
-  } catch {
-    return undefined;
-  }
-  const pr = event.pull_request;
-  if (!pr) return undefined;
-  return {
-    number: pr.number ?? event.number,
-    base: pr.base?.sha,
-    head: pr.head?.sha,
-    fork: !!pr.head?.repo && pr.head.repo.full_name !== env.GITHUB_REPOSITORY,
-  };
-}
+export { pullRequestOf };
 
 function appendSummary(env, text) {
-  if (!env.GITHUB_STEP_SUMMARY) return;
+  // GitLab has no job summary page; its job log is where the text goes.
+  const file = env.GITHUB_STEP_SUMMARY || env.FORGEJO_STEP_SUMMARY;
+  if (!file) {
+    if (env.GITLAB_CI === "true") process.stdout.write(`${text}\n`);
+    return;
+  }
   if (Buffer.byteLength(text) > SUMMARY_LIMIT_BYTES) text = `${text.slice(0, SUMMARY_LIMIT_BYTES - 200)}\n\n(summary cut at 1 MiB)\n`;
-  appendFileSync(env.GITHUB_STEP_SUMMARY, text);
+  appendFileSync(file, text);
 }
 
+/** Outputs go to the file the runner names; GitLab has none and the step is a no-op there. */
 function setOutputs(env, outputs) {
-  if (!env.GITHUB_OUTPUT) return;
-  for (const [k, v] of Object.entries(outputs)) appendFileSync(env.GITHUB_OUTPUT, `${k}=${String(v).replace(/\r?\n/g, " ")}\n`);
+  const file = env.GITHUB_OUTPUT || env.FORGEJO_OUTPUT;
+  if (!file) return;
+  for (const [k, v] of Object.entries(outputs)) appendFileSync(file, `${k}=${String(v).replace(/\r?\n/g, " ")}\n`);
 }
 
 const git = (root, args) => spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
@@ -110,11 +102,12 @@ async function runGraph(behold, argv) {
  * after writing the failure to the job summary, unless fail-on-error is off.
  */
 export async function readChanged({ env, inputs, behold, log = console }) {
-  const pr = pullRequestOf(env);
+  const forge = forgeAdapter(detectForge(env, inputs.forge));
+  const pr = forge.requestOf(env);
   const base = inputs.base || pr?.base;
   const head = inputs.head || pr?.head;
-  if (!base || !head) throw new Error("no base and head: this is not a pull_request run, so give the base and head inputs");
-  const workspace = env.GITHUB_WORKSPACE ?? process.cwd();
+  if (!base || !head) throw new Error(`no base and head: this is not a ${forge.noun} run, so give the base and head inputs`);
+  const workspace = forge.workspace(env) ?? process.cwd();
   const dir = resolve(workspace, inputs.path);
   mkdirSync(inputs.out, { recursive: true });
   const jsonFile = join(inputs.out, "changed.json");
@@ -134,9 +127,8 @@ export async function readChanged({ env, inputs, behold, log = console }) {
     const checked = behold.checkGraphDocument(JSON.parse(readFileSync(jsonFile, "utf8")));
     if (!checked.ok) throw new ReadFailed(checked.error);
     const doc = checked.document;
-    const runUrl = env.GITHUB_RUN_ID ? `${env.GITHUB_SERVER_URL ?? "https://github.com"}/${env.GITHUB_REPOSITORY}/actions/runs/${env.GITHUB_RUN_ID}` : "";
-    const footer = runUrl ? `\n<sub>behold, from the [workflow run](${runUrl}); the SVG and JSON are artifacts of that run.</sub>\n` : "";
-    const body = commentBody(behold, doc, { marker: inputs.marker, footer });
+    const footer = forge.footer(env, { out: inputs.out, svg: doc.nodes.length > 0 });
+    const body = commentBody(behold, doc, { marker: inputs.marker, footer, forge: forge.name });
     let svg = false;
     if (doc.nodes.length > 0) {
       // A cut is at most the node budget, so the painter's flat-card limit does not meet one in practice; if it does, that is a failed read.
@@ -144,14 +136,14 @@ export async function readChanged({ env, inputs, behold, log = console }) {
       svg = true;
     }
     writeFileSync(join(inputs.out, "comment.md"), body.text);
-    writeFileSync(join(inputs.out, "pr.json"), JSON.stringify({ number: pr?.number ?? null, base, head, marker: inputs.marker }));
-    const result = { ok: true, kind: body.kind, summary: body.summary, svg, json: true, fork: !!pr?.fork, number: pr?.number ?? null };
+    writeFileSync(join(inputs.out, "pr.json"), JSON.stringify({ number: pr?.number ?? null, base, head, marker: inputs.marker, ...(pr?.webUrl ? { webUrl: pr.webUrl } : {}) }));
+    const result = { ok: true, forge: forge.name, kind: body.kind, summary: body.summary, svg, json: true, fork: !!pr?.fork, number: pr?.number ?? null, ...(pr?.webUrl ? { webUrl: pr.webUrl } : {}) };
     writeFileSync(join(inputs.out, "result.json"), JSON.stringify(result));
     setOutputs(env, { "changed-count": body.summary.total, "neighbour-count": body.summary.neighbours, "svg-path": svg ? svgFile : "", "json-path": jsonFile, "comment-path": join(inputs.out, "comment.md"), "out-dir": inputs.out, fork: result.fork });
     return result;
   } catch (err) {
     if (!(err instanceof ReadFailed)) throw err;
-    appendSummary(env, `## behold: what this pull request changes\n\nThe read failed.\n\n\`\`\`\n${err.message}\n\`\`\`\n`);
+    appendSummary(env, `## ${forge.summaryTitle}\n\nThe read failed.\n\n\`\`\`\n${err.message}\n\`\`\`\n`);
     writeFileSync(join(inputs.out, "result.json"), JSON.stringify({ ok: false, error: err.message }));
     setOutputs(env, { "out-dir": inputs.out, "changed-count": "", fork: !!pr?.fork });
     if (inputs.failOnError) throw err;
@@ -161,10 +153,12 @@ export async function readChanged({ env, inputs, behold, log = console }) {
 }
 
 /** Phase two. Summary first (it needs no token), then the comment when this run may post one. */
-export async function report({ env, inputs, gh = githubClient({ token: inputs.token, apiUrl: env.GITHUB_API_URL }), log = console }) {
+export async function report({ env, inputs, gh, log = console }) {
   const resultFile = join(inputs.out, "result.json");
   if (!existsSync(resultFile)) throw new Error(`no ${resultFile}: the read step did not run`);
   const result = JSON.parse(readFileSync(resultFile, "utf8"));
+  const forge = forgeAdapter(detectForge(env, inputs.forge));
+  gh ??= forge.client({ token: inputs.token, env });
   if (!result.ok) return { skipped: "read failed" };
   const text = readFileSync(join(inputs.out, "comment.md"), "utf8");
   const body = { text, kind: result.kind, summary: result.summary };
@@ -172,22 +166,23 @@ export async function report({ env, inputs, gh = githubClient({ token: inputs.to
     { label: "changed.svg", url: env.ARTIFACT_URL_SVG },
     { label: "changed.json", url: env.ARTIFACT_URL_JSON },
   ];
-  const repo = env.GITHUB_REPOSITORY;
+  const target = forge.target(env);
   const mode = inputs.comment; // true | false | auto
   let commentNote = "";
   let comment = { action: "skipped" };
   if (mode === "false") commentNote = "Comment skipped: the comment input is false.";
-  else if (result.number == null) commentNote = "No comment: this run is not for a pull request.";
+  else if (result.number == null) commentNote = `No comment: this run is not for a ${forge.noun}.`;
   else if (result.fork) comment = { action: "fork" };
   else {
-    comment = result.kind === "empty" ? await updateIfPresent(gh, { repo, number: result.number, body: text, marker: inputs.marker }) : await upsertComment(gh, { repo, number: result.number, body: text, marker: inputs.marker });
+    const args = { env, target, number: result.number, body: text, marker: inputs.marker, webUrl: result.webUrl };
+    comment = result.kind === "empty" ? await forge.updateIfPresent(gh, args) : await forge.upsert(gh, args);
     if (comment.action === "denied") {
-      commentNote = `The token could not write a comment (HTTP ${comment.status}). Give the job pull-requests: write, or use the workflow_run recipe in the action's README.`;
+      commentNote = forge.deniedNote(comment.status);
       log.warn?.(`behold: ${commentNote}`);
     } else if (comment.action === "none") commentNote = "Nothing changed and there is no earlier comment, so none was posted.";
     else commentNote = `Comment ${comment.action}${comment.url ? `: ${comment.url}` : ""}.`;
   }
-  appendSummary(env, jobSummary(body, { artifacts, fork: comment.action === "fork", commentNote }));
+  appendSummary(env, jobSummary(body, { artifacts, fork: comment.action === "fork", commentNote, forge }));
   setOutputs(env, { "comment-action": comment.action, "comment-url": comment.url ?? "" });
   return comment;
 }
@@ -200,6 +195,7 @@ export async function report({ env, inputs, gh = githubClient({ token: inputs.to
  * commit the first run built, and the body must carry the marker and fit.
  */
 export async function postComment({ env, inputs, gh = githubClient({ token: inputs.token, apiUrl: env.GITHUB_API_URL }), readFile = (p) => readFileSync(p, "utf8") }) {
+  if (detectForge(env, inputs.forge) !== "github") throw new Error("post-comment is the workflow_run recipe, which only GitHub has; Forgejo has no workflow_run event and GitLab runs a fork's merge request in its own project");
   const event = JSON.parse(readFile(env.GITHUB_EVENT_PATH));
   const run = event.workflow_run;
   if (!run) throw new Error("post-comment runs on a workflow_run event");

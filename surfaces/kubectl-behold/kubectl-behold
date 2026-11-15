@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# kubectl behold: draw the current kubectl context with behold and open the
+# picture in a browser, optionally cut down to one object and its neighbours.
+#
+#   kubectl behold                          the whole context
+#   kubectl behold deploy/web -n app        one Deployment and what touches it
+#   kubectl behold deploy web -n app        the same, kubectl's other spelling
+#
+# It is a small launcher over `behold graph --context ...` (the bare-cluster
+# reader): read-only, nothing is written to the cluster, and the only file
+# written is the SVG. Run `kubectl behold --help` for the options.
+set -euo pipefail
+
+# The behold release this plugin runs. It must be a release that has
+# `behold graph --context` (behold#1083).
+BEHOLD_PIN="0.31.0"
+PROG="kubectl behold"
+
+usage() {
+  cat <<USAGE
+Usage: $PROG [TYPE/NAME | TYPE NAME] [-n NAMESPACE] [--context NAME]
+                       [--kubeconfig FILE] [--depth N] [--theme light|dark]
+                       [--allow-exec-plugin] [--no-open] [-o FILE]
+
+Draw a cluster with behold and open it in a browser. With an object, the
+picture is that object and what it references or is referenced by.
+
+  -n, --namespace NS     Read this namespace only. For an object, default is
+                         the object's own namespace.
+  --context NAME         The kubeconfig context (default: the current one).
+  --kubeconfig FILE      The kubeconfig (default: KUBECONFIG, then ~/.kube/config).
+  --depth N              Hops around the object (default: behold's own).
+  --theme light|dark     The SVG theme (default dark).
+  --allow-exec-plugin    A context whose user authenticates through an exec
+                         plugin (the GKE, EKS and AKS tools write these) is
+                         refused by default, because behold would run the
+                         command the kubeconfig names. This runs it once and
+                         reads with the credential it prints.
+  --no-open              Write the picture and print its path, open nothing.
+  -o, --output FILE      Write the SVG to FILE (default: a temporary file).
+
+Needs kubectl and Node 20 or newer on PATH. Runs @intentius/behold@$BEHOLD_PIN
+through npx; set BEHOLD_BIN to a command to run something else.
+USAGE
+}
+
+die() { echo "$PROG: $*" >&2; exit "${2:-2}"; }
+
+context="" kubeconfig="" namespace="" depth="" theme="" allow="" open=1 out=""
+target=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    -n|--namespace) [ $# -ge 2 ] || die "$1 needs a namespace"; namespace="$2"; shift 2 ;;
+    --namespace=*) namespace="${1#*=}"; shift ;;
+    --context) [ $# -ge 2 ] || die "--context needs a name"; context="$2"; shift 2 ;;
+    --context=*) context="${1#*=}"; shift ;;
+    --kubeconfig) [ $# -ge 2 ] || die "--kubeconfig needs a file"; kubeconfig="$2"; shift 2 ;;
+    --kubeconfig=*) kubeconfig="${1#*=}"; shift ;;
+    --depth) [ $# -ge 2 ] || die "--depth needs a number"; depth="$2"; shift 2 ;;
+    --theme) [ $# -ge 2 ] || die "--theme needs light or dark"; theme="$2"; shift 2 ;;
+    --allow-exec-plugin) allow=1; shift ;;
+    --no-open) open=""; shift ;;
+    -o|--output) [ $# -ge 2 ] || die "$1 needs a file"; out="$2"; shift 2 ;;
+    -*) die "unknown option $1 (see $PROG --help)" ;;
+    *) target+=("$1"); shift ;;
+  esac
+done
+[ ${#target[@]} -le 2 ] || die "give TYPE/NAME or TYPE NAME, not ${#target[@]} words"
+
+command -v kubectl >/dev/null 2>&1 || die "kubectl is not on PATH"
+kube=(kubectl)
+[ -z "$kubeconfig" ] || kube+=(--kubeconfig "$kubeconfig")
+if [ -z "$context" ]; then
+  context="$("${kube[@]}" config current-context 2>/dev/null)" || die "no current context; pass --context NAME"
+fi
+kube+=(--context "$context")
+
+args=(graph --context "$context" --svg)
+[ -z "$kubeconfig" ] || args+=(--kubeconfig "$kubeconfig")
+[ -z "$allow" ] || args+=(--allow-exec-plugin)
+[ -z "$theme" ] || args+=(--theme "$theme")
+
+if [ ${#target[@]} -gt 0 ]; then
+  nsflag=()
+  [ -z "$namespace" ] || nsflag=(-n "$namespace")
+  # kubectl resolves short names (deploy, svc), the type's kind and the namespace.
+  # kubectl itself runs an exec plugin the user already relies on; behold's refusal is only about behold running one.
+  found="$("${kube[@]}" get "${target[@]}" ${nsflag[@]+"${nsflag[@]}"} -o 'jsonpath={.kind}/{.metadata.namespace}/{.metadata.name}')" || exit 1
+  IFS=/ read -r kind ons oname <<<"$found"
+  [ -n "$kind" ] && [ -n "$oname" ] || die "kubectl get ${target[*]} did not answer one object" 1
+  args+=(--namespace "${ons:-cluster}" --around "${ons:-cluster}/$kind/$oname")
+  [ -z "$depth" ] || args+=(--depth "$depth")
+else
+  [ -z "$namespace" ] || args+=(--namespace "$namespace")
+fi
+
+if [ -z "$out" ]; then
+  out="$(mktemp -d "${TMPDIR:-/tmp}/kubectl-behold.XXXXXX")/behold.svg"
+fi
+args+=(-o "$out")
+
+if [ -n "${BEHOLD_BIN:-}" ]; then
+  read -r -a runner <<<"$BEHOLD_BIN"
+else
+  command -v npx >/dev/null 2>&1 || die "npx is not on PATH; install Node 20 or newer, or set BEHOLD_BIN"
+  runner=(npx --yes "@intentius/behold@$BEHOLD_PIN")
+fi
+
+errfile="$(mktemp "${TMPDIR:-/tmp}/kubectl-behold-err.XXXXXX")"
+trap 'rm -f "$errfile"' EXIT
+set +e
+"${runner[@]}" "${args[@]}" 2>"$errfile" >/dev/null
+status=$?
+set -e
+if [ "$status" -ne 0 ]; then
+  cat "$errfile" >&2
+  if [ "$status" -eq 2 ] && grep -q "exec plugin" "$errfile"; then
+    echo "$PROG: this kubeconfig user runs an exec plugin, which behold refuses unless you allow it. Run it again with --allow-exec-plugin to let behold run that command once and read with the credential it prints." >&2
+  fi
+  exit "$status"
+fi
+
+echo "$out"
+if [ -n "$open" ]; then
+  if [ -n "${BEHOLD_OPEN:-}" ]; then "$BEHOLD_OPEN" "$out" || true
+  elif command -v open >/dev/null 2>&1; then open "$out"
+  elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$out" >/dev/null 2>&1 || true
+  else echo "$PROG: no browser opener found; open the file above" >&2
+  fi
+fi

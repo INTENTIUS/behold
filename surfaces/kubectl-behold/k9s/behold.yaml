@@ -1,0 +1,25 @@
+plugins:
+  behold:
+    shortCut: Shift-B
+    description: "Draw with behold (kubectl behold)"
+    scopes:
+      - deployments
+      - statefulsets
+      - daemonsets
+      - replicasets
+      - services
+      - pods
+      - jobs
+      - cronjobs
+      - ingresses
+    command: kubectl
+    background: true
+    args:
+      - behold
+      - $RESOURCE_NAME/$NAME
+      - -n
+      - $NAMESPACE
+      - --context
+      - $CONTEXT
+      - --kubeconfig
+      - $KUBECONFIG

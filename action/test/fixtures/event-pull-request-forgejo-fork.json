@@ -1,0 +1,64 @@
+{
+  "action": "synchronized",
+  "number": 7,
+  "pull_request": {
+    "id": 901,
+    "url": "https://forgejo.example.com/acme/infra/pulls/7",
+    "number": 7,
+    "state": "open",
+    "title": "Change the subnet",
+    "head": {
+      "label": "topic",
+      "ref": "topic",
+      "sha": "__HEAD__",
+      "repo_id": 12,
+      "repo": {
+        "id": 12,
+        "owner": {
+          "id": 6,
+          "login": "fork",
+          "username": "fork"
+        },
+        "name": "infra",
+        "full_name": "fork/infra",
+        "html_url": "https://forgejo.example.com/fork/infra",
+        "fork": true
+      }
+    },
+    "base": {
+      "label": "main",
+      "ref": "main",
+      "sha": "__BASE__",
+      "repo_id": 11,
+      "repo": {
+        "id": 11,
+        "owner": {
+          "id": 5,
+          "login": "acme",
+          "username": "acme"
+        },
+        "name": "infra",
+        "full_name": "acme/infra",
+        "html_url": "https://forgejo.example.com/acme/infra",
+        "fork": false
+      }
+    }
+  },
+  "repository": {
+    "id": 11,
+    "owner": {
+      "id": 5,
+      "login": "acme",
+      "username": "acme"
+    },
+    "name": "infra",
+    "full_name": "acme/infra",
+    "html_url": "https://forgejo.example.com/acme/infra",
+    "fork": false
+  },
+  "sender": {
+    "id": 1001,
+    "login": "reviewer",
+    "username": "reviewer"
+  }
+}

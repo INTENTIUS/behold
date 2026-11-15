@@ -143,8 +143,23 @@ async function paintPlans(ir: GraphIR, read: ReadGraphResult, deps: PlanReadDeps
 /** Read `dir` and run the source view's lenses over it. The module header says which. */
 export async function graphView(dir: string | readonly string[], opts: GraphViewOptions = {}): Promise<GraphView> {
   const { alike, collapse, terraformPlan, ...readOpts } = opts;
-  const read = await readGraph(dir, readOpts);
-  const zoom = zoomOf(readOpts.detail);
+  return viewOf(await readGraph(dir, readOpts), { alike, collapse, terraformPlan, detail: readOpts.detail });
+}
+
+/**
+ * A cluster read through a kubeconfig context (behold#1083, src/read-cluster.ts)
+ * with the same lenses over it: stacking alike cards and collapse. There is no
+ * plan to paint. The refusals `readCluster` throws pass through.
+ */
+export async function clusterView(read: ReadGraphResult, opts: Pick<GraphViewOptions, "alike" | "collapse" | "detail"> = {}): Promise<GraphView> {
+  const n = read.ir.dangling?.length ?? 0;
+  // The route's wording is for a project's source (a workflow in another repo); a cluster's references name objects the read did not list.
+  return viewOf(read, { ...opts, danglingText: n ? `${n} ${n === 1 ? "reference names an object" : "references name objects"} this read did not list` : "" });
+}
+
+async function viewOf(read: ReadGraphResult, opts: Pick<GraphViewOptions, "alike" | "collapse" | "terraformPlan" | "detail"> & { danglingText?: string }): Promise<GraphView> {
+  const { alike, collapse, terraformPlan } = opts;
+  const zoom = zoomOf(opts.detail);
   // The plan paints the read's own IR, as the route paints the IR it read.
   const planNote = terraformPlan ? await paintPlans(read.ir, read, terraformPlan) : undefined;
   const expanded = read.ir;
@@ -157,7 +172,7 @@ export async function graphView(dir: string | readonly string[], opts: GraphView
     lexicon,
     sameZoom: unchangedZoomNote(zoom, read.members.map((m) => m.kind)),
     plan: planNote,
-    dangling: danglingNote(expanded),
+    dangling: opts.danglingText !== undefined ? opts.danglingText || undefined : danglingNote(expanded),
     shaped: shaped.note,
   });
   return { ir: shaped.ir, meta: { estate: read.meta.estate, zoom, ...note }, read };
