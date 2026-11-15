@@ -1,4 +1,4 @@
-import { createFrontendPlugin } from '@backstage/frontend-plugin-api';
+import { createFrontendPlugin, type FrontendPlugin } from '@backstage/frontend-plugin-api';
 import { EntityContentBlueprint } from '@backstage/plugin-catalog-react/alpha';
 import { namesSlice } from './slice';
 
@@ -13,7 +13,8 @@ const infrastructureContent = EntityContentBlueprint.make({
   },
 });
 
-export const beholdFrontendPlugin = createFrontendPlugin({
+// Annotated so the declaration does not name a nested package's type (TS2742 on Backstage 1.54).
+export const beholdFrontendPlugin: FrontendPlugin = createFrontendPlugin({
   pluginId: 'behold',
   extensions: [infrastructureContent],
 });

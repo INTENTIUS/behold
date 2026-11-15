@@ -1,0 +1,6 @@
+# What the tab reads. Merge this into the app-config RHDH starts with (the
+# Helm values' appConfig or the Operator's app-config ConfigMap).
+behold:
+  exportUrl: https://example.github.io/estate/
+  # proxyPath: /behold
+  # viewerUrl: https://example.github.io/estate/behold.html

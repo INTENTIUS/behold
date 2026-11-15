@@ -1,0 +1,10 @@
+# Red Hat Developer Hub, the default new frontend system app (RHDH next, built
+# on Backstage 1.54). The package's ./alpha export registers the Infrastructure
+# tab as an entity-content extension, so there is no mount point or tab wiring
+# to write: install it and enable it.
+#
+# Use the OCI image the release workflow publishes. The derived "-dynamic"
+# package is not published to public npm.
+plugins:
+  - package: oci://ghcr.io/intentius/backstage-plugin-behold:0.1.0!intentius-backstage-plugin-behold
+    enabled: true

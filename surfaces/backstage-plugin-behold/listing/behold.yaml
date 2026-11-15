@@ -1,0 +1,11 @@
+---
+title: behold
+author: INTENTIUS
+authorUrl: https://github.com/INTENTIUS
+category: Infrastructure
+description: An Infrastructure tab on a component. The Terraform roots its annotation names, and what they touch, drawn from a behold graph.json with no cloud access.
+documentation: https://github.com/INTENTIUS/behold/tree/main/surfaces/backstage-plugin-behold
+iconUrl: /img/behold.svg
+npmPackageName: '@intentius/backstage-plugin-behold'
+addedDate: '2026-11-15'
+status: active

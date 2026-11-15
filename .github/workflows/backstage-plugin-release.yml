@@ -1,0 +1,82 @@
+name: backstage-plugin-release
+
+# Checks the Backstage plugin in surfaces/backstage-plugin-behold against two
+# Backstage releases, then exports it as a Red Hat Developer Hub dynamic plugin
+# and builds the OCI image. On a tag the image is pushed to ghcr.io; any other
+# run builds the image and stops there.
+#
+# The npm release of @intentius/backstage-plugin-behold is separate and stays a
+# maintainer step. The derived "-dynamic" package is only ever inside the image.
+#
+# Tag: backstage-plugin-behold-v<version> (distinct from the behold-v* tags).
+on:
+  push:
+    tags: ["backstage-plugin-behold-v*"]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "surfaces/backstage-plugin-behold/**"
+      - ".github/workflows/backstage-plugin-release.yml"
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: surfaces/backstage-plugin-behold
+
+jobs:
+  # 1.54.9 is what Red Hat Developer Hub next is built on; 1.56.5 is the
+  # release the package.json devDependencies were resolved against.
+  backstage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        backstage: ["1.54.9", "1.56.5"]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+      - name: Pin every @backstage package to the release
+        run: node scripts/pin-backstage.mjs ${{ matrix.backstage }}
+      - run: npm install --ignore-scripts
+      - run: npm run tsc
+      - run: npm test
+      - run: npm run build
+
+  dynamic-plugin:
+    needs: backstage
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    env:
+      CONTAINER_TOOL: docker
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - name: Name the image
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            test "${GITHUB_REF_NAME#backstage-plugin-behold-v}" = "$version" || { echo "tag $GITHUB_REF_NAME does not match package.json $version"; exit 1; }
+            echo "IMAGE=ghcr.io/intentius/backstage-plugin-behold:$version" >> "$GITHUB_ENV"
+          else
+            echo "IMAGE=ghcr.io/intentius/backstage-plugin-behold:rehearsal" >> "$GITHUB_ENV"
+          fi
+      - name: Export the dynamic plugin and build the image
+        run: npm run package-dynamic
+      - name: Push the image
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push "$IMAGE"
