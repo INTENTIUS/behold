@@ -28,7 +28,7 @@
  */
 import type { GraphIR, IREdge, IRNode } from "@intentius/chant";
 import { CATALOG_WEIGHTS, WEIGHTS, edgeWeights, weightLegend } from "../web/edge-weight.js";
-import { catalogOfIr, type CatalogDangling, type CatalogIr, type IrCatalog } from "./reference-catalog.ts";
+import { catalogOfIr, type CatalogDangling, type CatalogIr, type IrCatalog } from "./reference-catalog-shape.ts";
 
 type Rec = Record<string, unknown>;
 

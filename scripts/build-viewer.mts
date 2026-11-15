@@ -122,7 +122,8 @@ for (const name of readdirSync(OUT).sort()) {
 }
 console.log(`  ${kb(total).padStart(9)}  the directory`);
 if (total > BUDGET.directory) failures.push(`the directory is ${kb(total)}, over ${kb(BUDGET.directory)}`);
-const connections = (iife.match(/EventSource|WebSocket/g) ?? []).length;
+// Whole identifiers only: an AWS attribute such as EventSourceArn in a painter table is not a connection.
+const connections = (iife.match(/\b(?:EventSource|WebSocket)\b/g) ?? []).length;
 console.log(`viewer: EventSource or WebSocket in viewer.js: ${connections}`);
 if (connections) failures.push(`viewer.js names EventSource or WebSocket ${connections} times`);
 if (failures.length) {
