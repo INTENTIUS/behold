@@ -27,7 +27,7 @@ spec:
         - darwin
         - linux
     uri: https://github.com/INTENTIUS/behold/releases/download/kubectl-behold-v0.1.0/kubectl-behold-v0.1.0.tar.gz
-    sha256: "80d10cff87354840fc9178c42034d600f8cf4cacd8ff203e9226944a91309684"
+    sha256: "98e3a759b7a29442f1d39b6da2e75466bfa980be0ac803d85759e6ce5b77ef3c"
     files:
     - from: kubectl-behold
       to: .

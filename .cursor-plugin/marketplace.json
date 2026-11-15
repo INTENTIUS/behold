@@ -11,7 +11,7 @@
       "name": "behold",
       "source": "./plugins/cursor",
       "description": "Your infrastructure repo as a graph, from the files. Draws Terraform roots, no state needed.",
-      "version": "0.31.0",
+      "version": "0.32.0",
       "category": "development",
       "keywords": [
         "terraform",
