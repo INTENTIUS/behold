@@ -35,5 +35,5 @@ jobs:
           npx -y @anthropic-ai/claude-code@2.1.325 plugin validate --strict .
       - name: plugins stay out of the npm package
         run: |
-          npm pack --dry-run --json --ignore-scripts | node -e 'const f=JSON.parse(require("fs").readFileSync(0,"utf8"))[0].files.map(x=>x.path).filter(p=>p.startsWith("plugins/")||p.startsWith(".claude-plugin/")); if(f.length){console.error("packed:",f);process.exit(1)}'
+          npm pack --dry-run --json --ignore-scripts | node -e 'const f=JSON.parse(require("fs").readFileSync(0,"utf8"))[0].files.map(x=>x.path).filter(p=>p.startsWith("plugins/")||p.startsWith(".claude-plugin/")||p.startsWith(".cursor-plugin/")); if(f.length){console.error("packed:",f);process.exit(1)}'
 

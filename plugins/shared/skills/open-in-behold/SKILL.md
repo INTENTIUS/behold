@@ -11,13 +11,13 @@ roots. It needs no state file and no cloud account, and it writes nothing into
 the folder.
 
 1. Start the serve in the background from the repo root, so the session stays
-   free: run `npx -y @intentius/behold@{{VERSION}} serve .` with the Bash tool's
-   `run_in_background` option. If port 4600 is taken, add `--port 4601` (or any
+   free: run `npx -y @intentius/behold@{{VERSION}} serve .` as a background process
+   that you do not wait on to exit. If port 4600 is taken, add `--port 4601` (or any
    free port).
 2. Read the background output until the line that starts with `behold` and
    gives an `http://localhost:` URL appears. That URL is the address, normally
    `http://localhost:4600`.
-3. Print that URL to the user and say it opens in a browser tab. Claude Code
+3. Print that URL to the user and say it opens in a browser tab. {{HOST}}
    does not render the graph itself.
 4. The `behold` MCP server in this plugin finds the running serve by itself.
    Call `ask` to put a question to the graph. `show` moves a browser tab that
