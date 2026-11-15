@@ -54,9 +54,27 @@
  * src/value-match.ts: infer only where the answer is forced.
  *
  * A project with no k8s nodes, or no managed cluster, is untouched.
+ *
+ * ## The cluster join (behold#1080)
+ *
+ * When the estate was read through chant's reference catalog (chant 0.124.98,
+ * src/reference-catalog.ts), a member whose Argo CD Applications name a cluster
+ * Secret has said which cluster its objects run on, and chant's rules
+ * (INTENTIUS/chant#5101) join the Secret to the cluster resource whose name it
+ * registers. That answer replaces the guess for that member's objects:
+ *
+ *  - one cluster resource: the member's objects anchor to it, and to no other,
+ *    however many clusters the estate declares;
+ *  - the Secret's name matches no cluster resource, or matches several, or the
+ *    member's Applications reach more than one cluster: nothing anchors, and a
+ *    note says why. The guess is not made either, since the join has the
+ *    answer and the answer is that there is none to give.
+ *
+ * A member with no cluster Secret keeps the guess above.
  */
 import type { GraphIR, IRNode } from "@intentius/chant";
 import { contextBindsCluster } from "./k8s-target.ts";
+import { catalogOfIr, type CatalogIr, type IrCatalog } from "./reference-catalog.ts";
 
 /**
  * Managed-cluster kinds across the three cloud lexicons — the node a k8s
@@ -153,52 +171,140 @@ export function boundManagedCluster(nodes: readonly IRNode[], boundContext?: str
   return bound.length === 1 ? bound[0] : undefined;
 }
 
+/** The rule that joins a cluster Secret to the cluster resource it registers (INTENTIUS/chant#5101). */
+const REGISTERS_RULE = /:argoCluster\.name$/;
+/** The rules that join an Application, or the Applications an ApplicationSet makes, to the cluster Secret they deploy to. */
+const DEPLOYS_RULE = /K8s::Argo::(Application:spec\.destination\.(name|server)|ApplicationSet:generators\[\]\.clusters)$/;
+
+/** What the catalog says about one member's cluster. */
+interface MemberCluster {
+  /** The cluster resources its Secrets register, by node id. */
+  clusters: Set<string>;
+  /** Reasons nothing can be anchored, as notes. */
+  problems: string[];
+}
+
+/** The member a node is in: its `byStack` box, else the prefix of its id. */
+function memberOf(ir: GraphIR): (id: string) => string {
+  const box = new Map<string, string>();
+  for (const [name, ids] of Object.entries((ir.groups.byStack ?? {}) as Record<string, string[]>)) for (const id of ids) if (!box.has(id)) box.set(id, name);
+  return (id) => box.get(id) ?? id.split("/")[0] ?? "";
+}
+
+/**
+ * What chant's cluster join says each member runs on. A member appears when one
+ * of its nodes holds an Application's reference to a cluster Secret, or is a
+ * cluster Secret itself (one that registers a cluster, rightly or not).
+ */
+export function memberClusters(ir: GraphIR, catalog: IrCatalog): Map<string, MemberCluster> {
+  const member = memberOf(ir);
+  const secrets = new Map<string, Set<string>>(); // Secret id -> members that rely on it
+  const rely = (secret: string, m: string): void => void (secrets.get(secret) ?? secrets.set(secret, new Set()).get(secret)!).add(m);
+  const edges = ir.edges as Array<{ from: string; to: string; rule?: string; origin?: string; viaAttr?: string }>;
+  const registered = new Map<string, Set<string>>(); // Secret id -> cluster resources
+  const register = (secret: string, cluster: string): void => void (registered.get(secret) ?? registered.set(secret, new Set()).get(secret)!).add(cluster);
+  for (const e of edges) {
+    if (typeof e.rule === "string" && DEPLOYS_RULE.test(e.rule)) rely(e.to, member(e.from));
+    if (typeof e.rule === "string" && REGISTERS_RULE.test(e.rule)) {
+      register(e.from, e.to);
+      rely(e.from, member(e.from));
+    }
+  }
+  for (const r of catalog.runsOn) {
+    register(r.from, r.to);
+    rely(r.from, member(r.from));
+  }
+  for (const d of catalog.dangling) if (REGISTERS_RULE.test(d.rule)) rely(d.from, member(d.from));
+  for (const a of catalog.ambiguous) if (REGISTERS_RULE.test(a.rule)) rely(a.from, member(a.from));
+
+  const out = new Map<string, MemberCluster>();
+  for (const [secret, members] of secrets) {
+    const dangling = catalog.dangling.filter((d) => d.from === secret && REGISTERS_RULE.test(d.rule));
+    const ambiguous = catalog.ambiguous.filter((a) => a.from === secret && REGISTERS_RULE.test(a.rule));
+    for (const m of members) {
+      const entry = out.get(m) ?? out.set(m, { clusters: new Set(), problems: [] }).get(m)!;
+      for (const c of registered.get(secret) ?? []) entry.clusters.add(c);
+      const resolved = (registered.get(secret)?.size ?? 0) > 0;
+      for (const d of dangling) if (!resolved) entry.problems.push(`cluster Secret ${secret} registers cluster "${d.value}", which no cluster resource names (${d.rule})`);
+      for (const a of ambiguous) entry.problems.push(`cluster Secret ${secret} registers cluster "${a.value}", which ${a.candidates.length} cluster resources name (${a.candidates.join(", ")})`);
+    }
+  }
+  return out;
+}
+
 /**
  * Add `runs-on` anchor edges: cluster → namespace → namespaced resource, and
  * cluster → cluster-scoped resource. Mutates + returns `ir`, matching
  * `addValueMatchEdges`'s contract so the two compose in the same pipeline.
  * `boundContext` (the kube context chant binds for the served env) breaks a
- * multi-cluster tie — see `boundManagedCluster`.
+ * multi-cluster tie — see `boundManagedCluster`. With chant's reference
+ * catalog on the IR, a member the cluster join answers for is anchored by the
+ * answer or not at all (see the module note), and the reasons it was not are
+ * on `ir.anchorNotes`.
  */
 export function addClusterAnchorEdges(ir: GraphIR, boundContext?: string): GraphIR {
   const nodes = ir.nodes as AnchorNode[];
-  const cluster = boundManagedCluster(ir.nodes, boundContext);
-  if (!cluster) return ir;
   const k8sNodes = nodes.filter(isK8s);
   if (k8sNodes.length === 0) return ir;
 
-  // Declared namespaces, by the name Kubernetes knows them as. A Namespace's
-  // `metadata.name` is the join key that `metadata.namespace` on every other
-  // object points at — nothing in the IR links them symbolically.
-  const namespaceByName = new Map<string, string>();
-  for (const n of k8sNodes) {
-    if (!isNamespace(n)) continue;
-    const name = metaString(n, "name");
-    if (name && !namespaceByName.has(name)) namespaceByName.set(name, n.id);
-  }
-
+  const mutual = catalogOfIr(ir) !== undefined;
   const existing = new Set(ir.edges.map((e) => `${e.from}\0${e.to}`));
   const add = (from: string, to: string) => {
     if (from === to) return;
     const key = `${from}\0${to}`;
-    if (existing.has(key)) return;
+    // A card that already registers the cluster (the cluster Secret) is tied to it by that edge.
+    if (existing.has(key) || (mutual && existing.has(`${to}\0${from}`))) return;
     existing.add(key);
     ir.edges.push({ from, to, kind: "ref", viaAttr: ANCHOR_VIA, inferred: true, join: "cluster-anchor" } as never);
   };
 
-  for (const n of k8sNodes) {
-    if (isNamespace(n)) {
-      add(cluster.id, n.id); // the namespace itself is cluster-scoped
-      continue;
+  /** Anchor `group` to `cluster`: namespaces under it, namespaced objects under their namespace. */
+  const anchor = (group: AnchorNode[], cluster: IRNode): void => {
+    // Declared namespaces, by the name Kubernetes knows them as. A Namespace's
+    // `metadata.name` is the join key that `metadata.namespace` on every other
+    // object points at — nothing in the IR links them symbolically.
+    const namespaceByName = new Map<string, string>();
+    for (const n of group) {
+      if (!isNamespace(n)) continue;
+      const name = metaString(n, "name");
+      if (name && !namespaceByName.has(name)) namespaceByName.set(name, n.id);
     }
-    const ns = metaString(n, "namespace");
-    const nsNode = ns ? namespaceByName.get(ns) : undefined;
-    // Namespaced and its namespace is declared here → nest under it. Otherwise
-    // (cluster-scoped, or a namespace this project doesn't declare) the cluster
-    // is the honest parent: something has to hold it, and inventing a namespace
-    // node would put a resource in the graph nobody declared.
-    add(nsNode ?? cluster.id, n.id);
-  }
+    for (const n of group) {
+      if (isNamespace(n)) {
+        add(cluster.id, n.id); // the namespace itself is cluster-scoped
+        continue;
+      }
+      const ns = metaString(n, "namespace");
+      const nsNode = ns ? namespaceByName.get(ns) : undefined;
+      // Namespaced and its namespace is declared here → nest under it. Otherwise
+      // (cluster-scoped, or a namespace this project doesn't declare) the cluster
+      // is the honest parent: something has to hold it, and inventing a namespace
+      // node would put a resource in the graph nobody declared.
+      add(nsNode ?? cluster.id, n.id);
+    }
+  };
 
+  // behold#1080: the members chant's cluster join answers for.
+  const catalog = catalogOfIr(ir);
+  const joined = catalog ? memberClusters(ir, catalog) : new Map<string, MemberCluster>();
+  const byId = new Map(ir.nodes.map((n) => [n.id, n] as const));
+  const memberName = memberOf(ir);
+  const notes: string[] = [];
+  for (const [name, answer] of joined) {
+    const clusters = [...answer.clusters].filter((id) => byId.has(id));
+    const mine = k8sNodes.filter((n) => memberName(n.id) === name);
+    if (answer.problems.length === 0 && clusters.length === 1) anchor(mine, byId.get(clusters[0]!)!);
+    else if (clusters.length > 1 && answer.problems.length === 0) notes.push(`${name}: its cluster Secrets register ${clusters.length} clusters (${clusters.join(", ")}), so its objects are anchored to none`);
+    else for (const p of answer.problems) notes.push(`${name}: ${p}; its objects are anchored to no cluster`);
+  }
+  if (notes.length) (ir as CatalogIr).anchorNotes = notes;
+
+  // Everything the join has no answer for keeps the guess.
+  const cluster = boundManagedCluster(ir.nodes, boundContext);
+  if (!cluster) return ir;
+  anchor(
+    k8sNodes.filter((n) => !joined.has(memberName(n.id))),
+    cluster,
+  );
   return ir;
 }

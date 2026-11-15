@@ -62,6 +62,18 @@ Foreign-owned is shown as a distinct state from drifted. A field the HPA legitim
 
 An estate that spans providers keeps its edges: a managed cluster declared in your cloud lexicon and the workload running on it render connected, in the live view and not only in the source graph.
 
+## Joined, dangling and ambiguous references
+
+A declared workspace read by a chant at 0.124.98 or newer carries chant's reference catalog (chant#5097): each lexicon's rules for how its resources name each other, run over every member at once. behold draws what the catalog finds in three ways, and the legend has a row for each.
+
+- A **joined** edge is one a catalog rule drew, an exact match of a value against the values that identify a node of the kind the rule names. It is a solid line, a little heavier than a plain reference, and apart from an **inferred** edge, which is a match by name. Hovering it names the rule, such as `runs as: joined by rule k8s:K8s::Apps::Deployment:spec.template.spec.serviceAccountName`.
+- A **dangling** reference, a value that names nothing in the workspace, is a dashed placeholder card beside its holder. The card is titled with the value, says the rule, and has a dashed edge from each holder in the member that names the same kind and value. A reference whose rule is containment, such as an object whose namespace no member declares, stays in the note and on the card's own list, since a placeholder for each namespace would draw cards nobody asked about on an estate of plain manifests.
+- An **ambiguous** reference, a value that names several nodes, gets one dotted edge to each candidate, labelled `one of N`. chant draws no edge for it and behold does not pick one.
+
+A cluster Secret that registers a cluster is the one place the catalog also changes where cards sit. When a member's Argo CD Applications name a cluster Secret and chant joins the Secret to a cluster resource of that name, the member's objects anchor to that cluster and no other, however many clusters the estate declares. When the Secret's name matches no cluster resource, or matches two, or the member reaches several clusters, nothing is anchored and the statusbar note says why. A member with no cluster Secret keeps the anchor behold has always drawn: the one managed cluster, or the one the bound kube context names.
+
+A chant older than 0.124.98 prints none of this, and behold draws the graph as it did before: its own name matches, the count of dangling references in the note, and the cluster guess. `behold doctor` lists the floor as "reference catalog".
+
 ## Pipeline boxes
 
 A project that declares CI (the github, forgejo or gitlab lexicon, chant 0.124.20 or later) draws each workflow or pipeline as a box holding the workflow and its jobs. The box takes the workflow's `name:` when it has one (`CI Pipeline`), and the entity's key otherwise. A reusable-workflow call runs between two boxes.

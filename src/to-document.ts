@@ -234,7 +234,8 @@ function documentNode(node: IRNode, boxes: Boxes, opts: ToDocumentOptions, membe
 
 /** The rule an inferred edge was drawn by: chant's catalog rule, or the behold pass that joined it. */
 function ruleOf(e: Rec): string | undefined {
-  if (e.origin === "derived" && str(e.rule)) return e.rule as string;
+  // chant's catalog rule, on its joined edge and on the edges behold draws for a reference of that rule that found no target or several (behold#1080).
+  if ((e.origin === "derived" || e.dangling === true || (typeof e.ambiguous === "object" && e.ambiguous !== null)) && str(e.rule)) return e.rule as string;
   const join = str(e.join);
   return join ? `behold:${join}` : undefined;
 }

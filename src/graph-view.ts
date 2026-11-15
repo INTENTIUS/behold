@@ -33,6 +33,7 @@ import type { GraphIR } from "@intentius/chant";
 import { collapseBoxes, collapseNote } from "./collapse-lens.ts";
 import { choudoufuLexiconNote } from "./choudoufu-refs.ts";
 import { addInstanceCards } from "./instance-cards.ts";
+import { drawCatalog } from "./catalog-draw.ts";
 import { readGraph, type ReadGraphOptions, type ReadGraphResult } from "./read-graph.ts";
 import { stackAlike, stackNote } from "./stack-lens.ts";
 import { paintTerraformPlan, readTerraformPlan, terraformPlanNote, type MemberPlanAnswer, type PlanReadDeps } from "./terraform-plan.ts";
@@ -175,5 +176,6 @@ async function viewOf(read: ReadGraphResult, opts: Pick<GraphViewOptions, "alike
     dangling: opts.danglingText !== undefined ? opts.danglingText || undefined : danglingNote(expanded),
     shaped: shaped.note,
   });
-  return { ir: shaped.ir, meta: { estate: read.meta.estate, zoom, ...note }, read };
+  // behold#1080: chant's dangling and ambiguous references, drawn on what the stacking left.
+  return { ir: drawCatalog(shaped.ir), meta: { estate: read.meta.estate, zoom, ...note }, read };
 }

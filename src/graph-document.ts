@@ -111,7 +111,7 @@ export interface GraphDocumentEdge {
   kind: string;
   /** True when behold or chant joined the two rather than a reader stating it. */
   inferred: boolean;
-  /** On an inferred edge: the join that drew it, `behold:<pass>` or chant's catalog rule. */
+  /** On an inferred edge: the join that drew it, `behold:<pass>` or chant's catalog rule id. On the edge to a placeholder card (a reference that names nothing) and on each edge of a reference that names several candidates, the rule of that reference. */
   rule?: string;
   /** The consumer-side attribute the reference flows through. */
   via?: string;

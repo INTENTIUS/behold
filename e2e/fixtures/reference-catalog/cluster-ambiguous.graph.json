@@ -1,0 +1,366 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/graph/v1/graph.schema.json",
+  "contract": 1,
+  "chant": "0.124.34",
+  "at": null,
+  "plantable": {
+    "plantable": false,
+    "box": null,
+    "reason": {
+      "code": "box-none",
+      "message": "no member's box block declares services, so there is no box to plant"
+    }
+  },
+  "version": 1,
+  "workspace": {
+    "name": "fx-amb",
+    "root": "/work/estate",
+    "repo": null
+  },
+  "members": [
+    {
+      "name": "a",
+      "dir": "a",
+      "kind": "terraform",
+      "status": "composed",
+      "reason": null,
+      "chant": "0.124.34",
+      "irVersion": 1,
+      "live": false,
+      "cached": false,
+      "stamp": "sha256:3bf25cd36b5708f50911e9c18ce5d505eaaa1334b6b1b07f329a7d64b2d9b7a1",
+      "meta": {
+        "lint": {
+          "errors": 0,
+          "warnings": 0,
+          "findings": []
+        }
+      },
+      "box": null
+    },
+    {
+      "name": "argo",
+      "dir": "argo",
+      "kind": "argo-app",
+      "status": "composed",
+      "reason": null,
+      "chant": "0.124.34",
+      "irVersion": 1,
+      "live": false,
+      "cached": false,
+      "stamp": "sha256:c5c2baa11c173d9b632e40f0677c922e427985d8f6bd37c69be8967af8100cbc",
+      "meta": {
+        "k8sMember": {
+          "kind": "argo-app",
+          "objects": 2
+        },
+        "lint": {
+          "errors": 0,
+          "warnings": 2,
+          "findings": [
+            {
+              "ruleId": "ARGO005",
+              "severity": "warning",
+              "message": "[web] Application \"web\" source.path \"web\" does not resolve to a directory under the build root. Confirm the path (or ignore if it lives in a different repo).",
+              "file": "chant.config.json",
+              "line": 1,
+              "column": 1,
+              "entity": "web"
+            },
+            {
+              "ruleId": "WK8102",
+              "severity": "warning",
+              "message": "[web] Application \"web\" has no metadata.labels — add labels for organizational purposes",
+              "file": "chant.config.json",
+              "line": 1,
+              "column": 1,
+              "entity": "web"
+            }
+          ]
+        }
+      },
+      "box": null
+    },
+    {
+      "name": "b",
+      "dir": "b",
+      "kind": "terraform",
+      "status": "composed",
+      "reason": null,
+      "chant": "0.124.34",
+      "irVersion": 1,
+      "live": false,
+      "cached": false,
+      "stamp": "sha256:c427505d2125297da066fcbe9027a608e8e85c66c99751e7d6a36f8ecf3ed4cb",
+      "meta": {
+        "lint": {
+          "errors": 0,
+          "warnings": 0,
+          "findings": []
+        }
+      },
+      "box": null
+    }
+  ],
+  "nodes": [
+    {
+      "id": "a/a/google_container_cluster.main",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "google_container_cluster.main",
+        "type": "google_container_cluster",
+        "name": "main",
+        "file": "main.tf",
+        "root": "a",
+        "source": "resource \"google_container_cluster\" \"main\" {\n  name     = \"prod\"\n  location = \"us-central1\"\n}\n",
+        "line": 1,
+        "mode": "state",
+        "lockFile": false
+      },
+      "member": "a"
+    },
+    {
+      "id": "argo/argo/applicationWeb",
+      "kind": "K8s::Argo::Application",
+      "lexicon": "k8s",
+      "attrs": {
+        "apiVersion": "argoproj.io/v1alpha1",
+        "kind": "Application"
+      },
+      "member": "argo"
+    },
+    {
+      "id": "argo/argo/secretClusterProd",
+      "kind": "K8s::Core::Secret",
+      "lexicon": "k8s",
+      "attrs": {
+        "apiVersion": "v1",
+        "kind": "Secret"
+      },
+      "member": "argo"
+    },
+    {
+      "id": "b/b/google_container_cluster.main",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "google_container_cluster.main",
+        "type": "google_container_cluster",
+        "name": "main",
+        "file": "main.tf",
+        "root": "b",
+        "source": "resource \"google_container_cluster\" \"main\" {\n  name     = \"prod\"\n  location = \"us-central1\"\n}\n",
+        "line": 1,
+        "mode": "state",
+        "lockFile": false
+      },
+      "member": "b"
+    }
+  ],
+  "edges": [
+    {
+      "from": "argo/argo/applicationWeb",
+      "to": "argo/argo/secretClusterProd",
+      "kind": "ref",
+      "viaAttr": "spec",
+      "grain": "property",
+      "origin": "derived",
+      "rule": "k8s:K8s::Argo::Application:spec.destination.name",
+      "relation": "reference",
+      "member": "argo"
+    }
+  ],
+  "groups": {
+    "byMember": {
+      "a": [
+        "a/a/google_container_cluster.main"
+      ],
+      "argo": [
+        "argo/argo/applicationWeb",
+        "argo/argo/secretClusterProd"
+      ],
+      "b": [
+        "b/b/google_container_cluster.main"
+      ]
+    },
+    "byLexicon": {
+      "k8s": [
+        "argo/argo/applicationWeb",
+        "argo/argo/secretClusterProd"
+      ],
+      "terraform": [
+        "a/a/google_container_cluster.main",
+        "b/b/google_container_cluster.main"
+      ]
+    },
+    "byStack": {
+      "a/a": [
+        "a/a/google_container_cluster.main"
+      ],
+      "argo/k8s": [
+        "argo/argo/applicationWeb",
+        "argo/argo/secretClusterProd"
+      ],
+      "b/b": [
+        "b/b/google_container_cluster.main"
+      ]
+    }
+  },
+  "exports": [],
+  "imports": [],
+  "links": [],
+  "collectors": [],
+  "records": [],
+  "dangling": [
+    {
+      "from": "argo/argo/secretClusterProd",
+      "kind": "ref",
+      "path": "metadata.namespace",
+      "value": "argocd",
+      "member": "argo",
+      "rule": "k8s:K8s::Core::Secret:metadata.namespace",
+      "targetKind": "K8s::Core::Namespace"
+    }
+  ],
+  "ambiguous": [
+    {
+      "from": "argo/argo/secretClusterProd",
+      "member": "argo",
+      "rule": "k8s:K8s::Core::Secret:argoCluster.name",
+      "path": "argoCluster.name",
+      "value": "prod",
+      "candidates": [
+        "a/a/google_container_cluster.main",
+        "b/b/google_container_cluster.main"
+      ]
+    }
+  ],
+  "catalog": {
+    "lexicons": [
+      "k8s",
+      "terraform"
+    ],
+    "members": [
+      "a",
+      "argo",
+      "b"
+    ],
+    "rules": {
+      "k8s:K8s::Argo::Application:spec.destination.name": {
+        "lexicon": "k8s",
+        "from": "K8s::Argo::Application",
+        "path": "spec.destination.name",
+        "relation": "reference",
+        "label": "deploys to",
+        "targetKinds": [
+          "K8s::Core::Secret"
+        ]
+      },
+      "k8s:K8s::Core::Secret:argoCluster.name": {
+        "lexicon": "k8s",
+        "from": "K8s::Core::Secret",
+        "path": "argoCluster.name",
+        "relation": "reference",
+        "label": "registers",
+        "targetKinds": [
+          "aws_eks_cluster",
+          "azurerm_kubernetes_cluster",
+          "google_container_cluster"
+        ]
+      },
+      "k8s:K8s::Core::Secret:metadata.namespace": {
+        "lexicon": "k8s",
+        "from": "K8s::Core::Secret",
+        "path": "metadata.namespace",
+        "relation": "containment",
+        "label": "in namespace",
+        "targetKinds": [
+          "K8s::Core::Namespace"
+        ]
+      }
+    }
+  },
+  "discovered": [
+    {
+      "dir": "a",
+      "member": "a",
+      "kind": "terraform",
+      "source": "@intentius/chant-lexicon-terraform",
+      "probe": {
+        "anyFile": [
+          "*.tf"
+        ]
+      },
+      "claims": [
+        {
+          "kind": "terraform",
+          "precedence": 400,
+          "source": "@intentius/chant-lexicon-terraform"
+        }
+      ],
+      "outcome": "member",
+      "note": null
+    },
+    {
+      "dir": "argo",
+      "member": "argo",
+      "kind": "argo-app",
+      "source": "@intentius/chant-lexicon-k8s",
+      "probe": {
+        "anyDocument": {
+          "in": [
+            "*.yaml",
+            "*.yml"
+          ],
+          "match": [
+            {
+              "/apiVersion": [
+                "argoproj.io/*"
+              ],
+              "/kind": [
+                "Application",
+                "ApplicationSet",
+                "AppProject"
+              ]
+            }
+          ]
+        }
+      },
+      "claims": [
+        {
+          "kind": "argo-app",
+          "precedence": 360,
+          "source": "@intentius/chant-lexicon-k8s"
+        },
+        {
+          "kind": "manifests",
+          "precedence": 305,
+          "source": "@intentius/chant-lexicon-k8s"
+        }
+      ],
+      "outcome": "member",
+      "note": null
+    },
+    {
+      "dir": "b",
+      "member": "b",
+      "kind": "terraform",
+      "source": "@intentius/chant-lexicon-terraform",
+      "probe": {
+        "anyFile": [
+          "*.tf"
+        ]
+      },
+      "claims": [
+        {
+          "kind": "terraform",
+          "precedence": 400,
+          "source": "@intentius/chant-lexicon-terraform"
+        }
+      ],
+      "outcome": "member",
+      "note": null
+    }
+  ]
+}

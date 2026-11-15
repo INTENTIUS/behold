@@ -181,6 +181,7 @@ import { allowedHostsFrom, guardRequest } from "./request-guard.ts";
 import { readGraph } from "./read-graph.ts";
 import { shapeEstate, viewNote } from "./graph-view.ts";
 import { discoverAppliesToList } from "./discover-read.ts";
+import { catalogLegend, drawCatalog } from "./catalog-draw.ts";
 import { applyMemberPasses, memberKindOf, memberKindSpec, memberPassNote, servesAsEstate, type MemberPassRun } from "./member-kind.ts";
 import { TerraformReadError, terraformMemberWorkspace, terraformReaderState, terraformVia } from "./terraform-member.ts";
 import { addInstanceCards } from "./instance-cards.ts";
@@ -3117,6 +3118,8 @@ export function createApp(
       // elided its cards returns an empty elision the second time, so a re-run
       // would silently drop the note on every composed Terraform estate.
       let estateRun: MemberPassRun = [];
+      // behold#1080: what chant's reference catalog could not say, and why a cluster anchor was declined.
+      let estateCatalogNote: string | undefined;
       // #384: a served Terraform directory says which roots it found and which
       // directories of `.tf` it skipped, so a root missing from the picture is
       // visible here rather than by counting boxes. Ahead of the elision note,
@@ -3181,6 +3184,7 @@ export function createApp(
         const read = await readGraph(cfg.projectDirs!, { ...opts, logical, workspace: servedWorkspace(), ...(estateContext !== undefined ? { k8sContext: estateContext } : {}) });
         ir = read.ir;
         estateRun = read.run;
+        estateCatalogNote = read.meta.catalogNote;
         // #224: the logical lens over the COMPOSED IR. Every projection joins
         // on attribute values, never node ids, so composeStacks' prefixed ids
         // pass through exactly as the edge passes above do — and the k8s lens
@@ -3491,6 +3495,8 @@ export function createApp(
         const shaped = shapeEstate(ir, { collapse, alike: !components && new URL(c.req.url).searchParams.get("alike") !== "0" });
         ir = shaped.ir;
         collapsedNote = shaped.note;
+        // behold#1080: chant's dangling and ambiguous references, drawn on what is left after the stacking.
+        if (!components) ir = drawCatalog(ir);
       }
       // The count badges (#393 C) ride on every estate render, collapsed or
       // not: a box of 301 cards has to be able to say so at "fit".
@@ -3549,7 +3555,7 @@ export function createApp(
       // picker rows, one image. One clause, through the same module every
       // other caption comes from.
       const sameNote = unchangedZoomNote(srcZoom, estateMembers(estateDirs()).map((m) => m.kind));
-      const ownNote = [estateLensNote, tf.note, cdNote, sameNote, planNote].filter(Boolean).join(" · ");
+      const ownNote = [estateLensNote, tf.note, cdNote, sameNote, planNote, multi ? estateCatalogNote : undefined].filter(Boolean).join(" · ");
       // #554: notesFor counts the references to undeclared targets itself.
       // When it is not consulted (an estate, or a note above took its place),
       // the count is added here, read from the expanded IR like the rest.
@@ -3560,7 +3566,7 @@ export function createApp(
         pass: tf,
         lexicon: cdNote,
         sameZoom: sameNote,
-        plan: planNote,
+        plan: [planNote, multi ? estateCatalogNote : undefined].filter(Boolean).join(" · ") || undefined,
         dangling: danglingClause,
         shaped: collapsedNote,
         ...(multi ? {} : { fallback: () => notesFor(srcZoom, expanded, srcCompositeEdgesAttached, undefined, opts.detail ?? 2, cdNote) }),
@@ -3583,6 +3589,8 @@ export function createApp(
           tier: opts.tier ?? null,
           target: opts.target ?? null,
           ...(multi ? { estate: cfg.projectDirs!.length } : {}),
+          // behold#1080: the key rows for the joined, dangling and ambiguous marks this picture has.
+          ...(multi && !components && catalogLegend(ir).length ? { catalogLegend: catalogLegend(ir) } : {}),
           ...(!multi && components ? { components: true } : {}),
           // behold#631: a repo whose CI runs chant's pull-request loop: the facets its wave boxes and marks are drawn from.
           ...((): { chantPr?: ReturnType<typeof chantPrFacets> } => {

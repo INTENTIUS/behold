@@ -56,7 +56,7 @@ The node and edge field names are the ones Grafana's node graph panel reads (`id
 
 - `subtitle` is the tool that declares the card, `file` is relative to the repository root, and `box` is the id of the innermost group the card sits in.
 - `status`, `color` and `mainstat` are present when a drift overlay painted the card, and `change` when a plan was read and would change it.
-- Every edge's `source` and `target` is a node in the same document. An inferred edge carries `rule`, the join that drew it.
+- Every edge's `source` and `target` is a node in the same document. An inferred edge carries `rule`, the join that drew it: `behold:<pass>`, or chant's catalog rule id. The edge to a placeholder card (a reference that names nothing) and each edge of a reference that names several nodes carry the rule of that reference too, and the placeholder is a node of the kind it was looking for, with `lexicon` `behold`.
 - No field holds an absolute path, and a card's source text (`attrs.source`) is left out unless it was asked for.
 
 ## From the command line

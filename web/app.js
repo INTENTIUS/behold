@@ -9356,7 +9356,7 @@ function wireEdgeHighlight(svgEl, ir) {
   // itself; this fills it in where it did not.
   const viaOf = viaIndex(ir.edges || []);
   // #878: each reference weighed by how it was found (web/edge-weight.js).
-  lastEdgeWeights = edgeWeights(ir.edges || [], new Map((ir.nodes || []).map((n) => [n.id, n.kind])));
+  lastEdgeWeights = edgeWeights(ir.edges || [], new Map((ir.nodes || []).map((n) => [n.id, n.kind])), ir.catalog && ir.catalog.rules);
   for (const g of edges) {
     const w = lastEdgeWeights.get(`${g.getAttribute("data-edge-from")}→${g.getAttribute("data-edge-to")}`);
     if (w) g.setAttribute("data-edge-weight", w);
@@ -9369,6 +9369,8 @@ function wireEdgeHighlight(svgEl, ir) {
     if (via) g.setAttribute("data-edge-via", via); // drives the dashed style
     const cross = g.getAttribute("data-edge-cross") === "true";
     if (!g.querySelector("path")) relabelEdgeChip(g, kind, via);
+    // behold#1080: an edge the catalog drew arrives with its tooltip, which names the rule.
+    if (g.querySelector(":scope > title")) continue;
     const title = document.createElementNS(SVGNS, "title");
     title.textContent = edgeTitle(from, to, { kind, via, cross });
     g.insertBefore(title, g.firstChild);

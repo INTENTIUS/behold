@@ -78,7 +78,10 @@ import { addEstateMemberEdges } from "./estate-edges.ts";
 import { addK8sDeclaredEdges } from "./k8s-edges.ts";
 import { applyMemberPasses, memberPassNote, type MemberKind, type MemberPassRun } from "./member-kind.ts";
 import { markOperatorHome } from "./operator.ts";
-import { discoveredNote, discoverApplies, discoverWorkspace, DiscoverError } from "./discover-read.ts";
+import { discoveredNote, discoverApplies, discoverWorkspace, readDiscovered, DiscoverError } from "./discover-read.ts";
+import { REFERENCE_CATALOG_CHANT_FLOOR } from "./chant-floors.ts";
+import { meetsFloor } from "./floor.ts";
+import { applyReferenceCatalog, readReferenceCatalog, referenceCatalogOf, type CatalogIr, type CatalogReadDeps, type ReferenceCatalog } from "./reference-catalog.ts";
 import { drawnMembers, hasDeclaration, readWorkspace, workspaceLookup, type DiscoveredDir, type Workspace } from "./workspace.ts";
 
 export interface ReadGraphOptions extends GraphOptions {
@@ -88,13 +91,15 @@ export interface ReadGraphOptions extends GraphOptions {
   k8sContext?: string;
   /** Read members at detail 3 for the logical lens; the passes keep `detail`. */
   logical?: boolean;
+  /** How the reference catalog is read (behold#1080). Tests hand it recorded documents; the default is chant. */
+  catalog?: CatalogReadDeps;
 }
 
 export interface ReadGraphResult {
   ir: GraphIR;
   members: { name: string; dir: string; kind: MemberKind }[];
   run: MemberPassRun;
-  meta: { estate: number; note?: string; noteShort?: string };
+  meta: { estate: number; note?: string; noteShort?: string; /** behold#1080: what the reference catalog could not say, and why a cluster anchor was declined. */ catalogNote?: string };
   /** The declared workspace the members were read from; absent for a loose read. */
   workspace?: Workspace;
 }
@@ -106,6 +111,8 @@ export class ReadGraphError extends Error {
     this.name = "ReadGraphError";
   }
 }
+
+const meetsCatalogFloor = (chant: string | undefined): boolean => meetsFloor(chant, REFERENCE_CATALOG_CHANT_FLOOR);
 
 /** The member paths and workspace `dir` stands for, as `behold serve <dir>` reads them. `graphOpts` are the options the members are read with, which a discovery carries too. */
 async function resolveDirs(dir: string | readonly string[], workspace: Workspace | undefined, graphOpts: GraphOptions): Promise<{ dirs: readonly string[]; workspace: Workspace | undefined }> {
@@ -141,29 +148,62 @@ function joinNotes(a: { note?: string; noteShort?: string }, b: { note?: string;
 
 /** Read `dir` into behold's graph. The module header says what each argument and answer is. */
 export async function readGraph(dir: string | readonly string[], opts: ReadGraphOptions = {}): Promise<ReadGraphResult> {
-  const { workspace: given, k8sContext, logical, ...graphOpts } = opts;
+  const { workspace: given, k8sContext, logical, catalog: catalogDeps, ...graphOpts } = opts;
   const memberOpts = logical ? { ...graphOpts, detail: 3 } : graphOpts;
   const { dirs, workspace } = await resolveDirs(dir, given, memberOpts);
   const lookup = workspaceLookup(workspace);
   const members = estateMembers(dirs, lookup);
   const ir = await composeEstate(dirs, memberOpts, lookup);
-  const read = await readComposed(ir, members, dirs, { detail: graphOpts.detail, k8sContext, ...(workspace?.discovered ? { discovered: workspace.discovered } : {}) });
+  // behold#1080: chant's reference catalog for the whole workspace, which a read of one member cannot see.
+  const found = workspace ? await catalogOf(workspace, memberOpts, catalogDeps) : undefined;
+  const read = await readComposed(ir, members, dirs, {
+    detail: graphOpts.detail,
+    k8sContext,
+    ...(workspace?.discovered ? { discovered: workspace.discovered } : {}),
+    ...(found?.catalog ? { catalog: found.catalog } : {}),
+    ...(found?.note ? { catalogNotes: [found.note] } : {}),
+  });
   return { ir: read.ir, members: read.members, run: read.run, ...(workspace ? { workspace } : {}), meta: read.meta };
+}
+
+/**
+ * The reference catalog of a workspace (behold#1080), or the note saying why a
+ * chant at its floor could not give it. A folder read through `--discover`
+ * already holds chant's whole-workspace document (the same read, cached by
+ * src/discover-read.ts), so its catalog is taken from that and no second
+ * `chant workspace graph` runs. A declared workspace is read once, behind
+ * REFERENCE_CATALOG_CHANT_FLOOR; below it nothing is sent.
+ */
+async function catalogOf(workspace: Workspace, memberOpts: GraphOptions, deps: CatalogReadDeps | undefined): Promise<{ catalog?: ReferenceCatalog; note?: string }> {
+  if (workspace.discovered) {
+    try {
+      const doc = await readDiscovered(workspace.root, memberOpts);
+      const catalog = referenceCatalogOf(doc);
+      if (catalog && meetsCatalogFloor(workspace.chant)) return { catalog };
+    } catch {
+      // A discovery that could not be read again has nothing to add; the folder's own read said so.
+    }
+    return {};
+  }
+  const found = await readReferenceCatalog(workspace.root, { ...memberOpts, chant: workspace.chant }, deps);
+  if (found.ok) return { catalog: found.catalog };
+  return found.reason === "error" ? { note: `reference catalog not read: ${found.message ?? "chant refused the read"}` } : {};
 }
 
 /**
  * The passes `readGraph` runs over a composed estate, for a caller whose
  * members did not come from directories (behold#1083: a cluster read through
  * chant's lister, src/read-cluster.ts). `dirs` are the directories the members
- * were read from, which the member kinds' notes name; none for a cluster.
+ * were read from, which the member kinds' notes name; none for a cluster. A
+ * cluster read passes no `catalog` and is unchanged by behold#1080.
  */
 export async function readComposed(
   composed: GraphIR,
   members: ReadGraphResult["members"],
   dirs: readonly string[],
-  opts: { detail?: number; k8sContext?: string; discovered?: DiscoveredDir[] } = {},
+  opts: { detail?: number; k8sContext?: string; discovered?: DiscoveredDir[]; catalog?: ReferenceCatalog; catalogNotes?: readonly string[] } = {},
 ): Promise<ReadGraphResult> {
-  const { detail, k8sContext, discovered } = opts;
+  const { detail, k8sContext, discovered, catalog, catalogNotes = [] } = opts;
   let ir = composed;
   // #188: the edge passes are the Kubernetes half's only edge source, and they
   // join on attribute values, never node ids, so composed ids pass through and
@@ -177,6 +217,11 @@ export async function readComposed(
   ir = addEstateMemberEdges(ir, members);
   // #369: a choudoufu member's cross-estate data sources name a producer estate.
   ir = addChoudoufuReferenceEdges(ir);
+  // behold#1080: chant's reference catalog, read once for the whole workspace
+  // (a read of one member cannot see a reference into another), when the
+  // workspace's chant is at its floor. What it finds replaces the guesses it
+  // covers and is drawn by src/catalog-draw.ts; the cluster anchor reads it.
+  if (catalog) applyReferenceCatalog(ir, catalog);
   // #234: an OperatorStack's CronJobs, named as the operating loop they are.
   ir = markOperatorHome(ir);
   // #103: the Kubernetes half joined to the managed cluster it runs on.
@@ -187,10 +232,17 @@ export async function readComposed(
   const pass = memberPassNote(run, dirs);
   // behold#1079: what a discovery left unread, after the member kinds' own lines. A cluster read has no `discovered`.
   const note = discovered ? joinNotes(pass, discoveredNote(discovered)) : pass;
+  let catalogNote: string | undefined;
+  const clauses = [...catalogNotes, ...((ir as CatalogIr).anchorNotes ?? [])];
+  if (clauses.length) {
+    catalogNote = clauses.join(" · ");
+    note.note = [note.note, ...clauses].filter(Boolean).join(" · ");
+    if (note.noteShort) note.noteShort = [note.noteShort, ...clauses].join(" · ");
+  }
   return {
     ir,
     members,
     run,
-    meta: { estate: members.length, ...(note.note ? { note: note.note } : {}), ...(note.noteShort ? { noteShort: note.noteShort } : {}) },
+    meta: { estate: members.length, ...(catalogNote ? { catalogNote } : {}), ...(note.note ? { note: note.note } : {}), ...(note.noteShort ? { noteShort: note.noteShort } : {}) },
   };
 }

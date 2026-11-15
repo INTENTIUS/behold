@@ -181,13 +181,23 @@ function allInPipelines(ir: NotableGraph): boolean {
   return ir.nodes.every((n) => inPipeline.has((n as { id?: string }).id ?? ""));
 }
 
+/** Whether a dangling reference's rule is a containment rule, which the picture leaves to the note. */
+function isContainmentDangling(ir: NotableGraph, d: { rule: string }): boolean {
+  const rules = (ir as { catalog?: { rules?: Record<string, { relation?: string }> } }).catalog?.rules;
+  return rules?.[d.rule]?.relation === "containment";
+}
+
 /**
  * #554: how many references name a target the project does not declare, for
  * a graph that has edges as well. Undefined when there are none. On an
  * edgeless graph `edgelessNote` says it, so `notesFor` never says it twice.
  */
 export function danglingNote(ir: NotableGraph): string | undefined {
-  const n = ir.dangling?.length ?? 0;
+  // behold#1080: a reference chant's catalog says names nothing is drawn as a
+  // placeholder card, so the note counts the others (a containment rule's, a CI
+  // workflow's call into another repository).
+  const drawn = (ir as { catalog?: unknown }).catalog !== undefined;
+  const n = (ir.dangling ?? []).filter((d) => !(drawn && typeof (d as { rule?: unknown }).rule === "string" && !isContainmentDangling(ir, d as { rule: string }))).length;
   if (n === 0) return undefined;
   return `${referencesCount(n)} to targets not declared here, such as another repo's workflow or a local action: listed on their cards, not drawn`;
 }

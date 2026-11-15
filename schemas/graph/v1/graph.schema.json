@@ -90,7 +90,7 @@
         "target": { "type": "string", "description": "The id of the node it names." },
         "kind": { "type": "string", "description": "The graph IR's edge kind: ref, needs, calls, triggers, includes, extends, or one added later." },
         "inferred": { "type": "boolean", "description": "True when behold or chant joined the two rather than a reader stating it." },
-        "rule": { "type": "string", "description": "On an inferred edge, the join that drew it: behold:<pass>, or chant's catalog rule." },
+        "rule": { "type": "string", "description": "On an inferred edge, the join that drew it: behold:<pass>, or chant's catalog rule id. On the edge to a placeholder card (a reference that names nothing) and on each edge of a reference that names several candidates, the rule of that reference." },
         "via": { "type": "string", "description": "The consumer-side attribute the reference flows through." },
         "diff": { "enum": ["added", "removed"], "description": "In a 'changed' cut, set when the edge exists in one revision only." }
       }

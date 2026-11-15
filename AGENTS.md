@@ -175,6 +175,44 @@ mask modules, the investigation templates come from
 `runCloudIndex` statically. src/value-match.ts stays until the pulumi
 lexicon has a `referenceCatalog` (chant#4535's note on behold#1005).
 
+## chant's reference catalog (behold#1080)
+
+A declared workspace read by a chant at `REFERENCE_CATALOG_CHANT_FLOOR`
+(0.124.98, the release that carries INTENTIUS/chant#5097; 0.124.97 is on npm
+today) gets one more read: `chant workspace graph <root>` for the whole
+workspace, at the tier the members are read at (src/reference-catalog.ts,
+cached under the workspace's source stamp). A read of one member cannot see a
+reference into another, so the per-member reads' `dangling` entries that carry
+a `rule` are replaced by this read's, and its derived edges, `dangling[]`,
+`ambiguous[]` and `catalog.rules` go on the composed IR (`ir.catalog`). The
+floor is checked first; below it nothing is sent and the estate is composed as
+before. `readGraph` does this, after behold's own edge passes and before the
+cluster anchor.
+
+src/catalog-draw.ts draws it, after the stacking (`graphView` and the estate
+branch of `/api/graph` call `drawCatalog`). A catalog edge is weighed "joined"
+(web/edge-weight.js, `isCatalogEdge`), apart from "inferred", and the weight
+and the rule are stamped on the SVG's edge (`data-edge-weight`,
+`data-edge-rule`) with inline strokes, so a static export keeps them. A
+dangling reference whose rule is not containment is a dashed placeholder card
+(kind of the `targetKind`, lexicon `behold`, `attrs._placeholder` the value, one
+per member, kind and value), and an ambiguous one is a dotted edge to each
+candidate with `viaAttr` "one of N". The picture ends with the key; the answer's
+`meta.catalogLegend` has the same rows for the page, which hides the in-SVG one
+and draws its own. The graph document keeps `rule`, the one field: chant's rule
+id on a joined edge, and the reference's rule on the placeholder and ambiguous
+edges.
+
+The cluster anchor (src/cluster-anchor.ts) reads the join: a member whose
+Applications name a cluster Secret that chant joins to one cluster resource
+anchors its objects to that cluster only; a Secret with no match, two matches,
+or a member that reaches several clusters anchors nothing and puts the reason
+in the note (`ir.anchorNotes`). A member without a cluster Secret keeps the
+guess. The fixtures are `chant workspace graph --discover --json` recorded
+from a chant checkout at the catalog and its rules (e2e/fixtures/
+reference-catalog), the tests src/catalog-draw.test.ts and
+src/catalog-route.test.ts.
+
 ## A pipeline's numbers, from Prometheus (behold#571)
 
 `behold serve --prometheus <url>` (or `BEHOLD_PROMETHEUS_URL`) adds `GET
