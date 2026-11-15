@@ -48,7 +48,12 @@ export function tarball() {
     parts.push(header(`${name}/${file}`, body.length), body, Buffer.alloc((512 - (body.length % 512)) % 512));
   }
   parts.push(Buffer.alloc(1024));
-  return gzipSync(Buffer.concat(parts), { level: 9 });
+  // Stored blocks (level 0) and an "unknown" OS byte (255) in the gzip header:
+  // compressed deflate output and the OS byte both differ between a Mac and a
+  // Linux runner, so these keep the archive's bytes, and its checksum, the same everywhere.
+  const gz = gzipSync(Buffer.concat(parts), { level: 0 });
+  gz[9] = 255;
+  return gz;
 }
 
 const sha = (b) => createHash("sha256").update(b).digest("hex");

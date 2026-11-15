@@ -13,7 +13,7 @@ set -euo pipefail
 
 # The behold release this plugin runs. It must be a release that has
 # `behold graph --context` (behold#1083).
-BEHOLD_PIN="0.31.0"
+BEHOLD_PIN="0.32.0"
 PROG="kubectl behold"
 
 usage() {

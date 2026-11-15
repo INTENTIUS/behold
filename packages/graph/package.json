@@ -1,6 +1,6 @@
 {
   "name": "@intentius/behold-graph",
-  "version": "0.31.0",
+  "version": "0.32.0",
   "license": "Apache-2.0",
   "type": "module",
   "description": "Read a directory of infrastructure files into behold's graph, with no server: a behold-graph bin and a readGraph library.",

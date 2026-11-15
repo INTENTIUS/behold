@@ -1,8 +1,10 @@
 // Builds the release archive krew installs from, byte for byte reproducible:
 // kubectl-behold (mode 0755) and the repository LICENSE, entries sorted,
-// times and owners fixed, no time in the gzip header. The same commit always
-// gives the same checksum, so krew/behold.yaml can name it before the release
-// exists.
+// times and owners fixed, no time and no OS in the gzip header, and the gzip written
+// with stored blocks only (level 0). Compressed deflate output depends on the
+// zlib build, so a Mac and a Linux runner gave different bytes; stored blocks
+// are fixed by the format. The same commit always gives the same checksum on
+// any machine, so krew/behold.yaml can name it before the release exists.
 //
 //   node scripts/package.mjs            write release/kubectl-behold-v<ver>.tar.gz
 //                                       and put its checksum in krew/behold.yaml
@@ -45,7 +47,11 @@ export function archive() {
   const parts = [];
   for (const [file, body, mode] of files) parts.push(header(file, body.length, mode), body, Buffer.alloc((512 - (body.length % 512)) % 512));
   parts.push(Buffer.alloc(1024));
-  return gzipSync(Buffer.concat(parts), { level: 9 });
+  const gz = gzipSync(Buffer.concat(parts), { level: 0 });
+  // Byte 9 of the gzip header names the OS that wrote it (19 on macOS, 3 on
+  // Linux); 255 is "unknown", the same on every machine.
+  gz[9] = 255;
+  return gz;
 }
 
 const sha = (b) => createHash("sha256").update(b).digest("hex");
