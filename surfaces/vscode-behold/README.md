@@ -38,4 +38,4 @@ Publishing is described in PUBLISHING.md.
 
 ## When this moves to its own repository
 
-Everything outside this folder that the extension touches is named in `src/behold.ts` and `scripts/build.mjs`: the reader (`@intentius/behold-graph`, which becomes a dependency), the viewer sources (`src/viewer/`, built by `scripts/build-viewer.mts`), the painter's `documentIcons`, and the `BEHOLD_CHANT_BIN` seam in `src/chant.ts`. The workflow `.github/workflows/vscode-extension.yml` moves with it.
+Everything outside this folder that the extension touches is named in `src/behold.ts` and `scripts/build.mjs`: the reader (`@intentius/behold`, which becomes a dependency), the viewer sources (`src/viewer/`, built by `scripts/build-viewer.mts`), the painter's `documentIcons`, and the `BEHOLD_CHANT_BIN` seam in `src/chant.ts`. The workflow `.github/workflows/vscode-extension.yml` moves with it.

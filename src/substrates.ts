@@ -311,7 +311,7 @@ export async function detectSubstrates(
   // on a machine that only ever installed helm.
   if (lexicons.includes("helm")) {
     const helm = await run("helm", ["version", "--short"]);
-    const ambient = helm.code === 0 && !boundContext ? await ambientContext() : undefined;
+    const ambient = helm.code === 0 && !boundContext ? await ambientContext().catch(() => undefined) : undefined;
     const ctx = boundContext ?? ambient ?? "";
     subs.push({
       name: "helm",

@@ -65,7 +65,7 @@ inputs:
     description: "post-comment mode: the folder the handoff artifact was downloaded to."
     default: ""
   behold-version:
-    description: Version of @intentius/behold-graph to install.
+    description: Version of @intentius/behold to install.
     default: latest
   fail-on-error:
     description: Fail the step when the read fails (an unreadable directory, a base commit that is missing, a graph too large for the SVG painter).

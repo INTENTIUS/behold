@@ -14,7 +14,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { fakeKubeconfig } from "@intentius/chant-k8s-client/testing";
-import { kubeconfigFromView, loadKubeconfig, ambientContext, resolveK8sTarget, contextBindsCluster } from "./k8s-target.ts";
+import { K8sClientMissingError, setK8sClientImporter, kubeconfigFromView, loadKubeconfig, ambientContext, resolveK8sTarget, contextBindsCluster } from "./k8s-target.ts";
 
 // The Floci-backed EKS cluster this lens was verified against: `aws eks
 // update-kubeconfig --name cc-eks` names the context by cluster ARN, and Floci
@@ -230,5 +230,19 @@ describe("contextBindsCluster", () => {
 
   it("has no opinion when there is no cluster to compare against", () => {
     expect(contextBindsCluster(EKS_CONTEXT, undefined)).toBeUndefined();
+  });
+});
+
+describe("a missing @intentius/chant-k8s-client (#1058)", () => {
+  it("fails with one line naming the package and the command to install it", async () => {
+    const prev = setK8sClientImporter(async () => {
+      throw new Error("Cannot find package");
+    });
+    try {
+      await expect(loadKubeconfig()).rejects.toBeInstanceOf(K8sClientMissingError);
+      await expect(ambientContext()).rejects.toThrow("behold reads clusters through @intentius/chant-k8s-client; install it with npm i @intentius/chant-k8s-client");
+    } finally {
+      setK8sClientImporter(prev);
+    }
   });
 });

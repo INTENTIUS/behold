@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkGraphDocument } from "./graph-document.ts";
 import { graphUsage, runGraph } from "./graph-cli.ts";
+import { setK8sClientImporter } from "./k8s-target.ts";
 import { HCL_PARSER_PKG, resolvedVersion, TERRAFORM_LEXICON_PKG } from "./terraform-member.ts";
 
 // behold#1058: `behold graph <dir>` reads a folder and prints, with no server.
@@ -160,5 +161,23 @@ describe("behold graph on a folder of .tf files (#1058)", () => {
     expect(doc.nodes.some((n) => n.id.includes("/net/"))).toBe(true);
     expect(doc.notes.map((n) => n.text).join(" ")).toContain("1 of 2 roots could not be parsed (app: main.tf:6)");
     expect(existsSync(join(dir, "chant.config.ts"))).toBe(false);
+  });
+});
+
+describe("behold graph without the Kubernetes client (#1058)", () => {
+  it.skipIf(gate)("reads a Terraform folder and never loads @intentius/chant-k8s-client", { timeout: 240_000 }, async () => {
+    let loads = 0;
+    const prev = setK8sClientImporter(async () => {
+      loads += 1;
+      throw new Error("Cannot find package '@intentius/chant-k8s-client'");
+    });
+    try {
+      const r = await graph([bareEstate(), "--json"]);
+      expect(r.code).toBe(0);
+      expect(JSON.parse(r.out).schema).toBe("behold-graph/1");
+      expect(loads).toBe(0);
+    } finally {
+      setK8sClientImporter(prev);
+    }
   });
 });

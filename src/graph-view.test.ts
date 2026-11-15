@@ -68,23 +68,31 @@ describe("graphView against /api/graph (#1058)", () => {
   }
 });
 
-describe("@intentius/behold-graph's manifest (#1058)", () => {
-  const root = JSON.parse(readFileSync(join(HERE, "..", "package.json"), "utf8")) as { version: string; dependencies: Record<string, string> };
-  const pkg = JSON.parse(readFileSync(join(HERE, "..", "packages", "graph", "package.json"), "utf8")) as { version: string; dependencies: Record<string, string>; bin: Record<string, string> };
-  const budget = JSON.parse(readFileSync(join(HERE, "..", "packages", "graph", "budget.json"), "utf8")) as { dependencies: string[]; refused: string[] };
+describe("the install stays lean (#1058)", () => {
+  const root = JSON.parse(readFileSync(join(HERE, "..", "package.json"), "utf8")) as {
+    dependencies: Record<string, string>;
+    peerDependencies: Record<string, string>;
+    peerDependenciesMeta: Record<string, { optional?: boolean }>;
+    devDependencies: Record<string, string>;
+  };
 
-  it("carries behold's version and behold's own range for every dependency", () => {
-    expect(pkg.version).toBe(root.version);
-    for (const [name, range] of Object.entries(pkg.dependencies)) expect(range, name).toBe(root.dependencies[name]);
+  it("lists the Kubernetes client and the MCP SDK as optional peers, kept in devDependencies for the tests", () => {
+    for (const name of ["@intentius/chant-k8s-client", "@modelcontextprotocol/sdk"]) {
+      expect(root.dependencies[name], name).toBeUndefined();
+      expect(root.peerDependencies[name], name).toBeDefined();
+      expect(root.peerDependenciesMeta[name]?.optional, name).toBe(true);
+      expect(root.devDependencies[name], name).toBeDefined();
+    }
   });
 
-  it("depends on exactly the allowlist, and on nothing the budget refuses", () => {
-    expect(Object.keys(pkg.dependencies).sort()).toEqual([...budget.dependencies].sort());
-    for (const name of budget.refused) expect(pkg.dependencies[name], name).toBeUndefined();
-    expect(budget.refused).toEqual(expect.arrayContaining(["hono", "@hono/node-server", "@modelcontextprotocol/sdk", "@kubernetes/client-node"]));
+  it("keeps hono as a normal dependency", () => {
+    expect(root.dependencies.hono).toBeDefined();
+    expect(root.dependencies["@hono/node-server"]).toBeDefined();
   });
 
-  it("names a behold-graph bin", () => {
-    expect(pkg.bin).toEqual({ "behold-graph": "./bin/behold-graph.js" });
+  it("loads the MCP server only when `behold mcp` runs", () => {
+    const cli = readFileSync(join(HERE, "cli.ts"), "utf8");
+    expect(cli).not.toMatch(/^import[^\n]*["']\.\/mcp\.ts["']/m);
+    expect(cli).toMatch(/await import\("\.\/mcp\.ts"\)/);
   });
 });

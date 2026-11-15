@@ -29,7 +29,6 @@ import { readCarveReport } from "./carve-lens.ts";
 import { HCL_PARSER_PKG } from "./terraform-member.ts";
 import { runShot } from "./shot-cli.ts";
 import { runGraph } from "./graph-cli.ts";
-import { runMcp } from "./mcp.ts";
 import { runIndex } from "./behold-index.ts";
 import { listCheckouts, type RepoTarget, type ViewRepos } from "./view-repos.ts";
 import {
@@ -116,9 +115,8 @@ Usage:
 
   graph   Read a directory into behold's graph and print it, with no server:
           the behold-graph/1 document by default (--json), or the {ir, meta}
-          snapshot /api/graph answers (--ir). The same command is the
-          behold-graph bin of @intentius/behold-graph, a smaller install
-          for a CI job or an editor.
+          snapshot /api/graph answers (--ir). A lean install:
+          the Kubernetes client (--context) is an optional peer.
 
   index   Read one cloud account, subscription, project or cluster with no
           project, type it through chant, add derived edges, and write one
@@ -425,6 +423,14 @@ export async function run(argv: string[]): Promise<void> {
 
   if (cmd === "mcp") {
     // The protocol owns stdout: nothing else is printed there.
+    let runMcp: typeof import("./mcp.ts").runMcp;
+    try {
+      ({ runMcp } = await import("./mcp.ts"));
+    } catch (err) {
+      if ((err as { code?: string }).code !== "ERR_MODULE_NOT_FOUND") throw err;
+      process.stderr.write("behold mcp needs @modelcontextprotocol/sdk; install it with npm i @modelcontextprotocol/sdk, or run npx -p @intentius/behold -p @modelcontextprotocol/sdk behold mcp\n");
+      process.exit(1);
+    }
     process.exit(await runMcp(rest));
   }
 

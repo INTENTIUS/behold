@@ -29,8 +29,10 @@ A directory that is not a chant project gets a structured `{code: "no-project", 
 Read `capabilities` first. It is chant's capability catalog (`chant search --capabilities --json`, chant#4375), and it says which `cap:` questions this estate can be asked: each capability's name, what it means, its parameters, the search term that asks it (`cap:internet-reachable(22)`, `->[cap=network]`), the questions it answers, what it does not evaluate, its rule, and whether each lexicon supplies it. Then `ask` with that term.
 
 ```sh
-claude mcp add behold -- npx @intentius/behold mcp <project-dir>
+claude mcp add behold -- npx -p @intentius/behold -p @modelcontextprotocol/sdk behold mcp <project-dir>
 ```
+
+The MCP SDK is an optional peer of `@intentius/behold`, so a plain `npm install` does not fetch it. `-p @modelcontextprotocol/sdk` brings it in for this command; in a project, `npm i @modelcontextprotocol/sdk` does the same. Without it `behold mcp` stops with one line naming the package.
 
 | Tool | What it does | Arguments |
 |---|---|---|

@@ -1636,19 +1636,18 @@ live test on a k3d cluster named `behold-read-cluster-<pid>`, deleted afterward
 unless `BEHOLD_K3D_KEEP=1`; `BEHOLD_EXPECT_5116=1` makes its reference test
 fail instead of skip.
 
-The same command is the `behold-graph` bin of `@intentius/behold-graph`,
-built from this repo into packages/graph by `npm run build:graph` (part of
-`npm run build`). Its entry is src/graph-package.ts, which exports `readGraph`,
-`graphView`, the formats, `toDocument` and the document types. Its
-dependencies are packages/graph/budget.json's allowlist, at behold's own
-ranges and version (a test holds both). `npm run check:graph-package` (CI runs
-it after the build) packs it, installs the tarball into an empty directory,
-prints the installed size, and fails above the budget, on a dependency not on
-the allowlist, or when `npm ls --all` names hono, `@hono/node-server`, the MCP
-SDK or the Kubernetes client. The first measurement was 127 MB and 55
-packages, against 238 MB and 162 for behold; the budget is 140 MB and 60.
-Most of it is chant itself (73 MB) and the TypeScript compiler chant loads
-configs with (23 MB). Publishing the package is the maintainer's step.
+`behold graph` is the lean way to use behold: `npx @intentius/behold graph ./infra`.
+There is no separate package. `npm run build` also writes `dist/index.js` from
+src/graph-package.ts, the library the action and the VS Code extension use
+(`readGraph`, `graphView`, the formats, `toDocument` and the document types);
+src/read-graph-imports.test.ts holds that module graph free of hono, the MCP
+SDK and the Kubernetes client. `@intentius/chant-k8s-client` and
+`@modelcontextprotocol/sdk` are optional peers (and devDependencies, for the
+tests): `src/k8s-target.ts` loads the client with a dynamic import and throws
+`K8sClientMissingError`, and `src/cli.ts` imports `./mcp.ts` only for `behold mcp`.
+The build splits chunks (`--splitting`) so the SDK import sits in the mcp chunk,
+not at the top of dist/cli.js. The plugin `.mcp.json` files run
+`npx -y -p @intentius/behold@<version> -p @modelcontextprotocol/sdk@1.30.1 behold mcp`.
 
 ## The single-file viewer (#1070)
 

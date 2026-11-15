@@ -4,7 +4,7 @@
  *   node scripts/build.mjs
  *
  *   dist/extension.js   the extension host side: src/extension.ts with the
- *                       reader (@intentius/behold-graph) bundled in
+ *                       reader (@intentius/behold) bundled in
  *   dist/viewer/        viewer.js and viewer.css, from the behold viewer build
  *   dist/node_modules/  the part of chant that reads Terraform (stage-chant.mjs)
  *

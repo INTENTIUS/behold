@@ -2,7 +2,7 @@
  * behold in VS Code: one command, "behold: Show infrastructure graph", that
  * draws the workspace folder from its files in a panel beside the editor.
  *
- * The read runs here, in the extension host: `@intentius/behold-graph`
+ * The read runs here, in the extension host: `@intentius/behold`
  * bundled into dist/extension.js, with the part of chant that reads a
  * Terraform folder staged in dist/node_modules (scripts/stage-chant.mjs). That chant
  * runs as this host's own binary acting as Node (BEHOLD_CHANT_BIN,
