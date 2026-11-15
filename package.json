@@ -7,6 +7,7 @@
   "bin": {
     "behold": "./bin/behold.js"
   },
+  "mcpName": "io.github.INTENTIUS/behold",
   "files": [
     "bin",
     "dist",
