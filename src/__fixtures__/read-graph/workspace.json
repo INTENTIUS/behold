@@ -8,10 +8,10 @@
   },
   "attributes": {
     "status": 200,
-    "sha256": "16596e1f1d6d5dca7c1a13bc607139236eb4abfd312e1bbe1b7291b73768b77b",
-    "nodes": 29,
-    "edges": 29,
-    "note": "1 root — prod; 1 root — platform; showing the estate — 2 terraform blocks, 1 provider not drawn · alike: 9 cards stacked into 3, 2 cards carry a count instead of its lines (click a stack to see its cards)"
+    "sha256": "b62edf00e70697d02310ca89e6b1921a5ac5a6a16f10c7bd6851d55efaf292d1",
+    "nodes": 36,
+    "edges": 36,
+    "note": "1 root — prod; 1 root — platform; showing the estate — 4 terraform blocks, 1 provider not drawn · alike: 28 cards stacked into 5, 2 cards carry a count instead of its lines (click a stack to see its cards)"
   },
   "every-card": {
     "status": 200,
@@ -29,9 +29,9 @@
   },
   "logical": {
     "status": 200,
-    "sha256": "4d6730f6488d978a0eebfc5f7fb6afb142ca338164b3950bc7bd4fa32f73a6a2",
-    "nodes": 25,
-    "edges": 25,
-    "note": "1 root — prod; 1 root — platform; showing the estate — 5 outputs, 5 variables, 2 terraform blocks, 1 provider not drawn (outputs and variables appear at detail 3 — ⌘K → attributes)"
+    "sha256": "e303cdb9ea6157695a16829efbc8841773a98c13c8b46bb73f37c80a2948c0b7",
+    "nodes": 37,
+    "edges": 31,
+    "note": "1 root — prod; 1 root — platform; showing the estate — 13 variables, 9 outputs, 4 terraform blocks, 1 provider not drawn (outputs and variables appear at detail 3 — ⌘K → attributes)"
   }
 }
