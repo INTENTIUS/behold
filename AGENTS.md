@@ -45,6 +45,16 @@ draws nothing. A declaration with `members: []` (terragucci writes one for its
 gates) declares nothing to draw, so serve, export and doctor read the
 directory as they would without one, and say so (#489). `.behold.json`'s `members` are ignored beside a declaration;
 `behold doctor --fix` writes the declaration for an estate that has only them.
+A `kustomize`, `argo-app`, `flux-kustomization`, `helm-chart` or `cloudformation`
+member is read the same way (#1056), and the detail tier of a read is passed on
+as `--detail` (chant 0.124.35, `WORKSPACE_DETAIL_CHANT_FLOOR`). The kinds come
+from the k8s, helm and aws lexicons the workspace pins (chant 0.124.49,
+`WORKSPACE_KINDS_CHANT_FLOOR`). At chant's default detail a k8s node carries only
+`apiVersion` and `kind`; the Argo and Flux path edges of src/estate-edges.ts need
+`spec`, which comes at detail 3. A lens, `up`, `down` and a namespace stay on the
+member's own `chant graph`. A kustomize member needs `kustomize` or `kubectl` on
+PATH and a helm-chart member needs `helm`. The fixture is
+e2e/fixtures/k8s-workspace and the test src/k8s-member.test.ts.
 Several directories on the command line (`behold serve a b c`) stay the loose
 view behold composes itself.
 
@@ -1412,6 +1422,55 @@ remote does not take the LFS object, it refuses with the setup line and exits
 1 before the branch moves; the local PNG is kept. `behold mcp`, `GET
 /api/shot` and a `--public` serve never publish.
 
+## The graph document: `behold-graph/1` (#1066)
+
+A graph snapshot (`{ir, meta}`, what `/api/graph` answers and what every
+export snapshot holds) becomes a versioned document through
+`toDocument(snapshot, opts)` (`src/to-document.ts`). The types, the version
+string and `checkGraphDocument` are in `src/graph-document.ts`, which imports
+nothing, so a browser host can load it. The JSON Schema ships in the package
+at `schemas/graph/v1/graph.schema.json` and is published at
+https://intentius.io/behold/schemas/graph/v1/graph.schema.json (its `$id`,
+the same bytes from `docs/public/`; a test holds the two together).
+
+```
+{schema: "behold-graph/1", generator: {behold, chant?}, origin: {dir, rev?},
+ cut: {kind: "whole" | "around" | "changed", ...}, nodes[], edges[], groups[],
+ notes[], layout?}
+node: {id, title, subtitle, kind, lexicon, box?, file?, line?, change?,
+       status?, color?, mainstat?, secondarystat?, stackOf?, detail__member?,
+       detail__root?, detail__namespace?, detail__release?, attrs}
+edge: {id, source, target, kind, inferred, rule?, via?}
+group: {id: "<kind>:<key>", title, kind: stack | wave | pipeline | container, parent?}
+note: {kind, text, short?, box?, count?}
+```
+
+The node and edge field names are the ones Grafana's node graph panel takes,
+so the panel reads `nodes` and `edges` with no transform. `subtitle` is the
+tool (`k8s` reads `kubernetes`), `status` is `attrs._status`, `color` its
+pinhole bar colour, `mainstat` the drift record's words or the plan's action,
+`change` the plan's action unless it is `no-op` or `read`. `file` is relative
+to the repository root, and absent when behold cannot place it there; an
+absolute `sourceLoc` is dropped. An edge whose end the view does not draw is
+left out and counted in `notes` (`edges-left-out`), so every `source` and
+`target` names a node. Edge ids are `<source>-><target>:<kind>[:<via>]`, with
+`#2`, `#3` on repeats. `rule` names the join behind an inferred edge: chant's
+catalog rule (`origin: "derived"`), or `behold:<join>` from the `join` field
+each behold pass now sets beside `inferred: true` (`value-match`,
+`k8s-declared`, `estate-member`, `cluster-anchor`, `composite-deps`,
+`choudoufu-lexicon`, `choudoufu-estate`). `attrs.source` is left out unless
+`opts.source` asks for it.
+
+`documentOptions({projectDir, projectDirs?, workspace?, behold, rev?})`
+(`src/graph-document-context.ts`) works out what the IR does not carry: the
+served directory relative to its repository (the nearest `.git` above it),
+each member's directory and Terraform roots, and a scrubber that rewrites this
+machine's paths to repository-relative ones, the home directory to `~` and
+the temporary directory to `$TMPDIR`. The same snapshot and options give
+byte-identical JSON. Within `behold-graph/1` fields are only added and a
+reader ignores what it does not know; `checkGraphDocument` refuses any other
+`behold-graph/<n>` by name.
+
 ## Over MCP: `behold mcp` (#916)
 
 `behold mcp [project-dir] [--url <serve> | --port <n>]` is a stdio MCP server
@@ -2201,6 +2260,16 @@ live here, with the enforceable ones enforced.
   from the environment and run under `e2e/lib/safe-env.sh`, which keeps real
   cloud credentials out of reach and fails on a real-cloud rejection in the
   log; e2e/README.md has the variables (behold#1032).
+- The painter bundles for a browser (#1069). `src/render.ts` and what it
+  imports take no Node built-in: `npm run check:browser-bundle` bundles it
+  with esbuild for `--platform=browser`, fails naming the import chain to any
+  `node:` import, and prints the minified and gzipped sizes; CI runs it. A
+  constant or card rule the painter needs from a module that reads disk or
+  spawns lives in a module of its own (src/card-marks.ts,
+  src/choudoufu-card.ts, src/carve-state.ts) and is re-exported from the old
+  one. The icons come from src/icons.generated.ts: after a vendor script
+  changes `web/icons`, run `npm run generate:icons` (`npm run check:icons`
+  and src/generate-icons.test.ts fail until you do).
 - **The local gate** is `just check` (tsc, tests, build). The tests never read
   the caller's environment (behold#1013): src/test-env.ts, vitest's setup
   file, removes CHOUDOUFU_BIN, PLUNGE_BIN and the other variables behold
@@ -2807,3 +2876,28 @@ strip either way: the DNS fan is 19564 x 400 upright and 900 x 10046 on its
 side. A box under 4:1 is left exactly as it laid out. Measured: `terralith-4`
 7660 x 5162 with 266 edges, waterpark 3536 x 3138 at detail 2 and 7142 x 6974
 at detail 3 (from 4.2:1 and 15.1:1, the case #393's wrap did not answer).
+
+## What live objects name outside the cluster (behold#1082)
+
+`outsideRefs(objects, { graph })` in web/outside-refs.js is a pure function
+with no imports, so a browser bundle takes it whole. It turns Kubernetes
+objects as the API serves them into `{ cards, edges, notes }`: a cloud identity
+card for a ServiceAccount's `iam.gke.io/gcp-service-account`,
+`eks.amazonaws.com/role-arn` or `azure.workload.identity/client-id`
+annotation, a store card and a provider card (GCP Secret Manager, AWS Secrets
+Manager or Parameter Store, Vault, with the `remoteRef.key` values) for an
+ExternalSecret, and a source card for an Argo CD Application's `spec.source`
+and `spec.sources[]` or a Flux Kustomization's `sourceRef` and `path`. It reads
+the field paths chant#5098 and chant#5099 read, so a placeholder and a derived
+edge agree. A card's id is made from what it names, so two objects naming one
+thing share it, and a target the `graph` already holds gets no card and no
+edge. A field it cannot read goes in `notes`, never dropped.
+
+Chant's live Kubernetes read masks every key matching /secret/i. An
+ExternalSecret's whole `spec.secretStoreRef` comes back as `<masked>`, so on a
+live read that ExternalSecret has no store card and its keys stay off the
+provider card; its note carries `waitsOn: "INTENTIUS/chant#5116"`. The
+ServiceAccount, provider and source cards work on a live read today.
+src/outside-refs-live.test.ts reads a scratch k3d cluster through chant's
+lister to show it (BEHOLD_K3D_TESTS=1; the cluster is `behold-outside-refs-<pid>`,
+created and deleted by the test). Fixtures are in web/outside-refs.test.js.

@@ -22,19 +22,19 @@ import {
   type NodeOverride,
 } from "@intentius/pinhole";
 import type { GraphIR, IRGroups, IRNode, Layout } from "@intentius/chant";
-import { CARD_IN, CARD_WITH, OUTSIDE_LEXICON, type ByContainer } from "./logical.ts";
+import type { ByContainer } from "./logical.ts";
+import { CARD_IN, CARD_WITH, MEMBER_RUNS_LEXICON, OUTSIDE_LEXICON } from "./card-marks.ts";
 import { k8sIconFor, helmIconFor } from "./icon-packs.ts";
 import { awsIconFor, azureIconFor, gcpIconFor, terraformIconFor } from "./cloud-icons.ts";
 import { SQL_LEXICON, sqlCardFields, sqlIconFor } from "./sql-kinds.ts";
 import { carveCardFields } from "./carve-lens.ts";
 import { cardFaces } from "./card-face.ts";
-import { CHOUDOUFU_LEXICON, choudoufuCardFields, moduleInstanceOf } from "./choudoufu-member.ts";
+import { CHOUDOUFU_LEXICON, choudoufuCardFields, moduleInstanceOf } from "./choudoufu-card.ts";
 import { terraformCardFields } from "./terraform-lens.ts";
-import { carveProgress, splitCarveState, type CarveState } from "./carve-manifest.ts";
+import { carveProgress, splitCarveState, type CarveState } from "./carve-state.ts";
 import { opCardFields } from "./ops-lens.ts";
 import { ROW_ASPECT, ROW_MIN_CARDS, rowColumns, withRowChains, type RowBand, type RowGrid } from "./edgeless.ts";
 import { SUMMARY_LEXICON, summaryCardFields } from "./collapse-lens.ts";
-import { MEMBER_RUNS_LEXICON } from "./component-releases.ts";
 import { STACK_OF, stackFields } from "./stack-lens.ts";
 import { STACK_LEXICON } from "./stack-order.ts";
 import { routeEdges } from "./edge-route.ts";

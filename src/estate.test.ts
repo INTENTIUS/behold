@@ -862,8 +862,8 @@ describe("a declared member that fails to graph is a box, not a page error (#474
   it("draws the only drawn member as a box carrying chant's words", async () => {
     serve(["delivery"]);
     vi.mocked(graphIr).mockReset().mockRejectedValue(noLexicon());
-    // detail 2 reads through the member's own chant (workspaceGraphTakes), the mocked shell-out.
-    const ir = await composeEstate(["/toy/delivery"], { detail: 2 });
+    // a lens reads through the member's own chant (workspaceGraphTakes), the mocked shell-out.
+    const ir = await composeEstate(["/toy/delivery"], { lens: "k8s" });
     const nodes = ir.nodes as unknown as Node[];
     expect(nodes.map((n) => [n.id, n.kind])).toEqual([["delivery/unreadable", "UnreadableMember"]]);
     expect(nodes[0].attrs._unreadable).toEqual({ code: "command-failed", message: "warning: could not load the project's lexicons\nerror: No lexicon detected in infrastructure files" });
@@ -877,7 +877,7 @@ describe("a declared member that fails to graph is a box, not a page error (#474
         if (dir.endsWith("delivery")) throw new WorkspaceMemberError("delivery", { code: "command-failed", message: "No lexicon detected" });
         return stack("svc") as never;
       });
-    const ir = await composeEstate(["/toy/delivery", "/toy/api"], { detail: 2 });
+    const ir = await composeEstate(["/toy/delivery", "/toy/api"], { lens: "k8s" });
     const nodes = ir.nodes as unknown as Node[];
     expect(nodes.map((n) => n.id).sort()).toEqual(["api/svc", "delivery/unreadable"]);
     expect(nodes.find((n) => n.id === "delivery/unreadable")!.attrs._unreadable).toEqual({ code: "command-failed", message: "No lexicon detected" });
@@ -886,13 +886,13 @@ describe("a declared member that fails to graph is a box, not a page error (#474
   it("draws the box on the live path too, where the source fallback also failed", async () => {
     serve(["delivery"]);
     vi.mocked(graphIr).mockReset().mockRejectedValue(noLexicon());
-    const est = await composeEstateOverlay(["/toy/delivery"], { env: "local", detail: 2 }, (ir) => ir);
+    const est = await composeEstateOverlay(["/toy/delivery"], { env: "local", lens: "k8s" }, (ir) => ir);
     expect(est.dropped).toEqual([]);
     expect(est.ir.nodes.map((n) => n.id)).toEqual(["delivery/unreadable"]);
   });
 
   it("still throws for a loose estate, which has no declaration to say the member exists", async () => {
     vi.mocked(graphIr).mockReset().mockRejectedValue(noLexicon());
-    await expect(composeEstate(["/loose/delivery"], { detail: 2 })).rejects.toThrow(/No lexicon detected/);
+    await expect(composeEstate(["/loose/delivery"], { lens: "k8s" })).rejects.toThrow(/No lexicon detected/);
   });
 });

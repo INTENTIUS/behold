@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intentius.io/behold/schemas/graph/v1/graph.schema.json",
+  "title": "behold-graph/1",
+  "description": "A behold graph as flat node and edge lists (behold#1066). Field names follow Grafana's node graph panel: a node has id, title, subtitle, mainstat, secondarystat, color and detail__* fields, and an edge has id, source and target, so the panel reads the lists with no transform. Every edge's source and target is the id of a node in the same document. No field holds an absolute path: files are relative to the repository root. Within behold-graph/1 fields are only ever added, and a reader ignores the fields it does not know. A change a reader could not ignore is behold-graph/2, which a behold-graph/1 reader refuses.",
+  "type": "object",
+  "required": ["schema", "generator", "origin", "cut", "nodes", "edges", "groups", "notes"],
+  "properties": {
+    "schema": { "const": "behold-graph/1", "description": "The document's version. A reader refuses one it does not know." },
+    "generator": {
+      "type": "object",
+      "description": "The behold that wrote the document and the chant that read the graph.",
+      "required": ["behold"],
+      "properties": {
+        "behold": { "type": "string" },
+        "chant": { "type": "string" }
+      }
+    },
+    "origin": {
+      "type": "object",
+      "description": "What was read.",
+      "required": ["dir"],
+      "properties": {
+        "dir": { "$ref": "#/$defs/relativePath", "description": "The directory read, relative to the repository root. '.' is the root." },
+        "rev": { "type": "string", "description": "The revision the graph was read at, when it was not read from the working tree." }
+      }
+    },
+    "cut": {
+      "type": "object",
+      "description": "Which part of the graph the document holds. 'whole' is every card the view draws; a cut such as 'around' or 'changed' carries its parameters beside kind.",
+      "required": ["kind"],
+      "properties": { "kind": { "type": "string", "minLength": 1 } }
+    },
+    "nodes": { "type": "array", "items": { "$ref": "#/$defs/node" } },
+    "edges": { "type": "array", "items": { "$ref": "#/$defs/edge" } },
+    "groups": { "type": "array", "items": { "$ref": "#/$defs/group" } },
+    "notes": { "type": "array", "items": { "$ref": "#/$defs/note" } },
+    "layout": {
+      "type": "object",
+      "description": "Positions a host can draw without laying the graph out again.",
+      "required": ["nodes"],
+      "properties": {
+        "nodes": { "type": "object", "additionalProperties": { "$ref": "#/$defs/point" } },
+        "groups": { "type": "object", "additionalProperties": { "$ref": "#/$defs/rect" } }
+      }
+    }
+  },
+  "$defs": {
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "not": { "pattern": "^(/|[A-Za-z]:[\\\\/]|\\.\\.(/|$))" }
+    },
+    "status": { "enum": ["good", "warn", "accent", "neutral", "runtime"] },
+    "node": {
+      "type": "object",
+      "required": ["id", "title", "subtitle", "kind", "lexicon", "attrs"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "description": "The graph IR's node id, unique in the document." },
+        "title": { "type": "string", "description": "What the card is titled." },
+        "subtitle": { "type": "string", "description": "The tool that declares it: terraform, kubernetes, helm, choudoufu, or the chant lexicon." },
+        "kind": { "type": "string", "description": "The resource type." },
+        "lexicon": { "type": "string" },
+        "box": { "type": "string", "description": "The id of the innermost group the card is drawn in." },
+        "file": { "$ref": "#/$defs/relativePath", "description": "The declaring file, relative to the repository root. Absent when behold cannot place it there." },
+        "seed": { "type": "boolean", "description": "In an 'around' cut, true on the cards the cut was asked for." },
+        "line": { "type": "integer", "minimum": 1 },
+        "change": { "type": "string", "description": "What a plan would do to it (create, update, replace, delete), when a plan was read and it changes." },
+        "status": { "$ref": "#/$defs/status" },
+        "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$", "description": "A colour for status." },
+        "mainstat": { "type": ["string", "number"], "description": "The status in words." },
+        "secondarystat": { "type": ["string", "number"] },
+        "icon": { "type": "string" },
+        "stackOf": { "type": "array", "items": { "type": "string" }, "description": "On a stacked card, the ids of the cards it stands for." },
+        "detail__member": { "type": "string", "description": "The workspace member it belongs to." },
+        "detail__root": { "type": "string", "description": "The Terraform root that applies it." },
+        "detail__namespace": { "type": "string", "description": "The Kubernetes namespace it lives in." },
+        "detail__release": { "type": "string", "description": "The Helm release that installs it." },
+        "attrs": { "type": "object", "description": "The graph IR's attributes. 'source' is present only when it was asked for." }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "required": ["id", "source", "target", "kind", "inferred"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "description": "Deterministic, unique in the document." },
+        "source": { "type": "string", "description": "The id of the node holding the reference." },
+        "target": { "type": "string", "description": "The id of the node it names." },
+        "kind": { "type": "string", "description": "The graph IR's edge kind: ref, needs, calls, triggers, includes, extends, or one added later." },
+        "inferred": { "type": "boolean", "description": "True when behold or chant joined the two rather than a reader stating it." },
+        "rule": { "type": "string", "description": "On an inferred edge, the join that drew it: behold:<pass>, or chant's catalog rule." },
+        "via": { "type": "string", "description": "The consumer-side attribute the reference flows through." }
+      }
+    },
+    "group": {
+      "type": "object",
+      "required": ["id", "title", "kind"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z]+:", "description": "<kind>:<key>, never a node id." },
+        "title": { "type": "string" },
+        "kind": { "type": "string", "description": "stack (a workspace member or a Terraform root), wave, pipeline, container, or one added later." },
+        "parent": { "type": "string", "description": "The group this one is drawn inside." }
+      }
+    },
+    "note": {
+      "type": "object",
+      "required": ["kind", "text"],
+      "properties": {
+        "kind": { "type": "string" },
+        "text": { "type": "string" },
+        "short": { "type": "string" },
+        "box": { "type": "string" },
+        "count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "point": {
+      "type": "object",
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number" },
+        "height": { "type": "number" }
+      }
+    },
+    "rect": {
+      "type": "object",
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number" },
+        "height": { "type": "number" }
+      }
+    }
+  }
+}

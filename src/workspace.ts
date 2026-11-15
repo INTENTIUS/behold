@@ -30,7 +30,7 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { GraphIR } from "@intentius/chant";
 import { envOverridesFor, resolveChant, type GraphOptions } from "./chant.ts";
-import { CI_REPORT_URL_CHANT_FLOOR } from "./chant-floors.ts";
+import { CI_REPORT_URL_CHANT_FLOOR, WORKSPACE_DETAIL_CHANT_FLOOR } from "./chant-floors.ts";
 import type { MemberVia } from "./member-ir.ts";
 import { meetsFloor } from "./floor.ts";
 import { attachLintFindings } from "./terraform-lint.ts";
@@ -224,12 +224,15 @@ export async function readWorkspace(root: string, reader: WorkspaceReader = root
 // ---------------------------------------------------------------------------
 
 let served: Workspace | undefined;
-const byDir = new Map<string, WorkspaceMember>();
+let byDir = new Map<string, WorkspaceMember>();
+
+/** Each member's checkout to the member, for every member but a `repo` one, which names another repository rather than a directory here. */
+const membersByDir = (ws: Workspace | undefined): Map<string, WorkspaceMember> =>
+  new Map((ws?.members ?? []).filter((m) => m.kind !== "repo").map((m) => [m.abs, m]));
 
 export function setServedWorkspace(ws: Workspace | undefined): void {
   served = ws;
-  byDir.clear();
-  for (const m of ws?.members ?? []) if (m.kind !== "repo") byDir.set(m.abs, m);
+  byDir = membersByDir(ws);
   // A root member's source is the root minus every other member's directory.
   const root = ws?.members.find((m) => m.dir === ".");
   setStampExclusions(root && ws ? new Map([[root.abs, ws.members.filter((m) => m !== root && m.kind !== "repo").map((m) => m.abs)]]) : new Map());
@@ -242,6 +245,28 @@ export function servedWorkspace(): Workspace | undefined {
 /** The declared member `dir` is, when a workspace is served and declares it. */
 export function workspaceMemberOf(dir: string): WorkspaceMember | undefined {
   return byDir.get(resolve(dir));
+}
+
+/**
+ * A workspace, and the question the estate code asks of it: which declared
+ * member is this directory? behold#1057: the estate read takes one of these
+ * as an argument, so a caller that serves nothing (`readGraph`, a CLI) names
+ * its workspace, or none, and two reads in one process can name two.
+ */
+export interface MemberLookup {
+  ws: Workspace | undefined;
+  memberOf(dir: string): WorkspaceMember | undefined;
+}
+
+/** The lookup over `ws`, or over no workspace at all when it is undefined. */
+export function workspaceLookup(ws: Workspace | undefined): MemberLookup {
+  const members = membersByDir(ws);
+  return { ws, memberOf: (dir) => members.get(resolve(dir)) };
+}
+
+/** The lookup over the served workspace, which is what an estate function reads when its caller names none. */
+export function servedLookup(): MemberLookup {
+  return { ws: served, memberOf: workspaceMemberOf };
 }
 
 /**
@@ -293,9 +318,9 @@ export function unreadableMemberIr(m: WorkspaceMember): GraphIR {
   } as unknown as GraphIR;
 }
 
-/** Graph options the workspace read carries today; anything else goes to the member's own `chant graph`. */
+/** Graph options the workspace read carries today; anything else goes to the member's own `chant graph`. A detail tier is carried (behold#1056) when the chant passes it on to its members: {@link workspaceVia} checks that. */
 export function workspaceGraphTakes(opts: GraphOptions): boolean {
-  return opts.detail === undefined && !opts.lens && !opts.up && !opts.down && !opts.namespace;
+  return !opts.lens && !opts.up && !opts.down && !opts.namespace;
 }
 
 // ---------------------------------------------------------------------------
@@ -428,11 +453,12 @@ export function workspaceGraphArgs(root: string, member: string, opts: GraphOpti
   if (opts.live) args.push("--live");
   if (opts.overlay) args.push("--overlay");
   if (opts.traffic) args.push("--traffic", opts.traffic);
+  if (opts.detail !== undefined) args.push("--detail", String(opts.detail));
   return args;
 }
 
-/** Kinds chant reads through `workspace graph`. A choudoufu member's roster, rungs and cross-estate references still come from choudoufu: src/choudoufu-workspace.ts says why (#465). A pulumi member is read through it and nothing else: {@link pulumiWorkspaceVia} (behold#994). */
-export const CONTRACT_READ_KINDS = new Set(["chant", "terraform", "choudoufu", "pulumi"]);
+/** Kinds chant reads through `workspace graph`. The kustomize, argo-app, flux-kustomization, helm-chart and cloudformation kinds are the k8s, helm and aws lexicons' (behold#1056): their nodes carry only `apiVersion` and `kind` until a detail tier is passed, and the path edges of src/estate-edges.ts need `spec`, which comes at detail 3. A kustomize member needs `kustomize` or `kubectl` on PATH and a helm-chart member needs `helm`; chant says on the member's meta when it could not render. A choudoufu member's roster, rungs and cross-estate references still come from choudoufu: src/choudoufu-workspace.ts says why (#465). A pulumi member is read through it and nothing else: {@link pulumiWorkspaceVia} (behold#994). */
+export const CONTRACT_READ_KINDS = new Set(["chant", "terraform", "choudoufu", "pulumi", "kustomize", "argo-app", "flux-kustomization", "helm-chart", "cloudformation"]);
 
 /** Why a pulumi member has no live read, as the overlay's `_unobserved` says it. */
 export const PULUMI_NO_LIVE_READ =
@@ -452,6 +478,8 @@ export function workspaceVia(member: WorkspaceMember, root: string, fallback: Me
     },
     read: async (dir, opts) => {
       if (!workspaceGraphTakes(opts)) return fallback.read(dir, opts);
+      // A chant below the floor rejects --detail, so that read stays on the member's own chant graph.
+      if (opts.detail !== undefined && !meetsFloor(resolveChant(root).version, WORKSPACE_DETAIL_CHANT_FLOOR)) return fallback.read(dir, opts);
       const doc = await rootReader(root, envOverridesFor(opts)).read("graph", workspaceGraphArgs(root, member.name, opts));
       return memberIrFromGraphDocument(doc, member.name);
     },

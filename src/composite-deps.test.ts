@@ -32,7 +32,7 @@ describe("addCompositeDeps — the kebab-kind fallback (loomster's shape)", () =
 
   it("overlays dependsOn onto the real composite nodes (not the byo twin)", () => {
     const out = addCompositeDeps(ir(), dag);
-    expect(out.edges).toContainEqual({ from: "backend", to: "foundation", kind: "ref", viaAttr: "dependsOn", inferred: true });
+    expect(out.edges).toContainEqual({ from: "backend", to: "foundation", kind: "ref", viaAttr: "dependsOn", inferred: true, join: "composite-deps" });
     // downstream-stub has no composite node → no dangling edge; byo twin untouched.
     expect(out.edges).toHaveLength(1);
     expect(out.edges.some((e) => e.from === "byoBackend")).toBe(false);
@@ -80,15 +80,15 @@ describe("addCompositeDeps — liveNames ownership (#138, the pure-lexicon estat
   it("attaches dependsOn via each component's first present liveName", () => {
     const { ir: out, attached } = addCompositeDepsCounted(ir(), dag);
     expect(attached).toBe(2);
-    expect(out.edges).toContainEqual({ from: "workloadNs", to: "artifactBucket", kind: "ref", viaAttr: "dependsOn", inferred: true });
-    expect(out.edges).toContainEqual({ from: "m80Deploy", to: "artifactBucket", kind: "ref", viaAttr: "dependsOn", inferred: true });
+    expect(out.edges).toContainEqual({ from: "workloadNs", to: "artifactBucket", kind: "ref", viaAttr: "dependsOn", inferred: true, join: "composite-deps" });
+    expect(out.edges).toContainEqual({ from: "m80Deploy", to: "artifactBucket", kind: "ref", viaAttr: "dependsOn", inferred: true, join: "composite-deps" });
   });
 
   it("a liveName pruned from this tier falls through to the next one present", () => {
     const pruned = ir();
     pruned.nodes = pruned.nodes.filter((n) => n.id !== "workloadNs");
     const { ir: out } = addCompositeDepsCounted(pruned, dag);
-    expect(out.edges).toContainEqual({ from: "workloadImage", to: "artifactBucket", kind: "ref", viaAttr: "dependsOn", inferred: true });
+    expect(out.edges).toContainEqual({ from: "workloadImage", to: "artifactBucket", kind: "ref", viaAttr: "dependsOn", inferred: true, join: "composite-deps" });
   });
 
   it("ownership wins over the kebab heuristic when both could map", () => {
@@ -110,7 +110,7 @@ describe("addCompositeDeps — liveNames ownership (#138, the pure-lexicon estat
       ],
       edges: [{ from: "workload", to: "aws-plane" }],
     });
-    expect(out.edges).toContainEqual({ from: "workloadNs", to: "artifactBucket", kind: "ref", viaAttr: "dependsOn", inferred: true });
+    expect(out.edges).toContainEqual({ from: "workloadNs", to: "artifactBucket", kind: "ref", viaAttr: "dependsOn", inferred: true, join: "composite-deps" });
     expect(out.edges.some((e) => e.to === "impostor")).toBe(false);
   });
 
@@ -156,7 +156,7 @@ describe("addCompositeDeps — liveNames ownership (#138, the pure-lexicon estat
       ],
       edges: [{ from: "workload", to: "aws-plane" }],
     });
-    expect(out.edges).toContainEqual({ from: "workloadNs", to: "artifactBucket", kind: "ref", viaAttr: "dependsOn", inferred: true });
+    expect(out.edges).toContainEqual({ from: "workloadNs", to: "artifactBucket", kind: "ref", viaAttr: "dependsOn", inferred: true, join: "composite-deps" });
   });
 
   it("a [name]-shaped claim WITH agreeing source evidence is real ownership (fountain's backup CronJob)", () => {
@@ -175,7 +175,7 @@ describe("addCompositeDeps — liveNames ownership (#138, the pure-lexicon estat
       ],
       edges: [{ from: "backup", to: "postgres" }],
     });
-    expect(out.edges).toContainEqual({ from: "backup", to: "pgDeployment", kind: "ref", viaAttr: "dependsOn", inferred: true });
+    expect(out.edges).toContainEqual({ from: "backup", to: "pgDeployment", kind: "ref", viaAttr: "dependsOn", inferred: true, join: "composite-deps" });
   });
 
   it("a synthesized release card carrying attrs.component represents its component (the overlay's operator)", () => {
@@ -200,6 +200,7 @@ describe("addCompositeDeps — liveNames ownership (#138, the pure-lexicon estat
       kind: "ref",
       viaAttr: "dependsOn",
       inferred: true,
+      join: "composite-deps",
     });
   });
 

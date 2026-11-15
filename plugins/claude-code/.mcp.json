@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "behold": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@intentius/behold@0.31.0",
+        "mcp"
+      ]
+    }
+  }
+}

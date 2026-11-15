@@ -239,7 +239,8 @@ describe("memberIrFromWorkspaceGraph", () => {
       "workspace", "graph", "/w", "--member", "api", "--env", "prod", "--live", "--overlay", "--traffic", "peak",
     ]);
     expect(workspaceGraphTakes({ env: "prod", live: true })).toBe(true);
-    expect(workspaceGraphTakes({ detail: 1 })).toBe(false);
+    expect(workspaceGraphTakes({ detail: 1 })).toBe(true);
+    expect(readArgv("graph", workspaceGraphArgs("/w", "api", { detail: 3 }))).toEqual(["workspace", "graph", "/w", "--member", "api", "--detail", "3"]);
     expect(workspaceGraphTakes({ lens: "k8s" })).toBe(false);
   });
 });

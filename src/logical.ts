@@ -40,6 +40,7 @@ import { projectKustomizeLogical } from "./logical-kustomize.ts";
 import { projectFlyLogical } from "./logical-fly.ts";
 import { projectChoudoufuLogical } from "./logical-choudoufu.ts";
 import { projectTerraformLogical } from "./logical-terraform.ts";
+import { CARD_IN, CARD_WITH, OUTSIDE_LEXICON } from "./card-marks.ts";
 
 /** The container-nesting map pinhole's `layoutArchitecture` consumes:
  * `containerId → memberIds`, where a member may itself be a container id (the
@@ -684,8 +685,7 @@ function absorbOutsideAws(ir: GraphIR, nodes: IRNode[], byContainer: ByContainer
 /** The card that stands for everyone outside the estate (behold#876). */
 export const OUTSIDE_ID = "outside";
 export const OUTSIDE_KIND = "Internet";
-/** Its own lexicon, so its card reads in words rather than as a resource (src/render.ts). */
-export const OUTSIDE_LEXICON = "outside";
+export { OUTSIDE_LEXICON } from "./card-marks.ts";
 
 /** Whether a card is open to the public: where the outside world comes in. */
 export function isEntryPoint(n: IRNode): boolean {
@@ -1275,6 +1275,4 @@ export function projectLogical(ir: GraphIR): LogicalProjection {
   return { ir: { nodes: cards, edges, groups: {} }, byContainer };
 }
 
-/** The card lines the logical zoom adds (behold#873, #874), drawn by src/render.ts. */
-export const CARD_WITH = "_with";
-export const CARD_IN = "_in";
+export { CARD_IN, CARD_WITH } from "./card-marks.ts";

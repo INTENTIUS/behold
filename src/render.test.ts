@@ -395,7 +395,7 @@ describe("renderGraph — lexicon-native icons (#227)", () => {
   it("emits well-formed XML — the vendored bodies' editor namespaces are dropped, so an exported .svg still parses", () => {
     const svg = renderGraph(iconIr).svg;
     // `xmlns:inkscape` and friends are declared on each vendored file's root
-    // <svg>, which never survives into the painted document (src/icon-packs.ts
+    // <svg>, which never survives into the painted document (src/icon-svg.ts
     // `unprefix`). A surviving `inkscape:label` would be an unbound prefix and
     // every `image/svg+xml` consumer — the SPA's `↓ SVG` download, a snapshot
     // opened directly — would fail to parse the file.

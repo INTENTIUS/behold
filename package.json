@@ -7,9 +7,11 @@
   "bin": {
     "behold": "./bin/behold.js"
   },
+  "mcpName": "io.github.INTENTIUS/behold",
   "files": [
     "bin",
     "dist",
+    "schemas",
     "web",
     "example-writes",
     "example-k8s",
@@ -43,7 +45,10 @@
     "test": "vitest run",
     "generate:graph-layout": "tsx src/graph-db/generate-layout.ts",
     "check:graph-layout": "tsx src/graph-db/generate-layout.ts --check",
-    "build": "tsx src/graph-db/generate-layout.ts && esbuild src/cli.ts --bundle --platform=node --format=esm --external:hono --external:@hono/node-server --external:@intentius/pinhole --external:@kubernetes/client-node --external:ajv --external:@modelcontextprotocol/sdk --external:@ladybugdb/core --outfile=dist/cli.js && chmod +x dist/cli.js",
+    "generate:icons": "tsx src/generate-icons.ts",
+    "check:icons": "tsx src/generate-icons.ts --check",
+    "check:browser-bundle": "tsx scripts/check-browser-bundle.mts",
+    "build": "tsx src/graph-db/generate-layout.ts && tsx src/generate-icons.ts && esbuild src/cli.ts --bundle --platform=node --format=esm --external:hono --external:@hono/node-server --external:@intentius/pinhole --external:@kubernetes/client-node --external:ajv --external:@modelcontextprotocol/sdk --external:@ladybugdb/core --outfile=dist/cli.js && chmod +x dist/cli.js",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build"
   },
@@ -71,6 +76,9 @@
     }
   },
   "devDependencies": {
+    "@intentius/chant-lexicon-k8s": "0.124.58",
+    "@intentius/chant-lexicon-otel": "0.124.58",
+    "@intentius/chant-lexicon-prometheus": "0.124.58",
     "@intentius/chant-lexicon-pulumi": "^0.124.58",
     "@intentius/chant-lexicon-sql": "^0.124.58",
     "@types/node": "^26.4.1",

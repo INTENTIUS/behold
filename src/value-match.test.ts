@@ -36,7 +36,7 @@ describe("addValueMatchEdges", () => {
 
   it("connects a by-name reference the symbolic graph missed", () => {
     const ir = addValueMatchEdges(base());
-    expect(ir.edges).toContainEqual({ from: "dbRdsInstance", to: "dbRdsSubnetGroup", kind: "ref", viaAttr: "DBSubnetGroupName", inferred: true });
+    expect(ir.edges).toContainEqual({ from: "dbRdsInstance", to: "dbRdsSubnetGroup", kind: "ref", viaAttr: "DBSubnetGroupName", inferred: true, join: "value-match" });
     // ...and not the reverse, and not a self-edge.
     expect(ir.edges).toHaveLength(1);
   });
@@ -87,7 +87,7 @@ describe("addValueMatchEdges", () => {
       groups: {},
     } as unknown as GraphIR;
     const out = addValueMatchEdges(ir);
-    expect(out.edges).toContainEqual(expect.objectContaining({ from: "workspace", to: "cluster", inferred: true }));
+    expect(out.edges).toContainEqual(expect.objectContaining({ from: "workspace", to: "cluster", inferred: true, join: "value-match" }));
   });
 
   it("ignores short values that would collide", () => {
@@ -142,7 +142,7 @@ describe("addValueMatchEdges over nested attrs (#166)", () => {
   it("connects a k8s workload to the aws resource its container env names", () => {
     const out = addValueMatchEdges(mixed([{ name: "ASSET_BUCKET", value: BUCKET }]));
     expect(out.edges).toEqual([
-      { from: "web", to: "assets", kind: "ref", viaAttr: "spec.template.spec.containers.env.value", inferred: true },
+      { from: "web", to: "assets", kind: "ref", viaAttr: "spec.template.spec.containers.env.value", inferred: true, join: "value-match" },
     ]);
   });
 
@@ -202,7 +202,7 @@ describe("addValueMatchEdges over nested attrs (#166)", () => {
       groups: {},
     } as unknown as GraphIR;
     expect(addValueMatchEdges(ir).edges).toEqual([
-      { from: "role", to: "ns", kind: "ref", viaAttr: "Tags.Value", inferred: true },
+      { from: "role", to: "ns", kind: "ref", viaAttr: "Tags.Value", inferred: true, join: "value-match" },
     ]);
   });
 });

@@ -1,0 +1,17 @@
+{
+  "name": "behold",
+  "version": "0.31.0",
+  "description": "Your infrastructure repo as a graph, from the files. Draws Terraform roots, no state needed.",
+  "author": {
+    "name": "INTENTIUS"
+  },
+  "homepage": "https://github.com/INTENTIUS/behold",
+  "repository": "https://github.com/INTENTIUS/behold",
+  "license": "Apache-2.0",
+  "keywords": [
+    "terraform",
+    "infrastructure",
+    "graph",
+    "mcp"
+  ]
+}

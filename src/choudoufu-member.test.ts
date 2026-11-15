@@ -205,7 +205,7 @@ describe("addChoudoufuReferenceEdges — the cross-member edge (#369, #366's ope
   it("draws the data source to the producing instance in the member that declares that estate", () => {
     const ir = addChoudoufuReferenceEdges(composed());
     const cross = ir.edges.filter((e) => (e as { inferred?: boolean }).inferred);
-    expect(cross).toEqual([{ from: "app/data.aws_vpc.network", to: "net/aws_vpc.main", kind: "ref", viaAttr: "tofu-estate", inferred: true }]);
+    expect(cross).toEqual([{ from: "app/data.aws_vpc.network", to: "net/aws_vpc.main", kind: "ref", viaAttr: "tofu-estate", inferred: true, join: "choudoufu-estate" }]);
     expect(ir.nodes.find((n) => n.id === "app/data.aws_vpc.network")!.attrs.reads).toBe("net/aws_vpc.main");
     // Idempotent: the overlay route runs the same pass over a fresh compose,
     // and a second run over the same IR adds nothing.

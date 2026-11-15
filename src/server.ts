@@ -178,6 +178,7 @@ import { readWhy, whyRegion, withChain } from "./workspace-why.ts";
 import { DRIFT_RECORD_CHANT_FLOOR, floorFor, floorMet, floorRefusal, LEDGER_ROOT_MEMBER_CHANT_FLOOR } from "./chant-floors.ts";
 import { memberBlockGraph } from "./choudoufu-workspace.ts";
 import { allowedHostsFrom, guardRequest } from "./request-guard.ts";
+import { readGraph } from "./read-graph.ts";
 import { applyMemberPasses, memberKindOf, memberKindSpec, memberPassNote, servesAsEstate, type MemberPassRun } from "./member-kind.ts";
 import { TerraformReadError, terraformMemberWorkspace, terraformReaderState, terraformVia } from "./terraform-member.ts";
 import { addInstanceCards } from "./instance-cards.ts";
@@ -3165,50 +3166,19 @@ export function createApp(
       let mode: "component-status" | undefined;
       let metaEnv = cfg.env ?? null;
       if (multi) {
-        // The logical lens reads full attrs (metadata.namespace, spec fields),
-        // so an estate asked for it composes at detail 3 — the same thing the
+        // behold#1057: the estate's read is src/read-graph.ts's, the same
+        // function a CLI calls with no server. It composes the members and
+        // runs the edge passes, the operator mark, cluster anchoring and the
+        // member kinds' passes, in the order this branch always ran them. The
+        // logical lens reads full attrs (metadata.namespace, spec fields), so
+        // an estate asked for it composes at detail 3, the same thing the
         // single-project logical branch does with its own graphIr call (#224).
-        ir = await composeEstate(cfg.projectDirs!, logical ? { ...opts, detail: 3 } : opts);
-        // #188: the edge-derivation passes are the k8s half's ONLY edge
-        // source (chant's IR carries no k8s edges at all — src/k8s-edges.ts),
-        // and they ran only on the single-project branch below — so an
-        // 11-project k8s estate composed to a node cloud with FEWER edges
-        // than serving any one project alone. All three passes join on
-        // attribute values (namespace/name, literal value equality) — never
-        // on node ids — so composeStacks' stack-prefixed ids pass through
-        // them unchanged, and a join that spans two composed projects is
-        // exactly the cross-stack edge a GitOps estate needs (a control-plane
-        // Kustomization sourceRef-ing an app project's GitRepository).
-        //
-        // #166 put the declared-contract pass FIRST at every site the two run
-        // together: value-match now walks nested attrs, so it can reach a
-        // `spec.sourceRef.name` that `addK8sDeclaredEdges` joins properly, and
-        // whichever runs first claims the pair (both dedup against existing
-        // edges). Declared contracts should name their own field — `sourceRef`,
-        // not `spec.sourceRef.name` — and value-match fills what is left.
-        ir = addK8sDeclaredEdges(ir);
-        ir = await deriveGraphEdges(ir);
-        // The estate's own edge (#166): a control-plane member's Kustomization /
-        // Application declares the directory it applies, and behold knows each
-        // member by its checkout — so the join a single project cannot make is
-        // exactly the one composition exists for. After the two passes above,
-        // which is what tells it where a member's interior already starts.
-        ir = addEstateMemberEdges(ir, estateMembers(cfg.projectDirs!));
-        // #369: a choudoufu member's cross-estate data sources name a producer
-        // ESTATE; composition knows which member box carries that estate.
-        ir = addChoudoufuReferenceEdges(ir);
-        // #234's free rider: an `OperatorStack` renders as an ordinary namespace
-        // of CronJobs, so the estate already draws the operating loop — just
-        // anonymously. This names it, from chant's own labels. Additive paint;
-        // an estate with no OperatorStack gets the identical IR back. Joins on
-        // label values, never ids, so composed stack-prefixed ids pass through
-        // exactly as the edge passes above do.
-        ir = markOperatorHome(ir);
+        // The workspace and the kube context are handed to it, never read by
+        // it: they are this server's.
         const estateContext = await boundK8sContext(metaEnv ?? undefined);
-        ir = addClusterAnchorEdges(ir, estateContext);
-        // #379/#380/#382 — see the single-project branch below. An estate whose
-        // members are Terraform roots gets the same three passes.
-        estateRun = applyMemberPasses(ir, { detail: opts.detail });
+        const read = await readGraph(cfg.projectDirs!, { ...opts, logical, workspace: servedWorkspace(), ...(estateContext !== undefined ? { k8sContext: estateContext } : {}) });
+        ir = read.ir;
+        estateRun = read.run;
         // #224: the logical lens over the COMPOSED IR. Every projection joins
         // on attribute values, never node ids, so composeStacks' prefixed ids
         // pass through exactly as the edge passes above do — and the k8s lens
