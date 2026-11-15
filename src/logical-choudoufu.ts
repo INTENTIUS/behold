@@ -11,7 +11,7 @@
  * the edge between a choudoufu card and a chant one.
  */
 import type { GraphIR, IREdge } from "@intentius/chant";
-import { CHOUDOUFU_LEXICON } from "./choudoufu-member.ts";
+import { CHOUDOUFU_LEXICON } from "./choudoufu-card.ts";
 import type { ByContainer, LogicalProjection } from "./logical.ts";
 
 export function estateBoxTitle(estate: string): string {

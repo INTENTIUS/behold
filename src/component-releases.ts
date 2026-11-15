@@ -14,6 +14,7 @@
  */
 import type { GraphIR, IRNode } from "@intentius/chant";
 import type { ReleaseRecord } from "@intentius/chant/lifecycle/release-ledger";
+import { MEMBER_RUNS_LEXICON } from "./card-marks.ts";
 import { releaseChip, releaseStatus, type ReleaseStatus } from "./component-status.ts";
 import type { CiRunEntry } from "./ci-run-index.ts";
 import { readReleases, RELEASES_READ_TTL_MS, type ReleaseCell, type ReleasesAnswer } from "./lifecycle-releases.ts";
@@ -136,7 +137,7 @@ export function withRunsSince(ir: GraphIR, entries: readonly CiRunEntry[]): { ir
  * keyed by the member whose directory it ran in. One card per member stands
  * for its whole root, so every resource of the member is drawn under it.
  */
-export const MEMBER_RUNS_LEXICON = "member-runs";
+export { MEMBER_RUNS_LEXICON } from "./card-marks.ts";
 /** The card's kind. */
 export const MEMBER_RUNS_KIND = "MemberRuns";
 /** The attr a member card carries its newest apply that passed under. */

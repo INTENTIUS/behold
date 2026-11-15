@@ -727,7 +727,10 @@ Flux mark, a `Helm::Release` the Helm wheel. The corpus is vendored under
 `web/icons/` (30 kubernetes/community SVGs, 3 cncf/artwork marks for
 Flux/Argo/Helm, licensing in `THIRD_PARTY.md`) and mapped kind by kind in
 `src/icon-packs.ts`; a kind with no official icon falls through to pinhole's
-keyword heuristic rather than a wrong picture.
+keyword heuristic rather than a wrong picture. The painter reads the corpus from
+`src/icons.generated.ts`, which `npm run generate:icons` writes from `web/icons/`
+and `npm run check:icons` holds to it, so `src/render.ts` reads no file and
+bundles for a browser (`npm run check:browser-bundle`, #1069).
 
 dagre's layout is a good first draft, not a final one: drag a card to move
 it, grab a containment box's corner to resize it, and both survive a reload.

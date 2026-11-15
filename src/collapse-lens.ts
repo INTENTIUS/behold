@@ -24,7 +24,7 @@
  * lexicon of the cards being counted, not from one table for everything.
  */
 import type { GraphIR, IREdge, IRNode } from "@intentius/chant";
-import { CHOUDOUFU_LEXICON } from "./choudoufu-member.ts";
+import { CHOUDOUFU_LEXICON } from "./choudoufu-card.ts";
 import { TERRAFORM_LEXICON } from "./terraform-lens.ts";
 
 /** Cards above which `?collapse=1` shuts a box. 40 is a screen of cards: below

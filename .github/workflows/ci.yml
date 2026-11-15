@@ -23,6 +23,8 @@ jobs:
         run: npm run tsc
       - name: unit tests
         run: npm test
+      - name: icons module matches web/icons
+        run: npm run check:icons
       - name: build
         run: npm run build
 

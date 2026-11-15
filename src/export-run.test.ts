@@ -14,6 +14,8 @@ vi.mock("./chant.ts", async (importOriginal) => ({
 }));
 import { graphIr } from "./chant.ts";
 import { ExportRefusal, runExport } from "./export.ts";
+import { awsIconFor, gcpIconFor } from "./cloud-icons.ts";
+import { k8sIconFor } from "./icon-packs.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const fixture = (): GraphIR => JSON.parse(readFileSync(join(HERE, "__fixtures__", "terraform-ir-two-roots.json"), "utf8")) as GraphIR;
@@ -123,5 +125,45 @@ describe("runExport and history.json (#1068)", () => {
     const read = (d: string) => JSON.parse(readFileSync(join(root, d, "manifest.json"), "utf8")) as Record<string, unknown>;
     expect(read("plain")).not.toHaveProperty("history");
     expect(read("published").history).toBe(true);
+  });
+});
+
+// behold#1069: the painter takes its icons from src/icons.generated.ts now, not
+// from web/icons on disk. An export's snapshots are painted by the same
+// renderGraph, so each card of each vendor still wears its vendored icon there.
+describe("runExport paints the vendored icons (#1069)", () => {
+  const threeVendors = (): GraphIR => ({
+    nodes: [
+      { id: "bucket", kind: "AWS::S3::Bucket", lexicon: "aws", attrs: {} },
+      { id: "run", kind: "GCP::Run::Service", lexicon: "gcp", attrs: {} },
+      { id: "web", kind: "K8s::Apps::Deployment", lexicon: "k8s", attrs: {} },
+    ],
+    edges: [],
+    groups: {},
+  } as unknown as GraphIR);
+
+  it("draws the AWS, Google Cloud and Kubernetes icons on their cards", { timeout: 60_000 }, async () => {
+    vi.mocked(graphIr).mockImplementation((async () => threeVendors()) as never);
+    const project = mkdtempSync(join(tmpdir(), "behold-export-src-"));
+    const out = join(mkdtempSync(join(tmpdir(), "behold-export-out-")), "bundle");
+    made.push(project, dirname(out));
+    const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      await runExport({ projectDir: project, port: 0 }, out);
+    } finally {
+      write.mockRestore();
+    }
+    const manifest = JSON.parse(readFileSync(join(out, "manifest.json"), "utf8")) as { keyToFile: Record<string, string> };
+    const { svg } = JSON.parse(readFileSync(join(out, manifest.keyToFile["/api/graph?detail=2"]!), "utf8")) as { svg: string };
+    for (const id of ["bucket", "run", "web"]) expect(svg).toContain(`data-node-id="${id}"`);
+    const icons = {
+      aws: awsIconFor("AWS::S3::Bucket"),
+      gcp: gcpIconFor("GCP::Run::Service"),
+      k8s: k8sIconFor("K8s::Apps::Deployment"),
+    };
+    for (const [vendor, glyph] of Object.entries(icons)) {
+      expect(glyph, vendor).toBeDefined();
+      expect(svg, vendor).toContain(glyph!.body);
+    }
   });
 });
