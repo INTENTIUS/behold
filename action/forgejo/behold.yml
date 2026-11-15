@@ -15,7 +15,7 @@ jobs:
         with:
           fetch-depth: 0
       - id: behold
-        uses: https://github.com/INTENTIUS/behold-action@v1 # until the repository exists, a copy of the action/ folder
+        uses: https://github.com/INTENTIUS/behold-action@v1
         with:
           forge: forgejo
           upload: "false"

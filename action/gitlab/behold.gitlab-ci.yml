@@ -55,7 +55,7 @@ behold:changed:
       node /tmp/behold-action/action/src/main.mjs report
   artifacts:
     # The merge request widget links this folder. Whether `expose_as` takes a
-    # folder is on the maintainer's list in action/README.md.
+    # folder is a live check on the maintainer's list, in the behold repository.
     expose_as: behold changed cut
     paths:
       - behold-changed/

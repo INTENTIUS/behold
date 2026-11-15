@@ -5,8 +5,8 @@ branding:
   icon: git-pull-request
   color: purple
 
-# Built in the behold repository under action/ (INTENTIUS/behold#1062). It moves
-# to the behold-action repository when that exists; action/README.md lists what moves.
+# This file is built in the behold repository (INTENTIUS/behold#1062, #1063) and
+# copied to the root of the behold-action repository by a script there.
 #
 # This is a composite action and not a `node24` one: uploading an artifact is
 # actions/upload-artifact's job, and a composite step can call it, where a

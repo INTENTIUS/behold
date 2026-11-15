@@ -15,7 +15,7 @@ import { detectForge, forgeAdapter, pullRequestOf } from "./forge.mjs";
 import { findComment, githubClient, upsertComment } from "./github.mjs";
 
 export const DEFAULT_MARKER = "behold:changed";
-/** GitHub's comment ceiling is reported as 65,536; stay under 60,000 as FORGE_BUDGETS.github does (e2e/forge-limits/README.md). */
+/** GitHub's comment ceiling is reported as 65,536; stay under 60,000 as FORGE_BUDGETS.github does in behold's forge limits. */
 const COMMENT_CHARS = 60_000;
 
 /** Inputs from the environment the composite action sets (`INPUT_<NAME>`). */

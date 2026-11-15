@@ -1,19 +1,22 @@
-# behold changed cut (GitHub Action, with GitLab and Forgejo variants)
+# behold changed cut
 
-The sections below are the GitHub Action. "GitLab" and "Forgejo" further down
-cover the same picture on those forges (INTENTIUS/behold#1064).
+> Your infrastructure repo as a graph, from the files. Draws Terraform roots, no state needed.
 
-On each pull request this action draws the resources the pull request changed,
-and their neighbours, as Mermaid in the job summary and in one comment that it
-edits on every push. The SVG and the JSON are uploaded as artifacts. It reads
-files out of git, so it works on a repository that has never used chant, next
-to whatever plan tooling the repository already runs.
+Draw the resources a pull request changed, and their neighbours, as a diagram
+in the job summary and in one comment that is edited on each push. It reads
+the files in git, so it works on a repository that has never used chant,
+next to whatever plan tooling the repository already runs.
 
-This folder is built inside the behold repository (INTENTIUS/behold#1062) and
-moves to a `behold-action` repository when a maintainer creates it. See
-"What moves" at the end.
+## What it reads
 
-## Use
+Files only. The action reads `<base sha>..<head sha>` out of git with
+`git archive`, parses the Terraform it finds, and draws the roots that changed.
+It runs no `terraform` binary, needs no plan, no state file and no cloud
+credentials, and runs nothing from the repository it reads. The only token it
+uses is the repository's own `GITHUB_TOKEN`, to write the comment. It installs
+`@intentius/behold-graph` from the npm registry on each run.
+
+## Minimal workflow
 
 ```yaml
 name: behold
@@ -28,27 +31,63 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: INTENTIUS/behold-action@v1   # until the repository exists: INTENTIUS/behold/action@<sha>
+      - uses: INTENTIUS/behold-action@v1
 ```
 
-The action reads `<base sha>..<head sha>` from the pull request event with
+## What the comment holds
+
+The cut is `<base sha>..<head sha>` from the pull request event, read with
 `behold graph --changed`, at detail 3 so an edited attribute shows. Each push
 edits the comment that carries the hidden marker `<!-- behold:changed -->`, so
 the pull request keeps one behold comment. When the cut is over the node
 budget (60 cards by default) the neighbours fold, and past that the comment is
 a per-root table of counts. A comment is kept under 60,000 characters,
-GitHub's reported limit being 65,536 (e2e/forge-limits/README.md; those
-figures are provisional until the live check on #1065 is recorded).
+GitHub's reported limit being 65,536; that figure is provisional until the
+live check on INTENTIUS/behold#1065 is recorded.
 
 The run's job summary holds the same diagram or table, the count line (for
 example "4 changed, 9 neighbours, in 2 roots") and links to the artifacts.
 
-Inputs are listed in `action.yml`. Outputs: `changed-count`, `comment-url`,
-`comment-action`, `svg-artifact-url`, `json-artifact-url` and `out-dir`.
-
 An SVG the painter refuses (it stops at 400 flat cards) and a directory
 behold cannot read both count as a failed read: the step fails after writing
 the reason to the summary. Set `fail-on-error: false` to report and continue.
+
+## Inputs
+
+All inputs are optional.
+
+| Input | Default | What it does |
+|---|---|---|
+| `mode` | `changed` | `changed` draws the cut for a pull request. `post-comment` is the second workflow of the fork recipe. |
+| `github-token` | `github.token` | Token for the comment. |
+| `forge` | `auto` | `github`, `forgejo` or `auto`. |
+| `api-url` | empty | API base URL when the forge's own variable is wrong for the job. |
+| `base` | pull request base sha | Base commit. |
+| `head` | pull request head sha | Head commit. |
+| `path` | `.` | Directory to read, relative to the workspace. |
+| `depth` | behold's default | Hops from a changed card that are kept. |
+| `budget` | 60 | Cards a cut may hold before it folds. |
+| `theme` | behold's default | SVG theme, `light` or `dark`. |
+| `comment` | `auto` | `auto` posts one comment on a pull request; `false` writes the job summary and artifacts only. |
+| `marker` | `behold:changed` | The hidden marker that finds the comment to edit. Change it to keep two comments, one per directory. |
+| `upload` | `true` | Upload the SVG and JSON as artifacts. |
+| `artifact-name` | `behold-changed` | Prefix of the artifact names. Names are unique per run, so give each use of the action its own. |
+| `retention-days` | repository default | Artifact retention, 1 to 90. |
+| `handoff` | `false` | Also upload `comment.md` and `pr.json` as one artifact, for the fork recipe. |
+| `handoff-dir` | empty | `post-comment` mode: the folder the handoff artifact was downloaded to. |
+| `behold-version` | `latest` | Version of `@intentius/behold-graph` to install. |
+| `fail-on-error` | `true` | Fail the step when the read fails. |
+
+## Outputs
+
+| Output | What it holds |
+|---|---|
+| `changed-count` | Cards added, removed or changed. |
+| `comment-url` | The comment the action posted or edited, when it did. |
+| `comment-action` | `created`, `updated`, `unchanged`, `denied`, `fork` or `skipped`. |
+| `svg-artifact-url` | Artifact URL of the SVG. Needs a signed-in viewer. |
+| `json-artifact-url` | Artifact URL of the JSON. |
+| `out-dir` | Folder holding `changed.json`, `changed.svg`, `comment.md` and `pr.json`. |
 
 ## Pull requests from forks
 
@@ -129,7 +168,7 @@ GitLab has no action marketplace, so the same code runs from a CI template,
 and comment text, and keeps one note per marker: it lists the merge request's
 notes, skips system notes, edits the one that carries `<!-- behold:changed -->`
 and otherwise creates it (`src/gitlab.mjs`). Packaging the template as a CI/CD
-Catalog component is not done; see "Waiting on the maintainer".
+Catalog component is not done.
 
 Setup:
 
@@ -180,7 +219,7 @@ refuse a Forgejo server), because `actions/upload-artifact` and its
 on the run page.
 
 The `forgejo` row of `FORGE_BUDGETS` is the provisional 20,000 characters and
-250 edges until the live check (#1065) records what a Forgejo instance
+250 edges until the live check (INTENTIUS/behold#1065) records what a Forgejo instance
 renders. Gitea's default `MERMAID_MAX_SOURCE_CHARACTERS` is 50,000; Forgejo's
 is not documented.
 
@@ -191,63 +230,8 @@ the comment, and `mode: post-comment` refuses to run there. Posting for forks
 would need `pull_request_target`, which runs with a write token; that is a
 separate design and is not built here.
 
-## Tests
+## About behold
 
-`action/test/action.test.ts` runs under the repository's vitest. It builds a
-throwaway git repository, reads it through the real Terraform reader, and
-answers every GitHub call from `action/test/fixtures` (bodies shaped after the
-REST documentation: comment lists with a `Link` header, create, edit, a 403,
-a pull request, event payloads). A call with no recorded answer fails the
-test, so nothing reaches the network and nothing is posted to a real pull
-request. `action/test/forges.test.ts` does the same for GitLab (`gitlab-*`
-fixtures, merge request notes, CI variables) and Forgejo (`forgejo-*`
-fixtures, Gitea-shaped comments and event payloads).
+> behold draws your infrastructure repo as a graph, from the files. Run it in a folder of Terraform and it finds each root and draws it as a box of resources, with an edge for each reference the configuration states. It needs no state file or cloud account, and it runs no terraform binary. It writes nothing into the folder it reads. Terraform roots are what it draws from files today. Kubernetes manifests in a plain directory and the edges between tools are coming. behold works beside the tools a repo already uses.
 
-## What moves
-
-When `behold-action` exists, move the whole `action/` folder to its root:
-
-- `action.yml`, `src/`, `gitlab/`, `forgejo/` and `README.md`
-- `test/` and its `fixtures/`, plus the vitest entry that runs them. The tests
-  import `../../src/graph-package.ts` and `../../src/terraform-member.ts` from
-  behold; in the new repository they import `@intentius/behold-graph` and run
-  against a published version instead.
-- the `action/**/*.test.ts` line in behold's `vitest.config.ts` is removed.
-- a release workflow that tags `v1` and pins the same upload-artifact commit.
-
-What stays in behold: the `graph --changed` cut, the Mermaid and SVG formats
-and `@intentius/behold-graph` itself.
-
-## Waiting on the maintainer
-
-- creating the `behold-action` repository and moving this folder
-- publishing `@intentius/behold-graph` to npm (the action installs it by version)
-- the test-repository runs that the issue's Done-when names: a pull request
-  that changes two resources, a second push, and a fork pull request through
-  the two workflows above
-- GitLab test project (#1064). On a GitLab instance or gitlab.com: create a
-  project holding a copy of `action/test`'s two-commit Terraform layout (any
-  `.tf` files); create a project access token (`api`, Reporter) and store it as
-  `BEHOLD_GITLAB_TOKEN`; commit the include above with a real `BEHOLD_ACTION_REF`;
-  open a merge request that changes two resources and check one note with a
-  rendered block and the widget link; push again and check the note is edited,
-  not added; open a second merge request that changes 55 or more resources and
-  check the table, the SVG link and no block shown as text; with a second
-  account, fork the project, open a merge request from the fork and check that
-  the job posts nothing. Record on the issue whether `CI_JOB_TOKEN` can create a
-  note (`POST` with `JOB-TOKEN`), whether `expose_as` accepts the folder, the
-  rendered Mermaid limit actually applied, and that
-  `.../artifacts/file/behold-changed/changed.svg` opens.
-- Forgejo test instance (#1064). On a Forgejo 17 instance with a runner (label
-  `docker`): create a repository, copy `forgejo/behold.yml` to
-  `.forgejo/workflows/`, and put a copy of the `action/` folder where its
-  `uses` line points; open a pull request that changes two resources and check
-  the summary, one comment, and the artifact on the run page; push again and
-  check the comment is edited; check which of `FORGEJO_API_URL`,
-  `FORGEJO_RUN_NUMBER` and `FORGEJO_STEP_SUMMARY` the runner really sets; check
-  the Actions token may comment (repository Actions settings, default token
-  permissions); open a pull request from a fork and check no comment and no
-  error; record the Mermaid block size the instance renders so the `forgejo`
-  row of `FORGE_BUDGETS` can be confirmed.
-- packaging `gitlab/behold.gitlab-ci.yml` as a CI/CD Catalog component, which
-  needs the repository on a GitLab instance
+To try it on a checkout first, run `npx @intentius/behold serve .`.
