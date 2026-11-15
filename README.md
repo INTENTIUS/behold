@@ -1,6 +1,16 @@
 # behold
 
-**Visualize and control.**
+**Your infrastructure repo as a graph, from the files.**
+
+```sh
+npx @intentius/behold serve .
+```
+
+Run it in a folder of Terraform and it finds each root and draws it as a box of resources, with an edge for each reference the configuration states. It needs no state file or cloud account, and it runs no `terraform` binary. It writes nothing into the folder it reads. Terraform roots are what it draws from files today. Kubernetes manifests in a plain directory and the edges between tools are coming. behold works beside the tools a repo already uses.
+
+![Two Terraform roots, app and net, drawn as boxes of resources with an edge for each reference](https://raw.githubusercontent.com/INTENTIUS/behold/main/docs/public/readme/two-roots.png)
+
+## With chant
 
 Reads what chant records for terragucci and plywood.
 
