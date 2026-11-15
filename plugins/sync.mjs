@@ -9,7 +9,8 @@
 // package.json (the version the MCP config pins), and
 // plugins/shared/skills (the skill, with {{VERSION}} filled in) and
 // plugins/shared/icon.png (square, from docs/public/brand/logo.svg).
-// A second plugin (Cursor, #1052) adds its target to TARGETS below.
+// The Claude Code and Cursor plugins are two folders written from the same
+// sources; the Cursor manifest and marketplace file are the Cursor-only parts.
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,14 +31,14 @@ const mcpConfig = {
 };
 
 // The shared skills, as { relative path: text }.
-function sharedSkills() {
+function sharedSkills(host) {
   const base = join(here, "shared", "skills");
   const out = {};
   const walk = (dir) => {
     for (const name of readdirSync(dir)) {
       const p = join(dir, name);
       if (statSync(p).isDirectory()) walk(p);
-      else out[relative(base, p)] = readFileSync(p, "utf8").replaceAll("{{VERSION}}", version);
+      else out[relative(base, p)] = readFileSync(p, "utf8").replaceAll("{{VERSION}}", version).replaceAll("{{HOST}}", host);
     }
   };
   walk(base);
@@ -64,7 +65,7 @@ put(
 );
 put("plugins/claude-code/.mcp.json", json(mcpConfig));
 put("plugins/claude-code/.claude-plugin/icon.png", icon);
-for (const [rel, text] of Object.entries(sharedSkills())) put(join("plugins/claude-code/skills", rel), text);
+for (const [rel, text] of Object.entries(sharedSkills("Claude Code"))) put(join("plugins/claude-code/skills", rel), text);
 put(
   "plugins/claude-code/README.md",
   `# behold for Claude Code\n\n${listing.paragraph}\n\n` +
@@ -89,6 +90,58 @@ put(
         version,
         category: "development",
         keywords: ["terraform", "infrastructure", "graph", "mcp"],
+      },
+    ],
+  }),
+);
+
+// Cursor plugin. The MCP config is the same shape at the plugin root (mcp.json,
+// which Cursor discovers by default); the marketplace file at the repo root
+// lets Cursor read the repository as a one-plugin marketplace.
+const cursorKeywords = ["terraform", "infrastructure", "graph", "mcp"];
+put(
+  "plugins/cursor/.cursor-plugin/plugin.json",
+  json({
+    name: "behold",
+    version,
+    description: listing.short,
+    author: { name: "INTENTIUS" },
+    homepage: "https://github.com/INTENTIUS/behold",
+    repository: "https://github.com/INTENTIUS/behold",
+    license: "Apache-2.0",
+    keywords: cursorKeywords,
+    logo: "assets/logo.png",
+  }),
+);
+put("plugins/cursor/mcp.json", json(mcpConfig));
+put("plugins/cursor/assets/logo.png", icon);
+for (const [rel, text] of Object.entries(sharedSkills("Cursor"))) put(join("plugins/cursor/skills", rel), text);
+put(
+  "plugins/cursor/README.md",
+  `# behold for Cursor\n\n${listing.paragraph}\n\n` +
+    `## Install\n\n` +
+    `Install behold from the Cursor Marketplace. To try it from a clone of this repository, copy ` +
+    "\`plugins/cursor\` to \`~/.cursor/plugins/local/behold\` and run Developer: Reload Window.\n\n" +
+    `The plugin registers the \`behold\` MCP server (\`npx @intentius/behold@${version} mcp\`) and adds one skill, ` +
+    `\`open-in-behold\`, which starts \`${listing.command}\` in the background and prints the URL. ` +
+    `The server's tools are \`ask\`, \`show\`, \`shot\` and \`capabilities\`; they return text and a link, ` +
+    `so the graph opens in a browser tab.\n\n` +
+    `## Try it\n\nIn a folder of Terraform, ask the agent to open the repo in behold.\n`,
+);
+put(
+  ".cursor-plugin/marketplace.json",
+  json({
+    name: "behold",
+    owner: { name: "INTENTIUS" },
+    metadata: { description: listing.line },
+    plugins: [
+      {
+        name: "behold",
+        source: "./plugins/cursor",
+        description: listing.short,
+        version,
+        category: "development",
+        keywords: cursorKeywords,
       },
     ],
   }),
