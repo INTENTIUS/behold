@@ -119,6 +119,7 @@ import { SCRATCH_PREFIX, assertScratch } from "./scratch.ts";
 import { attachLintFindings, terraformLintNote } from "./terraform-lint.ts";
 import { redactSensitiveSources } from "./terraform-redact.ts";
 import { addInstanceCards } from "./instance-cards.ts";
+import { addUnparsedRootCards, parseUnparsedRoots, unparsedNote, unparsedRootCards, type UnparsedRoot } from "./terraform-unparsed.ts";
 import { GRAPH_LINT_REPORT_CHANT_FLOOR } from "./chant-floors.ts";
 import { meetsFloor } from "./floor.ts";
 import {
@@ -787,8 +788,10 @@ export async function readTerraformMember(dir: string, opts: GraphOptions, state
   // mock of ./chant.ts still answers it.
   const { graphIr, ChantCliError } = await import("./chant.ts");
   let ir: GraphIR;
+  // behold#1053: a root chant cannot parse is a warning on stderr and nothing in the IR.
+  const unparsed: UnparsedRoot[] = [];
   try {
-    ir = await graphIr(project, { ...source, detail });
+    ir = await graphIr(project, { ...source, detail }, (stderr) => unparsed.push(...parseUnparsedRoots(stderr)));
   } catch (err) {
     // #919: a chant below the floor ignores `graph.lint` and still refuses an
     // estate lint finds errors in. Say which chant draws it.
@@ -798,6 +801,8 @@ export async function readTerraformMember(dir: string, opts: GraphOptions, state
     }
     throw err;
   }
+  // One card per root that did not parse, so the root is drawn and says why it is empty.
+  addUnparsedRootCards(ir, unparsed, (root) => scan.roots.find((r) => r.name === root)?.dir);
   // Before composition, which keeps nodes and nothing above them.
   attachLintFindings(ir);
   // #920: a sensitive variable's literal default, in the file text each card carries and in its parsed body.
@@ -821,7 +826,8 @@ const terraformPasses: MemberPasses = {
     // #919: before the elision, so a finding on a block this zoom does not draw is still named.
     attachLintFindings(ir);
     const lint = terraformLintNote(ir);
-    const elision = hasTerraformEntities(ir)
+    const unparsed = unparsedRootCards(ir);
+    const elision = hasTerraformEntities(ir) || unparsed.length
       ? (groupTerraformByRoot(normalizeTerraformNodes(ir)), filterTerraformCards(ir, detail))
       : { dropped: {}, total: 0 };
     // #996: chant's instance nodes (C4), tied to their block card. A no-op until chant emits them.
@@ -837,8 +843,9 @@ const terraformPasses: MemberPasses = {
         // behold#571: a Terragrunt repo says which units it drew, and from what.
         const units = dirs.map((d) => terragruntOf(d)).filter((p): p is TerragruntPicture => !!p);
         const unitShort = (p: TerragruntPicture) => `${p.units.length} unit${p.units.length === 1 ? "" : "s"}`;
-        const note = [...scans.map(terraformRootsNote), ...units.map(terragruntNote), terraformElisionNote(elision, detail), lint.note].filter(Boolean).join("; ");
-        const short = [...scans.map(terraformRootsNoteShort), ...units.map(unitShort), terraformElisionNoteShort(elision), lint.noteShort].filter(Boolean).join(" · ");
+        const bad = unparsedNote(unparsed, scans.reduce((n, sc) => n + sc.roots.length, 0));
+        const note = [...scans.map(terraformRootsNote), bad.note, ...units.map(terragruntNote), terraformElisionNote(elision, detail), lint.note].filter(Boolean).join("; ");
+        const short = [...scans.map(terraformRootsNoteShort), bad.noteShort, ...units.map(unitShort), terraformElisionNoteShort(elision), lint.noteShort].filter(Boolean).join(" · ");
         return note ? { note, ...(short && short !== note ? { noteShort: short } : {}) } : {};
       },
     };
