@@ -111,8 +111,8 @@ export const READ_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD", "OPTION
 
 /**
  * The writes a terragucci repo still answers (#500): each writes nothing
- * outside behold, as AGENTS.md's "The exceptions, and their exact size" lists
- * them. Everything else that is not a read is refused, so a route added later
+ * outside behold; each entry's `why` says so (AGENTS.md, "The write
+ * boundary"). Everything else that is not a read is refused, so a route added later
  * is refused until someone puts it here, whatever its method.
  */
 export const TERRAGUCCI_ALLOWED_WRITES: readonly { method: string; pattern: RegExp; why: string }[] = [

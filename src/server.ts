@@ -2714,8 +2714,8 @@ export function createApp(
 
   // #193: the API's front door, for agents. Everything the SPA can see is
   // plain JSON over these routes — this index makes them discoverable without
-  // reading source. Shapes and the read/act loop: AGENTS.md (shipped in the
-  // npm package, linked from the docs).
+  // reading source. The read/act loop: AGENTS.md, "Driving a running behold"
+  // (shipped in the npm package); shapes: docs/src/content/docs/using/agents.mdx.
   app.get("/api", (c) =>
     c.json({
       name: "behold",
@@ -3955,7 +3955,7 @@ export function createApp(
         // #422: the picture arrives in pieces, opt-in.
         //
         // Opt-in, and never the default, because `/api/overlay` is a CONTRACT:
-        // AGENTS.md's read loop names it as the live entity overlay, an agent
+        // AGENTS.md ("Driving a running behold") names it as the live entity overlay, an agent
         // GETs it expecting the account's answer, and `src/export.ts` captures
         // whatever it returns into a static bundle. A route that answered with
         // members it had not read yet would hand an agent a half-picture it had
@@ -4603,7 +4603,7 @@ export function createApp(
   // from inside a served member, the preview is choudoufu's own `-dry-run`,
   // the lines are handed back for a person to run, and the receipt is the
   // listing afterwards. There is no `/api/choudoufu/mv` — see AGENTS.md's
-  // Invariant, and src/choudoufu-route.test.ts, which asserts it stays absent.
+  // "The write boundary", and src/choudoufu-route.test.ts, which asserts it stays absent.
   // -------------------------------------------------------------------------
 
   /** The plan path a request names, resolved against the primary and accepted

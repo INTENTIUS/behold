@@ -623,7 +623,7 @@ reason. [example-carve/README.md](example-carve/README.md) has the estate's full
 and the offline/`--live` split.
 
 behold writes only into `app/carveout/` inside the demo copy it made, and
-nothing else. Your Terraform is never edited; see AGENTS.md, "Invariant".
+nothing else. Your Terraform is never edited; see AGENTS.md, "The write boundary".
 
 ## Configuration: `.behold.json`
 
@@ -739,8 +739,8 @@ yourself when you like.
 
 ## Layout
 
-A shape rather than a manifest. `src/` is ~85 modules with one concern each, and
-[AGENTS.md](./AGENTS.md) is the map that stays current.
+A shape rather than a manifest. `src/` is ~85 modules with one concern each;
+[AGENTS.md](./AGENTS.md) names the rules that hold across them.
 
 ```
 src/

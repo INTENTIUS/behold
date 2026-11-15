@@ -167,7 +167,7 @@ rewrite that would change anything but tags.
 ## 3. Relationship to the card graph
 
 behold's zoom stops today are `components`, `resources` and, where a Kubernetes
-read has an owner chain, `runtime` (AGENTS.md). `?collapse=1` already turns a
+read has an owner chain, `runtime` (docs/src/content/docs/using/reading-the-graph.mdx, "The zoom dial"). `?collapse=1` already turns a
 member box of more than 40 cards into one counted card. The dots answer the
 level between those two: every resource, too many to title.
 

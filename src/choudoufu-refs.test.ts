@@ -16,7 +16,7 @@ import type { TerraformReaderState } from "./terraform-member.ts";
 
 // ---------------------------------------------------------------------------
 // PROVENANCE. Both documents were recorded on the `terralith-4` workbench entry
-// (AGENTS.md, "The workbench catalog") on 2026-09-09 — choudoufu v0.16.0,
+// (workbench.json) on 2026-09-09 — choudoufu v0.16.0,
 // @intentius/chant-lexicon-terraform 0.61.0, @cdktf/hcl2json 0.21.0, over the
 // estate `tools/terralith-gen` renders at scale 4:
 //
