@@ -48,9 +48,7 @@
     "generate:icons": "tsx src/generate-icons.ts",
     "check:icons": "tsx src/generate-icons.ts --check",
     "check:browser-bundle": "tsx scripts/check-browser-bundle.mts",
-    "build": "tsx src/graph-db/generate-layout.ts && tsx src/generate-icons.ts && esbuild src/cli.ts --bundle --platform=node --format=esm --external:hono --external:@hono/node-server --external:@intentius/pinhole --external:@kubernetes/client-node --external:ajv --external:@modelcontextprotocol/sdk --external:@ladybugdb/core --outfile=dist/cli.js && chmod +x dist/cli.js && npm run build:graph",
-    "build:graph": "esbuild index=src/graph-package.ts cli=src/graph-bin.ts --bundle --splitting --platform=node --format=esm --external:@intentius/pinhole --external:@intentius/chant-k8s-client --external:@kubernetes/client-node --external:ajv --outdir=packages/graph/dist",
-    "check:graph-package": "tsx scripts/graph-package-check.ts",
+    "build": "tsx src/graph-db/generate-layout.ts && tsx src/generate-icons.ts && esbuild cli=src/cli.ts index=src/graph-package.ts --bundle --platform=node --format=esm --external:hono --external:@hono/node-server --external:@intentius/pinhole --external:@kubernetes/client-node --external:ajv --external:@modelcontextprotocol/sdk --external:@ladybugdb/core --splitting --outdir=dist && chmod +x dist/cli.js",
     "build:viewer": "tsx scripts/build-viewer.mts",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build"
@@ -59,7 +57,6 @@
     "@cdktn/hcl2json": "^0.24.0",
     "@hono/node-server": "^2.0.5",
     "@intentius/chant": "^0.124.98",
-    "@intentius/chant-k8s-client": "^0.124.98",
     "@intentius/chant-lexicon-terraform": "^0.124.98",
     "@intentius/pinhole": "^0.6.0",
     "@modelcontextprotocol/sdk": "1.30.1",
@@ -68,7 +65,8 @@
   },
   "peerDependencies": {
     "@ladybugdb/core": ">=0.22.0",
-    "playwright-core": "^1.62.0"
+    "playwright-core": "^1.62.0",
+    "@intentius/chant-k8s-client": "^0.124.98"
   },
   "peerDependenciesMeta": {
     "playwright-core": {
@@ -76,9 +74,13 @@
     },
     "@ladybugdb/core": {
       "optional": true
+    },
+    "@intentius/chant-k8s-client": {
+      "optional": true
     }
   },
   "devDependencies": {
+    "@intentius/chant-k8s-client": "^0.124.98",
     "@intentius/chant-lexicon-k8s": "0.124.98",
     "@intentius/chant-lexicon-otel": "0.124.98",
     "@intentius/chant-lexicon-prometheus": "0.124.98",

@@ -6,7 +6,7 @@
  * `readGraph` (src/read-graph.ts) answers the composed IR. The route then runs
  * lenses over it before it paints. This module holds the ones a program
  * reading a folder needs too, so the CLI (`behold graph`), the package
- * (`@intentius/behold-graph`) and the route answer the same graph:
+ * (`@intentius/behold`) and the route answer the same graph:
  *
  * - The plan, when `opts.terraformPlan` is given: each stock Terraform
  *   member's plan read through chant and painted on its cards

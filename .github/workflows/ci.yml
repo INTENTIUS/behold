@@ -41,10 +41,6 @@ jobs:
       - name: plugins stay out of the npm package
         run: |
           npm pack --dry-run --json --ignore-scripts | node -e 'const f=JSON.parse(require("fs").readFileSync(0,"utf8"))[0].files.map(x=>x.path).filter(p=>p.startsWith("plugins/")||p.startsWith(".claude-plugin/")||p.startsWith(".cursor-plugin/")); if(f.length){console.error("packed:",f);process.exit(1)}'
-      # behold#1058: install the packed @intentius/behold-graph into an empty
-      # directory; fails above packages/graph/budget.json or on a refused package.
-      - name: graph package budget
-        run: npm run check:graph-package
       - name: the painter bundles for a browser
         run: npm run check:browser-bundle
 

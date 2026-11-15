@@ -66,8 +66,8 @@ for GitHub Actions" pages (read 2026-11-15):
 
 ## Steps for the maintainer, in order
 
-1. Publish `@intentius/behold-graph` to npm. The action runs
-   `npm install @intentius/behold-graph@<behold-version>` on every run and the
+1. Publish `@intentius/behold` to npm. The action runs
+   `npm install @intentius/behold@<behold-version>` on every run and the
    default is `latest`, so nothing works before this.
 2. Choose the name. `name` in `action.yml` is "behold changed cut". Search the
    Marketplace for it and check that no user or organization is called that.

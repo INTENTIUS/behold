@@ -14,7 +14,7 @@ Files only. The action reads `<base sha>..<head sha>` out of git with
 It runs no `terraform` binary, needs no plan, no state file and no cloud
 credentials, and runs nothing from the repository it reads. The only token it
 uses is the repository's own `GITHUB_TOKEN`, to write the comment. It installs
-`@intentius/behold-graph` from the npm registry on each run.
+`@intentius/behold` from the npm registry on each run.
 
 ## Minimal workflow
 
@@ -75,7 +75,7 @@ All inputs are optional.
 | `retention-days` | repository default | Artifact retention, 1 to 90. |
 | `handoff` | `false` | Also upload `comment.md` and `pr.json` as one artifact, for the fork recipe. |
 | `handoff-dir` | empty | `post-comment` mode: the folder the handoff artifact was downloaded to. |
-| `behold-version` | `latest` | Version of `@intentius/behold-graph` to install. |
+| `behold-version` | `latest` | Version of `@intentius/behold` to install. |
 | `fail-on-error` | `true` | Fail the step when the read fails. |
 
 ## Outputs
@@ -158,7 +158,7 @@ marker comment on that one pull request. It does not read a fork's
 `GITHUB_TOKEN` or secrets, since the first workflow has none.
 
 The behold install in the first workflow runs `npm install` of
-`@intentius/behold-graph` from the registry, not from the pull request.
+`@intentius/behold` from the registry, not from the pull request.
 
 ## GitLab
 

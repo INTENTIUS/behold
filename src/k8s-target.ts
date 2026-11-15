@@ -120,15 +120,15 @@ export function kubeconfigFromView(view: KubeconfigView): Kubeconfig {
  *    reports its address here — the address is sitting in the file, and a
  *    lens that refused to name it would be reporting a policy as an absence.
  *
- * No kubeconfig — or no `@intentius/chant-k8s-client` resolvable at all, which
- * a dynamic import keeps survivable — yields an empty result. That is an
- * ordinary state for an aws-only project, and never a reason to fail the
- * target lens. kubectl is no longer involved either way (#231): a machine that
- * has never installed it still resolves targets.
+ * No kubeconfig yields an empty result. That is an ordinary state for an
+ * aws-only project, and never a reason to fail the target lens. kubectl is no
+ * longer involved (#231): a machine that has never installed it still resolves
+ * targets. A missing `@intentius/chant-k8s-client` throws
+ * {@link K8sClientMissingError}; callers reach this only for a project that
+ * declares the k8s or helm lexicon.
  */
 export async function loadKubeconfig(options: KubeconfigOptions = {}): Promise<Kubeconfig> {
   const client = await k8sClient();
-  if (!client) return EMPTY;
   return kubeconfigFromView(await client.readKubeconfigView(options));
 }
 
@@ -142,33 +142,53 @@ export async function loadKubeconfig(options: KubeconfigOptions = {}): Promise<K
  */
 export async function ambientContext(options: KubeconfigOptions = {}): Promise<string | undefined> {
   const client = await k8sClient();
-  return client ? await client.readAmbientContext(options) : undefined;
+  return await client.readAmbientContext(options);
+}
+
+/** `@intentius/chant-k8s-client` could not be loaded; it is an optional peer dependency, needed only to read a kubeconfig. */
+export class K8sClientMissingError extends Error {
+  constructor(cause?: unknown) {
+    super(
+      "behold reads clusters through @intentius/chant-k8s-client; install it with npm i @intentius/chant-k8s-client",
+      cause === undefined ? undefined : { cause },
+    );
+    this.name = "K8sClientMissingError";
+  }
+}
+
+type K8sClientModule = typeof import("@intentius/chant-k8s-client");
+let importClient: () => Promise<K8sClientModule> = () => import("@intentius/chant-k8s-client");
+
+/** Test seam: replace the loader of `@intentius/chant-k8s-client`. Returns the previous one. */
+export function setK8sClientImporter(next: () => Promise<K8sClientModule>): () => Promise<K8sClientModule> {
+  const prev = importClient;
+  importClient = next;
+  return prev;
 }
 
 /**
- * `@intentius/chant-k8s-client`, or `undefined` when it cannot be loaded.
+ * `@intentius/chant-k8s-client`, loaded on first use.
  *
- * A regular dependency, so it is normally there — but it is imported
- * dynamically rather than statically for two reasons that outlive the
- * dependency line: behold serves plenty of projects with no k8s in them and
- * should not pull `@kubernetes/client-node` into memory for those, and an
- * install whose optional transitive deps did not build should degrade to an
- * empty kubeconfig rather than take the whole server down at import time.
+ * It is an optional peer dependency, because it brings `@kubernetes/client-node`
+ * (63 MB) and only a kubeconfig read needs it: reading a Terraform folder,
+ * `behold graph` and the other paths that never touch a cluster do not load
+ * it. The import is dynamic for that reason, and a missing package throws
+ * {@link K8sClientMissingError}, which names what to install.
  *
  * Two build facts hold this up, and they pull in opposite directions.
  * `@intentius/chant-k8s-client` ships as raw TypeScript (its `exports` has no
  * compiled-JS condition, same as `@intentius/chant/yaml`), so it must be
- * BUNDLED into dist/cli.js — a plain `node dist/cli.js` cannot import it
+ * BUNDLED into dist/cli.js, since a plain `node dist/cli.js` cannot import it
  * otherwise. `@kubernetes/client-node` underneath it must NOT be: bundling it
  * took dist/cli.js from 260KB to 15MB, and it ships ordinary ESM that resolves
  * from node_modules at runtime. So `build` externalizes exactly that one, and
- * its absence arrives here as the import failure this catch is for.
+ * its absence arrives here as the import failure.
  */
-async function k8sClient(): Promise<typeof import("@intentius/chant-k8s-client") | undefined> {
+async function k8sClient(): Promise<K8sClientModule> {
   try {
-    return await import("@intentius/chant-k8s-client");
-  } catch {
-    return undefined;
+    return await importClient();
+  } catch (err) {
+    throw new K8sClientMissingError(err);
   }
 }
 

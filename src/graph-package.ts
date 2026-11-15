@@ -1,14 +1,10 @@
 /**
- * behold#1058: the entry point of `@intentius/behold-graph`, the reader built
- * from this repository for hosts that cannot carry behold's whole install (a
- * CI action, an editor extension, an MCP tool). It holds the read, the view
- * the route draws, the output formats and the graph document, and nothing of
- * the server: no hono, no MCP SDK, no Kubernetes client
- * (src/read-graph-imports.test.ts walks this module, and
- * scripts/graph-package-check.sh installs the packed tarball and checks the
- * tree and its size).
- *
- * The package is built by `npm run build:graph` into packages/graph/dist.
+ * behold#1058: the library entry of the graph read, for hosts inside this
+ * repository (the action's tests, the VS Code extension). It holds the read,
+ * the view the route draws, the output formats and the graph document, and
+ * nothing of the server: no hono, no MCP SDK, no Kubernetes client
+ * (src/read-graph-imports.test.ts walks this module). `behold graph` runs the
+ * same code from the main CLI.
  */
 export { readGraph, ReadGraphError, type ReadGraphOptions, type ReadGraphResult } from "./read-graph.ts";
 export { graphView, shapeEstate, viewNote, zoomOf, type GraphView, type GraphViewMeta, type GraphViewOptions } from "./graph-view.ts";

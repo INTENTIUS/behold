@@ -70,7 +70,7 @@ export function ensureCommit(root, sha, run = git) {
 }
 
 /**
- * Load `@intentius/behold-graph`: a module path when one is given (tests, a
+ * Load `@intentius/behold`: a module path when one is given (tests, a
  * local build), else an install of the named version into a scratch directory.
  */
 export async function loadBehold({ module, version, scratch }) {
@@ -79,10 +79,10 @@ export async function loadBehold({ module, version, scratch }) {
     return { ...mod, version: mod.version ?? "action" };
   }
   mkdirSync(scratch, { recursive: true });
-  const spec = `@intentius/behold-graph@${version}`;
+  const spec = `@intentius/behold@${version}`;
   const r = spawnSync("npm", ["install", "--prefix", scratch, "--no-audit", "--no-fund", "--loglevel=error", spec], { encoding: "utf8" });
   if (r.status !== 0) throw new Error(`could not install ${spec}: ${r.stderr.trim() || r.stdout.trim()}`);
-  const pkgDir = join(scratch, "node_modules", "@intentius", "behold-graph");
+  const pkgDir = join(scratch, "node_modules", "@intentius", "behold");
   const pkg = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8"));
   const mod = await import(`file://${join(pkgDir, "dist", "index.js")}`);
   return { ...mod, version: pkg.version };

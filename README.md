@@ -175,9 +175,20 @@ npx @intentius/behold graph ./infra --changed origin/main...HEAD -o cut.json
 npx @intentius/behold graph ./infra --around prod/prod/aws_vpc.main --depth 2
 ```
 
-The same command ships on its own as `@intentius/behold-graph`
-(`npx @intentius/behold-graph ./infra`), a smaller install with none of the
-server's dependencies; packages/graph/README.md has its budget.
+`npx @intentius/behold graph ./infra` is a lean install. The Kubernetes client
+is an optional peer, so `npm install` does not fetch it;
+see "Optional install" below.
+
+### Optional install: the Kubernetes client
+
+`@intentius/chant-k8s-client` (it brings `@kubernetes/client-node`, 63 MB) is an
+optional peer of `@intentius/behold`, so a plain `npm install` does not fetch it.
+It is loaded only to read a kubeconfig: the server's context lookups, the
+kubectl context pills and `behold doctor`. When it is missing those paths stop
+with one line naming it. Install it with `npm i @intentius/chant-k8s-client`.
+
+`behold graph` on a Terraform folder, `serve`, `export` and `behold mcp` do not
+need it.
 
 ## Export and host: a shareable, interactive snapshot
 

@@ -1,6 +1,5 @@
 /**
- * behold#1058: `behold graph [dir]`, and the `behold-graph` bin of
- * `@intentius/behold-graph`, which run this same function. It reads a
+ * behold#1058: `behold graph [dir]`. It reads a
  * directory into behold's graph (src/graph-view.ts) and prints one output
  * format (src/graph-formats.ts) to stdout or to a file. No server starts and
  * no browser opens, and nothing is written but the `-o` file.

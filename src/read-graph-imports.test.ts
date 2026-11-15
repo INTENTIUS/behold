@@ -12,11 +12,11 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ENTRY = join(HERE, "read-graph.ts");
-// behold#1058: the package's entry points, which add the view, the formats,
+// behold#1058: the library entry, which `behold graph` shares and which adds the view, the formats,
 // the CLI and the graph document to the read.
-const PACKAGE_ENTRIES = [join(HERE, "graph-package.ts"), join(HERE, "graph-bin.ts")];
-// What the package's install budget refuses (packages/graph/budget.json): the
-// server's HTTP stack, the MCP SDK and the Kubernetes client.
+const PACKAGE_ENTRIES = [join(HERE, "graph-package.ts")];
+// What `behold graph` must not load at run time: the server's HTTP stack, the
+// MCP SDK and the Kubernetes client (an optional dependency).
 const isServerOnly = (spec: string): boolean =>
   isHono(spec) || spec.startsWith("@modelcontextprotocol/") || spec.startsWith("@kubernetes/client-node") || spec === "@intentius/chant-k8s-client";
 const SPECIFIER = /(?:^|[^\w.])(?:import|export)\s*(?:type\s+)?(?:[^'"`;]*?\sfrom\s*)?["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)/g;
@@ -81,7 +81,7 @@ describe("src/read-graph.ts loads no hono (#1057)", () => {
   });
 });
 
-describe("@intentius/behold-graph's entry points load no server code (#1058)", () => {
+describe("the graph entry loads no server code (#1058)", () => {
   const { files } = moduleGraph(...PACKAGE_ENTRIES);
 
   it("walks the view, the formats and the document", () => {
@@ -95,7 +95,7 @@ describe("@intentius/behold-graph's entry points load no server code (#1058)", (
     const runtime = (file: string): string[] =>
       [...code(readFileSync(file, "utf8")).matchAll(SPECIFIER)].filter((m) => !/^\W*(?:import|export)\s+type\s/.test(m[0].replace(/^[^\w]*/, ""))).map((m) => (m[1] ?? m[2])!);
     const offenders = [...files.keys()].flatMap((file) => runtime(file).filter(isServerOnly).map((s) => `${file.slice(HERE.length + 1)} imports ${s}`));
-    // src/k8s-target.ts loads the Kubernetes client lazily, inside a try, and only for a kube context; the package leaves it out.
+    // src/k8s-target.ts loads the Kubernetes client lazily, inside a try, and only for a kube context; the graph path leaves it out.
     expect(offenders.filter((o) => !o.startsWith("k8s-target.ts imports @intentius/chant-k8s-client"))).toEqual([]);
     for (const m of ["server.ts", "mcp.ts", "cli.ts"]) expect([...files.keys()].some((f) => f.endsWith(`/${m}`)), m).toBe(false);
   });

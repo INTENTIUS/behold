@@ -6,7 +6,7 @@ import { loadBehold, postComment, readChanged, readInputs, report } from "./run.
 const phase = process.argv[2];
 const env = process.env;
 const inputs = readInputs(env);
-const scratch = join(env.RUNNER_TEMP ?? ".", "behold-graph-install");
+const scratch = join(env.RUNNER_TEMP ?? ".", "behold-install");
 
 try {
   if (phase === "read") {
