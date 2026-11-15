@@ -37,7 +37,15 @@ describe("runExport, end to end (#489)", () => {
     }
 
     for (const f of ["index.html", "app.js", "manifest.json", "README.md", "wrangler.jsonc", "LICENSE"]) expect(existsSync(join(out, f))).toBe(true);
-    expect(readFileSync(join(out, "index.html"), "utf8")).toContain("window.__BEHOLD_STATIC__ = true");
+    // behold#1068: the flag is a file the page loads, so a policy that blocks inline scripts leaves it alone.
+    expect(readFileSync(join(out, "static.js"), "utf8")).toContain("window.__BEHOLD_STATIC__ = true");
+    const index = readFileSync(join(out, "index.html"), "utf8");
+    expect(index).toContain('<script src="./static.js"></script>');
+    expect(index.match(/<script( type="module")?>/g) ?? []).toEqual([]);
+    expect(index.indexOf("./static.js")).toBeLessThan(index.indexOf("./app.js"));
+    expect(index.indexOf("./theme-paint.js")).toBeLessThan(index.indexOf("</head>"));
+    expect(existsSync(join(out, "theme-paint.js"))).toBe(true);
+    expect(existsSync(join(out, "boot-motion.js"))).toBe(true);
     // The directory that broke it, copied whole.
     expect(statSync(join(out, "icons")).isDirectory()).toBe(true);
     expect(readdirSync(join(out, "icons"), { recursive: true }).length).toBeGreaterThan(10);
@@ -95,5 +103,25 @@ describe("runExport, end to end (#489)", () => {
     made.push(project, dirname(out));
     await expect(runExport({ projectDir: project, port: 0 }, out, { open: { env: "prod" } })).rejects.toThrow(ExportRefusal);
     expect(existsSync(out)).toBe(false);
+  });
+});
+
+// behold#1068: the manifest says whether a history.json was published beside the view.
+describe("runExport and history.json (#1068)", () => {
+  it("writes `history` to the manifest only when the export was told one is published", { timeout: 60_000 }, async () => {
+    vi.mocked(graphIr).mockImplementation((async () => fixture()) as never);
+    const project = mkdtempSync(join(tmpdir(), "behold-export-src-"));
+    const root = mkdtempSync(join(tmpdir(), "behold-export-out-"));
+    made.push(project, root);
+    const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      await runExport({ projectDir: project, port: 0 }, join(root, "plain"));
+      await runExport({ projectDir: project, port: 0 }, join(root, "published"), { history: true });
+    } finally {
+      write.mockRestore();
+    }
+    const read = (d: string) => JSON.parse(readFileSync(join(root, d, "manifest.json"), "utf8")) as Record<string, unknown>;
+    expect(read("plain")).not.toHaveProperty("history");
+    expect(read("published").history).toBe(true);
   });
 });

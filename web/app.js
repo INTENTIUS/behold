@@ -12187,9 +12187,12 @@ async function initActions() {
     bar.appendChild(pill);
     // #510: other commits' views, when ../history.json sits beside this one.
     // The deploy tab stays hidden unless there is history to pick from.
-    mountHistoryPicker(bar).then((picker) => {
-      if (picker) document.documentElement.classList.add("static-history");
-    });
+    // behold#1068: only when the manifest says a history.json was published; any other export would log a 404.
+    if (manifest && manifest.history) {
+      mountHistoryPicker(bar).then((picker) => {
+        if (picker) document.documentElement.classList.add("static-history");
+      });
+    }
     previewMode = true;
     return; // nothing else in the bar is a read
   }
