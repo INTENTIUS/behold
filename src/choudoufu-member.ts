@@ -323,7 +323,7 @@ export function addChoudoufuReferenceEdges(ir: GraphIR): GraphIR {
   const link = (from: string, to: string, viaAttr: string): void => {
     if (have.has(`${from}|${to}`)) return;
     have.add(`${from}|${to}`);
-    ir.edges.push({ from, to, kind: "ref", viaAttr, inferred: true } as never);
+    ir.edges.push({ from, to, kind: "ref", viaAttr, inferred: true, join: "choudoufu-estate" } as never);
   };
   for (const n of ir.nodes) {
     if (n.lexicon !== CHOUDOUFU_LEXICON) continue;

@@ -155,8 +155,8 @@ describe("the flux-estate demo's cross-member edges (#166)", () => {
     const { ir: composed, members } = fluxEstate();
     const edges = deriveEstateMemberEdges(composed, members);
     expect(edges).toEqual([
-      { from: "control-plane/appA", to: "app-a/service", kind: "ref", viaAttr: "reconciles", inferred: true },
-      { from: "control-plane/appB", to: "app-b/service", kind: "ref", viaAttr: "reconciles", inferred: true },
+      { from: "control-plane/appA", to: "app-a/service", kind: "ref", viaAttr: "reconciles", inferred: true, join: "estate-member" },
+      { from: "control-plane/appB", to: "app-b/service", kind: "ref", viaAttr: "reconciles", inferred: true, join: "estate-member" },
     ]);
   });
 
@@ -193,8 +193,8 @@ describe("the argo-estate demo's cross-member edges (#166)", () => {
   it("joins each Application to the member its source path points at", () => {
     const { ir: composed, members } = argoEstate();
     expect(deriveEstateMemberEdges(composed, members)).toEqual([
-      { from: "control-plane/appA", to: "app-a/service", kind: "ref", viaAttr: "delivers", inferred: true },
-      { from: "control-plane/appB", to: "app-b/service", kind: "ref", viaAttr: "delivers", inferred: true },
+      { from: "control-plane/appA", to: "app-a/service", kind: "ref", viaAttr: "delivers", inferred: true, join: "estate-member" },
+      { from: "control-plane/appB", to: "app-b/service", kind: "ref", viaAttr: "delivers", inferred: true, join: "estate-member" },
     ]);
   });
 });

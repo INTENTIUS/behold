@@ -144,7 +144,7 @@ export function addCompositeDeps(ir: GraphIR, dag: ComponentDag): GraphIR {
     const key = `${from}\0${to}`;
     if (declared.has(key)) continue;
     declared.add(key);
-    ir.edges.push({ from, to, kind: "ref", viaAttr: "dependsOn", inferred: true } as never);
+    ir.edges.push({ from, to, kind: "ref", viaAttr: "dependsOn", inferred: true, join: "composite-deps" } as never);
   }
   return ir;
 }

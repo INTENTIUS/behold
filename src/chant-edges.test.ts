@@ -46,7 +46,7 @@ function fakePasses(catalogEdges: DerivedEdge[], identityEdges: DerivedEdge[] = 
   return passes as typeof passes & ChantEdgePasses;
 }
 
-const matcherEdge = { from: "db", to: "group", kind: "ref", viaAttr: "DBSubnetGroupName", inferred: true };
+const matcherEdge = { from: "db", to: "group", kind: "ref", viaAttr: "DBSubnetGroupName", inferred: true, join: "value-match" };
 
 describe("deriveGraphEdges: value-match fallback (chant has no passes)", () => {
   it("runs today's matcher when the chant beside behold has no reconstructIndexedEdges", async () => {

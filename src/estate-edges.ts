@@ -93,6 +93,8 @@ export interface EstateMemberEdge {
   kind: "ref";
   viaAttr: string;
   inferred: true;
+  /** The join that drew it, which the graph document names as its `rule` (#1066). */
+  join: "estate-member";
 }
 
 type Rec = Record<string, unknown>;
@@ -218,7 +220,7 @@ export function deriveEstateMemberEdges(
         const key = `${delivery.from}\0${to}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        out.push({ from: delivery.from, to, kind: "ref", viaAttr: delivery.viaAttr, inferred: true });
+        out.push({ from: delivery.from, to, kind: "ref", viaAttr: delivery.viaAttr, inferred: true, join: "estate-member" });
       }
     }
   }

@@ -145,7 +145,7 @@ export function addValueMatchEdges(ir: GraphIR): GraphIR {
       const key = `${a.id}\0${b}`;
       if (declared.has(key) || added.has(key)) continue;
       added.add(key);
-      ir.edges.push({ from: a.id, to: b, kind: "ref", viaAttr: path, inferred: true } as never);
+      ir.edges.push({ from: a.id, to: b, kind: "ref", viaAttr: path, inferred: true, join: "value-match" } as never);
     }
   }
   return ir;
