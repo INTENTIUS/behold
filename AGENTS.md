@@ -2807,3 +2807,28 @@ strip either way: the DNS fan is 19564 x 400 upright and 900 x 10046 on its
 side. A box under 4:1 is left exactly as it laid out. Measured: `terralith-4`
 7660 x 5162 with 266 edges, waterpark 3536 x 3138 at detail 2 and 7142 x 6974
 at detail 3 (from 4.2:1 and 15.1:1, the case #393's wrap did not answer).
+
+## What live objects name outside the cluster (behold#1082)
+
+`outsideRefs(objects, { graph })` in web/outside-refs.js is a pure function
+with no imports, so a browser bundle takes it whole. It turns Kubernetes
+objects as the API serves them into `{ cards, edges, notes }`: a cloud identity
+card for a ServiceAccount's `iam.gke.io/gcp-service-account`,
+`eks.amazonaws.com/role-arn` or `azure.workload.identity/client-id`
+annotation, a store card and a provider card (GCP Secret Manager, AWS Secrets
+Manager or Parameter Store, Vault, with the `remoteRef.key` values) for an
+ExternalSecret, and a source card for an Argo CD Application's `spec.source`
+and `spec.sources[]` or a Flux Kustomization's `sourceRef` and `path`. It reads
+the field paths chant#5098 and chant#5099 read, so a placeholder and a derived
+edge agree. A card's id is made from what it names, so two objects naming one
+thing share it, and a target the `graph` already holds gets no card and no
+edge. A field it cannot read goes in `notes`, never dropped.
+
+Chant's live Kubernetes read masks every key matching /secret/i. An
+ExternalSecret's whole `spec.secretStoreRef` comes back as `<masked>`, so on a
+live read that ExternalSecret has no store card and its keys stay off the
+provider card; its note carries `waitsOn: "INTENTIUS/chant#5116"`. The
+ServiceAccount, provider and source cards work on a live read today.
+src/outside-refs-live.test.ts reads a scratch k3d cluster through chant's
+lister to show it (BEHOLD_K3D_TESTS=1; the cluster is `behold-outside-refs-<pid>`,
+created and deleted by the test). Fixtures are in web/outside-refs.test.js.
