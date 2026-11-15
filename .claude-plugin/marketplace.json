@@ -1,0 +1,24 @@
+{
+  "name": "behold",
+  "owner": {
+    "name": "INTENTIUS"
+  },
+  "metadata": {
+    "description": "your infrastructure repo as a graph, from the files"
+  },
+  "plugins": [
+    {
+      "name": "behold",
+      "source": "./plugins/claude-code",
+      "description": "Your infrastructure repo as a graph, from the files. Draws Terraform roots, no state needed.",
+      "version": "0.31.0",
+      "category": "development",
+      "keywords": [
+        "terraform",
+        "infrastructure",
+        "graph",
+        "mcp"
+      ]
+    }
+  ]
+}
