@@ -1,0 +1,17 @@
+{
+  "action": "completed",
+  "workflow_run": {
+    "id": 9001,
+    "name": "behold",
+    "event": "pull_request",
+    "conclusion": "success",
+    "head_sha": "__HEAD__",
+    "head_repository": {
+      "full_name": "fork/infra"
+    },
+    "pull_requests": []
+  },
+  "repository": {
+    "full_name": "acme/infra"
+  }
+}

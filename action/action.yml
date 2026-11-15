@@ -1,0 +1,154 @@
+name: behold changed cut
+description: Draw the resources a pull request changed, and their neighbours, in the job summary and in one comment that is edited on each push. SVG and JSON are uploaded as artifacts.
+author: INTENTIUS
+branding:
+  icon: git-pull-request
+  color: purple
+
+# Built in the behold repository under action/ (INTENTIUS/behold#1062). It moves
+# to the behold-action repository when that exists; action/README.md lists what moves.
+#
+# This is a composite action and not a `node24` one: uploading an artifact is
+# actions/upload-artifact's job, and a composite step can call it, where a
+# JavaScript action would have to bundle the artifact toolkit.
+
+inputs:
+  mode:
+    description: "changed draws the cut for a pull request. post-comment is the second workflow of the fork recipe: it posts the comment the first workflow made."
+    default: changed
+  github-token:
+    description: Token for the comment. A fork's pull_request run has a read-only one, and the action then leaves the comment to the workflow_run job.
+    default: ${{ github.token }}
+  base:
+    description: Base commit. Default is the pull request's base sha.
+    default: ""
+  head:
+    description: Head commit. Default is the pull request's head sha.
+    default: ""
+  path:
+    description: Directory to read, relative to the workspace.
+    default: .
+  depth:
+    description: Hops from a changed card that are kept (behold graph --depth).
+    default: ""
+  budget:
+    description: Cards a cut may hold before it folds (behold graph --budget).
+    default: ""
+  theme:
+    description: SVG theme, light or dark.
+    default: ""
+  comment:
+    description: "auto posts one comment on a pull request; false writes the job summary and artifacts only."
+    default: auto
+  marker:
+    description: The hidden marker that finds the comment to edit. Change it to keep two comments, one per directory.
+    default: "behold:changed"
+  upload:
+    description: Upload the SVG and JSON as artifacts.
+    default: "true"
+  artifact-name:
+    description: Prefix of the artifact names. Names are unique per run, so give each use of the action its own.
+    default: behold-changed
+  retention-days:
+    description: Artifact retention, 1 to 90. Empty keeps the repository default.
+    default: ""
+  handoff:
+    description: Also upload comment.md and pr.json as one artifact, for the workflow_run recipe.
+    default: "false"
+  handoff-dir:
+    description: "post-comment mode: the folder the handoff artifact was downloaded to."
+    default: ""
+  behold-version:
+    description: Version of @intentius/behold-graph to install.
+    default: latest
+  fail-on-error:
+    description: Fail the step when the read fails (an unreadable directory, a base commit that is missing, a graph too large for the SVG painter).
+    default: "true"
+
+outputs:
+  changed-count:
+    description: Cards added, removed or changed.
+    value: ${{ steps.read.outputs.changed-count }}
+  comment-url:
+    description: The comment the action posted or edited, when it did.
+    value: ${{ steps.report.outputs.comment-url || steps.post.outputs.comment-url }}
+  comment-action:
+    description: created, updated, unchanged, denied, fork or skipped.
+    value: ${{ steps.report.outputs.comment-action || steps.post.outputs.comment-action }}
+  svg-artifact-url:
+    description: Artifact URL of the SVG. Needs a signed-in viewer.
+    value: ${{ steps.upload-svg.outputs.artifact-url }}
+  json-artifact-url:
+    description: Artifact URL of the JSON.
+    value: ${{ steps.upload-json.outputs.artifact-url }}
+  out-dir:
+    description: Folder holding changed.json, changed.svg, comment.md and pr.json.
+    value: ${{ steps.read.outputs.out-dir }}
+
+runs:
+  using: composite
+  steps:
+    - id: read
+      if: inputs.mode == 'changed'
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/src/main.mjs" read
+      env:
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_BASE: ${{ inputs.base }}
+        INPUT_HEAD: ${{ inputs.head }}
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_DEPTH: ${{ inputs.depth }}
+        INPUT_BUDGET: ${{ inputs.budget }}
+        INPUT_THEME: ${{ inputs.theme }}
+        INPUT_MARKER: ${{ inputs.marker }}
+        INPUT_BEHOLD_VERSION: ${{ inputs.behold-version }}
+        INPUT_FAIL_ON_ERROR: ${{ inputs.fail-on-error }}
+
+    - id: upload-svg
+      if: inputs.mode == 'changed' && inputs.upload == 'true' && steps.read.outputs.svg-path != ''
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+      with:
+        name: ${{ inputs.artifact-name }}-svg
+        path: ${{ steps.read.outputs.svg-path }}
+        archive: false
+        retention-days: ${{ inputs.retention-days || '0' }}
+
+    - id: upload-json
+      if: inputs.mode == 'changed' && inputs.upload == 'true' && steps.read.outputs.json-path != ''
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+      with:
+        name: ${{ inputs.artifact-name }}-json
+        path: ${{ steps.read.outputs.json-path }}
+        archive: false
+        retention-days: ${{ inputs.retention-days || '0' }}
+
+    - id: upload-handoff
+      if: inputs.mode == 'changed' && inputs.handoff == 'true' && steps.read.outputs.comment-path != ''
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+      with:
+        name: ${{ inputs.artifact-name }}-comment
+        path: |
+          ${{ steps.read.outputs.out-dir }}/comment.md
+          ${{ steps.read.outputs.out-dir }}/pr.json
+        retention-days: ${{ inputs.retention-days || '0' }}
+
+    - id: report
+      if: inputs.mode == 'changed' && steps.read.outputs.out-dir != ''
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/src/main.mjs" report
+      env:
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_COMMENT: ${{ inputs.comment }}
+        INPUT_MARKER: ${{ inputs.marker }}
+        INPUT_OUTPUT_DIR: ${{ steps.read.outputs.out-dir }}
+        ARTIFACT_URL_SVG: ${{ steps.upload-svg.outputs.artifact-url }}
+        ARTIFACT_URL_JSON: ${{ steps.upload-json.outputs.artifact-url }}
+
+    - id: post
+      if: inputs.mode == 'post-comment'
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/src/main.mjs" post
+      env:
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_MARKER: ${{ inputs.marker }}
+        INPUT_HANDOFF_DIR: ${{ inputs.handoff-dir }}

@@ -16,7 +16,11 @@ import { join, dirname, basename, relative, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { S3Error, S3Object } from "./s3-object.ts";
 import { fileURLToPath } from "node:url";
-import { createApp, type ServerOptions } from "./server.ts";
+import { beholdVersion, createApp, type ServerOptions } from "./server.ts";
+import { documentOptions } from "./graph-document-context.ts";
+import { toDocument, type GraphSnapshot } from "./to-document.ts";
+import type { GraphDocument } from "./graph-document.ts";
+import { loadSingleFileViewer, SINGLE_FILE_NAME, type SingleFileViewer } from "./single-file.ts";
 import { checkCountBy, checkQuery } from "../web/view-url.js";
 
 /** The only query params that select a distinct snapshot — a stable whitelist so
@@ -306,6 +310,53 @@ export interface ExportOptions {
   plan?: boolean;
   /** behold#1068: a `history.json` sits beside this bundle's folder (`--publish` writes one), so the page may ask for it. */
   history?: boolean;
+  /** behold#1071: the revision the export was read at (the commit `--publish` files it under), written to `graph.json` as `origin.rev`. */
+  rev?: string;
+  /** behold#1071: the single-file viewer, for a test; by default the one this build carries, if it carries one (src/single-file.ts). */
+  viewer?: SingleFileViewer;
+}
+
+/** The graph document a bundle carries at its root (behold#1071). */
+export const GRAPH_FILE = "graph.json";
+
+/**
+ * behold#1071: the snapshot `graph.json` is made from: the opening view at
+ * detail 2 (the resource cards), over the opening environment's overlay when
+ * the bundle opens on one, and, in an estate, with every card drawn rather
+ * than the alike ones stacked. The key is one `captureKeys` captures.
+ */
+export function openingGraphKey(axes: Pick<ExportAxes, "tiers" | "estate">, opening: Opening): string {
+  const p: Record<string, string> = { detail: "2" };
+  if (opening.env) p.env = opening.env;
+  const tier = axes.tiers?.[0];
+  if (tier) p.tier = tier;
+  if (axes.estate) p.alike = "0";
+  return canonicalKey(opening.env ? "/api/overlay" : "/api/graph", new URLSearchParams(p));
+}
+
+/**
+ * behold#1071: a captured graph body as a `behold-graph/1` document. It takes
+ * the body as the route answered it (after `--no-source`, before the
+ * bundle's scrubber, which rewrites paths to directory names and would break
+ * the repository-relative files), and keeps `attrs.source` only when the
+ * export does. A body that is not a graph (an error) gives `undefined`.
+ */
+export function graphDocumentOf(body: string, cfg: ServerOptions, opts: Pick<ExportOptions, "noSource" | "rev">): GraphDocument | undefined {
+  let snap: unknown;
+  try {
+    snap = JSON.parse(body);
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(snap) || !isRecord(snap.ir) || !Array.isArray(snap.ir.nodes) || !Array.isArray(snap.ir.edges)) return undefined;
+  const ctx = documentOptions({
+    projectDir: cfg.projectDir,
+    ...(cfg.projectDirs ? { projectDirs: cfg.projectDirs } : {}),
+    ...(cfg.workspace ? { workspace: cfg.workspace } : {}),
+    behold: beholdVersion(),
+    ...(opts.rev ? { rev: opts.rev } : {}),
+  });
+  return toDocument(snap as unknown as GraphSnapshot, { ...ctx, source: !opts.noSource });
 }
 
 /** behold#922: check `--count-by`: kind, module or attr:<name>, as a link's countBy is checked. */
@@ -353,15 +404,10 @@ export const VIEWS_REPORTS_BASE = "../../";
 /** The file `static.js` holds: it flips the page into static mode (behold#1068). */
 export const STATIC_FLAG_JS = "window.__BEHOLD_STATIC__ = true;\n";
 
-export async function runExport(cfg: ServerOptions, outDir: string, opts: ExportOptions = {}): Promise<void> {
-  // A capture reads the project; it never writes to it (#228). The layout
-  // sidecar is the one thing behold can write, and an export is exactly the
-  // wrong moment for it — so the app built here refuses that write outright
-  // rather than relying on nothing happening to call it.
-  const app = createApp({ ...cfg, layoutWrites: false });
-
+/** What the project says an export can capture: its environments, tiers and the optional reads. */
+async function readAxes(app: { request: (path: string) => Response | Promise<Response> }, cfg: ServerOptions): Promise<ExportAxes> {
   const proj = (await (await app.request("/api/project")).json()) as { environments?: string[]; tiers?: string[]; ops?: number; terragucciReports?: unknown; releaseLedger?: boolean; yodelReport?: unknown; sqlYodeler?: unknown };
-  const axes: ExportAxes = {
+  return {
     environments: proj.environments ?? [],
     tiers: proj.tiers ?? [],
     ...(proj.ops ? { ops: proj.ops } : {}),
@@ -372,6 +418,16 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
     ...((cfg.projectDirs?.length ?? 0) > 1 ? { estate: true } : {}),
     ...(await exportedRunIds(app)),
   };
+}
+
+export async function runExport(cfg: ServerOptions, outDir: string, opts: ExportOptions = {}): Promise<void> {
+  // A capture reads the project; it never writes to it (#228). The layout
+  // sidecar is the one thing behold can write, and an export is exactly the
+  // wrong moment for it — so the app built here refuses that write outright
+  // rather than relying on nothing happening to call it.
+  const app = createApp({ ...cfg, layoutWrites: false });
+
+  const axes = await readAxes(app, cfg);
   // behold#913: refused before anything is captured, like the opening view.
   const settledQueries = settleQueries(opts.queries);
   if ("error" in settledQueries) throw new ExportRefusal(settledQueries.error);
@@ -394,6 +450,12 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
   rmSync(snapDir, { recursive: true, force: true });
   mkdirSync(snapDir, { recursive: true });
 
+  // behold#1071: the opening view's body, as the route answered it, for graph.json.
+  const graphKey = openingGraphKey(axes, opening);
+  let graphBody: string | undefined;
+  rmSync(join(outDir, GRAPH_FILE), { force: true });
+  rmSync(join(outDir, SINGLE_FILE_NAME), { force: true });
+
   const keyToFile: Record<string, string> = {};
   let ok = 0;
   let failed = 0;
@@ -404,7 +466,9 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
     // the six that select a distinct snapshot and drops everything else — so the
     // captured key stays exactly what the frontend will ask for.
     const res = await app.request(`${key}${key.includes("?") ? "&" : "?"}layout=1`); // key is already `path?sortedLensParams`
-    const body = scrub(shapeSnapshot(key, await res.text(), opts));
+    const shaped = shapeSnapshot(key, await res.text(), opts);
+    if (key === graphKey && res.ok) graphBody = shaped;
+    const body = scrub(shaped);
     const file = slug(key, body);
     writeFileSync(join(snapDir, file), body);
     keyToFile[key] = `snapshots/${file}`;
@@ -424,6 +488,14 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
     }
   }
 
+  // behold#1071: the graph at a fixed path, from the body as the route answered
+  // it: the bundle's scrubber would have rewritten paths to directory names,
+  // and a card's repository-relative file is made from the whole path.
+  const graph = graphBody === undefined ? undefined : graphDocumentOf(graphBody, cfg, opts);
+  if (graph) writeFileSync(join(outDir, GRAPH_FILE), JSON.stringify(graph, null, 2) + "\n");
+  const viewer = opts.viewer ?? loadSingleFileViewer();
+  if (graph && viewer) writeFileSync(join(outDir, SINGLE_FILE_NAME), viewer.render({ document: graph, opening, ...(settledNote.note ? { note: settledNote.note } : {}) }));
+
   const identity = bundleIdentity(cfg);
   const manifest = {
     static: true,
@@ -439,6 +511,9 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
     ...(axes.plan ? { plan: true } : {}),
     // behold#1068: the page asks for ../history.json only when this says one was published.
     ...(opts.history ? { history: true } : {}),
+    // behold#1071: the graph document at the bundle root, and the one-file viewer when this build has one.
+    ...(graph ? { graph: GRAPH_FILE } : {}),
+    ...(graph && viewer ? { viewer: SINGLE_FILE_NAME } : {}),
     axes,
     keyToFile,
   };
@@ -491,11 +566,40 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
   // can be removed file by file later without a list call.
   writeFileSync(join(outDir, "manifest.json"), JSON.stringify({ ...manifest, files: bundleFiles(outDir).filter((f) => f !== "manifest.json") }, null, 2));
 
+  if (!graph) process.stderr.write(`  warning: ${GRAPH_FILE} not written: the opening view (${graphKey}) could not be read as a graph\n`);
   process.stdout.write(
     `behold export → ${outDir}\n  ${ok} snapshots${failed ? ` (${failed} endpoint error(s) captured as-is)` : ""}\n` +
+      (graph ? `  Graph:  ${join(outDir, GRAPH_FILE)} (${graph.nodes.length} nodes, ${graph.edges.length} edges)\n` : "") +
+      (graph && viewer ? `  Viewer: ${join(outDir, SINGLE_FILE_NAME)}\n` : "") +
       `  View:   npx serve ${outDir}\n` +
       `  Deploy: cd ${outDir} && npx wrangler deploy   → https://${name}.<your-account>.workers.dev\n`,
   );
+}
+
+/**
+ * behold#1071: `--single-file <path>`: the opening view as the one-file
+ * viewer, and nothing else. It reads only the opening view's snapshot (the
+ * lens matrix is the slow part of an export), so it is the cheap way to
+ * leave one file for a CI artifact. Refused, before anything is read, by a
+ * build that has no viewer.
+ */
+export async function runSingleFile(cfg: ServerOptions, file: string, opts: ExportOptions = {}): Promise<{ bytes: number; nodes: number }> {
+  const viewer = opts.viewer ?? loadSingleFileViewer();
+  if (!viewer) throw new ExportRefusal("--single-file needs the single-file viewer, which this build of behold does not carry yet (behold#1070); `behold export --out <dir>` writes graph.json beside the bundle");
+  const app = createApp({ ...cfg, layoutWrites: false });
+  const axes = await readAxes(app, cfg);
+  const settled = settleOpening(opts.open ?? {}, axes);
+  if ("error" in settled) throw new ExportRefusal(settled.error);
+  const settledNote = settleNote(opts.note);
+  if ("error" in settledNote) throw new ExportRefusal(settledNote.error);
+  const key = openingGraphKey(axes, settled.opening);
+  const res = await app.request(`${key}${key.includes("?") ? "&" : "?"}layout=1`);
+  const graph = res.ok ? graphDocumentOf(shapeSnapshot(key, await res.text(), opts), cfg, opts) : undefined;
+  if (!graph) throw new Error(`the opening view (${key}) could not be read as a graph: ${res.ok ? "the answer is not a graph" : `status ${res.status}`}`);
+  const html = viewer.render({ document: graph, opening: settled.opening, ...(settledNote.note ? { note: settledNote.note } : {}) });
+  mkdirSync(dirname(resolve(file)), { recursive: true });
+  writeFileSync(file, html);
+  return { bytes: Buffer.byteLength(html), nodes: graph.nodes.length };
 }
 
 // ---------------------------------------------------------------------------

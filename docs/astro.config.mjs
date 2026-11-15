@@ -97,6 +97,7 @@ export default defineConfig({
 						{ label: 'The graph document', slug: 'using/graph-document' },
 						{ label: 'Publish to GitHub Pages', slug: 'using/pages' },
 						{ label: 'Open in behold from Argo CD', slug: 'using/argocd-link' },
+						{ label: 'Draw the graph in Grafana', slug: 'using/grafana' },
 						{ label: 'The three-cloud demo', slug: 'using/three-cloud' },
 						{ label: 'Driving it from an agent', slug: 'using/agents' },
 					],

@@ -1,0 +1,39 @@
+/* behold#1070: the single-file viewer. The colours are pinhole's theme tokens,
+   which the viewer sets on the root element for the theme it is given. */
+:root {
+  color-scheme: dark light;
+  --behold-dim: 0.22;
+}
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--pin-bg0, #0d1117);
+  color: var(--pin-text, #e6edf3);
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+#behold-viewer {
+  height: 100%;
+  overflow: auto;
+}
+#behold-status {
+  margin: 0;
+  padding: 12px 16px;
+  color: var(--pin-textMuted, #9aa7b8);
+}
+#behold-status[hidden] {
+  display: none;
+}
+#behold-graph svg {
+  display: block;
+  max-width: none;
+}
+#behold-graph [data-node-id], #behold-graph [data-group-id] {
+  cursor: pointer;
+}
+#behold-graph .behold-dim {
+  opacity: var(--behold-dim);
+}
+#behold-graph .behold-lit rect {
+  stroke: var(--pin-selectedStroke, #4c8dff);
+  stroke-width: 2.5;
+}

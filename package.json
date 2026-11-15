@@ -51,6 +51,7 @@
     "build": "tsx src/graph-db/generate-layout.ts && tsx src/generate-icons.ts && esbuild src/cli.ts --bundle --platform=node --format=esm --external:hono --external:@hono/node-server --external:@intentius/pinhole --external:@kubernetes/client-node --external:ajv --external:@modelcontextprotocol/sdk --external:@ladybugdb/core --outfile=dist/cli.js && chmod +x dist/cli.js && npm run build:graph",
     "build:graph": "esbuild index=src/graph-package.ts cli=src/graph-bin.ts --bundle --splitting --platform=node --format=esm --external:@intentius/pinhole --external:@intentius/chant-k8s-client --external:@kubernetes/client-node --external:ajv --outdir=packages/graph/dist",
     "check:graph-package": "tsx scripts/graph-package-check.ts",
+    "build:viewer": "tsx scripts/build-viewer.mts",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build"
   },

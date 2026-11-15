@@ -1,0 +1,26 @@
+{
+  "action": "synchronize",
+  "number": 7,
+  "pull_request": {
+    "number": 7,
+    "state": "open",
+    "head": {
+      "ref": "topic",
+      "sha": "__HEAD__",
+      "repo": {
+        "full_name": "fork/infra",
+        "fork": true
+      }
+    },
+    "base": {
+      "ref": "main",
+      "sha": "__BASE__",
+      "repo": {
+        "full_name": "acme/infra"
+      }
+    }
+  },
+  "repository": {
+    "full_name": "acme/infra"
+  }
+}

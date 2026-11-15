@@ -13,9 +13,10 @@ vi.mock("./chant.ts", async (importOriginal) => ({
   graphIr: vi.fn(),
 }));
 import { graphIr } from "./chant.ts";
-import { ExportRefusal, runExport } from "./export.ts";
+import { ExportRefusal, bundleFiles, captureKeys, openingGraphKey, runExport, runSingleFile } from "./export.ts";
 import { awsIconFor, gcpIconFor } from "./cloud-icons.ts";
 import { k8sIconFor } from "./icon-packs.ts";
+import { Ajv2020 } from "ajv/dist/2020.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const fixture = (): GraphIR => JSON.parse(readFileSync(join(HERE, "__fixtures__", "terraform-ir-two-roots.json"), "utf8")) as GraphIR;
@@ -165,5 +166,114 @@ describe("runExport paints the vendored icons (#1069)", () => {
       expect(glyph, vendor).toBeDefined();
       expect(svg, vendor).toContain(glyph!.body);
     }
+  });
+});
+
+// behold#1071: graph.json at the bundle root, and the seam for the one-file viewer (behold#1070).
+describe("runExport and graph.json (#1071)", () => {
+  const marked = (): GraphIR => {
+    const ir = fixture();
+    for (const n of ir.nodes) (n.attrs as Record<string, unknown>).source = "# BEHOLD-MARKER-1071\nresource \"x\" \"y\" {}\n";
+    return ir;
+  };
+  const scratch = () => {
+    const project = mkdtempSync(join(tmpdir(), "behold-export-src-"));
+    const root = mkdtempSync(join(tmpdir(), "behold-export-out-"));
+    made.push(project, root);
+    return { project, root };
+  };
+  const quiet = async <T>(f: () => Promise<T>): Promise<T> => {
+    const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      return await f();
+    } finally {
+      write.mockRestore();
+    }
+  };
+  const validate = new Ajv2020({ allErrors: true, strict: false }).compile(JSON.parse(readFileSync(join(HERE, "..", "schemas", "graph", "v1", "graph.schema.json"), "utf8")));
+
+  it("writes graph.json, valid against behold-graph/1, with as many nodes as the opening view's snapshot", { timeout: 60_000 }, async () => {
+    vi.mocked(graphIr).mockImplementation((async () => fixture()) as never);
+    const { project, root } = scratch();
+    const out = join(root, "bundle");
+    await quiet(() => runExport({ projectDir: project, port: 0 }, out, { rev: "abc1234" }));
+
+    const doc = JSON.parse(readFileSync(join(out, "graph.json"), "utf8")) as { schema: string; nodes: unknown[]; origin: { rev?: string } };
+    expect(validate(doc), JSON.stringify(validate.errors)).toBe(true);
+    expect(doc.schema).toBe("behold-graph/1");
+    expect(doc.origin.rev).toBe("abc1234");
+    const manifest = JSON.parse(readFileSync(join(out, "manifest.json"), "utf8")) as { graph?: string; files: string[]; keyToFile: Record<string, string> };
+    const snap = JSON.parse(readFileSync(join(out, manifest.keyToFile["/api/graph?detail=2"]!), "utf8")) as { ir: GraphIR };
+    expect(doc.nodes.length).toBe(snap.ir.nodes.length);
+    expect(doc.nodes.length).toBeGreaterThan(0);
+    expect(manifest.graph).toBe("graph.json");
+    expect(manifest.files).toContain("graph.json");
+    expect(bundleFiles(out)).toContain("graph.json");
+    // The machine's paths do not ride along.
+    expect(readFileSync(join(out, "graph.json"), "utf8")).not.toContain(project);
+  });
+
+  it("keeps source text by default and leaves it out with --no-source", { timeout: 60_000 }, async () => {
+    vi.mocked(graphIr).mockImplementation((async () => marked()) as never);
+    const { project, root } = scratch();
+    await quiet(() => runExport({ projectDir: project, port: 0 }, join(root, "with")));
+    await quiet(() => runExport({ projectDir: project, port: 0 }, join(root, "without"), { noSource: true }));
+    expect(readFileSync(join(root, "with", "graph.json"), "utf8")).toContain("BEHOLD-MARKER-1071");
+    const without = readFileSync(join(root, "without", "graph.json"), "utf8");
+    expect(without).not.toContain("BEHOLD-MARKER-1071");
+    expect(validate(JSON.parse(without))).toBe(true);
+  });
+
+  it("writes no behold.html while this build has no viewer, and does when one is given", { timeout: 60_000 }, async () => {
+    vi.mocked(graphIr).mockImplementation((async () => fixture()) as never);
+    const { project, root } = scratch();
+    await quiet(() => runExport({ projectDir: project, port: 0 }, join(root, "none")));
+    expect(existsSync(join(root, "none", "behold.html"))).toBe(false);
+    expect(JSON.parse(readFileSync(join(root, "none", "manifest.json"), "utf8"))).not.toHaveProperty("viewer");
+
+    const render = vi.fn(({ document, opening, note }: { document: { nodes: unknown[] }; opening: object; note?: string }) => `<!doctype html><title>v</title>${document.nodes.length} ${JSON.stringify(opening)} ${note ?? ""}`);
+    await quiet(() => runExport({ projectDir: project, port: 0 }, join(root, "some"), { viewer: { render }, note: "a line", open: { zoom: "composites" } }));
+    const html = readFileSync(join(root, "some", "behold.html"), "utf8");
+    expect(html).toContain('{"zoom":"composites"}');
+    expect(html).toContain("a line");
+    const manifest = JSON.parse(readFileSync(join(root, "some", "manifest.json"), "utf8")) as { viewer?: string; files: string[] };
+    expect(manifest.viewer).toBe("behold.html");
+    expect(manifest.files).toContain("behold.html");
+  });
+
+  it("--single-file writes the one file and nothing beside it", { timeout: 60_000 }, async () => {
+    vi.mocked(graphIr).mockImplementation((async () => fixture()) as never);
+    const { project, root } = scratch();
+    const file = join(root, "sub", "estate.html");
+    const viewer = { render: ({ document }: { document: { nodes: unknown[] } }) => `<!doctype html><title>v</title><script type="application/json">${JSON.stringify(document)}</script>` };
+    const done = await runSingleFile({ projectDir: project, port: 0 }, file, { viewer });
+    expect(done.nodes).toBeGreaterThan(0);
+    expect(done.bytes).toBe(statSync(file).size);
+    expect(readdirSync(join(root, "sub"))).toEqual(["estate.html"]);
+  });
+
+  it("--single-file says so, and writes nothing, while there is no viewer", { timeout: 60_000 }, async () => {
+    vi.mocked(graphIr).mockImplementation((async () => fixture()) as never);
+    const { project, root } = scratch();
+    await expect(runSingleFile({ projectDir: project, port: 0 }, join(root, "x.html"))).rejects.toThrow(/behold#1070/);
+    expect(existsSync(join(root, "x.html"))).toBe(false);
+  });
+
+  it("--single-file refuses an opening env the export does not capture", { timeout: 60_000 }, async () => {
+    vi.mocked(graphIr).mockImplementation((async () => fixture()) as never);
+    const { project, root } = scratch();
+    const viewer = { render: () => "<!doctype html>" };
+    await expect(runSingleFile({ projectDir: project, port: 0 }, join(root, "x.html"), { viewer, open: { env: "prod" } })).rejects.toThrow(ExportRefusal);
+    expect(existsSync(join(root, "x.html"))).toBe(false);
+  });
+});
+
+describe("openingGraphKey (#1071)", () => {
+  it("is a key the export captures, for the source graph, an environment, a tier and an estate", () => {
+    const axes = { environments: ["prod"], tiers: ["a", "b"] };
+    expect(openingGraphKey({ tiers: [] }, {})).toBe("/api/graph?detail=2");
+    expect(openingGraphKey({ tiers: [] }, { env: "prod" })).toBe("/api/overlay?detail=2&env=prod");
+    expect(captureKeys(axes)).toContain(openingGraphKey(axes, { env: "prod" }));
+    expect(captureKeys({ ...axes, estate: true })).toContain(openingGraphKey({ ...axes, estate: true }, {}));
   });
 });

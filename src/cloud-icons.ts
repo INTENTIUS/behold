@@ -15,7 +15,7 @@
  * `gcp/project`) are drawn on the cloud boxes by the page (web/app.js).
  */
 
-import { loadIcon, type PackGlyph } from "./icon-packs.ts";
+import { iconOrFallthrough, type PackGlyph } from "./icon-packs.ts";
 
 type Vendor = "aws" | "azure" | "gcp";
 
@@ -459,7 +459,7 @@ const TERRAFORM_BY_PREFIX: Array<[string, string]> = [
   ["google_storage", "gcp/cloud-storage"],
 ].sort((a, b) => b[0].length - a[0].length) as Array<[string, string]>;
 
-const icon = (vendor: Vendor, slug: string | undefined): PackGlyph | undefined => (slug ? loadIcon(`${vendor}/${slug}`) : undefined);
+const icon = (vendor: Vendor, slug: string | undefined): PackGlyph | undefined => (slug ? iconOrFallthrough(`${vendor}/${slug}`) : undefined);
 
 /** The icon for an `aws` lexicon kind, or undefined to fall through. */
 export function awsIconFor(kind: string): PackGlyph | undefined {

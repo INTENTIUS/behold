@@ -17,6 +17,7 @@ import { documentOptions } from "./graph-document-context.ts";
 import { emptyDocument, gitRoot, parseRange, readAtRevision, resolveRange, RevisionError } from "./graph-revisions.ts";
 import { GRAPH_FORMATS, PENDING_FORMATS, graphFormat } from "./graph-formats.ts";
 import { FORGES, isForge, type Forge } from "./mermaid-budgets.ts";
+import { isSvgTheme, SVG_THEMES, FlatLayoutTooLarge, type SvgTheme } from "./graph-svg.ts";
 import { graphView, type GraphView } from "./graph-view.ts";
 import { ReadGraphError } from "./read-graph.ts";
 
@@ -31,7 +32,7 @@ export interface GraphCliIO {
 
 export function graphUsage(prog = "behold graph"): string {
   const flags = [...GRAPH_FORMATS.map((f) => f.name), ...Object.keys(PENDING_FORMATS)].map((n) => `--${n}`).join(" | ");
-  return `Usage: ${prog} [dir] [${flags}] [-o <file>] [--detail 0..3] [--source] [--every-card]
+  return `Usage: ${prog} [dir] [${flags}] [--theme light|dark] [-o <file>] [--detail 0..3] [--source] [--every-card]
        ${prog} [dir] --changed <base>..<head> [--depth n] [--budget n]
        ${prog} [dir] --around <id>[,<id>...] [--depth n] [--up | --down]
 
@@ -47,6 +48,7 @@ ${Object.keys(PENDING_FORMATS)
                  ${FORGES.join(", ")} (default github). Over budget, neighbours go
                  first, then whole boxes, and a line says how many cards are
                  not shown.
+  --theme <name> With --svg: ${SVG_THEMES.join(" or ")} (default dark).
   -o <file>      Write to <file> instead of stdout.
   --detail <n>   0 to 3, as the zoom levels read (default 2, resources;
                  3 adds attributes, and a Kubernetes object's spec).
@@ -81,6 +83,7 @@ interface Parsed {
   out?: string;
   detail?: number;
   forge?: Forge;
+  theme?: SvgTheme;
   source: boolean;
   alike: boolean;
   changed?: string;
@@ -96,6 +99,7 @@ function parse(argv: readonly string[]): Parsed | { error: string } | { help: tr
   let out: string | undefined;
   let detail: number | undefined;
   let forge: Forge | undefined;
+  let theme: SvgTheme | undefined;
   let source = false;
   let alike = true;
   let changed: string | undefined;
@@ -121,6 +125,10 @@ function parse(argv: readonly string[]): Parsed | { error: string } | { help: tr
       const v = argv[++i];
       if (v === undefined || !isForge(v)) return { error: `--forge takes ${FORGES.join(", ")}` };
       forge = v;
+    } else if (a === "--theme") {
+      const v = argv[++i];
+      if (v === undefined || !isSvgTheme(v)) return { error: `--theme takes ${SVG_THEMES.join(" or ")}` };
+      theme = v;
     } else if (a === "--source") {
       source = true;
     } else if (a === "--every-card") {
@@ -155,12 +163,14 @@ function parse(argv: readonly string[]): Parsed | { error: string } | { help: tr
   if (changed && direction) return { error: "--up and --down go with --around: a changed cut keeps neighbours both ways" };
   if (around && budget !== undefined) return { error: "--budget goes with --changed" };
   if ((changed || around) && format === "ir") return { error: "--ir is always the whole view; a cut is over the --json document" };
+  if (theme && format !== "svg") return { error: "--theme goes with --svg" };
   return {
     dir: dir ?? ".",
     format: format ?? "json",
     ...(out ? { out } : {}),
     ...(detail !== undefined ? { detail } : {}),
     ...(forge ? { forge } : {}),
+    ...(theme ? { theme } : {}),
     source,
     alike,
     ...(changed ? { changed } : {}),
@@ -260,9 +270,9 @@ export async function runGraph(argv: readonly string[], io: GraphCliIO): Promise
   }
   let text: string | Uint8Array;
   try {
-    text = format.emit({ view, document, source: parsed.source, ...(parsed.forge ? { forge: parsed.forge } : {}), ...(cut ? { cut } : {}) });
+    text = format.emit({ view, document, source: parsed.source, ...(parsed.forge ? { forge: parsed.forge } : {}), ...(parsed.theme ? { theme: parsed.theme } : {}), ...(cut ? { cut } : {}) });
   } catch (err) {
-    if (err instanceof CutRefused) {
+    if (err instanceof CutRefused || err instanceof FlatLayoutTooLarge) {
       stderr(`${prog}: ${err.message}\n`);
       return 1;
     }
