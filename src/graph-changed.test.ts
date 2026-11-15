@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -204,6 +204,19 @@ describe("behold graph --changed, arguments (#1059)", () => {
 });
 
 describe("behold graph --changed on a repository (#1059)", () => {
+  // Each test reads its revisions under a temp root of its own, so the
+  // "no stray behold-rev-* directory" check sees only this test's, never a
+  // directory another test file or process has open in the shared tmpdir.
+  const shared = process.env.TMPDIR;
+  beforeEach(() => {
+    process.env.TMPDIR = mkdtempSync(join(tmpdir(), "behold-changed-test-"));
+  });
+  afterEach(() => {
+    const own = process.env.TMPDIR!;
+    if (shared === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = shared;
+    rmSync(own, { recursive: true, force: true });
+  });
   it.skipIf(gate)("marks the one resource added, the one changed and the one removed, and their one-hop neighbours", { timeout: 240_000 }, async () => {
     const dir = repo([FIRST, SECOND]);
     const before = git(dir, "status", "--porcelain", "--ignored");
