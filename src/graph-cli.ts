@@ -10,9 +10,13 @@
  */
 import { existsSync, statSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { cutChanged, CHANGED_NODE_BUDGET } from "./graph-changed.ts";
+import { cutDocument, type CutDirection } from "./graph-cut.ts";
+import type { GraphDocument } from "./graph-document.ts";
 import { documentOptions } from "./graph-document-context.ts";
+import { emptyDocument, gitRoot, parseRange, readAtRevision, resolveRange, RevisionError } from "./graph-revisions.ts";
 import { GRAPH_FORMATS, PENDING_FORMATS, graphFormat } from "./graph-formats.ts";
-import { graphView } from "./graph-view.ts";
+import { graphView, type GraphView } from "./graph-view.ts";
 import { ReadGraphError } from "./read-graph.ts";
 
 export interface GraphCliIO {
@@ -27,6 +31,8 @@ export interface GraphCliIO {
 export function graphUsage(prog = "behold graph"): string {
   const flags = [...GRAPH_FORMATS.map((f) => f.name), ...Object.keys(PENDING_FORMATS)].map((n) => `--${n}`).join(" | ");
   return `Usage: ${prog} [dir] [${flags}] [-o <file>] [--detail 0..3] [--source] [--every-card]
+       ${prog} [dir] --changed <base>..<head> [--depth n] [--budget n]
+       ${prog} [dir] --around <id>[,<id>...] [--depth n] [--up | --down]
 
 Read a directory into behold's graph and print it. Starts no server.
 
@@ -43,6 +49,24 @@ ${Object.keys(PENDING_FORMATS)
                  out by default: a Terraform root's whole file rides on every
                  card from it.
   --every-card   Draw every card: no stacking of alike cards in a box.
+  --changed <base>..<head>
+                 Cut to what changed between two commits, plus the cards
+                 within --depth hops of it (default 1), each marked added,
+                 removed, changed or neighbour. Both are read from git
+                 archive into a temporary directory: the checkout is not
+                 touched, and a shallow clone works once the two commits are
+                 fetched. <base>...<head> starts from their merge base. The
+                 read is at --detail 3 unless you give another, since below
+                 it a card holds no attributes to compare. Past --budget
+                 cards (default ${CHANGED_NODE_BUDGET}) the neighbours fold into a count per box, then
+                 the cut becomes a table of counts per box.
+  --around <id>[,<id>...]
+                 Cut to the cards (or boxes) named and what is within --depth
+                 hops of them (default 1). --up follows what they depend on,
+                 --down what depends on them; the default is both. Exit 1
+                 when an id is not in the graph.
+  --depth <n>    Hops for --changed and --around.
+  --budget <n>   Cards a --changed cut may hold before it folds.
 `;
 }
 
@@ -53,6 +77,11 @@ interface Parsed {
   detail?: number;
   source: boolean;
   alike: boolean;
+  changed?: string;
+  around?: string[];
+  depth?: number;
+  budget?: number;
+  direction?: CutDirection;
 }
 
 function parse(argv: readonly string[]): Parsed | { error: string } | { help: true } {
@@ -62,6 +91,11 @@ function parse(argv: readonly string[]): Parsed | { error: string } | { help: tr
   let detail: number | undefined;
   let source = false;
   let alike = true;
+  let changed: string | undefined;
+  let around: string[] | undefined;
+  let depth: number | undefined;
+  let budget: number | undefined;
+  let direction: CutDirection | undefined;
   const formats = new Set([...GRAPH_FORMATS.map((f) => f.name), ...Object.keys(PENDING_FORMATS)]);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
@@ -80,6 +114,22 @@ function parse(argv: readonly string[]): Parsed | { error: string } | { help: tr
       source = true;
     } else if (a === "--every-card") {
       alike = false;
+    } else if (a === "--changed") {
+      changed = argv[++i];
+      if (!changed) return { error: "--changed needs a range: <base>..<head>" };
+    } else if (a === "--around") {
+      const v = argv[++i];
+      around = v?.split(",").map((x) => x.trim()).filter(Boolean);
+      if (!around?.length) return { error: "--around needs one or more ids, comma separated" };
+    } else if (a === "--depth" || a === "--budget") {
+      const v = argv[++i];
+      if (v === undefined || !/^\d+$/.test(v) || (a === "--budget" && Number(v) < 1)) return { error: `${a} takes a whole number${a === "--budget" ? " of 1 or more" : ""}` };
+      if (a === "--depth") depth = Number(v);
+      else budget = Number(v);
+    } else if (a === "--up" || a === "--down") {
+      const d = a.slice(2) as CutDirection;
+      if (direction && direction !== d) return { error: "--up and --down name two directions; give one, or neither for both" };
+      direction = d;
     } else if (a.startsWith("-")) {
       return { error: `unknown option ${a}` };
     } else if (dir === undefined) {
@@ -88,7 +138,24 @@ function parse(argv: readonly string[]): Parsed | { error: string } | { help: tr
       return { error: `one directory only (got ${dir} and ${a})` };
     }
   }
-  return { dir: dir ?? ".", format: format ?? "json", ...(out ? { out } : {}), ...(detail !== undefined ? { detail } : {}), source, alike };
+  if (changed && around) return { error: "--changed and --around are two cuts; give one" };
+  if ((depth !== undefined || budget !== undefined || direction) && !changed && !around) return { error: "--depth, --budget, --up and --down go with --changed or --around" };
+  if (changed && direction) return { error: "--up and --down go with --around: a changed cut keeps neighbours both ways" };
+  if (around && budget !== undefined) return { error: "--budget goes with --changed" };
+  if ((changed || around) && format === "ir") return { error: "--ir is always the whole view; a cut is over the --json document" };
+  return {
+    dir: dir ?? ".",
+    format: format ?? "json",
+    ...(out ? { out } : {}),
+    ...(detail !== undefined ? { detail } : {}),
+    source,
+    alike,
+    ...(changed ? { changed } : {}),
+    ...(around ? { around } : {}),
+    ...(depth !== undefined ? { depth } : {}),
+    ...(budget !== undefined ? { budget } : {}),
+    ...(direction ? { direction } : {}),
+  };
 }
 
 /** Run `behold graph` with `argv` (the arguments after `graph`). Answers the exit code. */
@@ -116,23 +183,87 @@ export async function runGraph(argv: readonly string[], io: GraphCliIO): Promise
     stderr(`${io.prog ?? "behold graph"}: ${parsed.dir} is not a directory\n`);
     return 2;
   }
-  let view;
+  const prog = io.prog ?? "behold graph";
+  let view: GraphView;
+  let document: ReturnType<typeof documentOptions>;
+  let cut: ((doc: GraphDocument) => GraphDocument) | undefined;
+  let keptCards: number | undefined;
   try {
-    view = await graphView(dir, { alike: parsed.alike, ...(parsed.detail !== undefined ? { detail: parsed.detail } : {}) });
+    if (parsed.changed) {
+      const range = parseRange(parsed.changed);
+      if ("error" in range) {
+        stderr(`${prog}: ${range.error}\n`);
+        return 2;
+      }
+      const root = gitRoot(dir);
+      const { base, head } = resolveRange(root, range);
+      // Below detail 3 a card holds no attributes, so an edited attribute would not show.
+      const detail = parsed.detail ?? 3;
+      const opts = { alike: false, detail, behold: io.version, source: parsed.source };
+      const headRead = await readAtRevision(root, dir, head, opts);
+      if (!headRead) {
+        stderr(`${prog}: ${parsed.dir} does not exist at ${range.head} (${head.slice(0, 10)})\n`);
+        return 1;
+      }
+      const baseRead = await readAtRevision(root, dir, base, opts);
+      const before = baseRead?.document ?? emptyDocument(headRead.document, base);
+      view = headRead.view;
+      document = headRead.options;
+      const names = { base: range.mergeBase ? `${range.base}...` : range.base, head: range.head };
+      cut = (after) => {
+        const doc = cutChanged(before, after, {
+          base: names.base,
+          head: names.head,
+          ...(parsed.depth !== undefined ? { depth: parsed.depth } : {}),
+          ...(parsed.budget !== undefined ? { budget: parsed.budget } : {}),
+        });
+        keptCards = doc.nodes.length;
+        if (detail < 3) doc.notes.push({ kind: "changed-detail", text: `read at --detail ${detail}: a card holds no attributes there, so only added and removed cards show; use --detail 3 to see an edited attribute` });
+        return doc;
+      };
+    } else {
+      view = await graphView(dir, { alike: parsed.alike, ...(parsed.detail !== undefined ? { detail: parsed.detail } : {}) });
+      document = documentOptions({ projectDir: dir, ...(view.read.workspace ? { workspace: view.read.workspace } : {}), behold: io.version });
+      if (parsed.around) {
+        const ids = parsed.around;
+        cut = (doc) => {
+          const r = cutDocument(doc, ids, { ...(parsed.depth !== undefined ? { depth: parsed.depth } : {}), ...(parsed.direction ? { direction: parsed.direction } : {}) });
+          if (!r.ok) throw new CutRefused(r.error);
+          keptCards = r.document.nodes.length;
+          return r.document;
+        };
+      }
+    }
   } catch (err) {
     if (err instanceof ReadGraphError) {
       stderr(`${err.refusal.error}\n${err.refusal.remedy}\n`);
       return 1;
     }
+    if (err instanceof RevisionError) {
+      stderr(`${prog}: ${err.message}\n${err.remedy ? `${err.remedy}\n` : ""}`);
+      return 1;
+    }
     throw err;
   }
-  const document = documentOptions({ projectDir: dir, ...(view.read.workspace ? { workspace: view.read.workspace } : {}), behold: io.version });
-  const text = format.emit({ view, document, source: parsed.source });
+  let text: string | Uint8Array;
+  try {
+    text = format.emit({ view, document, source: parsed.source, ...(cut ? { cut } : {}) });
+  } catch (err) {
+    if (err instanceof CutRefused) {
+      stderr(`${prog}: ${err.message}\n`);
+      return 1;
+    }
+    throw err;
+  }
+  const cards = keptCards ?? view.ir.nodes.length;
   if (parsed.out) {
     writeFileSync(resolve(parsed.out), text);
-    stderr(`wrote ${parsed.out} (${view.ir.nodes.length} ${view.ir.nodes.length === 1 ? "card" : "cards"})\n`);
+    stderr(`wrote ${parsed.out} (${cards} ${cards === 1 ? "card" : "cards"})\n`);
   } else {
     stdout(text);
   }
   return 0;
 }
+
+/** `--around` named an id the graph does not hold. */
+class CutRefused extends Error {}

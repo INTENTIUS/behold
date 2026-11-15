@@ -29,6 +29,8 @@ export interface DocumentReadContext {
   behold: string;
   /** The revision read, when the read was at one. */
   rev?: string;
+  /** The repository root the read directory sits in, when it is a copy of a revision outside the repository (#1059). Default: the nearest `.git` above the directory. */
+  repoRoot?: string;
 }
 
 const posixRel = (from: string, to: string): string => relative(from, to).split(sep).join("/") || ".";
@@ -91,7 +93,7 @@ export function documentScrubber(repoRoot: string, dirs: readonly string[], home
 /** The options `toDocument` takes for a graph read from `ctx`'s directories. */
 export function documentOptions(ctx: DocumentReadContext): ToDocumentOptions {
   const served = resolve(ctx.workspace?.root ?? ctx.projectDir);
-  const repoRoot = repositoryRoot(served);
+  const repoRoot = ctx.repoRoot ? resolve(ctx.repoRoot) : repositoryRoot(served);
   const members: Record<string, DocumentMember> = {};
   const abs: string[] = [served];
   if (ctx.workspace) {

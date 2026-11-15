@@ -11,8 +11,8 @@
  * flag from the entry's name (`--json`, `--ir`). The SVG painter (#1061) and
  * the Mermaid emitter (#1060) are listed in `PENDING_FORMATS` until they
  * apply, so their flags already answer with what to use meanwhile instead of
- * an unknown-flag error. A cut (#1067's `cutDocument` in src/graph-cut.ts,
- * #1059's changed cut) works on the document: the CLI hands it to a format
+ * an unknown-flag error. A cut (#1067's `cutDocument` in src/graph-cut.ts for
+ * `--around`, #1059's `cutChanged` in src/graph-changed.ts for `--changed`) works on the document: the CLI hands it to a format
  * as `cut`, and `graphDocument` applies it before the format prints, so a
  * format that reads the document needs nothing of its own for it.
  */
