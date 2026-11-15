@@ -1,0 +1,6 @@
+{
+  "installBytes": 140000000,
+  "packages": 60,
+  "dependencies": ["@cdktn/hcl2json", "@intentius/chant", "@intentius/chant-lexicon-terraform", "@intentius/pinhole", "ajv"],
+  "refused": ["hono", "@hono/node-server", "@modelcontextprotocol/sdk", "@kubernetes/client-node", "@intentius/chant-k8s-client"]
+}
