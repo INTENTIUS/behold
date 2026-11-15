@@ -22,6 +22,7 @@ import { hudAddress } from "./workspace-why.ts";
 import { approverOptionsProblem, isForgeIdentity, resolveApproverOptions } from "./approver.ts";
 import { prometheusAddress } from "./prometheus-metrics.ts";
 import { tempoAddress } from "./tempo-traces.ts";
+import { discoverAppliesToList } from "./discover-read.ts";
 import { servesAsEstate } from "./member-kind.ts";
 import { setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
 import { readCarveReport } from "./carve-lens.ts";
@@ -697,7 +698,8 @@ async function serveTarget(dirs: string[], verb: "serve" | "export"): Promise<Se
     // of a kind chant cannot read — a lone choudoufu estate has no chant to
     // shell, so it is served as a one-member estate rather than through the
     // single-project read that would answer "no lexicon detected".
-    ...(servesAsEstate(dirs) ? { projectDirs: dirs } : {}),
+    // behold#1079: and a lone folder chant reads by its kinds' probes (src/discover-read.ts).
+    ...(servesAsEstate(dirs) || discoverAppliesToList(dirs) ? { projectDirs: dirs } : {}),
   };
 }
 

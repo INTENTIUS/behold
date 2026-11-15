@@ -14,6 +14,7 @@ import type { AddressInfo } from "node:net";
 import { createApp, type ServerOptions } from "./server.ts";
 import { SHOT_HEIGHT, SHOT_WIDTH, ShotRefusal, takeShot, type ShotDeps, type ShotRequest, type ShotResult } from "./shot.ts";
 import { drawnMembers, hasDeclaration, readWorkspace } from "./workspace.ts";
+import { discoverAppliesToList } from "./discover-read.ts";
 import { servesAsEstate } from "./member-kind.ts";
 import { parsePublishTarget, PublishRefusal, publishShot, type GitRun, type PublishTarget } from "./shot-publish.ts";
 
@@ -149,7 +150,7 @@ export async function localServeOptions(dir: string): Promise<ServerOptions> {
       return { projectDir: drawn[0] ?? read.workspace.root, projectDirs: drawn, workspace: read.workspace, port: 0 };
     }
   }
-  return { projectDir: dir, port: 0, ...(servesAsEstate([dir]) ? { projectDirs: [dir] } : {}) };
+  return { projectDir: dir, port: 0, ...(servesAsEstate([dir]) || discoverAppliesToList([dir]) ? { projectDirs: [dir] } : {}) };
 }
 
 /** Take the shot the arguments ask for. Refusals come back as ShotRefusal; nothing is written here. */

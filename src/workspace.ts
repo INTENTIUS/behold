@@ -85,6 +85,23 @@ export interface Workspace {
   ciReportUrl?: string;
   /** behold#931: the redacted origin URL of the repository the document came from (`workspace.repo`, chant 0.124.47), or null. */
   repo?: string | null;
+  /** behold#1079: set when no declaration names the members and chant found them by the kinds' probes (`workspace graph <dir> --discover`): every directory a kind claims and what became of it. Such a workspace has no declaration file, so `file` is empty. */
+  discovered?: DiscoveredDir[];
+}
+
+/** One entry of chant's `discovered[]` (chant#5095): a directory some kind claims, and what became of it. */
+export interface DiscoveredDir {
+  /** Relative to the discovered directory, `.` for itself. */
+  dir: string;
+  /** The member's name when `outcome` is `member`. */
+  member: string | null;
+  /** The kind the precedence order picked, null for a tie. */
+  kind: string | null;
+  outcome: "member" | "tie" | "module" | "inside-member" | (string & {});
+  /** Every kind whose probe claims the directory, highest precedence first. */
+  claims: { kind: string; precedence: number; source: string }[];
+  /** Why a directory is not a member, in one line. */
+  note: string | null;
 }
 
 export type WorkspaceRead = { ok: true; workspace: Workspace } | { ok: false; refusal: WorkspaceRefusal };

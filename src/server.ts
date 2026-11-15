@@ -180,6 +180,7 @@ import { memberBlockGraph } from "./choudoufu-workspace.ts";
 import { allowedHostsFrom, guardRequest } from "./request-guard.ts";
 import { readGraph } from "./read-graph.ts";
 import { shapeEstate, viewNote } from "./graph-view.ts";
+import { discoverAppliesToList } from "./discover-read.ts";
 import { applyMemberPasses, memberKindOf, memberKindSpec, memberPassNote, servesAsEstate, type MemberPassRun } from "./member-kind.ts";
 import { TerraformReadError, terraformMemberWorkspace, terraformReaderState, terraformVia } from "./terraform-member.ts";
 import { addInstanceCards } from "./instance-cards.ts";
@@ -2263,7 +2264,7 @@ export function createApp(
     // behold#999: recorded adoption reports belong to the demo they came with.
     cfg.adoptRecorded = undefined;
     // #389: one directory composes too when chant cannot read it — see servesAsEstate.
-    cfg.projectDirs = workspace || servesAsEstate(dirs) ? dirs : undefined;
+    cfg.projectDirs = workspace || servesAsEstate(dirs) || discoverAppliesToList(dirs) ? dirs : undefined;
     // #372: a demo's scratch emulator reaches its choudoufu spawns through
     // this seam; a switch to anything else drops it, so no later project
     // inherits an endpoint meant for a demo.
