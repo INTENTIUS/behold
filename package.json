@@ -3,7 +3,7 @@
   "version": "0.31.0",
   "license": "Apache-2.0",
   "type": "module",
-  "description": "Visualize and control.",
+  "description": "Your infrastructure repo as a graph, from the files. Draws Terraform roots, no state needed.",
   "bin": {
     "behold": "./bin/behold.js"
   },
