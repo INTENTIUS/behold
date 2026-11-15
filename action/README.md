@@ -23,8 +23,10 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: INTENTIUS/behold-action@v1
+      - uses: INTENTIUS/behold@behold-v0.33.0
 ```
+
+The action lives in the behold repository, and its tags are behold's release tags (`behold-v<version>`). A tag can be moved, so for a workflow that has write access pin the full commit sha of the release instead, with the tag in a comment: `uses: INTENTIUS/behold@<40-character sha> # behold-v0.33.0`.
 
 ## What the comment holds
 
@@ -93,7 +95,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: INTENTIUS/behold-action@v1
+      - uses: INTENTIUS/behold@behold-v0.33.0
         with:
           handoff: "true"
 ```
@@ -120,7 +122,7 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
           path: handoff
-      - uses: INTENTIUS/behold-action@v1
+      - uses: INTENTIUS/behold@behold-v0.33.0
         with:
           mode: post-comment
           handoff-dir: handoff

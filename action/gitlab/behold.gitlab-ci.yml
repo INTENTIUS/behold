@@ -11,7 +11,7 @@
 #   BEHOLD_GITLAB_TOKEN  a project access token with the api scope, stored as a
 #                        masked CI/CD variable. Without it the job still draws
 #                        the cut into its log and artifacts and posts nothing.
-#   BEHOLD_ACTION_REF    a commit of the action's repository. Required.
+#   BEHOLD_ACTION_REF    a commit of the behold repository. Required.
 #
 # This runs the same src/ as the GitHub Action. A merge request from a fork
 # gets no API call at all: see mergeRequestOf in src/gitlab.mjs.

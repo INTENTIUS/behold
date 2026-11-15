@@ -480,14 +480,14 @@ describe("the CI files (#1064)", () => {
   it("the Forgejo workflow pins every action to a commit and swaps the artifact steps", () => {
     const yml = read("forgejo/behold.yml");
     const uses = [...yml.matchAll(/uses: (\S+)/g)].map((m) => m[1]!);
-    expect(uses.filter((u) => !/behold-action@/.test(u)).every((u) => /@[0-9a-f]{40}$/.test(u))).toBe(true);
+    expect(uses.filter((u) => !/INTENTIUS\/behold@/.test(u)).every((u) => /@[0-9a-f]{40}$/.test(u))).toBe(true);
     expect(yml).toContain('upload: "false"');
     expect(yml).toContain("forgejo/upload-artifact");
     expect(yml).not.toContain("workflow_run");
   });
 
   it("the action accepts a forge input", () => {
-    const yml = read("action.yml");
+    const yml = readFileSync(join(import.meta.dirname, "..", "..", "action.yml"), "utf8");
     expect(yml).toMatch(/^ {2}forge:/m);
     expect(yml).toContain("INPUT_FORGE");
   });

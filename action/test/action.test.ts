@@ -391,7 +391,7 @@ describe("the comment body (#1062)", () => {
 
 describe("the action folder (#1062)", () => {
   it("has an action.yml that pins its steps and names the artifact uploads", () => {
-    const yml = readFileSync(join(import.meta.dirname, "..", "action.yml"), "utf8");
+    const yml = readFileSync(join(import.meta.dirname, "..", "..", "action.yml"), "utf8");
     expect(yml).toMatch(/using: composite/);
     expect([...yml.matchAll(/uses: (\S+)/g)].every((m) => /@[0-9a-f]{40}$/.test(m[1]!))).toBe(true);
     expect(yml).toContain("archive: false");

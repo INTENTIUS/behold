@@ -27,9 +27,9 @@ jobs:
         run: npm run check:icons
       - name: build
         run: npm run build
-      # behold#1063: the tree behold-action should hold builds from action/ alone.
+      # behold#1063: the root action.yml is the only metadata file and runs paths that exist.
       - name: action tree
-        run: node scripts/action-tree.mjs --check
+        run: node scripts/action-tree.mjs
       - name: the viewer builds within its size budget
         run: npm run build:viewer
       - name: plugin files are in sync
