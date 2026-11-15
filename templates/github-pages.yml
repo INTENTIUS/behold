@@ -1,0 +1,131 @@
+# Publish `behold export` to GitHub Pages on each push to main.
+# Copy to .github/workflows/behold-pages.yml. Settings > Pages > Source must
+# be "GitHub Actions". Docs: https://intentius.github.io/behold/using/pages/
+name: behold-pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      allow-private-repo:
+        description: Publish although this repository is private or internal (the site is public on most plans)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# One deployment at a time; a newer push waits for the one running.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  # Directory to export, relative to the repository root.
+  PROJECT_DIR: .
+  # Sub-folder of the site to write the export into, for a repository whose
+  # Pages site holds something else too. Empty puts it at the site root.
+  SITE_PATH: ""
+  # Leave each card's source text out of the published bundle.
+  NO_SOURCE: "true"
+  # A command to run in PROJECT_DIR before the export, such as "npm ci", when
+  # the estate needs its own chant and lexicons installed.
+  INSTALL_COMMAND: ""
+  # The behold release to run. Pin it (for example 0.31.0) for a stable site.
+  BEHOLD_VERSION: latest
+  # A private or internal repository is refused unless this is "true". The
+  # dispatch input or the repository variable BEHOLD_ALLOW_PRIVATE_REPO sets it.
+  ALLOW_PRIVATE_REPO: ${{ inputs.allow-private-repo || vars.BEHOLD_ALLOW_PRIVATE_REPO || 'false' }}
+  # Pages refuses a site above 1 GB. Checked in kilobytes, before the upload.
+  MAX_SITE_KB: "1000000"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Refuse a private repository
+        env:
+          VISIBILITY: ${{ github.event.repository.visibility }}
+          IS_PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          set -eu
+          public=false
+          if [ "$VISIBILITY" = public ]; then public=true
+          elif [ -z "$VISIBILITY" ] && [ "$IS_PRIVATE" = false ]; then public=true
+          fi
+          if [ "$public" = true ]; then
+            echo "Repository is public."
+            exit 0
+          fi
+          if [ "$ALLOW_PRIVATE_REPO" = true ]; then
+            echo "::warning::This repository is not public and allow-private-repo is set. The Pages site is public on the internet unless the organisation is on Enterprise Cloud with private Pages."
+            exit 0
+          fi
+          echo "::error::Refusing to publish: this repository is ${VISIBILITY:-not public}, and its GitHub Pages site would be public on the internet (private Pages needs an organisation on Enterprise Cloud). Set the allow-private-repo input, or the repository variable BEHOLD_ALLOW_PRIVATE_REPO to true, to publish anyway."
+          exit 1
+
+      - name: Check the site path
+        run: |
+          set -eu
+          case "$SITE_PATH" in
+            /*|*..*) echo "::error::SITE_PATH must be a relative path without '..': $SITE_PATH"; exit 1 ;;
+          esac
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+
+      - name: Install the estate
+        if: env.INSTALL_COMMAND != ''
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: bash -c "$INSTALL_COMMAND"
+
+      - name: Export
+        run: |
+          set -eu
+          out="$PWD/_site"
+          if [ -n "$SITE_PATH" ]; then out="$out/$SITE_PATH"; fi
+          flags=""
+          if [ "$NO_SOURCE" = true ]; then flags="--no-source"; fi
+          cd "$PROJECT_DIR"
+          npx --yes "@intentius/behold@$BEHOLD_VERSION" export . $flags --out "$out"
+
+      - name: Check the size
+        run: |
+          set -eu
+          kb=$(du -sk _site | cut -f1)
+          echo "Site size: ${kb} KB (limit ${MAX_SITE_KB} KB)"
+          if [ "$kb" -gt "$MAX_SITE_KB" ]; then
+            echo "::error::The site is ${kb} KB, above GitHub Pages' 1 GB limit."
+            exit 1
+          fi
+
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
+      - name: Job summary
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          {
+            echo "### behold export published"
+            echo
+            echo "Site: ${PAGE_URL}${SITE_PATH:+$SITE_PATH/}"
+          } >> "$GITHUB_STEP_SUMMARY"

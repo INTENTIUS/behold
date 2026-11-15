@@ -95,6 +95,7 @@ export default defineConfig({
 						{ label: 'Collision marks', slug: 'using/collisions' },
 						{ label: 'Export a snapshot', slug: 'using/export' },
 						{ label: 'The graph document', slug: 'using/graph-document' },
+						{ label: 'Publish to GitHub Pages', slug: 'using/pages' },
 						{ label: 'The three-cloud demo', slug: 'using/three-cloud' },
 						{ label: 'Driving it from an agent', slug: 'using/agents' },
 					],

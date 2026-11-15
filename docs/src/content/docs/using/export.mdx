@@ -72,4 +72,4 @@ The bundle is deploy-ready for Cloudflare, since `export` writes an assets-only 
 cd ./behold-export && npx wrangler deploy
 ```
 
-GitHub Pages, S3 and nginx work too. The live app needs Docker and a chant subprocess and cannot run on an edge worker; the pre-baked export can.
+GitHub Pages, S3 and nginx work too. [Publish to GitHub Pages](/behold/using/pages/) has a workflow that deploys the export on each push to `main` and refuses on a private repository. The live app needs Docker and a chant subprocess and cannot run on an edge worker; the pre-baked export can.
