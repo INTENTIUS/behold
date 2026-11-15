@@ -83,6 +83,8 @@ export interface ExportAxes {
   countBy?: string;
   /** behold#922: `--plan`, the plan read captured: the source graph's cards with their plan facts, and each `--q` at the plan depth. */
   plan?: boolean;
+  /** behold#1068: a `history.json` sits beside this bundle's folder (`--publish` writes one), so the page may ask for it. */
+  history?: boolean;
 }
 
 /** #900: the run ids the served run index lists, or nothing when no report URL is declared or the index can't be read. */
@@ -302,6 +304,8 @@ export interface ExportOptions {
   countBy?: string;
   /** behold#922: `--plan`: capture the plan read as well. */
   plan?: boolean;
+  /** behold#1068: a `history.json` sits beside this bundle's folder (`--publish` writes one), so the page may ask for it. */
+  history?: boolean;
 }
 
 /** behold#922: check `--count-by`: kind, module or attr:<name>, as a link's countBy is checked. */
@@ -345,6 +349,9 @@ export function settleNote(note: string | undefined): { note?: string } | { erro
 
 /** Export's default for a report key's base: the bundle sits at `<prefix>/views/behold/`, so `../../` is the prefix. */
 export const VIEWS_REPORTS_BASE = "../../";
+
+/** The file `static.js` holds: it flips the page into static mode (behold#1068). */
+export const STATIC_FLAG_JS = "window.__BEHOLD_STATIC__ = true;\n";
 
 export async function runExport(cfg: ServerOptions, outDir: string, opts: ExportOptions = {}): Promise<void> {
   // A capture reads the project; it never writes to it (#228). The layout
@@ -430,17 +437,23 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
     // behold#922: the grouping and the plan read this bundle answers.
     ...(axes.countBy ? { countBy: axes.countBy } : {}),
     ...(axes.plan ? { plan: true } : {}),
+    // behold#1068: the page asks for ../history.json only when this says one was published.
+    ...(opts.history ? { history: true } : {}),
     axes,
     keyToFile,
   };
   writeFileSync(join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2));
 
   // Copy the SPA, flipping it into static mode.
+  // behold#1068: the flag is a file the page loads, not an inline script, so a
+  // webview's content security policy (script-src 'self') lets it run. It is a
+  // classic script ahead of the app's module, which reads it on load.
   const html = readFileSync(join(webDir(), "index.html"), "utf8").replace(
     /<\/head>/i,
-    `  <script>window.__BEHOLD_STATIC__ = true;</script>\n  </head>`,
+    `  <script src="./static.js"></script>\n  </head>`,
   );
   writeFileSync(join(outDir, "index.html"), html);
+  writeFileSync(join(outDir, "static.js"), STATIC_FLAG_JS);
   // Copy every sibling web asset, not just app.js: the SPA is unbundled ES modules, so app.js
   // imports theme.js which imports themes.js. Copying app.js alone 404s the rest of the module
   // graph and the whole bundle fails to boot. index.html is templated above, so skip it here.
