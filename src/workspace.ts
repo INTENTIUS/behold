@@ -224,12 +224,15 @@ export async function readWorkspace(root: string, reader: WorkspaceReader = root
 // ---------------------------------------------------------------------------
 
 let served: Workspace | undefined;
-const byDir = new Map<string, WorkspaceMember>();
+let byDir = new Map<string, WorkspaceMember>();
+
+/** Each member's checkout to the member, for every member but a `repo` one, which names another repository rather than a directory here. */
+const membersByDir = (ws: Workspace | undefined): Map<string, WorkspaceMember> =>
+  new Map((ws?.members ?? []).filter((m) => m.kind !== "repo").map((m) => [m.abs, m]));
 
 export function setServedWorkspace(ws: Workspace | undefined): void {
   served = ws;
-  byDir.clear();
-  for (const m of ws?.members ?? []) if (m.kind !== "repo") byDir.set(m.abs, m);
+  byDir = membersByDir(ws);
   // A root member's source is the root minus every other member's directory.
   const root = ws?.members.find((m) => m.dir === ".");
   setStampExclusions(root && ws ? new Map([[root.abs, ws.members.filter((m) => m !== root && m.kind !== "repo").map((m) => m.abs)]]) : new Map());
@@ -242,6 +245,28 @@ export function servedWorkspace(): Workspace | undefined {
 /** The declared member `dir` is, when a workspace is served and declares it. */
 export function workspaceMemberOf(dir: string): WorkspaceMember | undefined {
   return byDir.get(resolve(dir));
+}
+
+/**
+ * A workspace, and the question the estate code asks of it: which declared
+ * member is this directory? behold#1057: the estate read takes one of these
+ * as an argument, so a caller that serves nothing (`readGraph`, a CLI) names
+ * its workspace, or none, and two reads in one process can name two.
+ */
+export interface MemberLookup {
+  ws: Workspace | undefined;
+  memberOf(dir: string): WorkspaceMember | undefined;
+}
+
+/** The lookup over `ws`, or over no workspace at all when it is undefined. */
+export function workspaceLookup(ws: Workspace | undefined): MemberLookup {
+  const members = membersByDir(ws);
+  return { ws, memberOf: (dir) => members.get(resolve(dir)) };
+}
+
+/** The lookup over the served workspace, which is what an estate function reads when its caller names none. */
+export function servedLookup(): MemberLookup {
+  return { ws: served, memberOf: workspaceMemberOf };
 }
 
 /**

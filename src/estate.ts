@@ -31,7 +31,7 @@ import { memberKindOf, memberKindSpec, type MemberKind } from "./member-kind.ts"
 import { CLUSTER_SCOPED } from "./zoom-notes.ts";
 import { choudoufuWorkspaceVia } from "./choudoufu-workspace.ts";
 import { bareFolderMemberName } from "./terraform-member.ts";
-import { CONTRACT_READ_KINDS, pulumiWorkspaceVia, servedWorkspace, unreadableMemberIr, unreadableMembers, workspaceMemberOf, workspaceVia, WorkspaceMemberError } from "./workspace.ts";
+import { CONTRACT_READ_KINDS, pulumiWorkspaceVia, servedLookup, unreadableMemberIr, unreadableMembers, workspaceVia, WorkspaceMemberError, type MemberLookup } from "./workspace.ts";
 
 // ---------------------------------------------------------------------------
 // Bounded member reads (#295). Every estate read below fans out one `chant
@@ -86,11 +86,14 @@ export async function mapPool<T, R>(
  * the one fact a composed IR does not carry, and what `src/estate-edges.ts`
  * needs to join a declared `spec.path` back to the member it points at (#166).
  * One reading of `shortStackNames`, so the names here and the ids in the
- * composed IR cannot drift apart. */
-export function estateMembers(projectDirs: readonly string[]): { name: string; dir: string; kind: MemberKind }[] {
-  const names = estateMemberNames(projectDirs);
+ * composed IR cannot drift apart.
+ *
+ * `lookup` (behold#1057), here and below, is the workspace the directories
+ * are members of; left out, it is the served one. */
+export function estateMembers(projectDirs: readonly string[], lookup: MemberLookup = servedLookup()): { name: string; dir: string; kind: MemberKind }[] {
+  const names = estateMemberNames(projectDirs, lookup);
   // A declared member's kind is the declaration's (#464); a loose one's is its probe's.
-  const kindOf = (dir: string): MemberKind => (workspaceMemberOf(dir)?.kind as MemberKind | undefined) ?? memberKindOf(dir) ?? "chant";
+  const kindOf = (dir: string): MemberKind => (lookup.memberOf(dir)?.kind as MemberKind | undefined) ?? memberKindOf(dir) ?? "chant";
   return projectDirs.map((dir, i) => ({ name: names[i], dir, kind: kindOf(dir) }));
 }
 
@@ -100,8 +103,8 @@ export function estateMembers(projectDirs: readonly string[]): { name: string; d
  * member as `<name>/<id>`, so the two agree), else `shortStackNames`' readable
  * label, as a loose `behold serve a b c` always has.
  */
-export function estateMemberNames(projectDirs: readonly string[]): string[] {
-  const declared = projectDirs.map((d) => workspaceMemberOf(d)?.name);
+export function estateMemberNames(projectDirs: readonly string[], lookup: MemberLookup = servedLookup()): string[] {
+  const declared = projectDirs.map((d) => lookup.memberOf(d)?.name);
   if (declared.every((n): n is string => n !== undefined)) return declared;
   const names = shortStackNames([...projectDirs]);
   // behold#927: a bare Terraform folder served alone is searched as a one-member
@@ -115,9 +118,9 @@ export function estateMemberNames(projectDirs: readonly string[]): string[] {
  * one-node box saying why (#464): listed with its reason code, never silently
  * missing. Only when the estate being composed is that workspace's.
  */
-function unreadableStacks(projectDirs: readonly string[]): { name: string; ir: GraphIR }[] {
-  const ws = servedWorkspace();
-  if (!ws || !projectDirs.every((d) => workspaceMemberOf(d))) return [];
+function unreadableStacks(projectDirs: readonly string[], lookup: MemberLookup = servedLookup()): { name: string; ir: GraphIR }[] {
+  const ws = lookup.ws;
+  if (!ws || !projectDirs.every((d) => lookup.memberOf(d))) return [];
   return unreadableMembers(ws).map((m) => ({ name: m.name, ir: unreadableMemberIr(m) }));
 }
 
@@ -129,14 +132,14 @@ function unreadableStacks(projectDirs: readonly string[]): { name: string; ir: G
 // it always did, from the same place.
 
 /** How `dir` is read: its kind's own `via`, else chant's. */
-const memberViaFor = (dir: string): MemberVia => {
+const memberViaFor = (dir: string, lookup: MemberLookup = servedLookup()): MemberVia => {
   const own = memberKindSpec(memberKindOf(dir) ?? "chant")?.via ?? chantVia;
   // #464: a declared member of a kind chant composes is read through the
   // workspace contract, by the root's chant. #465: a choudoufu member too,
   // with choudoufu's own roster joined on (src/choudoufu-workspace.ts says why).
   // #994: a pulumi member has no read but the contract's, so no fallback.
-  const declared = workspaceMemberOf(dir);
-  const ws = servedWorkspace();
+  const declared = lookup.memberOf(dir);
+  const ws = lookup.ws;
   if (!declared || !ws || !CONTRACT_READ_KINDS.has(declared.kind)) return own;
   if (declared.kind === "pulumi") return pulumiWorkspaceVia(declared, ws.root);
   return declared.kind === "choudoufu" ? choudoufuWorkspaceVia(declared, ws.root) : workspaceVia(declared, ws.root, own);
@@ -153,7 +156,7 @@ function forMember(dir: string, opts: GraphOptions): GraphOptions {
   return rest;
 }
 
-const memberSource = (dir: string, opts: GraphOptions): Promise<GraphIR> => memberIr(dir, forMember(dir, opts), memberViaFor(dir));
+const memberSource = (dir: string, opts: GraphOptions, lookup: MemberLookup = servedLookup()): Promise<GraphIR> => memberIr(dir, forMember(dir, opts), memberViaFor(dir, lookup));
 
 /** A member's live read, by the member's own kind — served from the overlay
  * document the member was last read as when nothing behold knows about has
@@ -176,11 +179,11 @@ const memberLive = (dir: string, opts: GraphOptions, fresh: boolean): Promise<Gr
  * member never takes the whole page down with it. A loose estate still throws:
  * there is no declaration to say the member exists.
  */
-async function memberSourceOrBox(dir: string, opts: GraphOptions): Promise<GraphIR> {
+async function memberSourceOrBox(dir: string, opts: GraphOptions, lookup: MemberLookup = servedLookup()): Promise<GraphIR> {
   try {
-    return joinCarvedSources(await memberSource(dir, opts), (await carveStatesFor(dir)).values(), dir).ir;
+    return joinCarvedSources(await memberSource(dir, opts, lookup), (await carveStatesFor(dir)).values(), dir).ir;
   } catch (err) {
-    const box = declaredMemberBox(dir, err);
+    const box = declaredMemberBox(dir, err, lookup);
     if (!box) throw err;
     return box;
   }
@@ -188,8 +191,8 @@ async function memberSourceOrBox(dir: string, opts: GraphOptions): Promise<Graph
 
 /** The unreadable box for a declared member whose read failed, or undefined
  * when `dir` isn't a member of the served workspace. */
-function declaredMemberBox(dir: string, err: unknown): GraphIR | undefined {
-  const m = servedWorkspace() ? workspaceMemberOf(dir) : undefined;
+function declaredMemberBox(dir: string, err: unknown, lookup: MemberLookup = servedLookup()): GraphIR | undefined {
+  const m = lookup.ws ? lookup.memberOf(dir) : undefined;
   if (!m) return undefined;
   // chant's own words, every line: its error is often under a warning.
   const said = (e: unknown): string => {
@@ -202,13 +205,13 @@ function declaredMemberBox(dir: string, err: unknown): GraphIR | undefined {
 }
 
 /** Graph each project's source and compose them into one estate IR. */
-export async function composeEstate(projectDirs: string[], opts: GraphOptions = {}): Promise<GraphIR> {
-  const names = estateMemberNames(projectDirs); // declared names, else readable labels (common prefix stripped)
+export async function composeEstate(projectDirs: readonly string[], opts: GraphOptions = {}, lookup: MemberLookup = servedLookup()): Promise<GraphIR> {
+  const names = estateMemberNames(projectDirs, lookup); // declared names, else readable labels (common prefix stripped)
   const stacks = await mapPool(projectDirs, estateReadPool(projectDirs.length), async (dir, i) => ({
     name: names[i],
-    ir: await memberSourceOrBox(dir, opts),
+    ir: await memberSourceOrBox(dir, opts, lookup),
   }));
-  return composeStacks([...stacks, ...unreadableStacks(projectDirs)]);
+  return composeStacks([...stacks, ...unreadableStacks(projectDirs, lookup)]);
 }
 
 /** The estate-wide overlay's composition report (#189). */
