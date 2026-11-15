@@ -240,7 +240,7 @@ export function joinLexiconEdges(edges: readonly IREdge[], index: RosterIndex, r
     const key = `${from}\0${to}`;
     if (seen.has(key)) return;
     seen.add(key);
-    out.push({ from, to, kind: "ref", ...(viaAttr ? { viaAttr } : {}), inferred: true } as IREdge);
+    out.push({ from, to, kind: "ref", ...(viaAttr ? { viaAttr } : {}), inferred: true, join: "choudoufu-lexicon" } as IREdge);
   };
   for (const e of edges) {
     const fromPath = lexiconPath(e.from, root);

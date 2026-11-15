@@ -1,0 +1,64 @@
+---
+title: The graph document
+description: behold-graph/1, the versioned JSON a dashboard, a portal or a viewer reads instead of behold's own API.
+---
+
+`behold-graph/1` is the graph as one JSON file: flat lists of nodes and edges, the boxes they are drawn in, and the notes the view carries. Other programs read it instead of behold's API, so its shape is versioned and has a published schema:
+
+```
+https://intentius.io/behold/schemas/graph/v1/graph.schema.json
+```
+
+The same file ships in the npm package at `schemas/graph/v1/graph.schema.json`.
+
+## The shape
+
+```json
+{
+  "schema": "behold-graph/1",
+  "generator": { "behold": "0.31.0", "chant": "0.124.58" },
+  "origin": { "dir": "infra" },
+  "cut": { "kind": "whole" },
+  "nodes": [
+    {
+      "id": "prod/prod/aws_vpc.main",
+      "title": "prod/aws_vpc.main",
+      "subtitle": "terraform",
+      "kind": "aws_vpc",
+      "lexicon": "terraform",
+      "box": "stack:prod",
+      "file": "infra/envs/prod/network.tf",
+      "line": 1,
+      "status": "warn",
+      "color": "#FF5A5F",
+      "mainstat": "drifted (plan)",
+      "detail__member": "prod",
+      "detail__root": "prod",
+      "attrs": { "address": "aws_vpc.main" }
+    }
+  ],
+  "edges": [
+    {
+      "id": "prod/prod/aws_subnet.public_a->prod/prod/aws_vpc.main:ref:vpc_id",
+      "source": "prod/prod/aws_subnet.public_a",
+      "target": "prod/prod/aws_vpc.main",
+      "kind": "ref",
+      "inferred": false,
+      "via": "vpc_id"
+    }
+  ],
+  "groups": [{ "id": "stack:prod", "title": "prod", "kind": "stack" }],
+  "notes": [{ "kind": "view", "text": "1 root, prod; ..." }]
+}
+```
+
+The node and edge field names are the ones Grafana's node graph panel reads (`id`, `title`, `subtitle`, `mainstat`, `secondarystat`, `color` and `detail__*` on a node, `id`, `source` and `target` on an edge), so the panel can draw the two lists as they are.
+
+- `subtitle` is the tool that declares the card, `file` is relative to the repository root, and `box` is the id of the innermost group the card sits in.
+- `status`, `color` and `mainstat` are present when a drift overlay painted the card, and `change` when a plan was read and would change it.
+- Every edge's `source` and `target` is a node in the same document. An inferred edge carries `rule`, the join that drew it.
+- No field holds an absolute path, and a card's source text (`attrs.source`) is left out unless it was asked for.
+
+## Versions
+
+Within `behold-graph/1`, fields are only ever added. A reader ignores the fields it does not know. A change a reader could not ignore becomes `behold-graph/2`, and a reader written for version 1 should refuse it rather than draw it.

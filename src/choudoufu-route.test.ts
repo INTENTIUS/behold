@@ -284,7 +284,7 @@ describe("GET /api/choudoufu/split (#371)", () => {
     const body = (await (await app.request("/api/graph?alike=0")).json()) as { ir: { edges: Array<{ from: string; to: string }> } };
     expect(Date.now() - started).toBeLessThan(3000); // no chant spawned for the join
     // Joined on the member's own addresses, then composed under its short name.
-    expect(body.ir.edges).toContainEqual({ from: "mono/aws_iam_role.team_a", to: "mono/aws_iam_policy.team_a", kind: "ref", viaAttr: "policy_arn", inferred: true });
+    expect(body.ir.edges).toContainEqual({ from: "mono/aws_iam_role.team_a", to: "mono/aws_iam_policy.team_a", kind: "ref", viaAttr: "policy_arn", inferred: true, join: "choudoufu-lexicon" });
   });
 
   it("is advertised on /api, and /api/project lists the plans found", async () => {

@@ -1412,6 +1412,55 @@ remote does not take the LFS object, it refuses with the setup line and exits
 1 before the branch moves; the local PNG is kept. `behold mcp`, `GET
 /api/shot` and a `--public` serve never publish.
 
+## The graph document: `behold-graph/1` (#1066)
+
+A graph snapshot (`{ir, meta}`, what `/api/graph` answers and what every
+export snapshot holds) becomes a versioned document through
+`toDocument(snapshot, opts)` (`src/to-document.ts`). The types, the version
+string and `checkGraphDocument` are in `src/graph-document.ts`, which imports
+nothing, so a browser host can load it. The JSON Schema ships in the package
+at `schemas/graph/v1/graph.schema.json` and is published at
+https://intentius.io/behold/schemas/graph/v1/graph.schema.json (its `$id`,
+the same bytes from `docs/public/`; a test holds the two together).
+
+```
+{schema: "behold-graph/1", generator: {behold, chant?}, origin: {dir, rev?},
+ cut: {kind: "whole" | "around" | "changed", ...}, nodes[], edges[], groups[],
+ notes[], layout?}
+node: {id, title, subtitle, kind, lexicon, box?, file?, line?, change?,
+       status?, color?, mainstat?, secondarystat?, stackOf?, detail__member?,
+       detail__root?, detail__namespace?, detail__release?, attrs}
+edge: {id, source, target, kind, inferred, rule?, via?}
+group: {id: "<kind>:<key>", title, kind: stack | wave | pipeline | container, parent?}
+note: {kind, text, short?, box?, count?}
+```
+
+The node and edge field names are the ones Grafana's node graph panel takes,
+so the panel reads `nodes` and `edges` with no transform. `subtitle` is the
+tool (`k8s` reads `kubernetes`), `status` is `attrs._status`, `color` its
+pinhole bar colour, `mainstat` the drift record's words or the plan's action,
+`change` the plan's action unless it is `no-op` or `read`. `file` is relative
+to the repository root, and absent when behold cannot place it there; an
+absolute `sourceLoc` is dropped. An edge whose end the view does not draw is
+left out and counted in `notes` (`edges-left-out`), so every `source` and
+`target` names a node. Edge ids are `<source>-><target>:<kind>[:<via>]`, with
+`#2`, `#3` on repeats. `rule` names the join behind an inferred edge: chant's
+catalog rule (`origin: "derived"`), or `behold:<join>` from the `join` field
+each behold pass now sets beside `inferred: true` (`value-match`,
+`k8s-declared`, `estate-member`, `cluster-anchor`, `composite-deps`,
+`choudoufu-lexicon`, `choudoufu-estate`). `attrs.source` is left out unless
+`opts.source` asks for it.
+
+`documentOptions({projectDir, projectDirs?, workspace?, behold, rev?})`
+(`src/graph-document-context.ts`) works out what the IR does not carry: the
+served directory relative to its repository (the nearest `.git` above it),
+each member's directory and Terraform roots, and a scrubber that rewrites this
+machine's paths to repository-relative ones, the home directory to `~` and
+the temporary directory to `$TMPDIR`. The same snapshot and options give
+byte-identical JSON. Within `behold-graph/1` fields are only added and a
+reader ignores what it does not know; `checkGraphDocument` refuses any other
+`behold-graph/<n>` by name.
+
 ## Over MCP: `behold mcp` (#916)
 
 `behold mcp [project-dir] [--url <serve> | --port <n>]` is a stdio MCP server

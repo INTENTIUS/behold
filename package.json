@@ -10,6 +10,7 @@
   "files": [
     "bin",
     "dist",
+    "schemas",
     "web",
     "example-writes",
     "example-k8s",

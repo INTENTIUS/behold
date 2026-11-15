@@ -183,7 +183,7 @@ export function addClusterAnchorEdges(ir: GraphIR, boundContext?: string): Graph
     const key = `${from}\0${to}`;
     if (existing.has(key)) return;
     existing.add(key);
-    ir.edges.push({ from, to, kind: "ref", viaAttr: ANCHOR_VIA, inferred: true } as never);
+    ir.edges.push({ from, to, kind: "ref", viaAttr: ANCHOR_VIA, inferred: true, join: "cluster-anchor" } as never);
   };
 
   for (const n of k8sNodes) {

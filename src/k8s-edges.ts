@@ -228,6 +228,8 @@ export interface K8sDeclaredEdge {
   kind: "ref";
   viaAttr: string;
   inferred: true;
+  /** The join that drew it, which the graph document names as its `rule` (#1066). */
+  join: "k8s-declared";
 }
 
 /** Derive the declared-attribute joins listed at the top of this file over a
@@ -237,7 +239,7 @@ export function deriveK8sEdges(nodes: readonly IRNode[]): K8sDeclaredEdge[] {
   if (k8s.length === 0) return [];
   const out: K8sDeclaredEdge[] = [];
   const add = (from: string, to: string, viaAttr: string) => {
-    if (from !== to) out.push({ from, to, kind: "ref", viaAttr, inferred: true });
+    if (from !== to) out.push({ from, to, kind: "ref", viaAttr, inferred: true, join: "k8s-declared" });
   };
 
   const workloads = k8s.filter((n) => WORKLOAD_KINDS.has(n.kind));
