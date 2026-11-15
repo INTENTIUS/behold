@@ -258,6 +258,14 @@ chant-release *args:
 headlamp-plugin:
     cd surfaces/headlamp-behold && npm ci && npm run tsc && npm run lint && npm test && npm run build && node scripts/package.mjs --check
 
+# kubectl behold (#1086): the plugin parses, and the krew archive matches
+# krew/behold.yaml. `just kubectl-behold-e2e` boots a scratch k3d cluster.
+kubectl-behold:
+    bash -n surfaces/kubectl-behold/kubectl-behold && node surfaces/kubectl-behold/scripts/package.mjs --check
+
+kubectl-behold-e2e:
+    bash surfaces/kubectl-behold/e2e/kubectl-behold-e2e.sh
+
 headlamp-e2e:
     bash surfaces/headlamp-behold/e2e/headlamp-e2e.sh
 

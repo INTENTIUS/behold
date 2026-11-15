@@ -1,0 +1,24 @@
+# Drives a real k9s in a pty: open the deployments view on the app namespace,
+# select the web row and press Shift-B, then wait for the plugin's opener to
+# have been handed a picture. Usage: expect k9s-drive.exp <k9s> <context> <opened-file>
+set k9s [lindex $argv 0]
+set ctx [lindex $argv 1]
+set opened [lindex $argv 2]
+set timeout 60
+if {[info exists env(K9S_DRIVE_LOG)]} { log_file -noappend $env(K9S_DRIVE_LOG) }
+set stty_init "rows 40 cols 160"
+spawn $k9s --context $ctx -n app -c deployments --readonly --splashless
+expect {
+  -re {web} {}
+  timeout { puts "k9s never listed web"; exit 1 }
+}
+sleep 1
+send "B"
+for {set i 0} {$i < 60} {incr i} {
+  if {[file exists $opened] && [file size $opened] > 0} { break }
+  sleep 1
+}
+send "\x03"
+expect eof
+if {![file exists $opened] || [file size $opened] == 0} { puts "Shift-B opened nothing"; exit 1 }
+exit 0

@@ -1,0 +1,56 @@
+name: kubectl-behold-release
+
+# Builds the krew archive in surfaces/kubectl-behold and checks that
+# krew/behold.yaml names its checksum and release URL. On a tag it attaches the
+# archive to a release, so the krew index entry points at something that exists.
+#
+# Tag: kubectl-behold-v<version> (distinct from behold-v* and headlamp-behold-v*).
+on:
+  push:
+    tags: ["kubectl-behold-v*"]
+  pull_request:
+    paths:
+      - "surfaces/kubectl-behold/**"
+      - "LICENSE"
+      - ".github/workflows/kubectl-behold-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: surfaces/kubectl-behold
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+      - name: Plugin script parses
+        run: bash -n kubectl-behold
+      - name: Archive matches the krew manifest
+        run: node scripts/package.mjs --check
+      - name: Package
+        run: |
+          # --check does not write; write the archive and keep the manifest as committed
+          cp krew/behold.yaml "$RUNNER_TEMP/behold.yaml"
+          node scripts/package.mjs
+          cmp krew/behold.yaml "$RUNNER_TEMP/behold.yaml"
+          (cd release && sha256sum -c *.sha256)
+      - name: Tag matches the manifest version
+        if: startsWith(github.ref, 'refs/tags/kubectl-behold-v')
+        run: |
+          want="kubectl-behold-$(sed -n 's/^  version: "\(v[0-9.]*\)"/\1/p' krew/behold.yaml)"
+          test "$GITHUB_REF_NAME" = "$want" || { echo "tag $GITHUB_REF_NAME, manifest says $want"; exit 1; }
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/kubectl-behold-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "kubectl behold ${GITHUB_REF_NAME#kubectl-behold-v}" release/*.tar.gz release/*.tar.gz.sha256
