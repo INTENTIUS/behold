@@ -173,7 +173,7 @@ describe("the action, read phase (#1062)", () => {
     expect(body).toContain("**behold:** 1 changed, 1 added, 1 removed, 2 neighbours, in 1 root");
     expect(body).toContain("```mermaid");
     expect(body).not.toContain(tmpdir());
-    expect(body.length).toBeLessThan(60_000);
+    expect(body.length).toBeLessThan(262_144);
     expect(JSON.parse(readFileSync(join(x.out, "pr.json"), "utf8"))).toEqual({ number: 7, base: r.base, head: r.head, marker: "behold:changed" });
     expect(x.outputs()).toContain("changed-count=3");
     // The checkout is only read.
@@ -355,7 +355,7 @@ describe("the second workflow, post-comment (#1062)", () => {
       [{ number: "7; rm" }, /usable pull request number/],
       [{ number: -1 }, /usable pull request number/],
       [{ text: "hello\n" }, /marker/],
-      [{ text: `<!-- ${MARKER} -->\n${"x".repeat(60_000)}` }, /over 60000/],
+      [{ text: `<!-- ${MARKER} -->\n${"x".repeat(262_144)}` }, /over 262144/],
     ] as const) {
       const h = handoff(over);
       await expect(postComment({ env: h.x.env, inputs: h.inputs, gh: githubClient({ token: "t", fetch: recorded([pull(h.r.head)]).fetch }) })).rejects.toThrow(re);
@@ -364,7 +364,7 @@ describe("the second workflow, post-comment (#1062)", () => {
 });
 
 describe("the comment body (#1062)", () => {
-  const nodes = Array.from({ length: 400 }, (_, i) => ({ id: `r${i}`, title: `t${i}`, subtitle: "terraform", kind: "aws_thing", lexicon: "terraform", box: `stack:${i % 3}`, diff: i < 5 ? "changed" : "neighbour", attrs: {} }));
+  const nodes = Array.from({ length: 9000 }, (_, i) => ({ id: `r${i}`, title: `t${i}`, subtitle: "terraform", kind: "aws_thing", lexicon: "terraform", box: `stack:${i % 3}`, diff: i < 5 ? "changed" : "neighbour", attrs: {} }));
   const doc = {
     schema: "behold-graph/1",
     generator: { behold: "t" },
@@ -378,13 +378,13 @@ describe("the comment body (#1062)", () => {
 
   it("counts changed cards, neighbours and roots", () => {
     const s = summarize(doc);
-    expect(countLine(s)).toBe("5 changed, 395 neighbours, in 3 roots");
+    expect(countLine(s)).toBe("5 changed, 8995 neighbours, in 3 roots");
   });
 
   it("is a table that fits the comment limit when the diagram does not", () => {
     const b = commentBody(behold, doc, { marker: "m" });
     expect(b.kind).toBe("table");
-    expect(b.text.length).toBeLessThan(60_000);
+    expect(b.text.length).toBeLessThan(262_144);
     expect(b.text).toContain("| Root |");
   });
 });

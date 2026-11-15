@@ -186,14 +186,12 @@ describe("toMermaid (#1060)", () => {
 });
 
 describe("forge budgets (#1060, #1065)", () => {
-  it("holds the provisional figures in one table, none confirmed yet", () => {
-    expect(FORGE_BUDGETS.gitlab).toMatchObject({ blockChars: 2_000, maxChains: 30, maxBlocks: 50 });
-    expect(FORGE_BUDGETS.github).toMatchObject({ blockChars: 20_000, maxEdges: 250 });
-    expect(FORGE_BUDGETS.forgejo).toMatchObject({ blockChars: 20_000, maxEdges: 250 });
-    for (const b of Object.values(FORGE_BUDGETS)) {
-      expect(b.commentChars).toBe(60_000);
-      expect(b.confirmed).toBe(false);
-    }
+  it("holds the github figures measured on a real repository, and the others as provisional", () => {
+    expect(FORGE_BUDGETS.gitlab).toMatchObject({ blockChars: 2_000, maxChains: 30, maxBlocks: 50, commentChars: 60_000, confirmed: false });
+    // #1065: 500 edges drew and 501 did not; sources to 260,000 characters drew; a comment of 262,144 characters was accepted and 262,145 refused.
+    expect(FORGE_BUDGETS.github).toMatchObject({ blockChars: 200_000, maxEdges: 500, commentChars: 262_144, confirmed: true });
+    expect(FORGE_BUDGETS.github.blockChars).toBeLessThan(260_000);
+    expect(FORGE_BUDGETS.forgejo).toMatchObject({ blockChars: 20_000, maxEdges: 250, commentChars: 60_000, confirmed: false });
   });
 });
 

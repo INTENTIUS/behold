@@ -10,13 +10,12 @@
 import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { cliBehold, COMMENT_CHARS as FORGE_COMMENT_CHARS, readVersion } from "./cli-behold.mjs";
 import { commentBody, jobSummary, SUMMARY_LIMIT_BYTES } from "./compose.mjs";
 import { detectForge, forgeAdapter, pullRequestOf } from "./forge.mjs";
 import { findComment, githubClient, upsertComment } from "./github.mjs";
 
 export const DEFAULT_MARKER = "behold:changed";
-/** GitHub's comment ceiling is reported as 65,536; stay under 60,000 as FORGE_BUDGETS.github does in behold's forge limits. */
-const COMMENT_CHARS = 60_000;
 
 /** Inputs from the environment the composite action sets (`INPUT_<NAME>`). */
 export function readInputs(env) {
@@ -70,8 +69,9 @@ export function ensureCommit(root, sha, run = git) {
 }
 
 /**
- * Load `@intentius/behold`: a module path when one is given (tests, a
- * local build), else an install of the named version into a scratch directory.
+ * Load behold: a module path when one is given (tests, a local build), else an
+ * install of `@intentius/behold` at the named version into a scratch
+ * directory, driven through its `behold graph` command.
  */
 export async function loadBehold({ module, version, scratch }) {
   if (module) {
@@ -83,9 +83,7 @@ export async function loadBehold({ module, version, scratch }) {
   const r = spawnSync("npm", ["install", "--prefix", scratch, "--no-audit", "--no-fund", "--loglevel=error", spec], { encoding: "utf8" });
   if (r.status !== 0) throw new Error(`could not install ${spec}: ${r.stderr.trim() || r.stdout.trim()}`);
   const pkgDir = join(scratch, "node_modules", "@intentius", "behold");
-  const pkg = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8"));
-  const mod = await import(`file://${join(pkgDir, "dist", "index.js")}`);
-  return { ...mod, version: pkg.version };
+  return cliBehold({ bin: join(pkgDir, "bin", "behold.js"), version: readVersion(pkgDir) });
 }
 
 class ReadFailed extends Error {}
@@ -123,6 +121,7 @@ export async function readChanged({ env, inputs, behold, log = console }) {
     for (const sha of [base, head]) {
       if (!ensureCommit(root, sha)) throw new ReadFailed(`commit ${sha} is not in this clone and could not be fetched; check out with fetch-depth: 0`);
     }
+    behold.useCut?.({ dir, args: cutArgs });
     await runGraph(behold, [dir, ...cutArgs, "--json", "-o", jsonFile]);
     const checked = behold.checkGraphDocument(JSON.parse(readFileSync(jsonFile, "utf8")));
     if (!checked.ok) throw new ReadFailed(checked.error);
@@ -211,7 +210,7 @@ export async function postComment({ env, inputs, gh = githubClient({ token: inpu
   if (pr.head && pr.head !== run.head_sha) throw new Error("pr.json names a different head than the run that produced it");
   const marker = inputs.marker;
   if (!text.startsWith(`<!-- ${marker} -->\n`)) throw new Error("comment.md does not start with the marker; not posting it");
-  const limit = COMMENT_CHARS;
+  const limit = FORGE_COMMENT_CHARS.github;
   if (text.length >= limit) throw new Error(`comment.md is ${text.length} characters, over ${limit}`);
   const out = await upsertComment(gh, { repo, number, body: text, marker });
   setOutputs(env, { "comment-action": out.action, "comment-url": out.url ?? "" });
