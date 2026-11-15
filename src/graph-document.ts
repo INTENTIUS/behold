@@ -68,6 +68,8 @@ export interface GraphDocumentNode {
   lexicon: string;
   /** The id of the innermost group the card is drawn in. */
   box?: string;
+  /** In a cut (`around`, #1067): true on the cards the cut was asked for. */
+  seed?: boolean;
   /** The declaring file, relative to the repository root. Absent when behold cannot place it there. */
   file?: string;
   /** Line in {@link file}, when the reader knows it. */
