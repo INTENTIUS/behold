@@ -8,17 +8,18 @@
  * `-o <file>`.
  *
  * A new format is one more entry in `GRAPH_FORMATS`, and the CLI takes its
- * flag from the entry's name (`--json`, `--ir`, `--mermaid`). The SVG
- * painter (#1061) is listed in `PENDING_FORMATS` until it applies, so its flag
- * already answers with what to use meanwhile instead of an unknown-flag error.
- * A cut (#1067's `cutDocument` in src/graph-cut.ts for `--around`, #1059's
- * `cutChanged` in src/graph-changed.ts for `--changed`) works on the document:
- * the CLI hands it to a format
+ * flag from the entry's name (`--json`, `--ir`, `--mermaid`, `--svg`).
+ * `PENDING_FORMATS` lists a flag reserved for a format that has not applied
+ * yet, so it answers with what to use meanwhile instead of an unknown-flag
+ * error. A cut (#1067's `cutDocument` in src/graph-cut.ts for `--around`,
+ * #1059's `cutChanged` in src/graph-changed.ts for `--changed`) works on the
+ * document: the CLI hands it to a format
  * as `cut`, and `graphDocument` applies it before the format prints, so a
  * format that reads the document needs nothing of its own for it.
  */
 import type { GraphDocument } from "./graph-document.ts";
 import { toMermaid } from "./graph-mermaid.ts";
+import { toSvg, type SvgTheme } from "./graph-svg.ts";
 import type { Forge } from "./mermaid-budgets.ts";
 import type { GraphView } from "./graph-view.ts";
 import { toDocument, type ToDocumentOptions } from "./to-document.ts";
@@ -31,6 +32,8 @@ export interface GraphFormatInput {
   source: boolean;
   /** For `mermaid`: the forge whose character budget the diagram fits (src/mermaid-budgets.ts). Default github. */
   forge?: Forge;
+  /** For `svg`: the painter's theme (`light` or `dark`). Default is the painter's own. */
+  theme?: SvgTheme;
   /** A cut over the document, applied before a document format prints. None is the whole graph. */
   cut?: (doc: GraphDocument) => GraphDocument;
 }
@@ -96,12 +99,19 @@ export const GRAPH_FORMATS: readonly GraphFormat[] = [
     summary: "a Mermaid flowchart within a forge's character budget (--forge gitlab|github|forgejo, default github)",
     emit: (input) => toMermaid(graphDocument(input), input.forge ? { forge: input.forge } : {}),
   },
+  {
+    name: "svg",
+    summary: "the picture the served page draws, as one self-contained SVG (--theme light|dark)",
+    emit: (input) => {
+      // The painter takes the IR, so a cut is passed as the card ids the cut document kept.
+      const keep = input.cut ? new Set(graphDocument(input).nodes.map((n) => n.id)) : undefined;
+      return toSvg(input.view.ir, { ...(input.theme ? { theme: input.theme } : {}), ...(keep ? { keep } : {}) });
+    },
+  },
 ];
 
 /** Formats whose flag is reserved for an emitter that has not applied yet, and what to use meanwhile. */
-export const PENDING_FORMATS: Readonly<Record<string, string>> = {
-  svg: "the SVG painter for behold graph is not in this version; `behold export` writes the pictures meanwhile",
-};
+export const PENDING_FORMATS: Readonly<Record<string, string>> = {};
 
 export function graphFormat(name: string): GraphFormat | undefined {
   return GRAPH_FORMATS.find((f) => f.name === name);

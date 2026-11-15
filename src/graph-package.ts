@@ -22,3 +22,4 @@ export { gitRoot, parseRange, readAtRevision, resolveRange, resolveRevision, Rev
 export * from "./graph-document.ts";
 export { escapeLabel, forgeComment, mermaidDiagram, rootTable, toMermaid, type ForgeComment, type MermaidOptions, type MermaidResult } from "./graph-mermaid.ts";
 export { DEFAULT_FORGE, FORGES, FORGE_BUDGETS, isForge, type Forge, type ForgeBudget } from "./mermaid-budgets.ts";
+export { FLAT_NODE_LIMIT, FlatLayoutTooLarge, SVG_THEMES, isSvgTheme, keepCards, toSvg, type SvgTheme, type ToSvgOptions } from "./graph-svg.ts";

@@ -54,10 +54,10 @@ describe("behold graph, arguments (#1058)", () => {
     expect((await graph([".", "--frobnicate"])).err).toContain("unknown option --frobnicate");
   });
 
-  it("answers --svg with what to use until its painter applies", async () => {
-    const r = await graph([".", "--svg"]);
-    expect(r.code).toBe(2);
-    expect(r.err).toContain("not in this version");
+  it("takes --theme with --svg only, and light or dark (#1061)", async () => {
+    expect((await graph([".", "--svg", "--theme", "sepia"])).err).toContain("--theme takes light or dark");
+    expect((await graph([".", "--svg", "--theme"])).code).toBe(2);
+    expect((await graph([".", "--json", "--theme", "light"])).err).toContain("--theme goes with --svg");
   });
 
   it("takes --forge with --mermaid only, and one of the three forges (#1060)", async () => {
@@ -118,6 +118,20 @@ describe("behold graph on a folder of .tf files (#1058)", () => {
     const github = await graph([dir, "--mermaid"]);
     expect(github.out.length).toBeGreaterThanOrEqual(gitlab.out.length);
     expect(github.out).not.toContain("not shown");
+  });
+
+  it.skipIf(gate)("--svg writes a self-contained picture, light and dark differ (#1061)", { timeout: 240_000 }, async () => {
+    const dir = bareEstate();
+    const dark = await graph([dir, "--svg", "--theme", "dark"]);
+    expect(dark.code).toBe(0);
+    expect(dark.out.startsWith("<svg")).toBe(true);
+    expect(dark.out).not.toContain('href="http');
+    expect(dark.out).not.toContain("<foreignObject");
+    expect(dark.out).not.toContain(dir);
+    const light = await graph([dir, "--svg", "--theme", "light"]);
+    expect(light.code).toBe(0);
+    expect(light.out).not.toBe(dark.out);
+    expect((await graph([dir, "--svg"])).out).toBe(dark.out);
   });
 
   it.skipIf(gate)("-o writes the file and prints nothing on stdout", { timeout: 240_000 }, async () => {

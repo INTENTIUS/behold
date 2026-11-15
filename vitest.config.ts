@@ -15,7 +15,7 @@ import { defineConfig } from "vitest/config";
 // names the file.
 export default defineConfig({
   test: {
-    include: ["src/**/*.test.ts", "web/**/*.test.js"],
+    include: ["src/**/*.test.ts", "web/**/*.test.js", "action/**/*.test.ts"],
     reporters: ["default", ["json", { outputFile: ".vitest-last.json" }]],
     // #334: the route tests that spawn a real chant (`carve status` over a
     // project, a lexicon read) have a fixed cost the runner sets — under a

@@ -1,0 +1,22 @@
+{
+  "url": "https://api.github.com/repos/acme/infra/pulls/7",
+  "id": 1,
+  "number": 7,
+  "state": "open",
+  "head": {
+    "label": "fork:topic",
+    "ref": "topic",
+    "sha": "__HEAD__",
+    "repo": {
+      "full_name": "fork/infra",
+      "fork": true
+    }
+  },
+  "base": {
+    "ref": "main",
+    "sha": "__BASE__",
+    "repo": {
+      "full_name": "acme/infra"
+    }
+  }
+}

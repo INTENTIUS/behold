@@ -88,6 +88,16 @@ npx @intentius/behold graph ./infra --mermaid --forge gitlab
 
 Boxes are subgraphs, inferred edges are dotted, and a document with a plan's changes or a cut's seeds paints its cards as added, changed, removed or neighbour. When the graph does not fit, neighbours are dropped first, then whole boxes, and the last card says how many cards are not shown. The output is never over the budget, and two runs on the same input print the same text.
 
+## As an SVG file
+
+`--svg` writes the picture the served page draws as one self-contained SVG: its own styles, the icons inline, system fonts, and no link to anything outside the file, so it opens from disk and a CI job can keep it as an artifact. `--theme light` or `--theme dark` (the default) picks the colours.
+
+```sh
+npx @intentius/behold graph ./infra --svg --theme light -o infra.svg
+```
+
+A folder with Terraform roots, or a workspace, is boxed by root, as the page draws it. A graph with no boxes is laid out flat, and a flat layout of more than 400 cards takes minutes, so `--svg` refuses it and says to read it boxed or cut it first. A card that carries plan facts prints its change as the page does. The painter has no mark yet for the cards a cut was asked for, so they are drawn like their neighbours.
+
 ## Versions
 
 Within `behold-graph/1`, fields are only ever added. A reader ignores the fields it does not know. A change a reader could not ignore becomes `behold-graph/2`, and a reader written for version 1 should refuse it rather than draw it.

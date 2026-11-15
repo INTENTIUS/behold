@@ -158,6 +158,7 @@ unversioned `{ir, meta}` snapshot that `/api/graph` answers, without its SVG.
 Neither holds an absolute path, and a card's source text is left out unless
 you pass `--source`. A root that does not parse is one card in the output, as
 it is in the browser.
+`--svg [--theme light|dark]` writes the picture as one self-contained SVG file.
 
 Two cuts print part of the graph. `--changed <base>..<head>` keeps what
 changed between two commits (cards added, removed or changed, marked `diff` in
