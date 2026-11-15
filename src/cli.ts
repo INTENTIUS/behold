@@ -63,6 +63,7 @@ Usage:
                 [--publish <remote>[/<branch>]]   (behold shot --help)
   behold mcp [project-dir] [--url <serve> | --port <n>]   (behold mcp --help)
   behold graph [dir] [--json | --ir] [-o <file>] [--detail 0..3] [--source] [--every-card]
+  behold graph --context <name> [--kubeconfig <file>] [--namespace <ns,...>] [--allow-exec-plugin]
                 (behold graph --help)
   behold index <aws|azure|gcp|kubernetes> [--account|--subscription|--project|--cluster <id>]
                 [--regions <r,…>] [--types <t,…>] [--tag <k=v>]… [--endpoint <url>] [--store <spec>] [--json]

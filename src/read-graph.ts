@@ -118,7 +118,25 @@ export async function readGraph(dir: string | readonly string[], opts: ReadGraph
   const { dirs, workspace } = await resolveDirs(dir, given);
   const lookup = workspaceLookup(workspace);
   const members = estateMembers(dirs, lookup);
-  let ir = await composeEstate(dirs, logical ? { ...graphOpts, detail: 3 } : graphOpts, lookup);
+  const ir = await composeEstate(dirs, logical ? { ...graphOpts, detail: 3 } : graphOpts, lookup);
+  const read = await readComposed(ir, members, dirs, { detail: graphOpts.detail, k8sContext });
+  return { ir: read.ir, members: read.members, run: read.run, ...(workspace ? { workspace } : {}), meta: read.meta };
+}
+
+/**
+ * The passes `readGraph` runs over a composed estate, for a caller whose
+ * members did not come from directories (behold#1083: a cluster read through
+ * chant's lister, src/read-cluster.ts). `dirs` are the directories the members
+ * were read from, which the member kinds' notes name; none for a cluster.
+ */
+export async function readComposed(
+  composed: GraphIR,
+  members: ReadGraphResult["members"],
+  dirs: readonly string[],
+  opts: { detail?: number; k8sContext?: string } = {},
+): Promise<ReadGraphResult> {
+  const { detail, k8sContext } = opts;
+  let ir = composed;
   // #188: the edge passes are the Kubernetes half's only edge source, and they
   // join on attribute values, never node ids, so composed ids pass through and
   // a join across two members is the cross-member edge an estate needs. #166:
@@ -137,13 +155,12 @@ export async function readGraph(dir: string | readonly string[], opts: ReadGraph
   ir = addClusterAnchorEdges(ir, k8sContext);
   // #379/#380/#382: each member kind's render passes (a Terraform card titled
   // by its type, boxed by root, its settings blocks left out at this detail).
-  const run = applyMemberPasses(ir, { detail: graphOpts.detail });
+  const run = applyMemberPasses(ir, { detail });
   const note = memberPassNote(run, dirs);
   return {
     ir,
     members,
     run,
-    ...(workspace ? { workspace } : {}),
-    meta: { estate: dirs.length, ...(note.note ? { note: note.note } : {}), ...(note.noteShort ? { noteShort: note.noteShort } : {}) },
+    meta: { estate: members.length, ...(note.note ? { note: note.note } : {}), ...(note.noteShort ? { noteShort: note.noteShort } : {}) },
   };
 }
