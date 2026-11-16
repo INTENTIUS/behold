@@ -63,6 +63,22 @@ describe("the Pages workflow template (#1074)", () => {
     expect(stepNamed(/^Export$/).run).toContain('export . $flags --out "$out"');
   });
 
+  it("draws both README images beside the export, at the paths the docs snippet names", () => {
+    const run = stepNamed(/README images/i).run!;
+    expect(run).toContain('graph . --svg --theme "$theme" -o "$out/graph-$theme.svg"');
+    expect(run).toContain('out="$out/$SITE_PATH"');
+    expect(steps.findIndex((s) => /README images/i.test(s.name ?? ""))).toBeGreaterThan(
+      steps.findIndex((s) => s.name === "Export"),
+    );
+    const doc = readFileSync(DOC, "utf8");
+    const summary = workflow.jobs.deploy!.steps.map((s) => s.run ?? "").join("\n");
+    for (const f of ["graph-dark.svg", "graph-light.svg"]) {
+      expect(doc).toContain(`srcset="https://OWNER.github.io/REPO/${f}"`);
+      expect(summary).toContain(f);
+    }
+    expect(doc).toContain("prefers-color-scheme: dark");
+  });
+
   it("refuses before anything is checked out, built or uploaded", () => {
     expect(steps[0]!.name).toMatch(/private/i);
     const upload = steps.findIndex((s) => s.uses?.includes("upload-pages-artifact"));

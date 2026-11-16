@@ -1,6 +1,6 @@
 ---
 title: Publish to GitHub Pages
-description: A workflow that publishes behold export to GitHub Pages on each push to main, and refuses on a private repository unless told otherwise.
+description: A workflow that publishes behold export and README images of the graph to GitHub Pages on each push to main, and refuses on a private repository unless told otherwise.
 ---
 
 A link to the graph that outlasts a pull request needs a URL. This workflow runs [`behold export`](/behold/using/export/) on each push to `main` and deploys the result to GitHub Pages, so a README, a chat message or another tool can point at the same address every time.
@@ -105,6 +105,17 @@ jobs:
           cd "$PROJECT_DIR"
           npx --yes "@intentius/behold@$BEHOLD_VERSION" export . $flags --out "$out"
 
+      - name: Draw the README images
+        run: |
+          set -eu
+          out="$PWD/_site"
+          if [ -n "$SITE_PATH" ]; then out="$out/$SITE_PATH"; fi
+          mkdir -p "$out"
+          cd "$PROJECT_DIR"
+          for theme in dark light; do
+            npx --yes "@intentius/behold@$BEHOLD_VERSION" graph . --svg --theme "$theme" -o "$out/graph-$theme.svg"
+          done
+
       - name: Check the size
         run: |
           set -eu
@@ -140,8 +151,28 @@ jobs:
             echo "### behold export published"
             echo
             echo "Site: ${PAGE_URL}${SITE_PATH:+$SITE_PATH/}"
+            echo "README image (dark): ${PAGE_URL}${SITE_PATH:+$SITE_PATH/}graph-dark.svg"
+            echo "README image (light): ${PAGE_URL}${SITE_PATH:+$SITE_PATH/}graph-light.svg"
           } >> "$GITHUB_STEP_SUMMARY"
 ```
+
+## A picture for the README
+
+A README cannot embed a site, only an image. The workflow also writes the graph as two self-contained SVGs next to the export, with `behold graph . --svg`: `graph-dark.svg` and `graph-light.svg`. They are part of the same Pages artifact, so they change on each push to `main`, and the job summary prints both URLs. With `SITE_PATH` set, they sit in that sub-folder beside the export.
+
+This snippet shows the light or the dark one to match the reader's theme, and links the picture to the interactive export. Replace `OWNER` and `REPO`, and add the `SITE_PATH` folder (for example `estate/`) to each address if you set one:
+
+```html
+<a href="https://OWNER.github.io/REPO/">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://OWNER.github.io/REPO/graph-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="https://OWNER.github.io/REPO/graph-light.svg">
+    <img alt="The estate graph" src="https://OWNER.github.io/REPO/graph-light.svg">
+  </picture>
+</a>
+```
+
+The drawing leaves each card's source text out, as the export does with `--no-source`. A repository on a custom Pages domain uses that domain in place of `OWNER.github.io/REPO`.
 
 ## A private repository is refused
 
