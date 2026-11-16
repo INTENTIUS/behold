@@ -298,6 +298,7 @@ export async function readJoined(opts: ReadJoinedOptions): Promise<ReadJoinedRes
     run: [...cluster.run, ...folder.run],
     meta: { estate: cluster.meta.estate + folder.meta.estate, note: [cluster.meta.note, folder.meta.note, joinNote].filter(Boolean).join(" · ") },
     cluster: cluster.cluster,
+    ...(cluster.apps ? { apps: cluster.apps } : {}),
     folder,
     joined: { members: names, edges: added.length, placeholders, ambiguous, pass: !!pass },
   };

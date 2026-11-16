@@ -278,6 +278,7 @@ export function toDocument(snapshot: GraphSnapshot, opts: ToDocumentOptions): Gr
       inferred,
       ...(inferred && rule ? { rule } : {}),
       ...(via ? { via } : {}),
+      ...(str(e.field) ? { field: e.field as string } : {}),
     });
   }
 

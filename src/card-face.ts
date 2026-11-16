@@ -128,6 +128,9 @@ export function cardLabel(node: Pick<IRNode, "id" | "kind" | "lexicon" | "attrs"
   // behold#1080: a dangling reference's placeholder is titled with the value it names.
   const placeholder = node.attrs?._placeholder;
   if (typeof placeholder === "string" && placeholder) return placeholder;
+  // behold#1132: a card of a cluster read is titled with the object's name, and an outside card with its short name.
+  const title = node.attrs?._title;
+  if (typeof title === "string" && title) return title;
   const choudoufu = node.lexicon === CHOUDOUFU_LEXICON;
   const terraform = isTerraformCard(node);
   if (!choudoufu && !terraform) return undefined;
@@ -205,8 +208,15 @@ export function cardFaces(ir: GraphIR, boxes?: Record<string, string[]>, opts: C
   // including one an untouched id holds. Across boxes a repeat is fine — see
   // the header: the boxes are the disambiguation a reader sees, and the id the
   // restore needs is minted below.
+  // A card titled with its object's name (`_title`, behold#1132) says its kind
+  // on the line below, so a Service and a Deployment of one name in one box are
+  // told apart by that line.
   const taken = new Map<string, number>();
-  const scope = (id: string): string => `${box.get(id) ?? ""} `;
+  const nodeOf = new Map(ir.nodes.map((n) => [n.id, n] as const));
+  const scope = (id: string): string => {
+    const n = nodeOf.get(id);
+    return `${box.get(id) ?? ""} ${typeof n?.attrs?._title === "string" ? `${n.kind} ` : ""}`;
+  };
   for (const n of ir.nodes) {
     const key = scope(n.id) + (wanted.get(n.id) ?? n.id);
     taken.set(key, (taken.get(key) ?? 0) + 1);
@@ -232,7 +242,11 @@ export function cardFaces(ir: GraphIR, boxes?: Record<string, string[]>, opts: C
   if (minted.size === 0 && !choudoufu) return { ir, overrides, display: minted, restore: (svg) => svg };
   const nodes = ir.nodes.map((n) => {
     const display = minted.get(n.id) ?? n.id;
-    if (n.lexicon !== CHOUDOUFU_LEXICON) return display === n.id ? n : { ...n, id: display };
+    if (n.lexicon !== CHOUDOUFU_LEXICON) {
+      // behold#1132: a card titled with its object's name wears its kind's last word, so the line below the title fits a card sized for the name.
+      const short = typeof n.attrs?._title === "string" && n.kind.includes("::") ? n.kind.split("::").pop()! : n.kind;
+      return display === n.id && short === n.kind ? n : { ...n, id: display, kind: short };
+    }
     // The card's second line is `kind · lexicon`, and for a choudoufu card the
     // kind IS the Terraform type — the thing the icon already stands for — so
     // the lexicon is one more repetition of what the box is. Dropped from the

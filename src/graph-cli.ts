@@ -47,6 +47,7 @@ export function graphUsage(prog = "behold graph"): string {
   return `Usage: ${prog} [dir] [${flags}] [--theme light|dark] [-o <file>] [--detail 0..3] [--source] [--every-card]
        ${prog} [dir] --changed <base>..<head> [--depth n] [--budget n]
        ${prog} --context <name> [--kubeconfig <file>] [--namespace <ns,...>] [--types <t,...>] [--allow-exec-plugin]
+       ${prog} --context <name> --logical | --components
        ${prog} --context <name> <dir> | --infra <dir>
        ${prog} [dir] --around <id>[,<id>...] [--depth n] [--up | --down]
 
@@ -100,6 +101,17 @@ ${Object.keys(PENDING_FORMATS)
                  key) to the cards the folder declares, and a placeholder card
                  is drawn only for what the folder does not hold. Each card's
                  read field in --json says which source it came from.
+                 Each edge is labelled with the relationship (routes to,
+                 runs as, reads env from, mounts, assumes role) and keeps the
+                 field it was found in as field. A workload card says ready
+                 over desired replicas, its image and its restarts, and its
+                 ReplicaSets, Pods, EndpointSlices and the like are folded
+                 into the card they serve; --every-card draws them.
+  --logical      With --context: a box per application chant infers from the
+                 read, holding what it manages and what that names outside
+                 the cluster.
+  --components   With --context: one card per application with its health,
+                 and an edge to each application it depends on.
   --infra <dir>  With --context: the folder to draw with the cluster, the
                  same as giving it as dir.
   --kubeconfig <file>
@@ -144,6 +156,8 @@ interface Parsed {
   namespaces?: string[];
   types?: string[];
   allowExec: boolean;
+  /** With --context: the operator's view (behold#1132). */
+  view?: "logical" | "components";
 }
 
 function parse(argv: readonly string[]): Parsed | { error: string } | { help: true } {
@@ -166,6 +180,7 @@ function parse(argv: readonly string[]): Parsed | { error: string } | { help: tr
   let types: string[] | undefined;
   let allowExec = false;
   let infra = false;
+  let view: "logical" | "components" | undefined;
   const formats = new Set([...GRAPH_FORMATS.map((f) => f.name), ...Object.keys(PENDING_FORMATS)]);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
@@ -204,6 +219,10 @@ function parse(argv: readonly string[]): Parsed | { error: string } | { help: tr
       if (!v?.length) return { error: `${a} needs one or more names, comma separated` };
       if (a === "--types") types = v;
       else namespaces = v;
+    } else if (a === "--logical" || a === "--components") {
+      const v = a.slice(2) as "logical" | "components";
+      if (view && view !== v) return { error: "--logical and --components name two views; give one" };
+      view = v;
     } else if (a === "--allow-exec-plugin") {
       allowExec = true;
     } else if (a === "--source") {
@@ -239,6 +258,7 @@ function parse(argv: readonly string[]): Parsed | { error: string } | { help: tr
   if (cluster && changed) return { error: "--changed reads two commits of a directory; it does not go with --context" };
   const joined = cluster && dir !== undefined;
   if (!cluster && (namespaces || types || allowExec)) return { error: "--namespace, --types and --allow-exec-plugin go with --context" };
+  if (!cluster && view) return { error: `--${view} goes with --context: it draws the applications chant infers from a cluster read` };
   if (forge && format !== "mermaid") return { error: "--forge goes with --mermaid" };
   if (changed && around) return { error: "--changed and --around are two cuts; give one" };
   if ((depth !== undefined || budget !== undefined || direction) && !changed && !around) return { error: "--depth, --budget, --up and --down go with --changed or --around" };
@@ -266,6 +286,7 @@ function parse(argv: readonly string[]): Parsed | { error: string } | { help: tr
     ...(depth !== undefined ? { depth } : {}),
     ...(budget !== undefined ? { budget } : {}),
     ...(direction ? { direction } : {}),
+    ...(view ? { view } : {}),
   };
 }
 
@@ -343,7 +364,7 @@ export async function runGraph(argv: readonly string[], io: GraphCliIO): Promise
         version: io.version,
         ...(io.chant ? { chant: io.chant } : {}),
       };
-      const viewOpts = { alike: parsed.alike, ...(parsed.detail !== undefined ? { detail: parsed.detail } : {}) };
+      const viewOpts = { alike: parsed.alike, ...(parsed.detail !== undefined ? { detail: parsed.detail } : {}), ...(parsed.view ? { view: parsed.view } : {}) };
       if (parsed.joined) {
         const read = await readJoined({ cluster: clusterOpts, dir, ...(parsed.detail !== undefined ? { detail: parsed.detail } : {}) });
         view = await clusterView(read, viewOpts);
