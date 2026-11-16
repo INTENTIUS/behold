@@ -10,6 +10,8 @@ Run it in a folder of Terraform and it finds each root and draws it as a box of 
 
 ![Two Terraform roots, app and net, drawn as boxes of resources with an edge for each reference](https://raw.githubusercontent.com/INTENTIUS/behold/main/docs/public/readme/two-roots.png)
 
+The [documentation](https://intentius.io/behold/) covers each command and view in full. This README is the map.
+
 ## On every pull request
 
 The GitHub Action in this repository comments a diagram of the resources a pull request changes and what they connect to. Each push edits the same comment, and the diagram also lands in the job summary with an SVG and JSON copy as artifacts. It reads the files in the repository and needs neither a plan nor cloud credentials.
@@ -34,16 +36,64 @@ jobs:
 
 [action/README.md](action/README.md) lists the inputs and shows the GitLab and Forgejo forms.
 
-## With chant
+## Print the graph: `behold graph`
 
-Reads what chant records for terragucci and plywood.
+`behold graph [dir]` reads a directory and prints its graph, with no server and no browser. A CI job, an editor or a script can take the output as it is. The directory can be a folder of `.tf` files, a chant project, a chant workspace root or a choudoufu estate.
 
-Every substrate in one graph, coloured by drift. Then act through delegated, gated Ops.
+```sh
+npx @intentius/behold graph ./infra --json | jq '.nodes | length'
+npx @intentius/behold graph ./infra --svg --theme light -o graph.svg
+npx @intentius/behold graph ./infra --mermaid --forge gitlab
+```
 
-📖 **[Documentation](https://intentius.io/behold/)** starts with an agent prompt
-that gets you to a running graph without reading anything else first.
+`--json` (the default) prints the `behold-graph/1` document, described on [the graph document](https://intentius.io/behold/using/graph-document/) page, with its schema in the package at `schemas/graph/v1/graph.schema.json`. `--ir` prints the unversioned `{ir, meta}` snapshot that `/api/graph` answers, without its SVG. `--svg` writes the picture as one self-contained SVG. `--mermaid` writes a Mermaid flowchart that fits the comment budget of the forge `--forge` names (github, gitlab or forgejo). No output holds an absolute path, and a card's source text is left out unless you pass `--source`. A root that does not parse is one card in the output, as it is in the browser.
 
-Paste it into Claude Code, or any coding agent with a shell, from anywhere:
+Two cuts print part of the graph. `--changed <base>..<head>` keeps the cards added, removed or changed between two commits and the cards within `--depth` hops of them (default 1). Both commits are read with `git archive` into a temporary directory, so the checkout is not touched. Past `--budget` cards (default 60) the neighbours fold into a count per box. `--around <id>[,<id>...]` keeps the named cards or boxes and those within `--depth` hops, `--up` or `--down` for one direction.
+
+```sh
+npx @intentius/behold graph ./infra --changed origin/main...HEAD -o cut.json
+npx @intentius/behold graph ./infra --around prod/prod/aws_vpc.main --depth 2
+```
+
+`--context <name>` draws a live Kubernetes cluster instead of a directory, through chant's read-only lister: API discovery, then a list per kind, a box per namespace and one for cluster-scoped objects. `--namespace` and `--types` narrow it. Nothing is written to the cluster. A kubeconfig user that runs an exec plugin (the EKS, GKE and AKS command line tools write these) is refused unless you pass `--allow-exec-plugin`.
+
+`behold graph --help` lists every flag.
+
+## The graph in other tools
+
+The same read feeds several places outside behold's own page. Each has a docs page or a README with the setup.
+
+- A GitHub Pages workflow ([templates/github-pages.yml](templates/github-pages.yml), [docs](https://intentius.io/behold/using/pages/)) publishes `behold export` on each push to `main`, so the graph has a stable URL.
+- Grafana's node graph panel draws a published `graph.json` through the Infinity data source, with two ready dashboards ([docs](https://intentius.io/behold/using/grafana/)).
+- Backstage TechDocs can carry a component's graph as an image or a live frame ([docs](https://intentius.io/behold/using/techdocs/)).
+- A Backstage plugin adds an "Infrastructure" tab to a component's page from a published `graph.json`, and loads in Red Hat Developer Hub as a dynamic plugin ([surfaces/backstage-plugin-behold](surfaces/backstage-plugin-behold/README.md)).
+- An `argocd-cm` entry gives annotated Argo CD Applications an "Open in behold" link ([docs](https://intentius.io/behold/using/argocd-link/)), and a UI extension for Argo CD 3.5 and later adds an "Outside the cluster" tab ([docs](https://intentius.io/behold/using/argocd-extension/)).
+- A Headlamp plugin draws the cloud identities, secret stores and Git sources that live objects name ([surfaces/headlamp-behold](surfaces/headlamp-behold/README.md)).
+- `kubectl behold` draws the current context, or one object and its neighbours, and opens the SVG, with a krew manifest and a k9s entry ([surfaces/kubectl-behold](surfaces/kubectl-behold/README.md)).
+- A VS Code extension draws the open folder's Terraform in a panel and opens a card's file at its line ([surfaces/vscode-behold](surfaces/vscode-behold/README.md)).
+- Plugins for Claude Code and Cursor register `behold mcp` ([plugins/](plugins/)). In Claude Code: `claude plugin marketplace add INTENTIUS/behold`, then `claude plugin install behold@behold`.
+
+## The served page
+
+```sh
+npx @intentius/behold preview                  # the current directory, source graph only
+npx @intentius/behold serve . --env prod       # with the live drift overlay
+npx @intentius/behold serve . --env prod --poll 30
+```
+
+`behold preview` opens a project's graph at one port with no env and no emulator. `behold serve` takes the same project and more: `--env <name>` colours each card by what is deployed, `--poll <secs>` re-reads live drift on an interval, and several project directories compose into one estate with a box per project and edges across them. The page is at http://localhost:4600 unless `--port` says otherwise.
+
+The server watches the served source and pushes a refresh over SSE (`/api/events`) when a file changes, so the graph follows your edits with no reload. The panel offers zoom levels (components, logical, composites, resources, attributes, and the ops track and apply order where the project has them), a radial layout, an inspect pane and ⌘K search in chant's query grammar. [Reading the graph](https://intentius.io/behold/using/reading-the-graph/) explains the colours and marks.
+
+With chant, behold draws every substrate of an estate in one graph (cloud drift on AWS, supply-chain drift on GitHub Actions, artifact presence on Helm, an Argo CD or Flux cluster) and starts the project's own committed, gated Ops. [Serve a chant workspace](https://intentius.io/behold/using/workspace/) and [Acting on it](https://intentius.io/behold/using/acting/) cover that path.
+
+```
+chant source --build/lint--> graph IR --behold--> live graph + drift + (delegated) actions
+```
+
+### Start from an agent
+
+The docs start with a prompt that gets a coding agent with a shell to a running graph. Paste it into Claude Code, or any such agent, from anywhere:
 
 ```text
 Clone https://github.com/INTENTIUS/behold and get me looking at a live
@@ -64,838 +114,192 @@ https://intentius.io/behold/using/agents/.
 Never deploy with the Deploy button, `POST /api/apply` or `POST /api/ci/dispatch`. Gate approvals stay mine as well (`/api/ops/:name/signal/:gate`, `/api/workspace/gates/approve`, `/api/operator/approve/:op/:gate`). Op runs (`/api/ops/:name/run`) and rollbacks (`/api/rollback`) are mine too. Leave `--auto-sync` off, and keep a `behold preview` or `--public` serve read-only.
 ```
 
-behold shows the mixed-substrate estate: cloud drift on AWS, supply-chain drift
-on GitHub Actions, artifact presence on Helm. An Argo CD cluster draws in the
-same graph, with each substrate's own kind of truth in one picture.
-
-```
-chant source ──build/lint──▶ graph IR ──behold──▶ live graph + drift + (delegated) actions
-              (deterministic)          (server + browser)
-```
-
-## Quick start (npm)
-
-No chant project yet? The bundled demo is the five-minute path: an S3 bucket and
-policy against a local emulator. Needs Docker, and nothing else.
+### Check a project first: `behold doctor`
 
 ```sh
-npx @intentius/behold demo            # copies the example to ./behold-demo, installs, serves
-# → http://localhost:4600. Blue = declared; click Deploy, watch it turn green
+npx @intentius/behold doctor [dir] [--json]
 ```
 
-The copied project is yours: edit its source and watch the graph change live.
-There's a whole catalog, and `behold demo --list` names the rest (`behold demo
-k8s` stands the same loop up on a throwaway k3d cluster: runtime Pods, field
-ownership; `behold demo argo-estate` needs nothing at all, being a three-project
-Argo CD estate, declared only, so it runs where Docker doesn't; `behold demo
-choudoufu-estate` is four tag-owned OpenTofu estates served as one declared
-workspace, where a
-card's colour is **ownership** (bound, unowned, pending) rather than "nothing
-changed": a resource whose attributes drifted out of band still carries its
-markers and is still green, so attribute drift is a separate read you ask for
-with ⌘K → "Re-check live with plan"; `behold demo carve` shows chant and
-Terraform managing one account together, below). Two more need no Docker either: `behold demo
-terraform-estate` draws a multi-root Terraform estate boxed by root, and shows
-what behold refuses to infer, since one root reads a key the other declares and
-no edge is drawn between them; `behold demo flux-estate` is a GitOps estate on
-k3d, a Flux control plane plus two app projects composed. `behold demo fountain`
-clones a real self-hosted app onto a throwaway cluster. Every loaded demo lands
-in the panel's recents, so switching between them is the Scope tab.
+One line each for the project's kind, its own chant install and version, declared lexicons, which of them can be aimed at an emulator, the envs the picker will infer, the kube context chant binds against your ambient one, substrate readiness, committed Ops, the chant floor each read needs, and a line per non-chant member it found. Each is pass, warn or fail with a one-line fix. Nothing starts and nothing changes. The exit code is non-zero only when something would stop behold serving the project well, so CI can gate on it. `--fix` is the one form that writes: it writes `chant.workspace.json` for an estate root that still lists its members in `.behold.json`.
 
-Working in a checkout rather than an npm install? There is a second catalog,
-`workbench.json`, which is this checkout's and is not shipped. It is
-deliberately absent from package.json's `files`, so an npm install has
-`demos.json` and nothing else. It holds the eleven internal estates behold is
-developed against, named by relative path from this repo's root, so an entry
-whose sibling checkout you don't have says so in `--list` instead of failing
-halfway: chant's own two examples and water park's `access/` Terraform roots
-served in place, `../fountain-ops` on its own k3d cluster, the live-mv
-workbench's four estates, three `estate-gen` cohorts, and the generated
-terralith at scale 1 and 4, greenfield and adopted from a stock `terraform
-apply` by a `live-import` you run by hand. `just example terralith-4` serves
-one (`just example name="<entry>"`); each that boots a substrate brings up its
-own scratch emulator and leaves a `scripts/down.sh` in the target that removes
-it. `just e2e-workbench` loads the whole catalog and asserts each graph.
-
-The catalog is in the panel too (#268): the Scope tab's switcher lists every
-bundled demo under your recents, one click from any served project. Demos
-whose prerequisites are missing stay visible and disabled, saying what to
-install; one that would clone from the network says so on the button.
-
-Already have a chant project?
+## Demos
 
 ```sh
-cd my-chant-project
-npx @intentius/behold doctor          # will this project serve well? (read-only)
-npx @intentius/behold preview         # → http://localhost:4600, this project's graph
-npx @intentius/behold serve . --env prod --poll 30   # live drift overlay
+npx @intentius/behold demo            # the default: one S3 bucket on a local emulator
+npx @intentius/behold demo --list     # the catalog, with what each one needs
 ```
 
-`behold doctor` is the first thing to run on a project behold hasn't seen: one
-line each for the project's kind, its own chant install and version, declared
-lexicons, which of them can be aimed at an emulator, the envs the picker will
-infer, the kube context chant binds versus your ambient one, substrate
-readiness, committed Ops, and a line per non-chant member kind it found. Each is
-pass, warn or fail with a one-line fix. Nothing is started and nothing changes.
-The exit code is non-zero only when something would actually stop behold serving
-the project well, so CI can gate on it. `--json` for scripts and agents.
+A bundled demo copies its project into a directory that is yours to edit, installs it and serves it. The default (`writes`) is an S3 bucket and its policy against a local Floci emulator in Docker: the cards start blue (declared), you click Deploy on the panel's Deploy tab, and they turn green (managed). With Docker stopped, behold serves the source graph and says why.
 
-Driving it from an agent or script? `GET /api` is the front door. It lists the
-graph and action routes with a one-line description each, and
-`GET /api/doctor?reads=1` answers what the last reads cost.
-[AGENTS.md](./AGENTS.md) (shipped in the package) is the read/act contract.
+| Demo | Shows | Needs |
+|---|---|---|
+| `writes` | the first apply, on an emulator | Docker |
+| `k8s` | an nginx Deployment on a throwaway k3d cluster: runtime Pods, field-ownership drift, an unobserved context | Docker, k3d, kubectl |
+| `flux-estate` | a Flux control plane and two app projects composed into one estate | Docker, k3d, kubectl |
+| `argo-estate` | the Argo CD version of the same estate, declared only | nothing |
+| `terraform-estate` | a multi-root Terraform estate boxed by root, and the edge behold declines to infer | nothing |
+| `carve` | a chant project beside a Terraform root, and the six-step carve walkthrough | nothing (`--live` needs Docker and terraform) |
+| `choudoufu-estate` | four tag-owned estates as one workspace, coloured by ownership | Docker, choudoufu |
+| `terralith` | one Terraform root adopted into choudoufu and split into team estates | Docker, curl, choudoufu |
+| `three-cloud` | a website on AWS, Azure and GCP emulators behind Route 53, on three engines | Docker, curl, choudoufu, plunge |
+| `fountain` | a real self-hosted app on k3d, cloned from INTENTIUS/fountain-ops | Docker, k3d, kubectl, jq, just |
 
-## Preview: one project's graph, nothing set up
+Loaded demos land in the panel's recents, and the Scope tab lists the whole catalog. The walkthroughs are in [example-writes/README.md](example-writes/README.md), [example-k8s/README.md](example-k8s/README.md), [example-carve/README.md](example-carve/README.md) and the [three-cloud](https://intentius.io/behold/using/three-cloud/) page.
 
-`behold preview` is the quick way to look at a chant project's graph in a
-browser at one port. No env, no emulator, no config: it opens the project you
-point it at.
+`serve --local` is the same mechanism for any project: it boots the served project's own emulators through `chant emulator up`, aims the live overlay at them, and tears them down on exit.
+
+## Export a snapshot
+
+`behold export` freezes the view into a static folder any static host can serve. Pan, zoom, the zoom levels, the radial layout, the inspect pane and the env and tier pickers all work with no backend; nothing live is observed and nothing deploys.
 
 ```sh
-npx @intentius/behold preview                  # the current directory
-npx @intentius/behold preview ../my-project    # somewhere else
+npx @intentius/behold export . --out ./behold-export
+npx @intentius/behold export . --env prod --out ./behold-export   # with that env's overlay
+npx @intentius/behold export . --single-file graph.html           # one HTML file
 ```
 
-With no path it opens the **current directory**, so running it from inside your
-project is the shortest thing that works. From a checkout the same commands run
-through `npm run dev -- preview`.
+The bundle carries `graph.json`, the opening view as a `behold-graph/1` document, and a `wrangler.jsonc` for Cloudflare's static assets (`npx wrangler deploy` from the folder). It holds nothing about the machine that made it: no recent projects, no user name, and absolute paths cut to the directory's name. `--no-source` also leaves out each card's source text. `--open-env`, `--open-zoom`, `--note`, `--q` and `--count-by` set the opening view and the searches it answers offline. `--publish s3://<bucket>/<prefix>/views/<name>` uploads the bundle there, filed by commit. [Export a snapshot](https://intentius.io/behold/using/export/) has the rest.
 
-To colour the graph by what is actually deployed, name an environment with
-`serve . --env prod`, below.
-
-<sub>`preview`/`export` also take an `--emulator` flag, a v0.1.0-era turnkey path
-for one specific demo project. `behold demo` and `serve --local` supersede it for
-every purpose; it is kept for compatibility and is not documented further.</sub>
-
-## Print the graph: `behold graph`
-
-`behold graph [dir]` reads a directory and prints its graph, with no server
-and no browser. A CI job, an editor or a script can take the output as it is.
+## Index a cloud account: `behold index`
 
 ```sh
-npx @intentius/behold graph ./infra --json | jq '.nodes | length'
-npx @intentius/behold graph ./infra --ir -o graph.json --detail 3
+npx @intentius/behold index aws --account <id> --regions us-east-1,eu-west-1
+npx @intentius/behold index kubernetes --context <name>
 ```
 
-`--json` (the default) prints the `behold-graph/1` document. `--ir` prints the
-unversioned `{ir, meta}` snapshot that `/api/graph` answers, without its SVG.
-Neither holds an absolute path, and a card's source text is left out unless
-you pass `--source`. A root that does not parse is one card in the output, as
-it is in the browser.
-`--svg [--theme light|dark]` writes the picture as one self-contained SVG file.
+`behold index <aws|azure|gcp|kubernetes>` lists one account, subscription, project or cluster through that cloud's inventory API, types the result through chant, adds derived edges, and writes one stamped index version to the index store (by default `$XDG_DATA_HOME/behold`, else `~/.local/share/behold`; `--store` names another). It needs no project, starts no server and refuses every action flag. `behold index --help` lists the scope and filter flags.
 
-Two cuts print part of the graph. `--changed <base>..<head>` keeps what
-changed between two commits (cards added, removed or changed, marked `diff` in
-the document) and the cards within `--depth` hops of them (default 1), read
-from `git archive` into a temporary directory, so the checkout is not touched
-and a shallow clone works once both commits are fetched. A commit that only
-reformats a file changes no card. Past `--budget` cards (default 60) the
-neighbours fold into a count per box, then the cut becomes a table of counts.
-`--around <id>[,<id>...]` keeps the named cards or boxes and what is within
-`--depth` hops, `--up` or `--down` for one direction.
+The graph pane at `/graph` on a served page loads every member's IR, engine graph document, index version and cloud listing it finds into one read-only database, and answers Cypher queries and templates over it (`GET /api/graphdb/*`). The query side needs the optional peer `@ladybugdb/core`.
+
+## Driving behold from an agent
+
+`GET /api` on a running server lists the routes with a one-line description each. `GET /api/graph` answers `{ir, svg, meta}` and `GET /api/overlay?env=<env>` the live overlay; each node's `sourceLoc.file` is the source that declared it, and a failed precondition answers `{code, error, remedy}`. [AGENTS.md](./AGENTS.md), shipped in the package, is the read and act contract, and [Driving it from an agent](https://intentius.io/behold/using/agents/) is the long form.
+
+`behold mcp [dir]` is a stdio MCP server for a coding agent:
 
 ```sh
-npx @intentius/behold graph ./infra --changed origin/main...HEAD -o cut.json
-npx @intentius/behold graph ./infra --around prod/prod/aws_vpc.main --depth 2
+claude mcp add behold -- npx @intentius/behold mcp <dir>
 ```
 
-`npx @intentius/behold graph ./infra` is a lean install. The Kubernetes client
-is an optional peer, so `npm install` does not fetch it;
-see "Optional install" below.
+Its tools are `capabilities` (chant's capability catalog, to read first), `ask` (chant's search answer for a query, with a link to the view that draws it, or a read-only Cypher query over the graph pane), `show` (moves the open tab to a view), `shot` (a PNG of a view and its link) and `graph` (the repository or a cut of it, as an interactive view in a host that renders MCP Apps and as a summary with a Mermaid diagram elsewhere). It talks to the project's running serve when there is one. None of its tools deploys, approves, runs an Op, rolls back or writes.
 
-### Optional install: the Kubernetes client
+`behold shot "<query>" [dir]` writes the same PNG from a shell. It needs the optional peer `playwright-core` and a browser.
 
-`@intentius/chant-k8s-client` (it brings `@kubernetes/client-node`, 63 MB) is an
-optional peer of `@intentius/behold`, so a plain `npm install` does not fetch it.
-It is loaded only to read a kubeconfig: the server's context lookups, the
-kubectl context pills and `behold doctor`. When it is missing those paths stop
-with one line naming it. Install it with `npm i @intentius/chant-k8s-client`.
+To change the estate, an agent edits the chant source or runs a committed Op through chant's own MCP (`op-run`, `op-signal`, `op-status`). behold holds no apply credentials of its own.
 
-`behold graph` on a Terraform folder, `serve`, `export` and `behold mcp` do not
-need it.
+## The write boundary
 
-## Export and host: a shareable, interactive snapshot
+behold writes nothing in a served project, and writes nothing to a cloud or to your source itself. Its own state (hand layout, per-user settings, CI run ids, the serve registry) goes in your cache, home or temp directory, keyed by project. The exceptions are `behold doctor --fix` writing `chant.workspace.json`, the carve demo steps writing inside the demo copy behold made, and `behold export --publish`.
 
-`behold export` freezes whatever estate you're looking at into a **self-contained
-static folder** that any static host can serve. Read-only, and fully
-interactive. Pan/zoom, the zoom dial (components, logical, composites,
-resources, attributes, plus the ops track and the apply order where the project
-has them), radial layout, the inspect pane, and the env/tier pickers all work
-client-side; there's no live observe or deploy.
+Every other write behold offers is a command it starts, run by a tool you already trust:
 
-```sh
-npm run dev -- export --out ./behold-export           # defaults to cwd, like preview
-#   or someone else's project, with its live overlay:
-#   npm run dev -- export <project> --env <name> --out ./behold-export
-npx serve ./behold-export                              # → open it, no backend running
-```
+- Deploy starts the project's committed `ApplyOp`, and Adopt its `ReconcileOp` (which opens a pull request a person merges). Those run on your executor.
+- On a project with no committed ApplyOp, Deploy runs `chant run <component> --components` as a child of behold, with the credentials of whoever started behold. Reading needs only read roles; deploying from behold needs write roles in that environment.
+- An environment whose chant config names a forge executor is never applied from the laptop. Deploy dispatches that workflow through your `gh` login and follows the run.
+- `behold export --publish` uploads the bundle it just made, only under a `views/<name>` prefix.
+- In a terragucci repo (`terragucci.yml`) or a SQL Yodeler repo (`yodel.config.ts`), every write route answers 409 (`terragucci` or `sql-yodeler`) and the page offers none. Those repos are applied by their pipelines.
 
-Like `preview`, `export` defaults to the current directory and stays plain (no
-env, no emulator) unless you ask. `--env <name>` turns on that project's live
-overlay for the snapshot.
+There is no route that applies a carve or moves a choudoufu resource.
 
-It captures every read endpoint for the whole lens matrix (each env/tier × zoom ×
-radial) in-process, through the exact same handlers the live server runs, so a
-snapshot is byte-identical to live. The live app can't run on a Worker, since it
-needs Docker and a chant subprocess; the pre-baked export can.
+## Serving behold to others
 
-The bundle is **deploy-ready for Cloudflare**, since `behold export` writes an
-assets-only `wrangler.jsonc` (no server code, pure static):
+behold binds 127.0.0.1 and answers only loopback names, since it starts writes with the credentials of whoever ran it. `--allow-host <name>` (or `BEHOLD_ALLOWED_HOSTS`) adds a name a proxy forwards; `--host` binds another address.
 
-```sh
-cd ./behold-export && npx wrangler deploy     # → https://<name>.<account>.workers.dev
-```
+`behold serve --public` is a read-only view for a host anyone may load. It builds no op runner, refuses every method but GET, HEAD and OPTIONS, refuses every read that runs a command or uses your credentials (the live overlay, plans, diffs, CI, doctor, the graph pane and more), and shows no control that writes. It serves one project and does not combine with `--env`, `--poll`, `--local` or `--auto-sync`.
 
-Set the Worker name with `--name`, or edit `wrangler.jsonc`. Auth via
-`wrangler login` or `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` (same as any
-Workers deploy). GitHub Pages, S3, nginx and Cloudflare Pages
-(`wrangler pages deploy .`) all work too.
-
-A bundle is made to be opened by other people, so it carries the picture and
-nothing about the machine that made it: no list of your recent projects, no
-user name, and every absolute path reduced to its directory's name. Each card
-of a Terraform root carries that root's whole source file (`attrs.source`);
-`--no-source` leaves it out, and with it every attribute value that is source
-text (heredoc bodies, multi-line strings, expression text, strings over 120
-characters), each shown as `value left out (--no-source)`.
-
-`--terragucci <src>` (with `--terragucci-project`, as for `serve`) captures the
-terragucci marks too, for the view terragucci's estate job can publish beside
-`estate.html`. The bundle's report links are relative to
-`<prefix>/views/behold/` (`--reports-base` changes that), so uploaded there they
-open the bucket's own report pages through the same presigned link or front
-door. An export asked for marks it cannot read fails rather than publishing a
-picture without them.
-
-`--publish s3://<bucket>/<prefix>/views/<name>` uploads the bundle there too,
-each file with its content type, signed with the AWS credentials in the
-environment (no SDK, no aws CLI needed). It writes only under a `views/<name>`
-directory, terragucci's reserved viewer prefix, so a bundle's `index.html`
-never lands on a page behold did not make.
-
-## Try it: your first apply, no cloud account
-
-The bundled `example-writes` is one S3 bucket. `serve --local` boots *that
-project's own* local emulator (Floci, via Docker, generically through
-`chant emulator up`, chant #920), points behold's live overlay at it, and gives
-you a **▶ Deploy (floci-apply)** button on the panel's **Deploy** tab that
-deploys to it, with no AWS account and no creds. It works for any
-emulator-backed lexicon rather than one demo project.
-
-```sh
-npm install
-npm run demo        # installs example-writes' deps, then serves it with --local
-#   → http://localhost:4600
-```
-
-<sub>(or by hand: `npm install --prefix example-writes && npm run dev -- serve example-writes --local --env prod`)</sub>
-
-1. The graph shows the bucket and its TLS policy in **blue** (declared, not yet deployed).
-2. Click **▶ Deploy (floci-apply)** on the panel's **Deploy** tab (or ⌘K → "Deploy: Sync"). The
-   now-line streams Build → Apply → Verify; the bucket is created in the emulator
-   via the CloudFormation API.
-3. The nodes flip **green (managed)**: behold's overlay observed the live emulator.
-
-No Docker running? behold still serves the source graph and tells you to start
-it, rather than dying on you.
-
-**Real AWS.** The same project's **▶ Deploy** button starts its `ApplyOp` against a
-real account: `npm run dev -- serve example-writes --env prod` (needs AWS
-credentials). What the Deploy tab offers depends on what the project committed: a
-committed `ApplyOp` gets the **▶ Deploy (<op>)** button (plus **Approve** when
-gated); a project with only components gets **▶ Deploy…**, which opens the dial's
-component picker; **Adopt** appears per foreign node (`ReconcileOp`); every other
-Op runs from ⌘K (**Run: \<name\>**). Full walkthrough:
-**[example-writes/README.md](example-writes/README.md)**.
-
-## The k3d demo: `behold demo k8s`
-
-`behold demo k8s` (or `npm run demo:k8s` from a checkout) is the k8s analogue
-of the Floci demo above: it brings up a
-local, single-node [k3d](https://k3d.io) cluster (Docker only, no cloud
-account), then serves the bundled `example-k8s` (an nginx Deployment and
-Service) with `--local`. Same mechanism, same shape: declared-not-deployed
-(blue) → click **Run** on `k3d-apply` → managed (green), server-side applied
-with chant's own field manager. Ctrl-C tears the cluster back down.
-
-Beyond the AWS demo's single flip, this one also demonstrates Kubernetes'
-two additional tiers (epic #84): zoom into the Deployment to see its **Pods**
-as **runtime children** (owned by the cluster, never declared, never drift);
-induce an out-of-band `kubectl scale`/`kubectl label` and refresh to see
-**managed-fields drift** (chant's field manager vs. a competing one); and
-switch away from the bound kubectl context to see an **unobserved** refusal
-(an honest "did not look," never a false "all gone"). Full walkthrough,
-including the exact commands and what each state looks like over the API:
-**[example-k8s/README.md](example-k8s/README.md)**.
-
-## Read-only core, delegated gated writes (the invariant)
-
-**behold writes nothing to a cloud or to your source itself.** Every write it
-offers is a command it starts for you, run by a tool you already trust.
-
-- The vizes only read (`chant graph`, snapshots, Temporal history).
-- Sync starts your committed `ApplyOp`; Adopt starts your `ReconcileOp` (opens a
-  PR a human merges). Those run on your executor.
-- Deploy on a project with no committed ApplyOp runs `chant run <component>
-  --components` on chant's local executor, as a child of behold. That child has
-  behold's environment, so it applies with the credentials of whoever started
-  behold: to Deploy from behold, that environment needs write roles. Reads
-  alone need only read roles.
-- An env `.behold.json` designates to a forge is never applied from the laptop;
-  Deploy dispatches the forge's workflow through your `gh` instead.
-- `behold export --publish s3://…/views/<name>` uploads the bundle it just made.
-  It is the one write behold makes to a cloud, and only when an export is
-  asked for it.
-- A terragucci repo (a `terragucci.yml` in the served directory or above it) is
-  applied by its pipeline only. behold refuses every write there (Deploy, Op
-  runs, gate approvals, pipeline dispatch, rollback) with `409 terragucci` and
-  offers none of them on the page.
-
-## Why a Node service (not an edge function)
-
-The live path (`chant graph --live --overlay`, `chant lifecycle plan`) shells
-`kubectl`/`aws`/`az`/the Temporal client and holds cloud creds. That needs a real
-process, so behold is a Node service you run where your creds live. Viewing needs only **read**
-roles (describe/list); a Deploy from behold applies with whatever credentials its environment holds.
-
-## Agent-drivable, on chant's MCP
-
-behold is drivable by an agent, and leans on chant's MCP rather than reinventing it:
-
-- **Reads.** `lifecycle-diff`, `lifecycle-snapshot`, plus behold's own read API
-  (the overlay graph as JSON, blast radius, frame diffs).
-- **Delegated actions.** The writes *are* chant MCP Op tools: `op-run` starts an
-  `ApplyOp`/`ReconcileOp`, `op-signal` approves a gate, `op-status`/`op-report`
-  watch it. So an agent "syncing prod" is `op-run prod-apply` then
-  `op-signal prod-apply approve-apply`: gated, durable, no creds in behold.
-
-behold's value over raw MCP is the live spatial + temporal view and the coupling
-between them; the underlying capabilities are chant's, exposed the same way to a
-human and an agent. See [AGENTS.md](./AGENTS.md).
-
-## Usage
-
-```sh
-npm install
-npm run dev -- serve ./path/to/chant-project             # source graph (tsx)
-npm run dev -- serve ./path/to/chant-project --env prod  # + live drift overlay
-# or, built:
-npm run build && ./bin/behold.js serve ./path/to/chant-project --port 4600
-```
-
-Then open http://localhost:4600. With `--env`, the SPA shows the live overlay;
-without it, the source graph.
-
-**Live updates.** The server watches the served project's source and pushes a
-refresh over SSE (`/api/events`) when a `.ts` file changes, so you edit your
-infra and the graph updates with no reload. Add `--poll <secs>` (with `--env`) to also re-query live
-drift on an interval and push updates when a node's status changes:
-
-```sh
-behold serve ./infra --env prod --poll 30   # wait 30s between completed drift sweeps
-```
-
-**Read budget.** HTTP observations, background polling, and frame captures share
-one Chant subprocess budget: two reads at once by default (one on a one-CPU
-host). `BEHOLD_ESTATE_CONCURRENCY` overrides that process-wide limit. Up to 64
-distinct reads can wait; excess reads fail explicitly rather than growing an
-unbounded queue. Identical in-flight reads share work only when the project,
-resolved Chant, source stamp, argv, and effective environment match. Source
-watcher invalidation also separates new requests from work begun before an edit.
-
-**What is cached, and what drops it.** A member's source IR is cached under its
-source stamp, resolved chant and graph options (`src/member-ir.ts`), because
-~800ms of every `chant` invocation is module load that has nothing to do with the
-member's content. A member's completed live overlay document is cached too
-(`src/overlay-ir.ts`), so that a re-render such as collapsing a box is a
-re-render rather than a second pass over the account. That second cache is the
-stated exception to "a live read is never cached", and its header names
-everything that drops an entry: `POST /api/refresh` ("Re-check live"),
-`GET /api/overlay?plan=1` ("Re-check live with plan"), the capture that ends an
-Op run, and the member's source moving. What it cannot notice is a change made to
-the account by something that is not behold, which is what the re-check rows are
-for.
-
-A running read has a 180-second deadline, configurable with
-`BEHOLD_READ_TIMEOUT_MS`. A disconnected GET releases its subscription; when no
-callers remain, the read is canceled. On Unix, cancellation stops the whole
-npm/tsx/Node process group, escalating from TERM to KILL after one second. On
-Windows only the direct child is terminated. Delegated writes retain their
-existing lifecycle and are never deduplicated as reads.
-
-The browser runs one refresh at a time and collapses intervening notifications
-into one follow-up. It no longer starts additional reads at 3/8/15-second offsets.
-Polling uses the same estate namespace bindings as the HTTP overlay and reuses
-the primary member's observation for lanes capture. Slow sweeps extend the poll
-period; they do not overlap the next sweep. These bounds control duplicate work;
-they do not eliminate Chant's underlying live discovery cost.
-
-**What a read cost.** Every scheduled chant read is filed with its running time,
-its outcome and which side of the source/live split it sits on.
-`GET /api/doctor` serves the same report `behold doctor` prints with that ledger
-on it; `GET /api/doctor?reads=1` is the cheap half: counters, the per-member
-samples, `inFlight` (running and queued), and `unmeasured`, the count of served
-members the ledger is blind to because they spawn their own binary rather than
-chant. The loading scrim shows the slowest recent member, since an estate read
-finishes when its last member does.
-
-**The picture can arrive in pieces.** `GET /api/overlay?progressive=1` answers at
-once with the estate composed from each member's source, every card marked
-pending, then streams one SSE frame per member as its own live read lands.
-Opt-in and never the default: the blocking `/api/overlay` is what agents read and
-what `behold export` captures, and it is unchanged.
-
-behold shells the **project's own** chant (resolved from the project's
-`node_modules` first), so the project decides the chant version. Pin it to
-`@intentius/chant ^0.18.1` or later for the live overlay; `graph --live` observed
-nothing before that fix.
-
-## Linking to a view, and framing behold in a host
-
-The view is in the URL. behold reads it at boot and writes it back as the view
-changes, so a reload keeps it and a link opens where the sender was:
+The view is in the URL, so a reload keeps it and a link opens where the sender was:
 
 ```
 http://localhost:4600/?member=delivery&zoom=components&env=prod&node=delivery/appService
 ```
 
-`member`, `zoom`, `env`, `tier`, `lens` (the colour: `drift`, `cost` or
-`headroom`), `node` and `radial` (`1` or `0`). An empty `env=` is the source
-graph. A value the estate can't honour (a member it doesn't have, a zoom it
-doesn't offer) is named on the now line. A static export takes the same
-parameters against what it captured.
+The view keys include `member`, `zoom`, `env`, `tier`, `lens` (`drift`, `cost` or `headroom`), `node`, `radial`, `focus` and `q`. A host page frames behold with `?embed=1&host=<origin>` (and `bare=1` for the graph alone), receives `behold:select` messages when a card is picked, and moves the view with `behold:view`. A host that already watches the workspace sends `POST /api/refresh?notify=1` in place of `--poll`.
 
-A host pane, such as arugula's workspace block, frames behold with
-`?embed=1&host=<the host's origin>`, and optionally `theme=light`, `dark` or
-any theme name the picker lists:
+Gate approvals record who approved: `--as <principal>`, or the person a signing-in proxy names in the header `--identity-header` trusts, or the user running behold. A gate the workspace marks for signing is signed with `--signing-key`. [Approving a gate](https://intentius.io/behold/using/approving/) has the detail.
 
-- the panel and the inspect pane start folded, and the Deploy tab and the theme
-  picker are gone
-- picking a card posts `{type: "behold:select", member, node}` to the parent at
-  `host`; picking a member's box posts the same with `node: null`
-- the parent moves the view with `{type: "behold:view", ...}`, carrying any of
-  the URL's fields (`member: null` is the whole estate). Messages from any
-  other origin are ignored
-- gates are the host's to approve: behold draws them and says so
-- `bare=1` (with `embed=1`) leaves the graph alone in the frame: no panel, no
-  inspect pane, no buttons, no now line. The kiosk frames behold this way
-- `focus=<box>,<box>` (in the URL or a `behold:view` message) brings those boxes
-  forward and dims the rest; `focus: null` brings nothing forward. On a
-  terragucci repo the boxes are its roots
-- `run=<commit>` (or a `behold:view` message's `run`) keeps a terragucci repo's
-  view on that commit's run view instead of the newest; `run=none` draws the
-  pull request's plan, `run=base` nothing in flight; `run: null` the newest
-  again. `GET /api/terragucci/progress?commit=<sha>` reads that run view
+## Lanes for other tools
 
-`gates=<env>` sets the env the gate strip reads, apart from the graph's, so a
-host can open behold on the source graph and still show the gates of the env
-it watches. A host whose env changes posts `{type: "behold:view", gates: "<env>"}`
-instead of reloading the frame: behold checks the name as it checks the URL's,
-reads that env's gates at once, and writes `gates=` back into the URL so a
-reload keeps it. `gates: null` (or `""`) hands the strip back to the graph's
-env.
+- `--terragucci <src>` marks each root of a [terragucci](https://intentius.io/terragucci/) repo with its newest `tf-drift` and `tf-plan` report and the waves waiting for approval, read from the reports bucket (a directory, `s3://` or `https://`). Every mark is dated by its run and links its report; nothing is read from a cloud. A waiting wave offers the `terragucci approve` line to copy. `/kiosk` follows terragucci's looping demo. See [terragucci](https://intentius.io/behold/using/terragucci/).
+- `behold carve <report.json>` draws the report `chant carve advise` writes: one card per Terraform resource in three bands (carve now, boundary work, leave in Terraform), with the score arithmetic in the inspect pane. behold parses no HCL for it. See [the carve lens](https://intentius.io/behold/using/carve/).
+- A Terraform estate draws as a member beside chant projects, read from the `.tf` files, with carve state from chant's `<address>.carve.json` manifests. See [Terraform](https://intentius.io/behold/using/terraform/).
+- A choudoufu estate is coloured by ownership (bound, unowned, pending), with attribute drift as a separate plan read. See [choudoufu](https://intentius.io/behold/using/choudoufu/).
+- `--yodel-report <file|dir>` marks a SQL Yodeler project with each environment's applied migrations, gaps and drift, from `yodel report --json`. behold never runs yodel or reads the database. See [SQL Yodeler](https://intentius.io/behold/using/sql-yodeler/).
+- `--ci-report-url` and `--chant-report-url` read chant's CI run index and pull-request run events. See [the trunk lane](https://intentius.io/behold/using/trunk/) and [running a CI job locally](https://intentius.io/behold/using/local-run/).
 
-behold binds 127.0.0.1 and answers only loopback names, since it runs writes
-with the credentials of whoever started it. A page from another site can't
-write to it. A host that frames behold through a proxy of its own passes the
-proxy's name with `--allow-host <name>` (or `BEHOLD_ALLOWED_HOSTS`); `--host`
-(or `BEHOLD_HOST`) binds another address, which then needs `--allow-host` for
-the names it is reached by.
+## Configuration
 
-`behold serve --public` is for a host anyone may load (#569). behold builds no
-op runner at all, refuses every method but GET, HEAD and OPTIONS with 405,
-refuses with 403 every read that runs a command or uses its credentials and
-isn't part of the view (the op tools, the live overlay, plans, diffs, CI,
-doctor, substrates and more; the docs' terragucci page lists them), and the
-page shows no control that writes or asks for those reads. It serves one
-project directory and can't be combined with `--env`, `--poll`, `--local` or
-`--auto-sync`. It still binds 127.0.0.1, so put a
-proxy in front that forwards the public name in `Host`, and pass that name:
+behold keeps no config file of its own in a project. What it reads comes from chant:
 
-```sh
-npx @intentius/behold serve . --public --allow-host demo.example.com \
-  --terragucci s3://acme-terragucci-reports
-```
+- A chant workspace declaration (`chant.workspace.json`) lists an estate's members. Member kinds are chant, choudoufu, terraform and pulumi. A `.behold.json` with a `members` list is still read where no declaration exists; `behold doctor --fix` turns it into one.
+- The tier picker comes from a `buildParams` entry with a string `enum` in `chant.config.ts` (the one named `tier`, else the first such entry). A picked tier reaches `chant graph` as `--param tier=<value>`, and the parameter's `env` variable is set for chant when it declares one.
+- A forge executor for an environment is declared on that environment's entry in `chant.config.ts`, for example `{ name: "prod", executor: { forge: "github", workflow: "deploy-prod.yml" } }`. behold reads it through `chant workspace graph --composites`.
 
-With `--terragucci`, the poll defaults to 10 seconds under `--public`
-(`--terragucci-poll` still sets it). The credentials behold runs with should
-be read-only too: `GetObject` on the reports bucket, and a read-only key for
-the repo's `origin`, which `chant/lifecycle` is fetched from.
+Per-user state lives outside the project, under `<user cache>/behold/` (`~/Library/Caches` on macOS, `%LOCALAPPDATA%` on Windows, `$XDG_CACHE_HOME` or `~/.cache` elsewhere; `BEHOLD_CACHE_DIR` moves it), keyed by a hash of the project's realpath. That holds the hand layout (the `{dx,dy}` and `{dw,dh}` offsets of cards you dragged and boxes you resized, which `behold export` bakes in) and the per-user settings (`approver`, `behaviour.traffic`). Dispatched forge runs are kept under `~/.behold/ci-runs/`, so a restarted behold picks up a run it was following.
 
-`/kiosk` follows terragucci's looping demo (#569): it reads the `demo.json`
-the demo's driver writes beside `index.json`, and narrates the scenario, the
-step and the driver's next action with a countdown in a status bar, over
-behold's own view of the change in a frame (`/?embed=1&bare=1`): each root's
-wave and its state, the reads between roots, and the roots the step is about
-brought forward. Beside it, the pipeline's runs the way a CI page shows them:
-the recent runs, the selected run's jobs and steps, and the running step's
-log, which the loop driver copies into the bucket under `runs/`. It needs
-`--terragucci`, asks only GETs, and has no control.
-The docs' terragucci page says what it shows.
+## Reads and what they cost
 
-The demo is served at `/`: the live demo's page, else the first listed one.
-`/kiosk` redirects to `/`. The listed demos are the multi-state plan-and-apply
-ones (`choudoufu-compose`, `terragrunt-choudoufu`, `atmos-choudoufu`,
-`chant-compose`); one is listed once its tool has a published cycle
-(`cycles/<tool>/latest.json` beside `demo.json`) or is live, and
-`/api/terragucci/demos` says which. No demo has a page of its own: a tool's
-path (`/choudoufu-compose`, `/terragrunt-choudoufu`, `/atmos-choudoufu`,
-`/chant-compose`) redirects to `/` with a 302, so a link to one lands on
-whichever demo `/` shows. The page shows that demo under a banner with the
-example's name, the act, its products and a link to its code.
-The older tools' URLs (`/terraform`, `/terragrunt`, `/cdk-terrain`, `/choudoufu`,
-`/chant`, and the fan-out pages) redirect to `/` too. Any other short path
-answers 404 with a link to the front page.
+behold runs the project's own chant, resolved from the project's `node_modules` first, so the project decides the chant version. `behold doctor` prints the chant floor for each read. A read whose floor the project's chant does not meet is refused, or read the older way, and says which floor it needs.
 
-In a declared workspace, the gates waiting on a person come from
-`chant workspace status <env> --json`, keyed `member/op/gate` the way arugula's
-workspace block keys them, so the two show the same set. Standalone, a gate's
-button says who chant will record before the click: the person `--as` names
-(`--as github:<login>`), the person an authenticating proxy names in the header
-`--identity-header` trusts, or else the user running behold. A gate the
-workspace names in `identity.gates` is signed with that person's key when
-`--signing-key` (or `approver.keys` in behold's per-user settings) gives one, and sent to the
-command line otherwise (#690). Every approve route refuses in preview mode.
+Every chant read shares one process-wide budget: two at once by default (one on a one-CPU host), `BEHOLD_ESTATE_CONCURRENCY` to change it, up to 64 waiting, and a 180-second deadline (`BEHOLD_READ_TIMEOUT_MS`). Identical reads in flight share one run, and a read with no callers left is cancelled. A member's source IR is cached by its source stamp, and its completed live overlay until a re-check, an Op run's capture or a source change drops it. `GET /api/doctor?reads=1` reports what each read cost, and `GET /api/overlay?progressive=1` streams the overlay member by member.
 
-In a declared workspace, the inspect pane of a member's box or a card has a
-"why" section. "Read why" asks `chant workspace graph --intent <member dir or
-node id> --json` (chant 0.102.0 or newer in the workspace root) and shows the
-decisions covering it, in chant's order, with the agent runs and commits behind
-it. Nothing is read until the click: on chant's own repository one member takes
-about 30 s, a small workspace about 1 s. While it reads the section says
-"reading…" with a Stop button, and picking something else stops the read.
-Start behold with `--hud <url>` (or `BEHOLD_HUD_URL`) and a proposed decision
-links to its review in hud; otherwise it is named by id. Framed, the section is
-drawn the same, and clicks on the graph still go to the host.
+## Optional installs
 
-A host that already watches the workspace tells behold it changed with
-`POST /api/refresh?notify=1`, instead of running behold with `--poll` beside
-it. behold drops its cached reads and every open page re-pulls.
+Three peers are left out of a plain `npm install`. Each path that needs one stops with a line naming it.
 
-## A terragucci estate, from its reports: `--terragucci`
+| Peer | Used by |
+|---|---|
+| `@intentius/chant-k8s-client` | reading a kubeconfig on the served page: the context lookups, the kubectl context pills and `behold doctor` |
+| `playwright-core` | `behold shot` and the `shot` MCP tool |
+| `@ladybugdb/core` | Cypher queries in the graph pane |
 
-```sh
-npx @intentius/behold serve . --terragucci s3://acme-terragucci-reports   # or a synced dir, or an https address
-```
+`behold graph` (including `--context`), `export`, `index` and `mcp` run without the Kubernetes client.
 
-In a [terragucci](https://intentius.io/terragucci/) repo, behold draws every
-root from the checkout and marks each card with what terragucci's newest runs
-found: the newest `tf-drift` and `tf-plan` report per root (one GET of
-`index.json`, then one of each run's `report.json`), and the waves waiting for
-an approval. Every mark is dated by its run and links its report and job
-("drift found 06:04 UTC, 4h ago"); none is a fill, and nothing is read from a
-cloud. Counts and waiting waves come from `estate.json` when the source has
-one, so behold agrees with terragucci's estate page and links it. A waiting
-wave offers `npx terragucci approve wave-<k> --plan <digest>` to copy; there is
-no approve button, and every behold write refuses on a terragucci repo.
-Documents are checked against terragucci's JSON Schemas when
-`@intentius/terragucci` is installed, structurally otherwise. Full page:
-docs `using/terragucci`. `example-terragucci-reports/` is a bucket for
-terragucci's own example, written by terragucci's code.
-
-## Terraform and chant: `behold carve <report.json>`
-
-`chant carve advise` reads a Terraform estate and shows which resources chant
-can also manage, and the work each handoff takes. `behold carve` draws that
-report: one card per resource, three panels (carve now / boundary work /
-leave in Terraform) on the same `attrs._status` drift palette every other view
-uses, and the score arithmetic behind each rank in the inspect pane.
-
-```sh
-chant carve advise --from ./terraform --report carve.json
-behold carve carve.json                      # → http://localhost:4600
-curl localhost:4600/api/carve                # the raw report, for agents
-```
-
-behold parses no HCL and needs no Terraform tooling: the report **is** the
-contract. A file that isn't a peelability report is refused with a structured
-`{error, code: "carve-report", remedy}`, in the terminal and from the routes,
-never a blank graph. See [the carve lens](https://intentius.io/behold/using/carve/) and
-[the Terraform estate page](https://intentius.io/behold/using/terraform/) for the
-other half of that lane: Terraform is a member
-kind now (`MEMBER_KINDS = ["chant", "choudoufu", "terraform"]`), so an estate of
-`.tf` files draws beside a chant project, and carve state is read from chant's
-own `<address>.carve.json` manifests.
-
-### The walkthrough: `behold demo carve`
-
-```sh
-npx @intentius/behold demo carve      # no Docker, no cloud, no terraform binary
-```
-
-Copies a mixed estate (a small chant project beside a Terraform one, both on
-the same AWS account), installs the chant it will shell, runs
-`chant carve advise` over the copy, and opens the banded graph with a six-step
-stepper on the panel's **Carve** tab:
-
-1. **Advise.** The bands, with what each one means.
-2. **Pick.** Click a green card. The inspect pane shows the score arithmetic;
-   the step names the boundary the cut crosses.
-3. **Emit.** Runs `chant carve emit --state --select <addr>` into
-   `app/carveout/` in the copy, then shows the emitted chant source and the
-   `chant lint` result.
-4. **Bridge.** Runs `chant carve bridge` (never `--apply-rewrites`) and renders
-   the proposed data source, the rewired survivors and the patch.
-5. **Handoff.** The runbook's commands with copy buttons, and **not** a button:
-   `terraform state rm` and `terraform apply` change who owns a live resource,
-   so they stay yours to run. The panel says so.
-6. **Done.** The card is marked chant-owned at the observe position;
-   `terraform import` reverses all of it.
-
-The Emit step reports `chant lint`, not `chant build`: `build` fails on the
-emitted bucket (scored 84 by the advisor) on one rule: WAW042, a TLS-deny
-bucket policy. Adding one in Terraform fixes it too. The panel links the
-reason. [example-carve/README.md](example-carve/README.md) has the estate's full story, the band table,
-and the offline/`--live` split.
-
-behold writes only into `app/carveout/` inside the demo copy it made, and
-nothing else. Your Terraform is never edited; see AGENTS.md, "The write boundary".
-
-## Configuration: `.behold.json`
-
-An optional `.behold.json` in the served project's root is **behold's own**
-config, which #470 retired. One key is still read, `members`, spelled `[{ "dir": "x", "kind":
-"chant" | "choudoufu" | "terraform" }]`, how an estate root names what it
-composes, fail-closed on a kind behold has no reader for. `members` is
-deprecated: a chant workspace declaration (`chant.workspace.json`) lists an
-estate's members for every reader, and beside one, `.behold.json`'s list is
-ignored. `behold doctor --fix` writes the declaration from it (see
-[Serve a chant workspace](https://intentius.io/behold/using/workspace/)).
-
-### The tier axis: `buildParams` in `chant.config.ts`
-
-The deploy-**tier** axis, a dimension orthogonal to `environment`, is a chant
-build-time parameter (#470): a `buildParams` entry with a string `enum`, the
-one named `tier` first, else the first such entry.
-
-```typescript
-buildParams: {
-  tier: { type: "string", enum: ["light", "production", "production-ha"], default: "light", env: "LOOM_TIER" },
-},
-```
-
-- The `enum` is the tier picker's options.
-- A picked tier (`?tier=`) reaches `chant graph` as `--param tier=<value>`, and
-  the parameter's `env` variable is set for the chant shell-out when it
-  declares one, so a chant command without `--param` sees it too.
-- The current tier in the header is that `env` variable's value in behold's
-  own environment, when the parameter declares one.
-
-No such parameter means no tier axis: the picker doesn't render and the graph
-loads with no tier selected. `.behold.json`'s old `tiers` block is not read;
-`behold doctor` warns where one is left.
-
-### Per-user settings: `approver` and `behaviour.traffic`
-
-Who is approving (`approver`, see [Approving](https://intentius.io/behold/using/approving/))
-and the traffic level the behaviour overlay predicts at (`behaviour.traffic`)
-are one operator's settings, so since #470 they live in a per-user file outside
-the project, beside the hand layout: `<cache>/behold/settings/<key>.json`
-(`~/Library/Caches/behold/settings/` on macOS, `~/.cache/behold/settings/` on Linux, `%LOCALAPPDATA%\behold\settings\` on Windows; `BEHOLD_CACHE_DIR` moves it), keyed by the project's realpath like the layout. A project
-whose `.behold.json` carried either block has it copied in on the first read
-(relative key paths made absolute against the project); `.behold.json` is
-never written or deleted.
-
-### Deploy executors: `executor`
-
-A member's `chant.config.ts` designates which forge deploys an environment
-(#165, #470), on the environment's entry:
-
-```ts
-environments: [
-  "staging",
-  { name: "prod", executor: { forge: "github", workflow: "deploy-prod.yml" } },
-],
-```
-
-behold reads it from chant (`chant workspace graph --composites`, each
-`components[].environments[]` row's `executor`, chant 0.124.47 or newer), and
-never from the name of a generated `chant-components-<env>` workflow. A chant
-older than that, or an environment that declares none, reads as no designation.
-`.behold.json`'s old `executor` block is not read; `behold doctor` warns where
-one is left, with the entry to add.
-
-It names the committed **workflow**, not just the forge, because two
-environments' generated pipelines carry identical job ids and a picker cannot
-tell them apart. For a designated environment the Deploy button dispatches that
-workflow through your own `gh` login and follows the run on the dial; a local
-apply, a committed ApplyOp for that environment, and auto-sync are all refused
-(`409 executor-forge`), and rollback is withheld. Any approval the workflow's
-GitHub environment requires is granted on GitHub by your identity there. The
-dial links the run's page and offers nothing else, because behold holds no
-identity that could clear a forge gate. A designation behold cannot honour (a
-typo'd forge, a missing workflow, one without `workflow_dispatch`) disables
-Deploy for that environment with the reason, and never falls back to running
-it on your machine. The workflow is read from the `.github/workflows` of the
-repository the project belongs to, so a project that is one directory of a
-monorepo works as-is.
-
-A dispatched run's id is kept under `~/.behold/ci-runs/`, the operator's own
-state outside the project, so a behold restarted mid-deploy re-adopts the run
-and keeps following it. A follow whose stream dies is reported as `lost`, never
-as a verdict; `just e2e-ci-github` proves the whole contract against GitHub.
-
-### The hand layout: a per-user cache
-
-dagre places your nodes; you can move them. Drag a card, resize a containment
-box, and the offsets are remembered per project and lens: in `localStorage`
-first, and in a per-user cache file outside the project, which is what
-`behold export` bakes into its SVGs:
-
-```json
-{ "version": 1, "projectDir": "/path/to/project", "lenses": { "components": { "src/api#Component": { "dx": 40, "dy": -25 } } } }
-```
-
-The file is `<user cache>/behold/layouts/<key>.json`, where `<user cache>` is
-`~/Library/Caches` on macOS, `%LOCALAPPDATA%` on Windows and `$XDG_CACHE_HOME`
-(or `~/.cache`) elsewhere, and `<key>` is a hash of the project directory's
-realpath. `BEHOLD_CACHE_DIR` moves `<user cache>/behold`. behold writes nothing
-inside a served project (#469), so there is nothing to gitignore.
-
-It stores deltas rather than absolute positions, so the graph stays chant's and
-your layout sits on top of it. A delta whose node has left the estate is
-dropped. `POST /api/layout` refuses politely in preview mode, during a
-static-export capture, when the cache isn't writable, and above its size caps.
-`↺ layout` in the graph clears the current lens on both tiers.
-
-A project served by an older behold may have a `.behold/layout.json`. The first
-time the cache has nothing for that project, behold reads the old file once
-and copies it into the cache. It never changes or deletes it; remove it
-yourself when you like.
-
-## Layout
-
-A shape rather than a manifest. `src/` is ~85 modules with one concern each;
-[AGENTS.md](./AGENTS.md) names the rules that hold across them.
+## Repository layout
 
 ```
 src/
-  cli.ts            the verbs: serve, preview, demo, doctor, export, carve
-  server.ts         the Hono API + static SPA, every route read and delegated
-
-  the read path
-  chant.ts          shells the PROJECT's own chant; every read is scheduled
-  read-scheduler.ts one process-wide budget, in-flight sharing, cancellation
-  read-stats.ts     what each read cost (/api/doctor)
-  member-ir.ts      per-member source cache; overlay-ir.ts, the live one
-  estate.ts         N members composed into one graph (pinhole's composeStacks)
-  member-kind.ts    what a member can be: chant, choudoufu, terraform
-
-  the lenses (pure IR -> IR, no subprocess)
+  cli.ts            the commands: serve, preview, demo, doctor, export, carve, graph, index, mcp, shot
+  server.ts         the Hono API and the static page; every route reads or starts a delegated command
+  read-graph.ts     the directory read behind behold graph, the action and the served page
+  graph-*.ts        the graph document, its cuts, and the Mermaid and SVG formats
+  read-cluster.ts   the bare cluster read
+  behold-index.ts   behold index, over chant's runCloudIndex
+  graph-db/         the graph pane
+  mcp.ts            behold mcp
+  chant.ts          shells the project's own chant; read-scheduler.ts budgets it
+  workspace-reader.ts  every chant read goes through here
+  estate.ts         members composed into one graph; member-kind.ts lists the kinds
   logical*.ts       one topology projection per substrate
-  ops-lens.ts       declared Ops as a phase track; run-playhead.ts paints a run
-  carve-lens.ts     a peelability report; stack-order.ts, chant's apply order
-  terraform-lens.ts collapse-lens.ts, edgeless.ts
-
-  render.ts         pinhole painter, IR -> SVG, one pack per lexicon
-web/                the SPA, unbundled ES modules (app.js + ~20 siblings)
-docs/               the published site (Astro/Starlight)
-demos.json          the shipped demo catalog; workbench.json, this checkout's
-example-*/          nine bundled projects the demos and e2e serve
-e2e/                twelve acceptance runs, one per substrate lane
+  render.ts         the pinhole painter, IR to SVG, one pack per lexicon
+  viewer/           the single-file and hosted viewer
+web/                the page, unbundled ES modules
+action/             the GitHub Action's code, and the GitLab and Forgejo forms
+surfaces/           Argo CD, Backstage, Headlamp, kubectl and VS Code
+plugins/            Claude Code and Cursor
+templates/          the GitHub Pages workflow
+docs/               the published site (Astro and Starlight)
+demos.json          the shipped demo catalog
+example-*/          the bundled projects the demos and e2e serve
+e2e/                acceptance runs, one script per lane
 ```
 
-## The painter
-
-behold reuses [pinhole](https://github.com/INTENTIUS/pinhole)'s SVG painter as a
-library: a mature renderer with themes, icons, and `_status` drift colouring
-that already speaks the overlay vocabulary managed/foreign/pending. The server lays the IR out
-and paints it with `layoutIr` + `renderSvg` (`src/render.ts`); the SPA inlines the
-SVG and wires click-inspect by `data-node-id` against the IR. pinhole's layout is
-dagre, which is pure JS with no native dependency.
-
-Where an official mark exists, a node paints it instead of a generic glyph. A
-Deployment gets the Kubernetes wheel-and-helm heptagon, a Kustomization the
-Flux mark, a `Helm::Release` the Helm wheel. The corpus is vendored under
-`web/icons/` (30 kubernetes/community SVGs, 3 cncf/artwork marks for
-Flux/Argo/Helm, licensing in `THIRD_PARTY.md`) and mapped kind by kind in
-`src/icon-packs.ts`; a kind with no official icon falls through to pinhole's
-keyword heuristic rather than a wrong picture. The painter reads the corpus from
-`src/icons.generated.ts`, which `npm run generate:icons` writes from `web/icons/`
-and `npm run check:icons` holds to it, so `src/render.ts` reads no file and
-bundles for a browser (`npm run check:browser-bundle`, #1069).
-
-dagre's layout is a good first draft, not a final one: drag a card to move
-it, grab a containment box's corner to resize it, and both survive a reload.
-What persists is a delta (`{dx,dy}` for a card, `{dw,dh}` for a box) rather
-than an absolute position, keyed by `behold.layout.<project>.<lens>`
-(`web/layout-store.js`), so the graph stays chant's and the arrangement on
-top of it is yours. `↺ layout` sits beside `⤢ fit` and shows up only once
-something on the current lens is hand-placed.
-
-Every JSON value the UI shows goes through one renderer (`web/json-view.js`):
-2-space pretty printed, objects and arrays collapsible (the first tier open,
-anything deeper or wider than a dozen entries folded), long strings truncated
-with an expander, and a `copy` on every node that yields that subtree's raw
-JSON. Enter or Space toggles the focused node. It paints with `--fg` and
-`--muted` and nothing else, so all 552 palettes keep it readable. That covers
-the inspect pane's declared attributes, observed live state, drift pairs and
-field ownership, the op log's JSON lines, and the payload behind an `/api`
-error card.
-
-Type splits by purpose: a system mono stack carries node ids, ARNs and
-statuses, and sans carries labels only. Colour comes from 552 Ghostty terminal palettes run
-through an OKLCH-derived token pipeline (`web/theme.js`, the palettes in
-`web/themes.js`), so a theme switch
-re-derives the whole chrome rather than only the graph. A node whose drift
-status just changed pulses once in the colour it became, off under
-`prefers-reduced-motion`.
+The painter is [pinhole](https://github.com/INTENTIUS/pinhole), used as a library: the server lays out the IR with dagre and paints it to SVG, and the page wires click-inspect by `data-node-id`. Official marks (Kubernetes, Flux, Argo, Helm, and the cloud icon sets) are vendored under `web/icons/`, with licences in `THIRD_PARTY.md`. Themes are Ghostty terminal palettes run through an OKLCH token pipeline (`web/theme.js`).
 
 ## Local development
 
-`just` lists everything. The core loop:
+`just` lists every recipe. The core loop:
 
 ```sh
-just install               # behold's own deps
-just check                 # tsc + unit tests + build (the fast gate)
-just example-install       # install the example project's chant + aws lexicon (once)
-just serve                 # serve example/ read-only → http://localhost:4600 (source graph)
-just serve example prod    # same server, live drift overlay (needs AWS creds)
+just install               # behold's own dependencies
+just check                 # tsc, unit tests and build: the local gate
+just example-install       # install the example project's chant (once)
+just serve                 # serve example/ at http://localhost:4600
+just serve example prod    # the same, with the live overlay (needs AWS credentials)
+just example terralith-4   # serve one demo or workbench entry from this checkout
 ```
 
-One server, one SPA: passing an env turns on the live overlay (`/api/overlay`),
-omitting it shows the source graph (`/api/graph`). `serve` runs via `tsx` (no build
-step); for the built binary, `just build` then `./bin/behold.js serve <project>`.
+`serve` runs through `tsx` with no build step; for the built binary, `just build` then `./bin/behold.js serve <project>`. behold runs the served project's chant, falling back to its own only when the project has none, so install chant into the project you serve. `workbench.json` lists internal estates used in development, by path to sibling checkouts; it is not shipped, and an entry whose sibling is missing says so in `behold demo --list`.
 
-**Which chant runs.** behold does not bundle chant. It *shells* the chant binary
-resolved from the served project's `node_modules`, falling back to its own dep.
-So local testing means installing chant into a project, not into behold. The bundled
-`example/` does exactly that; point `serve` at any real chant project the same way.
+`npm test` runs the unit tests, including in-process route tests against the real Hono app, with no cloud and no cluster. The `just e2e*` recipes run the acceptance scripts under `e2e/`; [e2e/README.md](e2e/README.md) lists their variables. The docs site has its own gate: `npm run build` in `docs/`.
 
-## E2E
-
-```sh
-just e2e
-```
-
-`e2e/run.sh` installs the example's chant (the **chant install under test**), builds
-behold, serves the example, and asserts the read-only API against a live server. It
-auto-detects AWS credentials:
-
-- **no creds** → asserts `/api/graph` (the source mixed-substrate graph, offline).
-- **AWS creds** → asserts `/api/overlay`, the source-anchored live overlay: it queries
-  CloudFormation and checks every node carries a drift status. All `pending` when
-  nothing is deployed is a valid pass, since the point is the live path.
-
-It's hermetic apart from the chant install and (optionally) the cloud read; the
-server is torn down on exit. `BEHOLD_E2E_PORT` overrides the port.
-
-## Unit tests
-
-```sh
-npm test    # vitest, 106 files, including in-process route tests against
-            # the real Hono app. No cloud, no cluster.
-```
-
-## Upstream
-
-behold is a viewer over a compiler, so some of what it cannot do is not its to
-fix. The open asks:
-
-- chant **#822**, diff two historical snapshots, which is what a timeline of
-  more than the frames behold captures itself would need.
-- chant **#2481**, `chant` costs ~800ms per invocation before it does any work,
-  and behold shells it once per member per read.
-- pinhole **#79/#80/#81**, morph-over-time and first-class drift rendering.
-
-behold's own work is on the [issue tracker](https://github.com/INTENTIUS/behold/issues).
+[AGENTS.md](./AGENTS.md) has the rules for changing behold, and the [issue tracker](https://github.com/INTENTIUS/behold/issues) has its work.
