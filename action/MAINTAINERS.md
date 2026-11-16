@@ -66,9 +66,21 @@ GitHub Actions" pages, read on 2026-11-15:
 Workflows then use `INTENTIUS/behold@behold-v<version>`, or a commit sha for
 a stricter pin.
 
-## Live checks still open
+## Live checks
 
-The GitLab and Forgejo checks are tracked on INTENTIUS/behold#1064. Each needs
-a real instance and a test project that holds a small Terraform layout.
+The GitLab and Forgejo checks are tracked on INTENTIUS/behold#1064. They ran
+on a local GitLab CE `19.5.5` with a docker runner and a local Forgejo `17.0.1`
+with forgejo-runner `13.2.1`, each holding a test project with the two Terraform
+roots of INTENTIUS/behold-sandbox. Neither ran on gitlab.com or Codeberg. What
+a hosted instance can still differ on is its own runner image, its network
+policy for the template's `include: remote` and `git fetch` from GitHub, and
+whether the instance allows project access tokens.
+
+The checks found two faults in the templates, now fixed. The GitLab template set
+`BEHOLD_ACTION_REF: ""` on the job, which won over the project's own
+`variables:` and made the documented setup stop with "Set BEHOLD_ACTION_REF".
+The Forgejo workflow pinned `forgejo/upload-artifact` v4.3.1, which still refuses
+a Forgejo server; v5 has that check disabled.
+
 Packaging `action/gitlab/behold.gitlab-ci.yml` as a CI/CD Catalog component
 needs the repository on a GitLab instance.

@@ -186,12 +186,15 @@ describe("toMermaid (#1060)", () => {
 });
 
 describe("forge budgets (#1060, #1065)", () => {
-  it("holds the github figures measured on a real repository, and the others as provisional", () => {
-    expect(FORGE_BUDGETS.gitlab).toMatchObject({ blockChars: 2_000, maxChains: 30, maxBlocks: 50, commentChars: 60_000, confirmed: false });
+  it("holds the figures measured on GitHub, a local GitLab CE and a local Forgejo", () => {
+    // Local GitLab CE 19.5.5: 2,000 characters drew and 2,001 did not; 30 `&` chains drew and 31 did not.
+    expect(FORGE_BUDGETS.gitlab).toMatchObject({ blockChars: 2_000, maxChains: 30, maxBlocks: 50, commentChars: 60_000, confirmed: true });
     // #1065: 500 edges drew and 501 did not; sources to 260,000 characters drew; a comment of 262,144 characters was accepted and 262,145 refused.
     expect(FORGE_BUDGETS.github).toMatchObject({ blockChars: 200_000, maxEdges: 500, commentChars: 262_144, confirmed: true });
     expect(FORGE_BUDGETS.github.blockChars).toBeLessThan(260_000);
-    expect(FORGE_BUDGETS.forgejo).toMatchObject({ blockChars: 20_000, maxEdges: 250, commentChars: 60_000, confirmed: false });
+    // Local Forgejo 17.0.1, default settings: 500 edges drew and 501 did not; 49,999 characters drew and 50,000 did not; a 1,000,000 character comment was accepted.
+    expect(FORGE_BUDGETS.forgejo).toMatchObject({ blockChars: 49_999, maxEdges: 500, commentChars: 1_000_000, confirmed: true });
+    expect(FORGE_BUDGETS.forgejo.blockChars).toBeLessThan(50_000);
   });
 });
 
