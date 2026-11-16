@@ -5,7 +5,7 @@ description: Show behold's graph on a Backstage TechDocs page, as an image that 
 
 A component's docs page can carry its graph. Backstage TechDocs builds the page with MkDocs and sanitizes the HTML before it draws it, so what survives depends on how the instance is set up. This page gives two ways in: an image that works on an unchanged instance, and a live frame of the [hosted export](/behold/using/pages/) that needs one admin change.
 
-Both were checked in a local TechDocs preview built with `techdocs-cli serve` (CLI 1.14.1, `mkdocs-techdocs-core`) for a sample component. The sanitizer and publisher behaviour below is read from the Backstage source and docs.
+Both were checked in a local TechDocs preview built with `techdocs-cli serve` (CLI 1.14.1, `mkdocs-techdocs-core`) for a sample component. The live frame was checked again in a scratch Backstage app (1.56.0, new frontend system, TechDocs built by the backend with the `local` builder) driven by headless Chrome: with the host in `allowedIframeHosts` the page drew the frame, and with the line removed the page had no `iframe` at all. The sanitizer and publisher behaviour below is read from the Backstage source and docs.
 
 ## What TechDocs lets through
 
@@ -87,6 +87,11 @@ When the export writes `behold.html` (the single-file viewer, behold#1070), a co
 
 ## Hosting the export
 
-GitHub Pages and an S3 static website host serve the export as ordinary static files, and the export adds no frame restrictions of its own. Neither was tested as a frame host here, and a CDN, a bucket policy or the host's own settings can add `X-Frame-Options` or `frame-ancestors`, so open the frame once from your Backstage origin after you publish. A host that sets `frame-ancestors` has to list the Backstage origin.
+GitHub Pages and an S3 static website host serve the export as ordinary static files, and the export adds no frame restrictions of its own. A CDN, a bucket policy or the host's own settings can add `X-Frame-Options` or `frame-ancestors`, so open the frame once from your Backstage origin after you publish. A host that sets `frame-ancestors` has to list the Backstage origin.
+
+What was opened as a frame from the scratch Backstage app above:
+
+- GitHub Pages: the sandbox export at `https://intentius.io/behold-sandbox/` drew its graph.
+- A static bucket: the same export uploaded to a bucket on a local S3-compatible server (MinIO, anonymous read on the bucket, fake local credentials) drew its graph from `http://localhost:19000/sandbox-site/index.html?embed=1&bare=1&theme=light`. MinIO answers the S3 object API and has no website endpoint. A request for the bucket root finds no index document, so the frame address names `index.html`. A real S3 static website endpoint serves the index document for the root and an error document of its own, over HTTP only. None of that was run here. The host and port of the framed address go in `allowedIframeHosts` (`localhost:19000` in the check).
 
 The export is a snapshot: the frame shows the graph as of the last publish. Setting this up in a Backstage plugin or an MkDocs plugin is not part of this recipe.

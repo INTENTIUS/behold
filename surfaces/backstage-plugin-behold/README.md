@@ -64,11 +64,18 @@ publisher serves HTML as `text/plain`.
 3. Otherwise the tab draws the cut itself as SVG (`src/paint.ts`) and offers
    the Mermaid text of the cut under it.
 
+A resource with `count` draws its cards in the parent stack box, not in the
+root's own box. A slice around the root therefore leaves those cards out and
+keeps the folded card for the group (`null_resource ×3`).
+
 The single-file viewer's build waits on the pinhole 0.6.0 release (behold#1070,
 behold#1069), which is a maintainer step. Until the viewer is published
 beside an export, every tab takes step 3. The frame protocol is covered by
 `src/ViewerFrame.test.tsx` against the viewer's transport as written in
-`src/viewer/transport.ts`, and has not run against a built viewer.
+`src/viewer/transport.ts`. It also ran in a scratch Backstage app against the
+viewer built from `npm run build:viewer` (`behold.html` beside `graph.json`):
+the viewer asked for a graph, the tab answered with the cut, and the viewer
+drew the three cards of that cut.
 
 ## Wiring
 
