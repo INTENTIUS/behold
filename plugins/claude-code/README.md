@@ -9,7 +9,7 @@ claude plugin marketplace add INTENTIUS/behold
 claude plugin install behold@behold
 ```
 
-The plugin registers the `behold` MCP server (`npx @intentius/behold@0.33.2 mcp`) and adds one skill, `open-in-behold`, which starts `npx @intentius/behold serve .` in the background and prints the URL. Claude Code does not render MCP App views, so the graph opens in a browser tab.
+The plugin registers the `behold` MCP server (`npx @intentius/behold@0.33.3 mcp`) and adds one skill, `open-in-behold`, which starts `npx @intentius/behold serve .` in the background and prints the URL. Claude Code does not render MCP App views, so the graph opens in a browser tab.
 
 ## Try it
 

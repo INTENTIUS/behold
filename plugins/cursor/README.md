@@ -6,7 +6,7 @@ behold draws your infrastructure repo as a graph, from the files. Run it in a fo
 
 Install behold from the Cursor Marketplace. To try it from a clone of this repository, copy `plugins/cursor` to `~/.cursor/plugins/local/behold` and run Developer: Reload Window.
 
-The plugin registers the `behold` MCP server (`npx @intentius/behold@0.33.2 mcp`) and adds one skill, `open-in-behold`, which starts `npx @intentius/behold serve .` in the background and prints the URL. The server's tools are `ask`, `show`, `shot` and `capabilities`; they return text and a link, so the graph opens in a browser tab.
+The plugin registers the `behold` MCP server (`npx @intentius/behold@0.33.3 mcp`) and adds one skill, `open-in-behold`, which starts `npx @intentius/behold serve .` in the background and prints the URL. The server's tools are `ask`, `show`, `shot` and `capabilities`; they return text and a link, so the graph opens in a browser tab.
 
 ## Try it
 
