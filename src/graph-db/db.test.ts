@@ -6,8 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CypherRefused, GraphDb, SCHEMA, checkReadQuery, graphDbDir, plain, writeClause } from "./db.ts";
-import { fakeLbug } from "./fake-lbug.ts";
-import { loadLadybug } from "./peer.ts";
+import { fakeLbug, realLadybug } from "./fake-lbug.ts";
 import { emptyRows, finishRows, rowsFromChantIr, rowsFromEngineGraph, rowsFromIndex } from "./rows.ts";
 import type { EngineGraphDocument, IndexDocument } from "./types.ts";
 
@@ -128,7 +127,7 @@ describe("the build, against a stand-in", () => {
   });
 });
 
-const peer = await loadLadybug();
+const peer = await realLadybug();
 
 describe.runIf(peer.ok)("Cypher over a loaded fixture, on the real engine", () => {
   const build = async () => GraphDb.build((peer as { lbug: Parameters<typeof GraphDb.build>[0] }).lbug, fixtureRows(), mkdtempSync(join(tmpdir(), "behold-graph-")));
@@ -136,7 +135,7 @@ describe.runIf(peer.ok)("Cypher over a loaded fixture, on the real engine", () =
   it("answers the cross-source join: the bucket chant declares, choudoufu binds and the index lists is one CloudId", async () => {
     const db = await build();
     const a = await db.query(
-      "MATCH (a:Resource)-[:KNOWN_AS]->(c:CloudId {value: $v})<-[:KNOWN_AS]-(b:Resource) WHERE a.key < b.key RETURN a.key AS a, b.key AS b ORDER BY a, b",
+      "MATCH (a:Resource)-[:KNOWN_AS]->(c:CloudId {value: $v})<-[:KNOWN_AS]-(b:Resource) WHERE a.key < b.key RETURN a.key, b.key ORDER BY a.key, b.key",
       { v: "web-logs" },
     );
     expect(a.rows).toHaveLength(3);
