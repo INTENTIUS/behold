@@ -136,7 +136,7 @@ describe("the scratch project (#384)", () => {
 
     expect(memberSourceStamp(ESTATE)).toBe(before);
     expect(project.startsWith(ESTATE + sep)).toBe(false);
-    expect(existsSync(join(ESTATE, "chant.config.ts"))).toBe(false);
+    expect(existsSync(join(ESTATE, "chant.config.json"))).toBe(false);
     expect(existsSync(join(ESTATE, ".behold"))).toBe(false);
   });
 
@@ -154,7 +154,7 @@ describe("the scratch project (#384)", () => {
   it("holds the config and the two symlinks the read needs, and rewrites the config only when it changed", () => {
     const project = writeTerraformScratchProject(ESTATE, discoverTerraformRoots(ESTATE));
     made.push(project);
-    const config = join(project, "chant.config.ts");
+    const config = join(project, "chant.config.json");
     expect(lstatSync(join(project, ESTATE_LINK)).isSymbolicLink()).toBe(true);
     expect(readlinkSync(join(project, ESTATE_LINK))).toBe(ESTATE);
     // An ES module by declaration: chant's compiled CLI reads a config tsx
@@ -164,26 +164,26 @@ describe("the scratch project (#384)", () => {
     const stamp = memberSourceStamp(project);
     writeTerraformScratchProject(ESTATE, discoverTerraformRoots(ESTATE));
     expect(memberSourceStamp(project)).toBe(stamp);
-    expect(readFileSync(config, "utf8")).toContain(`"prod": { dir: "${ESTATE_LINK}/envs/prod" }`);
+    expect(JSON.parse(readFileSync(config, "utf8")).terraform.roots["prod"].dir).toBe(`${ESTATE_LINK}/envs/prod`);
   });
 
   it("names every root through the estate symlink, sorted, so the same estate generates the same bytes", () => {
     const config = terraformScratchConfig(discoverTerraformRoots(ESTATE), ESTATE_LINK);
-    expect(config).toContain(`import "${TERRAFORM_LEXICON_PKG}";`);
-    expect(config).toContain('lexicons: ["terraform"]');
+    // Data, not TypeScript: a JSON config needs no tsx to be read (chant 0.124.99).
+    expect(JSON.parse(config).lexicons).toEqual(["terraform"]);
     expect(config.indexOf('"baseline"')).toBeLessThan(config.indexOf('"prod"'));
     // A root that IS the served directory is the symlink itself, not `<link>/.`.
-    expect(terraformScratchConfig({ roots: [{ name: "prod", dir: "." }], skipped: [] }, ESTATE_LINK)).toContain(`"prod": { dir: "${ESTATE_LINK}" }`);
+    expect(JSON.parse(terraformScratchConfig({ roots: [{ name: "prod", dir: "." }], skipped: [] }, ESTATE_LINK)).terraform.roots["prod"].dir).toBe(`${ESTATE_LINK}`);
   });
 
   it("asks chant to draw the estate when lint finds errors, with the findings on meta.lint (#919)", () => {
     const scan = { roots: [{ name: "prod", dir: "." }], skipped: [] };
-    for (const flavour of ["tf", "chdf"] as const) expect(terraformScratchConfig(scan, ESTATE_LINK, flavour)).toContain('graph: { lint: "report" },');
+    for (const flavour of ["tf", "chdf"] as const) expect(terraformScratchConfig(scan, ESTATE_LINK, flavour)).toContain('"lint": "report"');
   });
 
   it("names choudoufu as the binary for the predictor's project and for no other, in a directory of its own (#402)", () => {
     const scan = { roots: [{ name: "prod", dir: "." }], skipped: [] };
-    expect(terraformScratchConfig(scan, ESTATE_LINK, "chdf")).toContain('binary: "choudoufu"');
+    expect(terraformScratchConfig(scan, ESTATE_LINK, "chdf")).toContain('"binary": "choudoufu"');
     expect(terraformScratchConfig(scan, ESTATE_LINK)).not.toContain("binary");
     expect(terraformScratchDir(ESTATE, undefined, "chdf")).not.toBe(terraformScratchDir(ESTATE));
     expect(terraformScratchDir(ESTATE, undefined, "chdf")).toMatch(/behold-chdf-[0-9a-f]{12}$/);

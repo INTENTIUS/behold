@@ -12,7 +12,8 @@
  * runtime dependencies of both, found by resolving each package's
  * `dependencies` the way Node would. Left out: the TypeScript toolchain
  * (typescript, tsx, esbuild and its platform binaries), which chant loads only
- * to evaluate TypeScript source a Terraform folder does not have, and every
+ * to evaluate TypeScript source (chant 0.124.99 made tsx an optional peer; behold's
+ * scratch project is a chant.config.json for that reason, so no read needs it), and every
  * package's source, type declarations and source maps, which a run never opens.
  * The extension runs the staged `@intentius/chant/dist/cli/main.js` itself
  * (BEHOLD_CHANT_BIN, src/chant.ts), as Node, through the host's own binary.
