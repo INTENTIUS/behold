@@ -3,7 +3,7 @@
   "name": "io.github.INTENTIUS/behold",
   "title": "behold",
   "description": "Your infrastructure repo as a graph, from the files. Draws Terraform roots, no state needed.",
-  "version": "0.33.2",
+  "version": "0.33.3",
   "repository": {
     "url": "https://github.com/INTENTIUS/behold",
     "source": "github"
@@ -13,7 +13,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@intentius/behold",
-      "version": "0.33.2",
+      "version": "0.33.3",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
