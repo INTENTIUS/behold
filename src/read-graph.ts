@@ -93,6 +93,12 @@ export interface ReadGraphOptions extends GraphOptions {
   logical?: boolean;
   /** How the reference catalog is read (behold#1080). Tests hand it recorded documents; the default is chant. */
   catalog?: CatalogReadDeps;
+  /**
+   * Handed the composed members before any pass runs (behold#1115): the nodes
+   * as chant read them, which the joined read hands to chant's catalog pass.
+   * The passes then change them in place, so a caller that keeps them copies.
+   */
+  composed?: (ir: GraphIR) => void;
 }
 
 export interface ReadGraphResult {
@@ -148,12 +154,13 @@ function joinNotes(a: { note?: string; noteShort?: string }, b: { note?: string;
 
 /** Read `dir` into behold's graph. The module header says what each argument and answer is. */
 export async function readGraph(dir: string | readonly string[], opts: ReadGraphOptions = {}): Promise<ReadGraphResult> {
-  const { workspace: given, k8sContext, logical, catalog: catalogDeps, ...graphOpts } = opts;
+  const { workspace: given, k8sContext, logical, catalog: catalogDeps, composed, ...graphOpts } = opts;
   const memberOpts = logical ? { ...graphOpts, detail: 3 } : graphOpts;
   const { dirs, workspace } = await resolveDirs(dir, given, memberOpts);
   const lookup = workspaceLookup(workspace);
   const members = estateMembers(dirs, lookup);
   const ir = await composeEstate(dirs, memberOpts, lookup);
+  composed?.(ir);
   // behold#1080: chant's reference catalog for the whole workspace, which a read of one member cannot see.
   const found = workspace ? await catalogOf(workspace, memberOpts, catalogDeps) : undefined;
   const read = await readComposed(ir, members, dirs, {

@@ -6,7 +6,9 @@
  *
  * With `--context` or `--kubeconfig` it draws a cluster instead of a
  * directory (behold#1083, src/read-cluster.ts): chant's read-only lister over
- * the kubeconfig's context, nothing written, no project needed.
+ * the kubeconfig's context, nothing written, no project needed. Given a
+ * directory too (or `--infra <dir>`), it draws the cluster and the folder as
+ * one graph (behold#1115, src/joined-read.ts).
  *
  * Exit codes: 0 printed, 1 the directory or cluster could not be read (chant
  * refused the workspace declaration, the cluster did not answer), 2 a usage
@@ -25,7 +27,8 @@ import { FORGES, isForge, type Forge } from "./mermaid-budgets.ts";
 import { isSvgTheme, SVG_THEMES, FlatLayoutTooLarge, type SvgTheme } from "./graph-svg.ts";
 import { clusterView, graphView, type GraphView } from "./graph-view.ts";
 import { ReadGraphError } from "./read-graph.ts";
-import { ClusterReadRefusal, readCluster } from "./read-cluster.ts";
+import { ClusterReadRefusal, readCluster, type ChantLister } from "./read-cluster.ts";
+import { markRead, readJoined } from "./joined-read.ts";
 import { documentScrubber } from "./graph-document-context.ts";
 
 export interface GraphCliIO {
@@ -35,6 +38,8 @@ export interface GraphCliIO {
   prog?: string;
   stdout?: (text: string | Uint8Array) => void;
   stderr?: (text: string) => void;
+  /** Replaces chant's cluster lister; tests pass a fake. */
+  chant?: ChantLister;
 }
 
 export function graphUsage(prog = "behold graph"): string {
@@ -42,6 +47,7 @@ export function graphUsage(prog = "behold graph"): string {
   return `Usage: ${prog} [dir] [${flags}] [--theme light|dark] [-o <file>] [--detail 0..3] [--source] [--every-card]
        ${prog} [dir] --changed <base>..<head> [--depth n] [--budget n]
        ${prog} --context <name> [--kubeconfig <file>] [--namespace <ns,...>] [--types <t,...>] [--allow-exec-plugin]
+       ${prog} --context <name> <dir> | --infra <dir>
        ${prog} [dir] --around <id>[,<id>...] [--depth n] [--up | --down]
 
 Read a directory into behold's graph and print it. Starts no server.
@@ -85,9 +91,17 @@ ${Object.keys(PENDING_FORMATS)
                  project: chant's read-only lister runs API discovery and a
                  LIST per kind, and nothing is written (no index store, no
                  file). Cards are boxed by namespace; cluster-scoped objects
-                 sit in a box named cluster. Not with a dir or --changed.
+                 sit in a box named cluster. Not with --changed.
                  A Secret's data is masked by the
                  lister, and so is any field whose name matches /secret/i.
+                 With a dir, the cluster and the folder are drawn as one
+                 graph: chant's reference catalog joins what the objects name
+                 (an IRSA or Workload Identity annotation, an ExternalSecret's
+                 key) to the cards the folder declares, and a placeholder card
+                 is drawn only for what the folder does not hold. Each card's
+                 read field in --json says which source it came from.
+  --infra <dir>  With --context: the folder to draw with the cluster, the
+                 same as giving it as dir.
   --kubeconfig <file>
                  The kubeconfig to read (default: the first path in
                  KUBECONFIG, then ~/.kube/config). Alone it reads that file's
@@ -111,6 +125,8 @@ ${Object.keys(PENDING_FORMATS)
 
 interface Parsed {
   dir: string;
+  /** A cluster and a directory, drawn as one graph (behold#1115). */
+  joined: boolean;
   format: string;
   out?: string;
   detail?: number;
@@ -149,6 +165,7 @@ function parse(argv: readonly string[]): Parsed | { error: string } | { help: tr
   let namespaces: string[] | undefined;
   let types: string[] | undefined;
   let allowExec = false;
+  let infra = false;
   const formats = new Set([...GRAPH_FORMATS.map((f) => f.name), ...Object.keys(PENDING_FORMATS)]);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
@@ -176,6 +193,12 @@ function parse(argv: readonly string[]): Parsed | { error: string } | { help: tr
       if (!v) return { error: `${a} needs a ${a === "--context" ? "context name" : "file"}` };
       if (a === "--context") context = v;
       else kubeconfig = v;
+    } else if (a === "--infra") {
+      const v = argv[++i];
+      if (!v) return { error: "--infra needs a directory" };
+      if (dir !== undefined && dir !== v) return { error: `one directory only (got ${dir} and ${v})` };
+      dir = v;
+      infra = true;
     } else if (a === "--namespace" || a === "--namespaces" || a === "--types") {
       const v = argv[++i]?.split(",").map((x) => x.trim()).filter(Boolean);
       if (!v?.length) return { error: `${a} needs one or more names, comma separated` };
@@ -212,8 +235,9 @@ function parse(argv: readonly string[]): Parsed | { error: string } | { help: tr
     }
   }
   const cluster = context !== undefined || kubeconfig !== undefined;
-  if (cluster && dir !== undefined) return { error: `a directory and a cluster are two reads; give ${dir} or --context, not both` };
+  if (infra && !cluster) return { error: "--infra goes with --context: it names the folder to draw beside the cluster" };
   if (cluster && changed) return { error: "--changed reads two commits of a directory; it does not go with --context" };
+  const joined = cluster && dir !== undefined;
   if (!cluster && (namespaces || types || allowExec)) return { error: "--namespace, --types and --allow-exec-plugin go with --context" };
   if (forge && format !== "mermaid") return { error: "--forge goes with --mermaid" };
   if (changed && around) return { error: "--changed and --around are two cuts; give one" };
@@ -224,6 +248,7 @@ function parse(argv: readonly string[]): Parsed | { error: string } | { help: tr
   if (theme && format !== "svg") return { error: "--theme goes with --svg" };
   return {
     dir: dir ?? ".",
+    joined,
     format: format ?? "json",
     ...(out ? { out } : {}),
     ...(detail !== undefined ? { detail } : {}),
@@ -266,7 +291,7 @@ export async function runGraph(argv: readonly string[], io: GraphCliIO): Promise
   const format = graphFormat(parsed.format)!;
   const cluster = parsed.context !== undefined || parsed.kubeconfig !== undefined;
   const dir = resolve(parsed.dir);
-  if (!cluster && (!existsSync(dir) || !statSync(dir).isDirectory())) {
+  if ((!cluster || parsed.joined) && (!existsSync(dir) || !statSync(dir).isDirectory())) {
     stderr(`${io.prog ?? "behold graph"}: ${parsed.dir} is not a directory\n`);
     return 2;
   }
@@ -309,17 +334,27 @@ export async function runGraph(argv: readonly string[], io: GraphCliIO): Promise
         return doc;
       };
     } else if (cluster) {
-      const read = await readCluster({
+      const clusterOpts = {
         ...(parsed.context ? { context: parsed.context } : {}),
         ...(parsed.kubeconfig ? { kubeconfig: parsed.kubeconfig } : {}),
         ...(parsed.namespaces ? { namespaces: parsed.namespaces } : {}),
         ...(parsed.types ? { types: parsed.types } : {}),
         allowExecPlugin: parsed.allowExec,
         version: io.version,
-      });
-      view = await clusterView(read, { alike: parsed.alike, ...(parsed.detail !== undefined ? { detail: parsed.detail } : {}) });
-      // No directory was read: the origin is the working directory only so the document has one, and the cluster is named in the note.
-      document = { generator: { behold: io.version }, origin: { dir: "." }, members: {}, scrub: documentScrubber(resolve("."), []) };
+        ...(io.chant ? { chant: io.chant } : {}),
+      };
+      const viewOpts = { alike: parsed.alike, ...(parsed.detail !== undefined ? { detail: parsed.detail } : {}) };
+      if (parsed.joined) {
+        const read = await readJoined({ cluster: clusterOpts, dir, ...(parsed.detail !== undefined ? { detail: parsed.detail } : {}) });
+        view = await clusterView(read, viewOpts);
+        // The folder is what was read from disk, so the document's origin and member paths are its.
+        document = documentOptions({ projectDir: dir, ...(read.folder.workspace ? { workspace: read.folder.workspace } : {}), behold: io.version });
+      } else {
+        const read = await readCluster(clusterOpts);
+        view = await clusterView(markRead(read, "cluster"), viewOpts);
+        // No directory was read: the origin is the working directory only so the document has one, and the cluster is named in the note.
+        document = { generator: { behold: io.version }, origin: { dir: "." }, members: {}, scrub: documentScrubber(resolve("."), []) };
+      }
     } else {
       view = await graphView(dir, { alike: parsed.alike, ...(parsed.detail !== undefined ? { detail: parsed.detail } : {}) });
       document = documentOptions({ projectDir: dir, ...(view.read.workspace ? { workspace: view.read.workspace } : {}), behold: io.version });

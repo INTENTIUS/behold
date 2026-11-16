@@ -271,8 +271,9 @@ describe("behold graph --context, arguments and refusals (#1083)", () => {
     }
   });
 
-  it("takes a cluster or a directory, not both, and the cluster flags only with a cluster", async () => {
-    expect((await run(["somedir", "--context", "x"])).err).toContain("two reads");
+  it("takes the cluster flags only with a cluster, and a directory beside a cluster only if it is one (#1115)", async () => {
+    expect((await run(["somedir-that-is-not-there", "--context", "x"])).err).toContain("is not a directory");
+    expect((await run(["--infra", "somedir"])).err).toContain("--infra goes with --context");
     expect((await run(["--context", "x", "--changed", "a..b"])).err).toContain("does not go with --context");
     expect((await run(["--namespace", "a"])).err).toContain("go with --context");
     expect((await run(["--allow-exec-plugin"])).code).toBe(2);
