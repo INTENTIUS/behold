@@ -49,7 +49,7 @@ import { readCluster, type ReadClusterOptions, type ReadClusterResult } from "./
 import { readGraph, type ReadGraphResult } from "./read-graph.ts";
 
 /** Where a card of a joined read was read from. `index` and `git` are the cloud index and a GitOps source. */
-export type ReadSource = "cluster" | "folder" | "index" | "git";
+export type ReadSource = "cluster" | "folder";
 
 type Rec = Record<string, unknown>;
 
