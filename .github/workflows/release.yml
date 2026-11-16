@@ -149,6 +149,15 @@ jobs:
           set -euo pipefail
           name="$(node -p 'require("./server.json").name')"
           V="$(node -p 'require("./server.json").version')"
+          # The registry checks that npm serves this version, and npm can take
+          # minutes to show a fresh publish; both 0.32.0 and 0.33.0 failed here
+          # with "version not found". Wait up to ten minutes for npm first.
+          pkg="$(node -p 'require("./server.json").packages[0].identifier')"
+          for i in $(seq 1 60); do
+            [ "$(npm view "${pkg}@${V}" version 2>/dev/null || true)" = "$V" ] && break
+            [ "$i" = 60 ] && { echo "npm does not serve ${pkg}@${V} after ten minutes" >&2; exit 1; }
+            sleep 10
+          done
           code="$(curl --silent --output /dev/null --write-out '%{http_code}' \
             "https://registry.modelcontextprotocol.io/v0/servers/${name//\//%2F}/versions/${V}")"
           if [ "$code" = "200" ]; then
