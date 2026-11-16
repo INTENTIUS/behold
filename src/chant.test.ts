@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { EventEmitter } from "node:events";
 import { spawn as spawnMock } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { delimiter, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   graphFlags,
@@ -591,7 +591,12 @@ describe("runChantRaw — env override reaches the spawn", () => {
     vi.mocked(spawnMock).mockReturnValue(fakeProc(0, "{}"));
     await runChantRaw(["graph", "src", "--format", "ir"], "/proj");
     const opts = vi.mocked(spawnMock).mock.calls[0]![2] as { env?: unknown } | undefined;
-    expect(opts?.env).toEqual(process.env);
+    // Everything inherited, plus behold's node_modules on NODE_PATH for tsx and esbuild.
+    const { NODE_PATH: added, ...rest } = (opts?.env ?? {}) as NodeJS.ProcessEnv;
+    const { NODE_PATH: own, ...inherited } = process.env;
+    expect(rest).toEqual(inherited);
+    expect(added?.split(delimiter)).toContain(join(process.cwd(), "node_modules"));
+    expect((added ?? "").startsWith(own ?? "")).toBe(true);
   });
 
   it("merges the env override over process.env for exactly this spawn (M2 tier/target lenses)", async () => {
@@ -919,5 +924,24 @@ describe("componentGraphPath", () => {
   it("no-regression: a single-stack project reads the same path as the resource graph", async () => {
     const dir = make({ "chant.config.ts": `export default { lexicons: ["aws"], sourceDir: "infra" };` });
     expect(await componentGraphPath(dir)).toBe(await graphPath(dir));
+  });
+});
+
+describe("withLoaderPath", () => {
+  it("appends behold's node_modules to NODE_PATH so a project's chant finds tsx and esbuild", async () => {
+    const { withLoaderPath } = await import("./chant.ts");
+    const env = withLoaderPath({ PATH: "/bin", NODE_PATH: "/project/node_modules" });
+    const parts = (env?.NODE_PATH ?? "").split(delimiter);
+    expect(parts[0]).toBe("/project/node_modules");
+    expect(parts).toHaveLength(2);
+    expect(existsSync(join(parts[1], "tsx", "package.json"))).toBe(true);
+    expect(env?.PATH).toBe("/bin");
+  });
+
+  it("is idempotent and starts from process.env when given none", async () => {
+    const { withLoaderPath } = await import("./chant.ts");
+    const once = withLoaderPath(undefined);
+    expect(once?.NODE_PATH).toBeTruthy();
+    expect(withLoaderPath(once)).toBe(once);
   });
 });

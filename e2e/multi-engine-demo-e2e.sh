@@ -107,8 +107,8 @@ mkdir -p "$TARGET"
 tar -C example-three-cloud --exclude node_modules --exclude .front-door --exclude export --exclude .terraform --exclude .tofu-records \
   --exclude .plunge --exclude stack-export.json --exclude Pulumi.local.yaml -cf - . | tar -C "$TARGET" -xf -
 npm --prefix "$TARGET" install --no-audit --no-fund --silent
-if [ ! -f "$TARGET/node_modules/@intentius/chant/src/components/verbs/member-outputs.ts" ] || [ ! -f "$TARGET/node_modules/@intentius/chant-lexicon-pulumi/workspace-kinds.json" ]; then
-  fail "the copy's npm install has no chant with member-outputs or no @intentius/chant-lexicon-pulumi; example-three-cloud depends on chant 0.124.54, which has both"
+if [ ! -f "$TARGET/node_modules/@intentius/chant/dist/components/verbs/member-outputs.js" ] || [ ! -f "$TARGET/node_modules/@intentius/chant-lexicon-pulumi/workspace-kinds.json" ]; then
+  fail "the copy's npm install has no chant with member-outputs or no @intentius/chant-lexicon-pulumi; example-three-cloud depends on chant 0.124.100, which has both"
 fi
 # The export a live `front-door.ts apply-aws` writes after `plunge up`.
 cp "$FIX/aws-stack-export.json" "$TARGET/aws/stack-export.json"

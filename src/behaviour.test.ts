@@ -488,7 +488,7 @@ describe("live versus declared on the routes (#402)", () => {
     readerState: () => ({ lexicon: { pkg: "l", version: "0.76.0" }, parser: { pkg: "p", version: "0.21.0" }, from: "test" }) as never,
     read: async (project, opts) => {
       asked.push({ project, live: opts.live === true, traffic: opts.traffic });
-      const mono = !readFileSync(join(project, "chant.config.ts"), "utf8").includes('"team-a"');
+      const mono = !readFileSync(join(project, "chant.config.json"), "utf8").includes('"team-a"');
       const held = ["aws_iam_role.team_a", ...(opts.live ? [] : ["aws_iam_policy.team_a"])];
       const nodes = mono ? held.map((address) => ({ id: `mono/${address}`, kind: "Terraform::Resource", lexicon: "terraform", attrs: { _behaviour: figure(0.01) } })) : [];
       return { nodes, edges: [], groups: {}, meta: { _behaviour: levelMeta(nodes.length * 0.01) } } as never;
@@ -544,7 +544,7 @@ describe("live versus declared on the routes (#402)", () => {
     const failing: PredictMemberDeps = {
       ...predictor,
       read: async (project, opts) => {
-        if (readFileSync(join(project, "chant.config.ts"), "utf8").includes('"team-a"')) throw new Error("Chant read exceeded 180000ms");
+        if (readFileSync(join(project, "chant.config.json"), "utf8").includes('"team-a"')) throw new Error("Chant read exceeded 180000ms");
         return predictor.read(project, opts);
       },
     };

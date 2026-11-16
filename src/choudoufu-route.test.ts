@@ -59,7 +59,7 @@ function fakeChant(reads: Array<{ args: string[]; project: string; env: Record<s
     readerAbsent: () => undefined,
     run: async (args: string[], project: string, env: Record<string, string>) => {
       reads.push({ args, project, env });
-      const config = readFileSync(join(project, "chant.config.ts"), "utf8");
+      const config = readFileSync(join(project, "chant.config.json"), "utf8");
       const root = /"(mono|team-a)": \{/.exec(config)![1]!;
       writeFileSync(join(env.CHANT_TERRAFORM_LIVE_PLAN_DIR!, `${root}.live-plan.json`), root === "mono" ? raw("choudoufu-live-plan-monolith-clean.json") : raw("choudoufu-live-plan-team-a-after-split.json"));
       return {
@@ -212,7 +212,7 @@ describe("GET /api/choudoufu/split (#371)", () => {
         expect(r.args).toEqual(["graph", ".", "--live", "--overlay", "--env", "behold-plan", "--format", "ir", "--detail", "3"]);
         expect(r.env.CHANT_TERRAFORM_OBSERVE).toBe("plan");
         expect(r.env.CHANT_TERRAFORM_LIVE_PLAN_DIR).toMatch(/behold-choudoufu-live-plan-/);
-        expect(readFileSync(join(r.project, "chant.config.ts"), "utf8")).toContain('binary: "choudoufu"');
+        expect(readFileSync(join(r.project, "chant.config.json"), "utf8")).toContain('"binary": "choudoufu"');
       }
       expect(spawns.filter((a) => ["live-plan", "plan", "show"].includes(a[0]!))).toEqual([]);
     });

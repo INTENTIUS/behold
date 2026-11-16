@@ -29,7 +29,7 @@ const LOOSE_Q = "launch-tier-1f278d6a8207";
 
 describe("the recorded documents are chant's (#472)", () => {
   it("points-open.json validates against chant's points schema", () => {
-    const schema = JSON.parse(readFileSync(join(import.meta.dirname, "..", "node_modules", "@intentius", "chant", "src", "workspace", "points.schema.json"), "utf8"));
+    const schema = JSON.parse(readFileSync(join(import.meta.dirname, "..", "node_modules", "@intentius", "chant", "dist", "workspace", "points.schema.json"), "utf8"));
     const validate = new Ajv2020({ strict: false, allErrors: true }).compile(schema);
     expect(validate(doc("points-open.json")), JSON.stringify(validate.errors)).toBe(true);
   });

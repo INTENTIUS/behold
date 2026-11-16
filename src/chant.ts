@@ -14,7 +14,7 @@ import { targetEnvOverrides, type SubstrateTarget } from "./targets.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import type { GraphIR, Layout, ComponentStatusRow } from "@intentius/chant";
 import type { MemberKind } from "./member-kind.ts";
 import { detectProject } from "./project.ts";
@@ -426,6 +426,28 @@ export function runChantRaw(
     .then((result) => ({ ...result })); // callers own their result; JSON is parsed separately
 }
 
+/**
+ * chant 0.124.99 ships only `dist/` and loads `tsx` and `esbuild` as optional
+ * peers, resolved from the project's chant. A project that installed chant
+ * alone has neither, so a TypeScript project would stop with an `npm i`
+ * message. behold depends on both, so its own `node_modules` is appended to
+ * `NODE_PATH`: the project's own copies still win, behold's are the fallback.
+ * Returns `env` unchanged when behold's copy cannot be found (a source run).
+ */
+export function withLoaderPath(env: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv | undefined {
+  let modules: string | undefined;
+  try {
+    // .../node_modules/tsx/package.json -> .../node_modules
+    modules = dirname(dirname(createRequire(import.meta.url).resolve("tsx/package.json")));
+  } catch {
+    return env;
+  }
+  const base = env ?? process.env;
+  const existing = (base.NODE_PATH ?? "").split(delimiter).filter(Boolean);
+  if (existing.includes(modules)) return env;
+  return { ...base, NODE_PATH: [...existing, modules].join(delimiter) };
+}
+
 function spawnChant(
   bin: string,
   args: string[],
@@ -441,7 +463,7 @@ function spawnChant(
     // A script (`BEHOLD_CHANT_BIN`) runs under this process's own runtime; in an
     // Electron host that is the host binary, which acts as Node with this variable.
     const script = /\.[cm]?js$/.test(bin);
-    const baseEnv = envOverride ? (signal ? envOverride : { ...process.env, ...envOverride }) : undefined;
+    const baseEnv = withLoaderPath(envOverride ? (signal ? envOverride : { ...process.env, ...envOverride }) : undefined);
     const proc = spawn(script ? process.execPath : bin, script ? [bin, ...args] : args, {
       ...(projectDir ? { cwd: projectDir } : {}),
       ...(script ? { env: { ...(baseEnv ?? process.env), ELECTRON_RUN_AS_NODE: "1" } } : baseEnv ? { env: baseEnv } : {}),

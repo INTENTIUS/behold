@@ -95,8 +95,8 @@ describe("the scaffold (#571)", () => {
     expect(memberSourceStamp(REPO)).toBe(before);
     expect(project.startsWith(REPO + sep)).toBe(false);
     expect(existsSync(join(REPO, TERRAGUCCI_COMPONENT_MODULE))).toBe(false);
-    const config = readFileSync(join(project, "chant.config.ts"), "utf8");
-    expect(config).toContain(`"network": { dir: "${ESTATE_LINK}/network" }`);
+    const config = readFileSync(join(project, "chant.config.json"), "utf8");
+    expect(JSON.parse(config).terraform.roots["network"].dir).toBe(`${ESTATE_LINK}/network`);
     expect(readFileSync(join(project, TERRAGUCCI_COMPONENT_MODULE), "utf8")).toBe(terragucciComponentModule(components!));
 
     writeTerraformScratchProject(REPO, discoverTerraformRoots(REPO), dirname(project));

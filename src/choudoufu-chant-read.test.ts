@@ -172,9 +172,9 @@ describe("the read (#924)", () => {
     expect(read!.env.CHANT_TERRAFORM_LIVE_PLAN_DIR).toContain("behold-choudoufu-live-plan-");
     expect(existsSync(read!.env.CHANT_TERRAFORM_LIVE_PLAN_DIR!)).toBe(false);
     // The reader project is the member's `chdf` one: choudoufu, one root.
-    const config = readFileSync(join(read!.project, "chant.config.ts"), "utf8");
-    expect(config).toContain('binary: "choudoufu"');
-    expect(config).toContain(`"${ROOT}": { dir: "estate" }`);
+    const config = readFileSync(join(read!.project, "chant.config.json"), "utf8");
+    expect(config).toContain('"binary": "choudoufu"');
+    expect(JSON.parse(config).terraform.roots[ROOT].dir).toBe(`estate`);
   });
 
   it("leaves the served folder unchanged", async () => {
