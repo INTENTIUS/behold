@@ -18,7 +18,7 @@ Every read endpoint for the whole lens matrix (each env/tier × zoom × radial),
 
 ## The graph as one file
 
-Every export also writes `graph.json` at the bundle root: the opening view at detail 2 as a [`behold-graph/1` document](/behold/using/graph-document/), so a dashboard, a portal or a script can read one URL instead of the snapshots, whose names change with their bytes. It follows `--open-env` (the opening environment's overlay) and `--no-source`, which leaves each card's source text out of it as it does the snapshots. In an estate of several projects every card is in it, not the stacked ones. `manifest.json` names it as `graph` and lists it in `files`, and `--publish` uploads it with the rest of each commit's folder, so it sits at `<prefix>/views/<name>/<commit>/graph.json`.
+Every export also writes `graph.json` at the bundle root: the opening view at detail 2 as a [`behold-graph/1` document](/behold/using/graph-document/), so a dashboard, a portal or a script can read one URL instead of the snapshots, whose names change with their bytes. It follows `--open-env` (the opening environment's overlay) and `--no-source`, which leaves each card's source text out of it as it does the snapshots (what it removes is listed under [What it leaves out](#what-it-leaves-out)). In an estate of several projects every card is in it, not the stacked ones. `manifest.json` names it as `graph` and lists it in `files`, and `--publish` uploads it with the rest of each commit's folder, so it sits at `<prefix>/views/<name>/<commit>/graph.json`.
 
 ```sh
 npx behold export . --out ./behold-export
@@ -65,11 +65,20 @@ Exporting a directory that holds a `chant.workspace.json` names the bundle after
 
 A bundle carries the picture and nothing about the machine that made it: no list of your recent projects, no user name, and every absolute path reduced to its directory's name.
 
-A Terraform card carries its root's whole source file. `--no-source` leaves that text out of every snapshot:
+A Terraform card carries its root's whole source file, and its attribute values as written. `--no-source` leaves the source text out of every snapshot and out of `graph.json` and `behold.html`:
 
 ```sh
 npx behold export . --no-source --out ./behold-export
 ```
+
+It removes:
+
+- `attrs.source`, a root's whole file.
+- Any attribute value, at any depth of a card's `attrs` (the body, the evaluated arguments, a stack's instances), that holds a line break: a heredoc body, a multi-line string, a multi-line expression with its comments.
+- Any value that holds a heredoc opener (`<<`), an interpolation that computes something (`${length(var.x)}`, `${jsonencode(...)}`), or a single-line string longer than 120 characters.
+- The text of an expression: a `for_each` or `count` string, an `expression` in an instance rollup, and each entry under `evaluated.stopped`, unless it is a plain reference such as `local.groups`.
+
+Each of them is replaced by the text `value left out (--no-source)`, which the card shows where the value was. It keeps every name, type, address, file name and line, edge, group and status, every reference (`aws_vpc.main.id`, `${var.region}`), every number and boolean, and each short single-line literal (`us-east-1`, a tag value). The same rule applies to every lexicon, so a long annotation or a multi-line ConfigMap value on a Kubernetes card is left out too. It does not read the values for secrets: a short literal that is a secret stays, so keep secrets out of the files, with or without the flag. The flag changes the bundle only. `behold graph` already leaves out `attrs.source` unless you pass `--source`, and does not change attribute values.
 
 ## A terragucci estate
 

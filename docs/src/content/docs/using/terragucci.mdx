@@ -280,7 +280,7 @@ cards and their lines, and terragucci's counts. Its report links are relative
 to `<prefix>/views/behold/<commit>/`, so they open the bucket's own report pages through
 the same presigned link or front door as `estate.html`. It carries no
 credential, no user name and no path of the machine that made it, and
-`--no-source` leaves each root's HCL out.
+`--no-source` leaves each root's HCL out, and the heredoc, multi-line and expression values on its cards.
 
 The upload is ordered so a reader never opens a half-written view: the
 snapshots and the SPA's files first, then `manifest.json`, then `index.html`.

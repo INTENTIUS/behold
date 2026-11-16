@@ -27,7 +27,9 @@ env:
   # Sub-folder of the site to write the export into, for a repository whose
   # Pages site holds something else too. Empty puts it at the site root.
   SITE_PATH: ""
-  # Leave each card's source text out of the published bundle.
+  # Leave each card's source text out of the published bundle: the root's
+  # file, and every attribute value that is a heredoc, a multi-line string,
+  # expression text or a string over 120 characters.
   NO_SOURCE: "true"
   # A command to run in PROJECT_DIR before the export, such as "npm ci", when
   # the estate needs its own chant and lexicons installed.

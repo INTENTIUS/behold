@@ -231,7 +231,9 @@ A bundle is made to be opened by other people, so it carries the picture and
 nothing about the machine that made it: no list of your recent projects, no
 user name, and every absolute path reduced to its directory's name. Each card
 of a Terraform root carries that root's whole source file (`attrs.source`);
-`--no-source` leaves it out.
+`--no-source` leaves it out, and with it every attribute value that is source
+text (heredoc bodies, multi-line strings, expression text, strings over 120
+characters), each shown as `value left out (--no-source)`.
 
 `--terragucci <src>` (with `--terragucci-project`, as for `serve`) captures the
 terragucci marks too, for the view terragucci's estate job can publish beside
