@@ -10,7 +10,8 @@
  *   ?theme=<name>     light, dark, or a pinhole theme (blueprint, aws); absent,
  *                     the system's light or dark (prefers-color-scheme)
  *   ?node=<id>        the card to light and scroll to
- *   ?focus=<a,b>      the boxes to bring forward (a root, `stack:<root>`); the rest dim
+ *   ?focus=<a,b>      cut the document around these boxes or cards (a root, `stack:<root>`, a card id)
+ *                     with behold's cut, one hop out, and draw only that
  *   ?host=<origin>    the parent's origin, for postMessage. No host, no parent messages.
  *   ?transport=<t>    post, vscode, mcp or none; absent, picked from the page (see main.ts)
  *   ?src=<path>       a same-origin path to fetch the document from

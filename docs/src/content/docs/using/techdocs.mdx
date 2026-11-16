@@ -69,7 +69,7 @@ The view parameters are the ones the export already reads:
 
 - `embed=1&bare=1` draws the graph alone, with no side panel, inspect pane or buttons.
 - `theme=light` or `theme=dark` sets the colours for this frame only. Pick the one that matches your Backstage theme.
-- `member=<name>` shows one member of a [declared workspace](/behold/using/workspace/), such as a Terraform root, and nothing else. `focus=<box>` brings the named box forward and leaves the others in view, so for one component use `member`.
+- `member=<name>` shows one member of a [declared workspace](/behold/using/workspace/), such as a Terraform root, and nothing else. On the multi-file site, `focus=<box>` brings the named box forward and leaves the others in view, so for one component use `member`. The one-file viewer reads `focus` differently, as the last section says.
 
 If the host is not allowed, TechDocs removes the whole `iframe` and the page shows the rest. Put the image from the section above under the frame and the page still shows the graph:
 
@@ -79,11 +79,13 @@ If the host is not allowed, TechDocs removes the whole `iframe` and the page sho
 ![The same graph as an image](graph/artifacts.png)
 ```
 
-In the local check the page with the host allow-listed drew the frame and the image, and the same page without the line drew the image alone.
+In the scratch Backstage app the page with the host allow-listed drew the frame and the image. The same page with the allow-list line removed had no `iframe`, and the image (a PNG of the export, kept in `docs/graph/`) rendered at its full width.
 
 ## A frame of the one-file viewer
 
-When the export writes `behold.html` (the single-file viewer, behold#1070), a component's roots can be framed from `graph.json` with `behold.html?src=graph.json&focus=<root box>`. The viewer reads `src` only from its own origin, so it has to be served from the same site as the `graph.json` it opens. This form is not in a release yet, so use `member` until it is.
+When the export writes `behold.html` (the single-file viewer, behold#1070), a component's root can be framed from `graph.json` with `behold.html?src=graph.json&focus=<root>`. `focus` cuts the document around the named box or card with behold's own cut, the one `behold graph --around` and the Backstage tab run, one hop out, and draws only that cut. `<root>` is a box id (`stack:prod`), a bare box name (`prod`) or a card id, and a comma list names several. A name the document does not hold is ignored and the whole document is drawn. The cards of a resource with `count` are drawn in the parent box, so a cut around a root leaves them out and keeps the folded card for the group. The viewer reads `src` only from its own origin, so it has to be served from the same site as the `graph.json` it opens.
+
+In the scratch Backstage app, a TechDocs page framing `behold.html?src=graph.json&focus=behold-sandbox/app&theme=light` from the sandbox export drew 3 cards, the root's own, with none dimmed. A page that posts `behold:view` with a `focus` to the viewer gets the same cut. The `node` parameter still lights one card and dims the rest. This form is not in a release yet, so use `member` until it is.
 
 ## Hosting the export
 

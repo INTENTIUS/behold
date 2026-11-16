@@ -9,6 +9,7 @@ import { extname, join, normalize } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { GraphIR } from "@intentius/chant";
 import type { GraphDocument } from "../graph-document.ts";
+import { cutDocument } from "../graph-cut.ts";
 import { documentOptions } from "../graph-document-context.ts";
 import { createApp } from "../server.ts";
 import type { Browser, Page } from "playwright-core";
@@ -121,6 +122,29 @@ describe("the single-file viewer in headless Chrome (behold#1070)", () => {
     await page.close();
   });
 
+  it("?focus= cuts the document around the root and draws only the cut", { timeout: 120_000 }, async (ctx) => {
+    if (skip) return ctx.skip(skip);
+    const cutIds = (root: string) => {
+      const c = cutDocument(doc, [root], { depth: 1 });
+      if (!c.ok) throw new Error(c.error);
+      return c.document.nodes.map((n) => n.id).sort();
+    };
+    const prod = cutIds("stack:prod");
+    expect(prod.length).toBeLessThan(serverCards.length);
+    writeFileSync(join(out, "graph.js"), graphScript(doc));
+    const page = await browser!.newPage({ viewport: { width: 1200, height: 800 }, deviceScaleFactor: 1 });
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto(`${pathToFileURL(join(out, "index.html")).href}?focus=prod`);
+    const first = await drawnCards(page);
+    expect(first.state.error ?? first.state.state).toBe("drawn");
+    expect(first.cards).toEqual(prod);
+    // The cards are removed, not dimmed.
+    expect(await page.evaluate(() => document.querySelectorAll(".behold-dim").length)).toBe(0);
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
   it("index.html fed by a behold:graph message draws under the CSP, with no violation, laid out in a worker", { timeout: 120_000 }, async (ctx) => {
     if (skip) return ctx.skip(skip);
     writeFileSync(join(out, "graph.js"), readFileSync(join(HERE, "graph.js"), "utf8"));
@@ -167,6 +191,13 @@ describe("the single-file viewer in headless Chrome (behold#1070)", () => {
       await page.waitForFunction(() => document.querySelectorAll(".behold-lit").length > 0);
       expect(await page.evaluate(() => [...document.querySelectorAll(".behold-lit")].map((e) => e.getAttribute("data-node-id")))).toEqual([lit]);
       expect(await page.evaluate(() => new Set([...document.querySelectorAll(".behold-dim")].map((e) => e.getAttribute("data-node-id"))).size)).toBe(serverCards.length - 1);
+      // A behold:view focus cuts the document again: the cards of that cut are drawn, the others are gone.
+      const c = cutDocument(doc, ["stack:prod"], { depth: 1 });
+      if (!c.ok) throw new Error(c.error);
+      const prod = c.document.nodes.map((n) => n.id).sort();
+      await page.evaluate(() => window.postMessage({ type: "behold:view", node: "", focus: "prod" }, location.origin));
+      await page.waitForFunction((n) => (window as unknown as { __BEHOLD_VIEWER_STATE__: { cards?: number } }).__BEHOLD_VIEWER_STATE__.cards === n, prod.length, { timeout: 60_000 });
+      expect((await drawnCards(page)).cards).toEqual(prod);
       await page.close();
     } finally {
       await new Promise<void>((r) => server.close(() => r()));

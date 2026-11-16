@@ -60,7 +60,8 @@ publisher serves HTML as `text/plain`.
    `behold.viewerUrl`), the tab opens it in an iframe with
    `?host=<portal origin>&transport=post` and answers its `behold:ready` with
    the theme, the cut (`behold:graph`) and the roots to bring forward
-   (`behold:view`).
+   (`behold:view`). The viewer's own `focus` cuts a whole document, so it leaves a document that
+   arrives already cut as it is.
 3. Otherwise the tab draws the cut itself as SVG (`src/paint.ts`) and offers
    the Mermaid text of the cut under it.
 
