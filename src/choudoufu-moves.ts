@@ -10,7 +10,7 @@
  * plan, runs the tool's own `-dry-run` for the preview, hands back the lines
  * with copy buttons, and reads the listing afterwards for the receipt. There
  * is no `/api/choudoufu/mv`, for the reason there is no `/api/carve/apply`
- * (AGENTS.md, "Invariant"), and `dryRunArgs` is the only way this module
+ * (AGENTS.md, "The write boundary"), and `dryRunArgs` is the only way this module
  * spells `live-mv` — always with `-dry-run`, asserted by test.
  *
  * The plan is a split: `split.json` at a member's root, in the live-mv

@@ -66,6 +66,37 @@ While a rollback PR is open, `pull-request` mode suspends. Otherwise the loop wo
 All delegated writes share one guard. If something is already running, a second trigger is refused and says which. It is not queued: the substrate waits until it drifts again.
 </Aside>
 
+## Moving a member to the engine tier
+
+In a declared workspace, the panel's **Adopt** tab offers a `terraform` member
+adoption into choudoufu and a `pulumi` member adoption into plunge. For each
+member it says what the engine tier gives, what it does not, the command, and
+the tool's own read-only report: every resource with its fate (claimed or left
+out, and why), and any refusal with its code. `GET /api/adopt` and
+`GET /api/adopt/report?member=<name>` answer the same.
+
+Starting it writes nothing on behold's say-so:
+
+- **Terraform into choudoufu.** Start runs chant's `workspace promote <member>
+  --state <file>` at the workspace root. chant records a pending gate and stops;
+  after a person runs the `chant approve workspace-promote` line the tab shows,
+  the same start applies the patch and imports. The state file is a file name
+  in the member's directory (`terraform.tfstate` by default), never a path.
+  promote refuses a member with uncommitted changes, so a root on a remote
+  backend pulls its state there under a name git ignores first. Needs chant
+  0.124.98 or newer.
+- **Pulumi into plunge.** Start runs plunge's classification only and answers
+  the confirm command (`plunge stack adopt --stack <s> --yes`) for a person to
+  run. behold never passes `--yes` and drops `PULUMI_SKIP_CONFIRMATIONS` from
+  the environment it hands plunge. The backend comes from the member's
+  `Pulumi.yaml`, never from login state; a member with no backend URL, or a
+  Pulumi Cloud one, gets no start. Afterwards, point `backend.url` at
+  `plunge+<url>` so chant runs the member through plunge.
+
+A public view refuses every adoption route, a terragucci or SQL Yodeler repo
+refuses the start, and one start runs at a time. `behold demo terraform-estate`
+shows recorded reports and no start.
+
 ## Rollback
 
 Rollback opens a PR restoring source to a prior revision. Merging it moves source; the estate follows on the next apply. behold never force-reverts a cloud.

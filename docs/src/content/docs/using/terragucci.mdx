@@ -557,6 +557,19 @@ The kiosk asks for `demo.json` every 3 seconds, and for the reports and the run
 view when the step moves or the event stream says they did. Everything it asks
 is a GET, and it shows no control.
 
+#### Pipeline metrics, from Prometheus
+
+When terragucci's gauges reach a Prometheus, serve with `--prometheus <url>`
+(or `BEHOLD_PROMETHEUS_URL`) and the kiosk adds a **Pipeline metrics** pane.
+`GET /api/metrics?project=<owner>/<name>[&commit=<sha>]` answers one commit's
+tf-apply waves (each root's plan and apply time, how long an approval held the
+wave at its gate, the changes it applied, the job's result) and the repo's
+four delivery metrics, from terragucci estate's gauges or the `dora.json` it
+writes beside the reports. behold asks a fixed set of named queries, with
+nothing a viewer sent in them, at most once every 30 seconds however many
+kiosks are open. It answers numbers and is never a proxy to Prometheus.
+Without an address the route answers 404 and the kiosk shows no pane.
+
 #### One checkout per repo
 
 The demo runs each tool on its own forge repo. `behold serve <dir> --repos

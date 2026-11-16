@@ -10,7 +10,7 @@
  * untouched). So behold generates the reader config itself, in a scratch
  * directory of its own, and points chant at that. Nothing is written under the
  * served directory, and behold writes nothing in a served project at all
- * (AGENTS.md, "Invariant"; #469).
+ * (AGENTS.md, "The write boundary"; #469).
  *
  * Three decisions shape this, and each was a real trade (#384's own three open
  * questions).

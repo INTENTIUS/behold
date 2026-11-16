@@ -51,7 +51,7 @@
  * so this cannot go stale within a process; it only means two behold processes
  * with different environments do not share a cache — which they don't anyway,
  * because this cache is in-memory and per-process. behold stays read-only with
- * no database (AGENTS.md): nothing here touches disk, and everything here dies
+ * no database (AGENTS.md, "The write boundary"): nothing here touches disk, and everything here dies
  * with the process.
  * ---------------------------------------------------------------------------
  */
