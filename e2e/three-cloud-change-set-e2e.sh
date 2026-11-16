@@ -95,8 +95,8 @@ mkdir -p "$TARGET"
 tar -C example-three-cloud --exclude node_modules --exclude .front-door --exclude export --exclude .terraform --exclude .tofu-records \
   --exclude .plunge --exclude stack-export.json --exclude Pulumi.local.yaml -cf - . | tar -C "$TARGET" -xf -
 npm --prefix "$TARGET" install --no-audit --no-fund --silent
-if [ ! -f "$TARGET/node_modules/@intentius/chant/src/components/verbs/member-outputs.ts" ] || [ ! -f "$TARGET/node_modules/@intentius/chant-lexicon-pulumi/workspace-kinds.json" ]; then
-  echo "FAIL: the copy's npm install has no chant with member-outputs (chant#4455) or no @intentius/chant-lexicon-pulumi, which dns's components import; example-three-cloud depends on chant 0.124.54, which has both" >&2
+if [ ! -f "$TARGET/node_modules/@intentius/chant/dist/components/verbs/member-outputs.js" ] || [ ! -f "$TARGET/node_modules/@intentius/chant-lexicon-pulumi/workspace-kinds.json" ]; then
+  echo "FAIL: the copy's npm install has no chant with member-outputs (chant#4455) or no @intentius/chant-lexicon-pulumi, which dns's components import; example-three-cloud depends on chant 0.124.100, which has both" >&2
   exit 1
 fi
 # The aws member's engine: the fake plunge, for front-door's calls and chant's.
@@ -111,7 +111,7 @@ echo "→ plan the four members into one change set"
 ( cd "$TARGET" && ./node_modules/.bin/tsx scripts/front-door.ts plan --out "$WORK/change-set.json" ) | tee "$WORK/plan.log"
 # behold#1017: a chant whose terraform lexicon has the choudoufuPlanSet Op
 # activity (chant#4483) plans azure through it, never through the fallback.
-if grep -q choudoufuPlanSetContract "$TARGET/node_modules/@intentius/chant-lexicon-terraform/src/op/activity-contracts.ts" 2>/dev/null; then
+if grep -q choudoufuPlanSetContract "$TARGET/node_modules/@intentius/chant-lexicon-terraform/dist/op/activity-contracts.js" 2>/dev/null; then
   if grep -q "has no choudoufuPlanSet Op activity" "$WORK/plan.log"; then echo "FAIL: azure was planned by the fallback although the copy's chant has the Op activity" >&2; exit 1; fi
   echo "  ✓ azure was planned through the choudoufuPlanSet Op activity"
 fi

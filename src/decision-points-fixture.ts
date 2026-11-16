@@ -82,7 +82,7 @@ export function makePointsWorkspace(scratch: string, opts: { chant: string; vers
     writeFileSync(join(root, path), text);
   }
   // The answer schema is the one chant ships, as the reference workspace copies it.
-  copyFileSync(join(import.meta.dirname, "..", "node_modules", "@intentius", "chant", "src", "workspace", "point-answer.schema.json"), join(root, "answers", "answer.schema.json"));
+  copyFileSync(join(import.meta.dirname, "..", "node_modules", "@intentius", "chant", "dist", "workspace", "point-answer.schema.json"), join(root, "answers", "answer.schema.json"));
   git(root, ["add", "-A"]);
   git(root, ["commit", "-q", "-m", "workspace"]);
 
