@@ -1,5 +1,5 @@
-name: behold changed cut
-description: Draw the resources a pull request changed, and their neighbours, in the job summary and one comment kept up to date.
+name: "behold: infrastructure diagram for pull requests"
+description: Diagrams the Terraform, Pulumi, and cloud native resources a pull request changes and what they connect to.
 author: INTENTIUS
 branding:
   icon: git-pull-request
