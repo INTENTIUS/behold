@@ -224,6 +224,15 @@ with one line naming it. Install it with `npm i @intentius/chant-k8s-client`.
 `behold graph` on a Terraform folder, `serve`, `export` and `behold mcp` do not
 need it.
 
+### Optional install: LadybugDB for the graph pane
+
+The graph pane at `/graph` and `behold mcp`'s Cypher questions run on
+`@ladybugdb/core`, an optional peer with a native addon. Install it with
+`npm i -g @ladybugdb/core`. behold needs `0.22.1` or newer. It refuses `0.22.0`
+and earlier, which count a multi-hop match wrongly. The pane's queries were
+checked on `0.22.3`, the newest release on 2026-11-16. Search queries keep
+working without the peer.
+
 ## Export and host: a shareable, interactive snapshot
 
 `behold export` freezes whatever estate you're looking at into a **self-contained

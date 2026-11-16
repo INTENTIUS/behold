@@ -5,7 +5,11 @@
  * hands it. The real engine is exercised by src/graph-db/db.test.ts when the
  * peer is installed.
  */
-import type { LbugConnection, LbugDatabase, LbugModule, LbugPreparedStatement, LbugQueryResult } from "./peer.ts";
+import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
+import { join } from "node:path";
+import { globalNodeModules } from "../shot.ts";
+import { LADYBUG_PACKAGE, loadLadybug, type LbugConnection, type LbugDatabase, type LbugModule, type LbugPreparedStatement, type LbugQueryResult } from "./peer.ts";
 
 export interface FakeLbugLog {
   opened: Array<{ path: string | undefined; readOnly: boolean }>;
@@ -54,5 +58,22 @@ export function fakeLbug(
       return result(answer(statement, params));
     }
   }
-  return { module: { Database, Connection, VERSION: "0.22.0-fake" }, log };
+  return { module: { Database, Connection, VERSION: "0.22.3-fake" }, log };
+}
+
+/**
+ * The real peer for the real-engine tests: beside behold, or where `npm i -g`
+ * put it. Under vitest a package missing beside behold fails to import with
+ * vite's own resolve error rather than ERR_MODULE_NOT_FOUND, so
+ * `importLadybug` never reaches its global fallback there; this looks in the
+ * global roots itself (behold#1121).
+ */
+export async function realLadybug(): ReturnType<typeof loadLadybug> {
+  const beside = await loadLadybug();
+  if (beside.ok) return beside;
+  for (const g of globalNodeModules()) {
+    const dir = join(g, ...LADYBUG_PACKAGE.split("/"));
+    if (existsSync(join(dir, "package.json"))) return loadLadybug(async () => createRequire(join(g, "noop.js"))(dir) as unknown);
+  }
+  return beside;
 }

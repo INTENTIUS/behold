@@ -16,18 +16,28 @@
  * node never looks there, and a behold run through npx would not find it.
  * The API used is the small part of `lbug.d.ts` (0.22.0) below, held
  * structurally.
+ *
+ * The floor is 0.22.1 (behold#1121). 0.21.2 and 0.22.0 answer a
+ * mixed-direction multi-hop MATCH with one row where there should be one per
+ * match (chant#4361's repro, and the same chain in behold's own tables in
+ * src/graph-db/templates-engine.test.ts), so an older peer is refused like a
+ * missing one rather than allowed to give a wrong count.
  */
 
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
+import { meetsFloor } from "../floor.ts";
 import { globalNodeModules } from "../shot.ts";
 
 /** The package name, checked on npm (`npm view @ladybugdb/core`, 0.22.0 on 2026-10-26). */
 export const LADYBUG_PACKAGE = "@ladybugdb/core";
 
+/** The oldest release whose answers behold#1121 checked: chant#4361's cases were run on 0.22.0 to 0.22.3 on 2026-11-16. */
+export const LADYBUG_FLOOR = "0.22.1";
+
 /** The range package.json's peerDependencies names. */
-export const LADYBUG_RANGE = ">=0.22.0";
+export const LADYBUG_RANGE = `>=${LADYBUG_FLOOR}`;
 
 /** The line a person runs to turn the pane on. */
 export const LADYBUG_INSTALL = `npm i -g ${LADYBUG_PACKAGE}`;
@@ -124,5 +134,8 @@ export async function loadLadybug(imp: PeerImport = importLadybug): Promise<{ ok
   }
   const mod = looksLikeModule(m) ? m : looksLikeModule((m as { default?: unknown })?.default) ? ((m as { default: LbugModule }).default) : undefined;
   if (!mod) return { ok: false, refusal: peerRefusal(`${LADYBUG_PACKAGE} loaded, but has no Database and Connection`) };
+  if (!meetsFloor(mod.VERSION, LADYBUG_FLOOR)) {
+    return { ok: false, refusal: peerRefusal(`${LADYBUG_PACKAGE} ${mod.VERSION} is installed, and the pane needs ${LADYBUG_FLOOR} or newer: older releases count a multi-hop match wrongly`) };
+  }
   return { ok: true, lbug: mod };
 }

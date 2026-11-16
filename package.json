@@ -72,7 +72,7 @@
     "tsx": "^4.19.0"
   },
   "peerDependencies": {
-    "@ladybugdb/core": ">=0.22.0",
+    "@ladybugdb/core": ">=0.22.1",
     "playwright-core": "^1.62.0",
     "@intentius/chant-k8s-client": "^0.124.100"
   },
