@@ -1,6 +1,6 @@
 {
   "name": "behold",
-  "version": "0.32.0",
+  "version": "0.33.0",
   "description": "Your infrastructure repo as a graph, from the files. Draws Terraform roots, no state needed.",
   "author": {
     "name": "INTENTIUS"
