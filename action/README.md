@@ -2,19 +2,11 @@
 
 > Your infrastructure repo as a graph, from the files. Draws Terraform roots, no state needed.
 
-Draw the resources a pull request changed, and their neighbours, as a diagram
-in the job summary and in one comment that is edited on each push. It reads
-the files in git, so it works on a repository that has never used chant,
-next to whatever plan tooling the repository already runs.
+This action draws what a Terraform pull request changed, plus the resources beside it. The diagram goes into the job summary and into a single comment that each push edits. The same cut is uploaded as an SVG and as JSON.
 
 ## What it reads
 
-Files only. The action reads `<base sha>..<head sha>` out of git with
-`git archive`, parses the Terraform it finds, and draws the roots that changed.
-It runs no `terraform` binary, needs no plan, no state file and no cloud
-credentials, and runs nothing from the repository it reads. The only token it
-uses is the repository's own `GITHUB_TOKEN`, to write the comment. It installs
-`@intentius/behold` from the npm registry on each run.
+Files only. The action reads `<base sha>..<head sha>` out of git with `git archive` and parses the Terraform it finds. It runs no `terraform` binary, and it needs neither a plan nor a state file nor cloud credentials. Nothing from the repository is executed. Posting the comment uses the repository's own `GITHUB_TOKEN`. Each run installs `@intentius/behold` from the npm registry and runs its `behold graph` command.
 
 ## Minimal workflow
 
@@ -31,26 +23,22 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: INTENTIUS/behold-action@v1
+      - uses: INTENTIUS/behold@behold-v0.33.0
 ```
+
+The action lives in the behold repository, and its tags are behold's release tags (`behold-v<version>`). A tag can be moved, so for a workflow that has write access pin the full commit sha of the release instead, with the tag in a comment: `uses: INTENTIUS/behold@<40-character sha> # behold-v0.33.0`.
 
 ## What the comment holds
 
-The cut is `<base sha>..<head sha>` from the pull request event, read with
-`behold graph --changed`, at detail 3 so an edited attribute shows. Each push
-edits the comment that carries the hidden marker `<!-- behold:changed -->`, so
-the pull request keeps one behold comment. When the cut is over the node
-budget (60 cards by default) the neighbours fold, and past that the comment is
-a per-root table of counts. A comment is kept under 60,000 characters,
-GitHub's reported limit being 65,536; that figure is provisional until the
-live check on INTENTIUS/behold#1065 is recorded.
+It starts with a count line ("4 changed, 9 neighbours, across 2 roots"). The Mermaid diagram follows, then the artifact links. The hidden marker `<!-- behold:changed -->` lets the next push find the comment and edit it, so a pull request keeps one behold comment.
 
-The run's job summary holds the same diagram or table, the count line (for
-example "4 changed, 9 neighbours, in 2 roots") and links to the artifacts.
+![The comment on a pull request that changed three resources](https://raw.githubusercontent.com/INTENTIUS/behold-sandbox/main/docs/comment.png)
 
-An SVG the painter refuses (it stops at 400 flat cards) and a directory
-behold cannot read both count as a failed read: the step fails after writing
-the reason to the summary. Set `fail-on-error: false` to report and continue.
+This is a real comment, from [a pull request in the test repository](https://github.com/INTENTIUS/behold-sandbox/pull/2).
+
+A cut with more cards than the `budget` input allows (60 by default) folds its neighbours first. If the diagram still exceeds the forge's Mermaid limit, a table of counts per root replaces it. The job summary carries the same text.
+
+If the SVG painter refuses a graph (it stops at 400 flat cards), or behold cannot read the directory, the step fails after writing the reason to the summary. Set `fail-on-error: false` to report and carry on.
 
 ## Inputs
 
@@ -68,14 +56,14 @@ All inputs are optional.
 | `depth` | behold's default | Hops from a changed card that are kept. |
 | `budget` | 60 | Cards a cut may hold before it folds. |
 | `theme` | behold's default | SVG theme, `light` or `dark`. |
-| `comment` | `auto` | `auto` posts one comment on a pull request; `false` writes the job summary and artifacts only. |
+| `comment` | `auto` | `auto` posts one comment on a pull request. `false` writes the job summary and artifacts only. |
 | `marker` | `behold:changed` | The hidden marker that finds the comment to edit. Change it to keep two comments, one per directory. |
 | `upload` | `true` | Upload the SVG and JSON as artifacts. |
 | `artifact-name` | `behold-changed` | Prefix of the artifact names. Names are unique per run, so give each use of the action its own. |
 | `retention-days` | repository default | Artifact retention, 1 to 90. |
 | `handoff` | `false` | Also upload `comment.md` and `pr.json` as one artifact, for the fork recipe. |
 | `handoff-dir` | empty | `post-comment` mode: the folder the handoff artifact was downloaded to. |
-| `behold-version` | `latest` | Version of `@intentius/behold` to install. |
+| `behold-version` | `latest` | Version of `@intentius/behold` to install. Any npm spec after the `@` works. |
 | `fail-on-error` | `true` | Fail the step when the read fails. |
 
 ## Outputs
@@ -91,13 +79,9 @@ All inputs are optional.
 
 ## Pull requests from forks
 
-On a fork's `pull_request` run `GITHUB_TOKEN` is read-only and no secrets are
-passed, so the first workflow cannot comment. The action notices the fork,
-makes no API call, still writes the job summary and uploads the artifacts, and
-hands the finished comment to a second workflow that runs from the default
-branch.
+On a fork's `pull_request` run the token is read-only and no secrets are passed, so that run cannot comment. The action notices this and makes no API call. It still writes the summary and uploads the artifacts. The comment is posted by a second workflow that runs from the default branch.
 
-First workflow, on `pull_request`:
+The first workflow runs on `pull_request`.
 
 ```yaml
 name: behold
@@ -111,13 +95,12 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: INTENTIUS/behold-action@v1
+      - uses: INTENTIUS/behold@behold-v0.33.0
         with:
           handoff: "true"
 ```
 
-Second workflow, on `workflow_run` of the first (the file must be on the
-default branch):
+The second runs on `workflow_run` of the first, and its file must be on the default branch.
 
 ```yaml
 name: behold comment
@@ -139,46 +122,17 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
           path: handoff
-      - uses: INTENTIUS/behold-action@v1
+      - uses: INTENTIUS/behold@behold-v0.33.0
         with:
           mode: post-comment
           handoff-dir: handoff
 ```
 
-Why the second workflow is safe. It has a write token, so it never checks out
-or runs anything from the pull request. The first workflow reads the head
-commit's files through `git archive` and parses them: a Terraform file is read
-as text, nothing in it is executed, and no install script of the repository
-runs. What crosses between the two is data, `comment.md` and `pr.json`, and
-the second workflow checks it before posting. The pull request number must be
-an integer, the pull request's current head sha must be the commit the first
-run read (a stale run is refused), `comment.md` must start with the marker and
-stay under 60,000 characters. All it can do with them is write or edit one
-marker comment on that one pull request. It does not read a fork's
-`GITHUB_TOKEN` or secrets, since the first workflow has none.
-
-The behold install in the first workflow runs `npm install` of
-`@intentius/behold` from the registry, not from the pull request.
+The second workflow has a write token, so it never checks out or runs anything from the pull request. The first reads the head commit's files as text through `git archive`. No install script of the repository runs. Two files pass from one to the other, `comment.md` and `pr.json`, and the second checks them before it posts. The pull request number must be an integer. The pull request's current head sha must be the commit the first run read. The file `comment.md` must start with the marker and stay under 262,144 characters, the most GitHub accepted in a live check. At most it writes or edits one marker comment on that pull request.
 
 ## GitLab
 
-GitLab has no action marketplace, so the same code runs from a CI template,
-`gitlab/behold.gitlab-ci.yml`. A merge request pipeline runs
-`src/main.mjs read` and `report` in a `node:24` job, writes the same SVG, JSON
-and comment text, and keeps one note per marker: it lists the merge request's
-notes, skips system notes, edits the one that carries `<!-- behold:changed -->`
-and otherwise creates it (`src/gitlab.mjs`). Packaging the template as a CI/CD
-Catalog component is not done.
-
-Setup:
-
-1. Create a project access token (Settings, Access tokens) with the `api`
-   scope and the Reporter role. `CI_JOB_TOKEN` is not used: whether it may
-   create notes is not documented.
-2. Store it as a CI/CD variable `BEHOLD_GITLAB_TOKEN`, masked, not protected
-   (a protected variable is withheld from pipelines of unprotected branches).
-3. Include the template pinned to a commit and give the same commit as
-   `BEHOLD_ACTION_REF`; the job fetches the action's source at that commit.
+GitLab has no action marketplace. A CI template runs the same code in merge request pipelines and keeps one note per marker. Create a project access token with the `api` scope and the Reporter role. Store it as the masked CI/CD variable `BEHOLD_GITLAB_TOKEN`. Then include the template pinned to a commit, and set `BEHOLD_ACTION_REF` to that commit:
 
 ```yaml
 include:
@@ -187,48 +141,11 @@ variables:
   BEHOLD_ACTION_REF: <sha>
 ```
 
-GitLab refuses a Mermaid block over 2,000 characters, and a page whose blocks
-total more, and shows the source as text behind a Display button. The note
-therefore uses the `gitlab` row of `FORGE_BUDGETS`: one block that fits, else
-the count line, the per-root table and a link to the SVG in the job's
-artifacts (`<job url>/artifacts/file/behold-changed/changed.svg`). The same
-cut is one diagram on GitHub. A cut that folds to a table has no SVG to link.
-The job log carries the text a job summary would, since GitLab has no summary
-page, and `artifacts:expose_as` lists the artifact folder in the merge request
-widget.
-
-A merge request from a fork. GitLab runs it in the fork's project by default,
-where this template's variables do not exist and the job does not start. When
-a project runs fork pipelines in the parent project, the source project id
-differs from the target's; the job then makes no API call, writes the log and
-artifacts, and posts no note. There is no second job that posts for it, so a
-fork's merge request gets no note until a maintainer runs the job on a branch
-of the project.
+A Mermaid block over 2,000 characters is refused there. A note therefore holds one block that fits. Otherwise it holds the count line and the per-root table. The SVG is linked from the job artifacts. A merge request from a fork gets no note.
 
 ## Forgejo
 
-Forgejo Actions runs the GitHub Action as it is, through `forge: forgejo`
-(auto-detected from `FORGEJO_ACTIONS`). The comment goes to
-`/api/v1/repos/<owner>/<repo>/issues/<n>/comments` with the `token` scheme,
-paged 50 at a time (`src/forgejo.mjs`), and the job summary is written to
-`FORGEJO_STEP_SUMMARY` or `GITHUB_STEP_SUMMARY`, whichever the runner gives.
-`forgejo/behold.yml` is the workflow to copy. It sets `upload: "false"` and
-uploads `out-dir` with `forgejo/upload-artifact` (the v4 build that does not
-refuse a Forgejo server), because `actions/upload-artifact` and its
-`archive: false` are not available there; artifacts are zipped and are listed
-on the run page.
-
-The `forgejo` row of `FORGE_BUDGETS` is the provisional 20,000 characters and
-250 edges until the live check (INTENTIUS/behold#1065) records what a Forgejo instance
-renders. Gitea's default `MERMAID_MAX_SOURCE_CHARACTERS` is 50,000; Forgejo's
-is not documented.
-
-A fork's pull request. Forgejo gives it a read-only token and no secrets, so
-the job writes the summary and uploads the artifacts and makes no API call.
-Forgejo has no `workflow_run` event, so there is no second workflow to post
-the comment, and `mode: post-comment` refuses to run there. Posting for forks
-would need `pull_request_target`, which runs with a write token; that is a
-separate design and is not built here.
+Forgejo Actions runs this action as it is. The `forge` input resolves to `forgejo` when the runner sets `FORGEJO_ACTIONS`. Copy `forgejo/behold.yml` as a starting workflow. It sets `upload: "false"` and uploads `out-dir` with `forgejo/upload-artifact`, because `actions/upload-artifact` is not available there. A fork's pull request gets the summary and artifacts but no comment, since Forgejo has no `workflow_run` event.
 
 ## About behold
 

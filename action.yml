@@ -5,8 +5,10 @@ branding:
   icon: git-pull-request
   color: purple
 
-# This file is built in the behold repository (INTENTIUS/behold#1062, #1063) and
-# copied to the root of the behold-action repository by a script there.
+# This is the action's metadata file, at the root of the behold repository so
+# that the Marketplace lists the action from here (INTENTIUS/behold#1062, #1063).
+# It is the only action metadata file in the repository: `$GITHUB_ACTION_PATH`
+# is the repository root, and the code the steps run is under action/.
 #
 # This is a composite action and not a `node24` one: uploading an artifact is
 # actions/upload-artifact's job, and a composite step can call it, where a
@@ -20,7 +22,7 @@ inputs:
     description: Token for the comment. A fork's pull_request run has a read-only one, and the action then leaves the comment to the workflow_run job.
     default: ${{ github.token }}
   forge:
-    description: "github, forgejo or auto. auto picks forgejo when the runner sets FORGEJO_ACTIONS and github otherwise. GitLab has no action marketplace; it uses gitlab/behold.gitlab-ci.yml, which runs the same code."
+    description: "github, forgejo or auto. auto picks forgejo when the runner sets FORGEJO_ACTIONS and github otherwise. GitLab has no action marketplace; it uses action/gitlab/behold.gitlab-ci.yml, which runs the same code."
     default: auto
   api-url:
     description: API base URL when the forge's own variable is wrong for the job, for example a Forgejo instance behind a proxy.
@@ -65,7 +67,7 @@ inputs:
     description: "post-comment mode: the folder the handoff artifact was downloaded to."
     default: ""
   behold-version:
-    description: Version of @intentius/behold to install.
+    description: Version of @intentius/behold to install. Any npm spec after the @ works.
     default: latest
   fail-on-error:
     description: Fail the step when the read fails (an unreadable directory, a base commit that is missing, a graph too large for the SVG painter).
@@ -97,7 +99,7 @@ runs:
     - id: read
       if: inputs.mode == 'changed'
       shell: bash
-      run: node "$GITHUB_ACTION_PATH/src/main.mjs" read
+      run: node "$GITHUB_ACTION_PATH/action/src/main.mjs" read
       env:
         INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
         INPUT_FORGE: ${{ inputs.forge }}
@@ -142,7 +144,7 @@ runs:
     - id: report
       if: inputs.mode == 'changed' && steps.read.outputs.out-dir != ''
       shell: bash
-      run: node "$GITHUB_ACTION_PATH/src/main.mjs" report
+      run: node "$GITHUB_ACTION_PATH/action/src/main.mjs" report
       env:
         INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
         INPUT_FORGE: ${{ inputs.forge }}
@@ -156,7 +158,7 @@ runs:
     - id: post
       if: inputs.mode == 'post-comment'
       shell: bash
-      run: node "$GITHUB_ACTION_PATH/src/main.mjs" post
+      run: node "$GITHUB_ACTION_PATH/action/src/main.mjs" post
       env:
         INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
         INPUT_FORGE: ${{ inputs.forge }}
