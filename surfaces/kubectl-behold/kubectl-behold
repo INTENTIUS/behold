@@ -13,7 +13,7 @@ set -euo pipefail
 
 # The behold release this plugin runs. It must be a release that has
 # `behold graph --context` (behold#1083).
-BEHOLD_PIN="0.32.0"
+BEHOLD_PIN="0.33.3"
 PROG="kubectl behold"
 
 usage() {
@@ -29,7 +29,8 @@ picture is that object and what it references or is referenced by.
                          the object's own namespace.
   --context NAME         The kubeconfig context (default: the current one).
   --kubeconfig FILE      The kubeconfig (default: KUBECONFIG, then ~/.kube/config).
-  --depth N              Hops around the object (default: behold's own).
+  --depth N              Hops around the object (default 2, which reaches a
+                         Deployment's Pods through its ReplicaSet).
   --theme light|dark     The SVG theme (default dark).
   --allow-exec-plugin    A context whose user authenticates through an exec
                          plugin (the GKE, EKS and AKS tools write these) is
@@ -90,7 +91,7 @@ if [ ${#target[@]} -gt 0 ]; then
   IFS=/ read -r kind ons oname <<<"$found"
   [ -n "$kind" ] && [ -n "$oname" ] || die "kubectl get ${target[*]} did not answer one object" 1
   args+=(--namespace "${ons:-cluster}" --around "${ons:-cluster}/$kind/$oname")
-  [ -z "$depth" ] || args+=(--depth "$depth")
+  args+=(--depth "${depth:-2}")
 else
   [ -z "$namespace" ] || args+=(--namespace "$namespace")
 fi
