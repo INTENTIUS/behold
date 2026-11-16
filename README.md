@@ -199,6 +199,16 @@ npx @intentius/behold graph ./infra --changed origin/main...HEAD -o cut.json
 npx @intentius/behold graph ./infra --around prod/prod/aws_vpc.main --depth 2
 ```
 
+`--context <name>` draws a cluster instead. Add a directory and the folder is
+drawn in the same graph. chant's reference catalog then joins a
+ServiceAccount's IRSA or Workload Identity annotation to the role the folder
+declares, and an ExternalSecret's key to its secret. A placeholder card stands
+only for what the folder does not hold.
+
+```sh
+npx @intentius/behold graph --context prod ./infra -o graph.json
+```
+
 `npx @intentius/behold graph ./infra` is a lean install. The Kubernetes client
 is an optional peer, so `npm install` does not fetch it;
 see "Optional install" below.

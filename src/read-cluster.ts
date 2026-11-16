@@ -86,6 +86,11 @@ export interface ReadClusterOptions {
   runExec?: ExecRunner;
   /** Replaces chant's `indexCloud` and `kubeTargetFromKubeconfig`; tests pass fakes. */
   chant?: ChantLister;
+  /**
+   * Nodes another source of a joined read holds (behold#1115, src/joined-read.ts),
+   * as chant's catalog reads them. A placeholder for a target among them is not made.
+   */
+  held?: readonly object[];
 }
 
 /** The parts of chant's lister this module calls, held loosely. */
@@ -290,7 +295,7 @@ export const OUTSIDE_BOX = "Outside the cluster";
  * edge starts at the drawn card of the object that names it. A field the live
  * read masked gives no card, and is counted so the note can say so.
  */
-export function addOutsideCards(ir: GraphIR): { ir: GraphIR; cards: number; masked: number } {
+export function addOutsideCards(ir: GraphIR, held: readonly object[] = []): { ir: GraphIR; cards: number; masked: number } {
   const listed = ir.nodes as unknown as { id: string; attrs?: Record<string, unknown>; listedType?: string }[];
   const key = (group: string, kind: string, ns: string, name: string) => `${group}/${kind}/${ns}/${name}`;
   const idByRef = new Map<string, string>();
@@ -305,7 +310,7 @@ export function addOutsideCards(ir: GraphIR): { ir: GraphIR; cards: number; mask
     manifests.push({ ...(maskedAsListed(n.attrs ?? {}) as Record<string, unknown>), apiVersion: group ? `${group}/${version}` : version, kind });
     idByRef.set(key(group, kind, kind === "ClusterSecretStore" ? "" : meta.namespace || "default", meta.name ?? ""), n.id);
   }
-  const out = outsideRefs(manifests, { graph: { nodes: ir.nodes } }) as OutsideResult;
+  const out = outsideRefs(manifests, { graph: { nodes: [...ir.nodes, ...held] } }) as OutsideResult;
   const masked = out.notes.filter((n) => n.code === "masked").length;
   if (!out.cards.length) return { ir, cards: 0, masked };
   const cards = out.cards.map((c) => ({ id: c.id, kind: c.kind, lexicon: "outside", attrs: { ...(c.attrs ?? {}), ...(c.label ? { label: c.label } : {}) } }));
@@ -361,7 +366,7 @@ export async function readCluster(opts: ReadClusterOptions = {}): Promise<ReadCl
   const { ir: drawn, dropped } = drawIr(doc.graph);
   const members = [{ name: found.context, dir: "", kind: "chant" as const }];
   const composed = await readComposed(drawn, members, [], { k8sContext: found.context });
-  const outside = addOutsideCards(composed.ir);
+  const outside = addOutsideCards(composed.ir, opts.held);
   const read = { ...composed, ir: outside.ir };
   const notListed = doc.coverage.filter((c) => c.verdict !== "listed").map((c) => ({ listedType: c.listedType, verdict: c.verdict, ...(c.detail ? { detail: c.detail } : {}) }));
   const clauses = [

@@ -105,10 +105,13 @@ export function stackAlike(ir: GraphIR, opts: { min?: number; hubMin?: number } 
     taken.add(id);
     for (const n of nodes) standsFor.set(n.id, id);
     const status = summaryStatus(nodes);
+    // behold#1115: the source of a joined read the cards came from, when they share one.
+    const read = (nodes[0] as { read?: string }).read;
     stackNodes.push({
       id,
       kind,
       lexicon: lexicon || undefined,
+      ...(read && nodes.every((n) => (n as { read?: string }).read === read) ? { read } : {}),
       attrs: {
         [STACK_OF]: nodes.map((n) => ({ id: n.id, ...(typeof n.attrs?._status === "string" ? { status: n.attrs._status } : {}) })),
         // terraform and choudoufu cards are titled from `address`, not the id.

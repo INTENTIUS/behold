@@ -212,6 +212,7 @@ function documentNode(node: IRNode, boxes: Boxes, opts: ToDocumentOptions, membe
   const root = str(a.root);
   const namespace = namespaceOf(node);
   const release = helmRelease(node);
+  const read = (node as { read?: unknown }).read;
   return {
     id: node.id,
     title: cardLabel(node, boxes.stackOf.get(node.id)) ?? node.id,
@@ -228,9 +229,13 @@ function documentNode(node: IRNode, boxes: Boxes, opts: ToDocumentOptions, membe
     ...(root ? { detail__root: root } : {}),
     ...(namespace ? { detail__namespace: namespace } : {}),
     ...(release ? { detail__release: release } : {}),
+    ...(isReadSource(read) ? { read } : {}),
     attrs,
   };
 }
+
+const READ_SOURCES: ReadonlySet<unknown> = new Set(["cluster", "folder"]);
+const isReadSource = (v: unknown): v is NonNullable<GraphDocumentNode["read"]> => READ_SOURCES.has(v);
 
 /** The rule an inferred edge was drawn by: chant's catalog rule, or the behold pass that joined it. */
 function ruleOf(e: Rec): string | undefined {

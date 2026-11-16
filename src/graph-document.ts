@@ -97,6 +97,8 @@ export interface GraphDocumentNode {
   detail__namespace?: string;
   /** The Helm release that installs it. */
   detail__release?: string;
+  /** Which source a read of a cluster took the card from (behold#1115): the cluster, or a folder read beside it. Absent on a read of a folder alone. */
+  read?: "cluster" | "folder";
   /** The graph IR's attributes. `source` is left out unless it was asked for. */
   attrs: Record<string, unknown>;
 }

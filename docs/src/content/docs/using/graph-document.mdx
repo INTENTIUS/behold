@@ -58,6 +58,7 @@ The node and edge field names are the ones Grafana's node graph panel reads (`id
 - `status`, `color` and `mainstat` are present when a drift overlay painted the card, and `change` when a plan was read and would change it.
 - Every edge's `source` and `target` is a node in the same document. An inferred edge carries `rule`, the join that drew it: `behold:<pass>`, or chant's catalog rule id. The edge to a placeholder card (a reference that names nothing) and each edge of a reference that names several nodes carry the rule of that reference too, and the placeholder is a node of the kind it was looking for, with `lexicon` `behold`.
 - No field holds an absolute path, and a card's source text (`attrs.source`) is left out unless it was asked for.
+- `read` is present on a read of a cluster: which source the card came from (`cluster` or `folder`).
 
 ## From the command line
 
@@ -69,6 +70,17 @@ npx @intentius/behold graph ./infra --detail 3 -o graph.json
 ```
 
 `@intentius/behold` installs without the Kubernetes client, an optional peer, so a CI job can run `npx @intentius/behold graph ./infra` on a Terraform folder with a small install. `--context` reads a cluster instead and needs the client: `npm i @intentius/chant-k8s-client` next to behold (or `npx -p @intentius/behold -p @intentius/chant-k8s-client behold graph --context <name>`). Without it the command stops with one line naming that package. `--source` keeps the cards' source text. `--ir` prints the unversioned `{ir, meta}` snapshot instead of the document.
+
+### A cluster and the folder that declares what it uses
+
+`--context` with a directory reads both into one graph:
+
+```sh
+npx @intentius/behold graph --context prod ./infra -o graph.json
+npx @intentius/behold graph --context prod --infra ./infra --svg -o graph.svg
+```
+
+chant's reference catalog joins what the cluster's objects name to the cards the folder declares: a ServiceAccount's `eks.amazonaws.com/role-arn` or `iam.gke.io/gcp-service-account` annotation to the `aws_iam_role` or `google_service_account`, and an ExternalSecret's key, through its store, to the `aws_secretsmanager_secret` or `google_secret_manager_secret`. Those edges carry chant's rule id. A placeholder card is drawn only for what the folder does not hold, and the notes say so. Each card carries `read`, the source it came from: `cluster` (a placeholder too, since a cluster object named it) or `folder`. On a read of a cluster alone every card has `read: "cluster"`.
 
 ## Cuts
 
