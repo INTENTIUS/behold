@@ -437,3 +437,61 @@ describe("the selector join, generalised past Service (#166)", () => {
     expect(deriveK8sEdges(nodes)).toHaveLength(0);
   });
 });
+
+// behold#1114: the edges a live read has and a manifest folder mostly does not.
+describe("owner references, Pod selection and EndpointSlice to Service (#1114)", () => {
+  const live = (id: string, kind: string, attrs: Record<string, unknown>, uid?: string) =>
+    ({ id, kind, lexicon: "k8s", attrs, ...(uid ? { facts: { cloudIds: [{ kind: "k8s-uid", value: uid }] } } : {}) }) as unknown as IRNode;
+  const owned = (name: string, ownerKind: string, ownerName: string, ownerUid: string) => ({
+    metadata: { name, namespace: "app", ownerReferences: [{ apiVersion: "apps/v1", kind: ownerKind, name: ownerName, uid: ownerUid }] },
+  });
+
+  function cluster(): IRNode[] {
+    return [
+      live("app/Deployment/web", "K8s::Apps::Deployment", { metadata: { name: "web", namespace: "app" }, spec: {} }, "u-dep"),
+      live("app/ReplicaSet/web-1", "K8s::Apps::ReplicaSet", owned("web-1", "Deployment", "web", "u-dep"), "u-rs"),
+      live("app/Pod/web-1-a", "K8s::Core::Pod", { ...owned("web-1-a", "ReplicaSet", "web-1", "u-rs"), spec: {} }, "u-pod-a"),
+      live("app/Pod/web-1-b", "K8s::Core::Pod", { metadata: { ...owned("web-1-b", "ReplicaSet", "web-1", "u-rs").metadata, labels: { app: "web" } } }, "u-pod-b"),
+      live("app/Pod/other", "K8s::Core::Pod", { metadata: { name: "other", namespace: "app", labels: { app: "other" } } }, "u-other"),
+      live("app/Service/web", "K8s::Core::Service", { metadata: { name: "web", namespace: "app" }, spec: { selector: { app: "web" } } }, "u-svc"),
+      live("app/EndpointSlice/web-xyz", "K8s::Discovery::EndpointSlice", { metadata: { name: "web-xyz", namespace: "app", labels: { "kubernetes.io/service-name": "web" } } }, "u-es"),
+    ];
+  }
+  const has = (edges: ReturnType<typeof deriveK8sEdges>, from: string, to: string) => edges.some((e) => e.from === from && e.to === to);
+
+  it("draws an owned object to its owner by uid, up the chain", () => {
+    const edges = deriveK8sEdges(cluster());
+    expect(has(edges, "app/ReplicaSet/web-1", "app/Deployment/web")).toBe(true);
+    expect(has(edges, "app/Pod/web-1-b", "app/ReplicaSet/web-1")).toBe(true);
+    expect(edges).toContainEqual(expect.objectContaining({ from: "app/Pod/web-1-b", viaAttr: "ownerReferences", inferred: true }));
+  });
+
+  it("falls back to kind and name in the same namespace when the owner's uid is not known", () => {
+    const edges = deriveK8sEdges([
+      live("app/Job/j", "K8s::Batch::Job", owned("j", "CronJob", "nightly", "gone")),
+      live("app/CronJob/nightly", "K8s::Batch::CronJob", { metadata: { name: "nightly", namespace: "app" } }),
+      live("other/CronJob/nightly", "K8s::Batch::CronJob", { metadata: { name: "nightly", namespace: "other" } }),
+    ]);
+    expect(edges.filter((e) => e.from === "app/Job/j").map((e) => e.to)).toEqual(["app/CronJob/nightly"]);
+  });
+
+  it("draws no owner edge to an object the read did not list", () => {
+    expect(deriveK8sEdges([live("app/Pod/p", "K8s::Core::Pod", owned("p", "ReplicaSet", "nope", "u-none"))])).toEqual([]);
+  });
+
+  it("draws a Service to the Pods its selector matches, in its namespace only", () => {
+    const edges = deriveK8sEdges(cluster());
+    expect(has(edges, "app/Service/web", "app/Pod/web-1-b")).toBe(true);
+    expect(has(edges, "app/Service/web", "app/Pod/other")).toBe(false);
+    const elsewhere = deriveK8sEdges([
+      live("a/Service/web", "K8s::Core::Service", { metadata: { name: "web", namespace: "a" }, spec: { selector: { app: "web" } } }),
+      live("b/Pod/web", "K8s::Core::Pod", { metadata: { name: "web", namespace: "b", labels: { app: "web" } } }),
+    ]);
+    expect(elsewhere).toEqual([]);
+  });
+
+  it("draws an EndpointSlice to the Service its service-name label names", () => {
+    const edges = deriveK8sEdges(cluster());
+    expect(edges).toContainEqual(expect.objectContaining({ from: "app/EndpointSlice/web-xyz", to: "app/Service/web", viaAttr: "service-name" }));
+  });
+});
