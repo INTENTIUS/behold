@@ -98,11 +98,17 @@ const EDITS: { file: string; edit: Edit }[] = [
     file: "package.json",
     edit: (d, r) => ({
       ...d,
-      dependencies: setDeps(d.dependencies as Json, ["@intentius/chant", "@intentius/chant-k8s-client", TERRAFORM], chantRange(r)),
-      devDependencies: { ...setDeps(d.devDependencies as Json, ["@intentius/chant-lexicon-sql", PULUMI], chantRange(r)), ...setDeps(d.devDependencies as Json, K8S_SET, chantVersion(r)) },
+      // The lexicons a plain install draws with are dependencies; each name takes the same rule in either map.
+      dependencies: behold(d.dependencies as Json, r),
+      devDependencies: behold(d.devDependencies as Json, r),
     }),
   },
 ];
+
+/** behold's own chant dependencies in one map: chant and the ranged lexicons at the release's range, the k8s set at the release exactly. */
+function behold(deps: Json | undefined, r: ChantRelease): Json {
+  return setDeps(setDeps(deps, ["@intentius/chant", "@intentius/chant-k8s-client", TERRAFORM, "@intentius/chant-lexicon-sql", PULUMI], chantRange(r)), K8S_SET, chantVersion(r));
+}
 
 /** Every file the switch decides, read from `repo`, with what it should hold. */
 export function chantReleaseFiles(repo: string, r: ChantRelease = CHANT_RELEASE): ReleaseFile[] {

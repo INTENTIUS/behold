@@ -45,7 +45,8 @@ describe("CHANT_RELEASE (behold#1005)", () => {
   it("behold's chant dependencies take the range the switch gives", () => {
     const pkg = json("package.json");
     expect(pkg.dependencies["@intentius/chant"]).toBe(chantRange(CHANT_RELEASE));
-    expect(pkg.devDependencies["@intentius/chant-lexicon-sql"]).toBe(chantRange(CHANT_RELEASE));
+    expect(pkg.dependencies["@intentius/chant-lexicon-sql"]).toBe(chantRange(CHANT_RELEASE));
+    expect(pkg.dependencies["@intentius/chant-lexicon-k8s"]).toBe(chantVersion(CHANT_RELEASE));
   });
 
   it("unreleased, a dependency stays at the published chant", () => {
