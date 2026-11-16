@@ -1,0 +1,285 @@
+{
+  "schema": "behold-graph/1",
+  "generator": {
+    "behold": "0.32.0"
+  },
+  "origin": {
+    "dir": "."
+  },
+  "cut": {
+    "kind": "whole"
+  },
+  "nodes": [
+    {
+      "id": "behold-sandbox/app/local_sensitive_file.db_credentials",
+      "title": "local_sensitive_file.db_credentials",
+      "subtitle": "terraform",
+      "kind": "local_sensitive_file",
+      "lexicon": "terraform",
+      "box": "stack:behold-sandbox/app",
+      "file": "app/main.tf",
+      "line": 26,
+      "detail__member": "behold-sandbox",
+      "detail__root": "app",
+      "attrs": {
+        "address": "local_sensitive_file.db_credentials",
+        "type": "local_sensitive_file",
+        "name": "db_credentials",
+        "file": "main.tf",
+        "root": "app",
+        "line": 26,
+        "mode": "state",
+        "lockFile": false,
+        "block": "resource"
+      }
+    },
+    {
+      "id": "behold-sandbox/app/null_resource.service[0]",
+      "title": "app/null_resource.service[0]",
+      "subtitle": "terraform",
+      "kind": "behold-sandbox/app/null_resource",
+      "lexicon": "terraform",
+      "box": "stack:behold-sandbox",
+      "detail__member": "behold-sandbox",
+      "attrs": {
+        "block": "resource"
+      }
+    },
+    {
+      "id": "behold-sandbox/app/null_resource.service[1]",
+      "title": "app/null_resource.service[1]",
+      "subtitle": "terraform",
+      "kind": "behold-sandbox/app/null_resource",
+      "lexicon": "terraform",
+      "box": "stack:behold-sandbox",
+      "detail__member": "behold-sandbox",
+      "attrs": {
+        "block": "resource"
+      }
+    },
+    {
+      "id": "behold-sandbox/app/random_password.db",
+      "title": "random_password.db",
+      "subtitle": "terraform",
+      "kind": "random_password",
+      "lexicon": "terraform",
+      "box": "stack:behold-sandbox/app",
+      "file": "app/main.tf",
+      "line": 14,
+      "detail__member": "behold-sandbox",
+      "detail__root": "app",
+      "attrs": {
+        "address": "random_password.db",
+        "type": "random_password",
+        "name": "db",
+        "file": "main.tf",
+        "root": "app",
+        "line": 14,
+        "mode": "state",
+        "lockFile": false,
+        "block": "resource"
+      }
+    },
+    {
+      "id": "behold-sandbox/core/local_file.inventory",
+      "title": "local_file.inventory",
+      "subtitle": "terraform",
+      "kind": "local_file",
+      "lexicon": "terraform",
+      "box": "stack:behold-sandbox/core",
+      "file": "core/main.tf",
+      "line": 45,
+      "detail__member": "behold-sandbox",
+      "detail__root": "core",
+      "attrs": {
+        "address": "local_file.inventory",
+        "type": "local_file",
+        "name": "inventory",
+        "file": "main.tf",
+        "root": "core",
+        "line": 45,
+        "mode": "state",
+        "lockFile": false,
+        "block": "resource"
+      }
+    },
+    {
+      "id": "behold-sandbox/core/random_id.suffix",
+      "title": "random_id.suffix",
+      "subtitle": "terraform",
+      "kind": "random_id",
+      "lexicon": "terraform",
+      "box": "stack:behold-sandbox/core",
+      "file": "core/main.tf",
+      "line": 20,
+      "detail__member": "behold-sandbox",
+      "detail__root": "core",
+      "attrs": {
+        "address": "random_id.suffix",
+        "type": "random_id",
+        "name": "suffix",
+        "file": "main.tf",
+        "root": "core",
+        "line": 20,
+        "mode": "state",
+        "lockFile": false,
+        "block": "resource"
+      }
+    },
+    {
+      "id": "behold-sandbox/core/random_pet.site",
+      "title": "random_pet.site",
+      "subtitle": "terraform",
+      "kind": "random_pet",
+      "lexicon": "terraform",
+      "box": "stack:behold-sandbox/core",
+      "file": "core/main.tf",
+      "line": 15,
+      "detail__member": "behold-sandbox",
+      "detail__root": "core",
+      "attrs": {
+        "address": "random_pet.site",
+        "type": "random_pet",
+        "name": "site",
+        "file": "main.tf",
+        "root": "core",
+        "line": 15,
+        "mode": "state",
+        "lockFile": false,
+        "block": "resource"
+      }
+    },
+    {
+      "id": "behold-sandbox/app/null_resource ×3",
+      "title": "behold-sandbox/app/null_resource ×3",
+      "subtitle": "terraform",
+      "kind": "null_resource",
+      "lexicon": "terraform",
+      "box": "stack:behold-sandbox/app",
+      "secondarystat": "3 cards",
+      "stackOf": [
+        "behold-sandbox/app/null_resource.database",
+        "behold-sandbox/app/null_resource.gateway",
+        "behold-sandbox/app/null_resource.service"
+      ],
+      "detail__member": "behold-sandbox",
+      "attrs": {
+        "_stackOf": [
+          {
+            "id": "behold-sandbox/app/null_resource.database"
+          },
+          {
+            "id": "behold-sandbox/app/null_resource.gateway"
+          },
+          {
+            "id": "behold-sandbox/app/null_resource.service"
+          }
+        ],
+        "address": "null_resource ×3"
+      }
+    },
+    {
+      "id": "behold-sandbox/core/null_resource ×3",
+      "title": "behold-sandbox/core/null_resource ×3",
+      "subtitle": "terraform",
+      "kind": "null_resource",
+      "lexicon": "terraform",
+      "box": "stack:behold-sandbox/core",
+      "secondarystat": "3 cards",
+      "stackOf": [
+        "behold-sandbox/core/null_resource.network",
+        "behold-sandbox/core/null_resource.subnet_a",
+        "behold-sandbox/core/null_resource.subnet_b"
+      ],
+      "detail__member": "behold-sandbox",
+      "attrs": {
+        "_stackOf": [
+          {
+            "id": "behold-sandbox/core/null_resource.network"
+          },
+          {
+            "id": "behold-sandbox/core/null_resource.subnet_a"
+          },
+          {
+            "id": "behold-sandbox/core/null_resource.subnet_b"
+          }
+        ],
+        "address": "null_resource ×3"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "behold-sandbox/app/local_sensitive_file.db_credentials->behold-sandbox/app/null_resource ×3:ref:content",
+      "source": "behold-sandbox/app/local_sensitive_file.db_credentials",
+      "target": "behold-sandbox/app/null_resource ×3",
+      "kind": "ref",
+      "inferred": false,
+      "via": "content"
+    },
+    {
+      "id": "behold-sandbox/app/local_sensitive_file.db_credentials->behold-sandbox/app/random_password.db:ref:content",
+      "source": "behold-sandbox/app/local_sensitive_file.db_credentials",
+      "target": "behold-sandbox/app/random_password.db",
+      "kind": "ref",
+      "inferred": false,
+      "via": "content"
+    },
+    {
+      "id": "behold-sandbox/core/local_file.inventory->behold-sandbox/core/null_resource ×3:ref:content",
+      "source": "behold-sandbox/core/local_file.inventory",
+      "target": "behold-sandbox/core/null_resource ×3",
+      "kind": "ref",
+      "inferred": false,
+      "via": "content"
+    },
+    {
+      "id": "behold-sandbox/core/local_file.inventory->behold-sandbox/core/random_id.suffix:ref:content",
+      "source": "behold-sandbox/core/local_file.inventory",
+      "target": "behold-sandbox/core/random_id.suffix",
+      "kind": "ref",
+      "inferred": false,
+      "via": "content"
+    },
+    {
+      "id": "behold-sandbox/core/local_file.inventory->behold-sandbox/core/random_pet.site:ref:content",
+      "source": "behold-sandbox/core/local_file.inventory",
+      "target": "behold-sandbox/core/random_pet.site",
+      "kind": "ref",
+      "inferred": false,
+      "via": "content"
+    },
+    {
+      "id": "behold-sandbox/core/null_resource ×3->behold-sandbox/core/random_pet.site:ref:triggers",
+      "source": "behold-sandbox/core/null_resource ×3",
+      "target": "behold-sandbox/core/random_pet.site",
+      "kind": "ref",
+      "inferred": false,
+      "via": "triggers"
+    }
+  ],
+  "groups": [
+    {
+      "id": "stack:behold-sandbox",
+      "title": "behold-sandbox",
+      "kind": "stack"
+    },
+    {
+      "id": "stack:behold-sandbox/app",
+      "title": "behold-sandbox/app",
+      "kind": "stack"
+    },
+    {
+      "id": "stack:behold-sandbox/core",
+      "title": "behold-sandbox/core",
+      "kind": "stack"
+    }
+  ],
+  "notes": [
+    {
+      "kind": "view",
+      "text": "2 roots — app, core; showing the estate — 3 outputs, 2 terraform blocks, 2 variables not drawn (outputs and variables appear at detail 3 — ⌘K → attributes) · alike: 6 cards stacked into 2 (click a stack to see its cards)",
+      "short": "2 roots · 7 blocks not drawn · alike: 6 cards stacked into 2 (click a stack to see its cards)"
+    }
+  ]
+}

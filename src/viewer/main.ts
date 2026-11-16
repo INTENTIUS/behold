@@ -22,6 +22,7 @@ import type { VendoredIcon } from "../icon-svg.ts";
 import { checkGraphDocument, type GraphDocument, type GraphDocumentNode } from "../graph-document.ts";
 import { paintDocument, type PaintResult } from "./paint.ts";
 import { iconTable, readOptions, sameOriginSrc, selectMessage, type Inbound, type ViewerOptions } from "./options.ts";
+import { focusCut, litCards } from "./focus.ts";
 import { openTransport, type Transport, type WindowLike } from "./transport.ts";
 
 declare const __VIEWER_FORMAT__: "esm" | "iife";
@@ -131,6 +132,8 @@ function boot(): void {
   root.setAttribute("data-behold-viewer", state.state);
 
   let shown: GraphDocument | undefined;
+  /** The document as it arrived, so a new `focus` cuts it again. */
+  let received: GraphDocument | undefined;
   let icons: Record<string, VendoredIcon> | undefined = iconTable(scope.__BEHOLD_ICONS__);
   let theme = opts.theme ?? systemTheme();
   let view: { node?: string; focus?: string[] } = { ...(opts.node ? { node: opts.node } : {}), ...(opts.focus ? { focus: opts.focus } : {}) };
@@ -156,17 +159,19 @@ function boot(): void {
       return say(checked.error);
     }
     if (extraIcons) icons = { ...icons, ...extraIcons };
+    received = checked.document;
+    const toDraw = focusCut(checked.document, view.focus);
     const mine = ++drawing;
     set({ state: "drawing" });
-    say(`Laying out ${checked.document.nodes.length} cards.`);
-    const r = await paint({ document: checked.document, ...(icons ? { icons } : {}) });
+    say(`Laying out ${toDraw.nodes.length} cards.`);
+    const r = await paint({ document: toDraw, ...(icons ? { icons } : {}) });
     if (mine !== drawing) return; // a newer document arrived while this one was laid out
     if (!r.ok) {
       set({ state: "refused", error: r.error, where: r.where });
       transport.send({ type: "behold:refused", error: r.error });
       return say(r.error);
     }
-    shown = checked.document;
+    shown = toDraw;
     stage.innerHTML = r.svg;
     say("");
     applyView();
@@ -204,8 +209,11 @@ function boot(): void {
     else if (m.type === "theme") applyTheme(m.theme ?? theme, m.vars);
     else {
       if (m.node !== undefined) view = { ...view, node: m.node ?? undefined };
+      const before = JSON.stringify(view.focus ?? null);
       if (m.focus !== undefined) view = { ...view, focus: m.focus ?? undefined };
-      applyView();
+      // `focus` cuts the document, so a new one draws again. A document that arrived already cut draws as it is.
+      if (received && JSON.stringify(view.focus ?? null) !== before && received.cut.kind === "whole") void draw(received);
+      else applyView();
     }
   };
   const transport: Transport = openTransport(scope as unknown as WindowLike, opts, onInbound, __VIEWER_VERSION__);
@@ -250,22 +258,4 @@ function boot(): void {
 
 function systemTheme(): string {
   return typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-}
-
-/** The cards a view lights: the asked-for card, or every card in the focused boxes. Undefined when nothing is asked, so nothing dims. */
-export function litCards(doc: GraphDocument, view: { node?: string; focus?: string[] }): Set<string> | undefined {
-  if (!view.focus?.length) return view.node ? new Set([view.node]) : undefined;
-  const groups = new Map(doc.groups.map((g) => [g.id, g] as const));
-  const wanted = new Set(view.focus.flatMap((f) => [f, ...doc.groups.filter((g) => g.id.endsWith(`:${f}`)).map((g) => g.id)]));
-  const lit = new Set<string>();
-  for (const n of doc.nodes) {
-    for (let at = n.box ? groups.get(n.box) : undefined, hops = 0; at && hops < 64; at = at.parent ? groups.get(at.parent) : undefined, hops++) {
-      if (wanted.has(at.id)) {
-        lit.add(n.id);
-        break;
-      }
-    }
-  }
-  if (view.node) lit.add(view.node);
-  return lit;
 }

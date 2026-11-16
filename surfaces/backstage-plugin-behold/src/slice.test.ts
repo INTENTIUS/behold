@@ -71,6 +71,41 @@ describe('sliceFor', () => {
   });
 });
 
+// The public INTENTIUS/behold-sandbox export: two roots, no edge between them,
+// and a resource with `count` whose cards sit in the parent box.
+const sandbox = JSON.parse(readFileSync(join(__dirname, '..', 'fixtures', 'behold-sandbox.graph.json'), 'utf8')) as GraphDocument;
+
+describe('sliceFor on the sandbox export', () => {
+  const cardsOf = (r: ReturnType<typeof sliceFor>) => (r.ok ? r.slice.document.nodes.map(n => n.id).sort() : []);
+
+  it('cuts the app root to its own cards and drops the other root', () => {
+    const r = sliceFor(sandbox, { 'behold.intentius.io/roots': 'behold-sandbox/app' });
+    expect(r.ok && r.slice.document.groups.map(g => g.id)).toEqual(['stack:behold-sandbox/app']);
+    expect(cardsOf(r)).toEqual([
+      'behold-sandbox/app/local_sensitive_file.db_credentials',
+      'behold-sandbox/app/null_resource ×3',
+      'behold-sandbox/app/random_password.db',
+    ]);
+    expect(r.ok && r.slice.document.edges).toHaveLength(2);
+  });
+  it('leaves out the cards of a counted resource, which sit in the parent box', () => {
+    const counted = sandbox.nodes.filter(n => n.id.includes('null_resource.service['));
+    expect(counted.length).toBeGreaterThan(0);
+    expect(counted.every(n => n.box === 'stack:behold-sandbox')).toBe(true);
+    const ids = cardsOf(sliceFor(sandbox, { 'behold.intentius.io/roots': 'behold-sandbox/app' }));
+    expect(ids.some(id => id.includes('null_resource.service['))).toBe(false);
+  });
+  it('keeps the neighbour of a card named by id, and marks the named card as the seed', () => {
+    const r = sliceFor(sandbox, { 'behold.intentius.io/roots': 'behold-sandbox/app/random_password.db' });
+    expect(cardsOf(r)).toEqual(['behold-sandbox/app/local_sensitive_file.db_credentials', 'behold-sandbox/app/random_password.db']);
+    expect(r.ok && r.slice.document.nodes.filter(n => n.seed).map(n => n.id)).toEqual(['behold-sandbox/app/random_password.db']);
+  });
+  it('says so when the annotation names a root the export does not have', () => {
+    const r = sliceFor(sandbox, { 'behold.intentius.io/roots': 'ghost' });
+    expect(r).toMatchObject({ ok: false });
+  });
+});
+
 describe('addresses', () => {
   it('puts graph.json under a base and takes a .json address as it is', () => {
     expect(graphUrl('https://o.github.io/estate/')).toBe('https://o.github.io/estate/graph.json');
