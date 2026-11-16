@@ -10,6 +10,30 @@ Run it in a folder of Terraform and it finds each root and draws it as a box of 
 
 ![Two Terraform roots, app and net, drawn as boxes of resources with an edge for each reference](https://raw.githubusercontent.com/INTENTIUS/behold/main/docs/public/readme/two-roots.png)
 
+## On every pull request
+
+The GitHub Action in this repository comments a diagram of the resources a pull request changes and what they connect to. Each push edits the same comment, and the diagram also lands in the job summary with an SVG and JSON copy as artifacts. It reads the files in the repository and needs neither a plan nor cloud credentials.
+
+![The comment behold posts on a pull request that changed three resources](https://raw.githubusercontent.com/INTENTIUS/behold-sandbox/main/docs/comment.png)
+
+```yaml
+name: behold
+on: pull_request
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  draw:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: INTENTIUS/behold@behold-v0.33.2
+```
+
+[action/README.md](action/README.md) lists the inputs and shows the GitLab and Forgejo forms.
+
 ## With chant
 
 Reads what chant records for terragucci and plywood.
