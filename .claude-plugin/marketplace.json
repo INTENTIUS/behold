@@ -11,7 +11,7 @@
       "name": "behold",
       "source": "./plugins/claude-code",
       "description": "Your infrastructure repo as a graph, from the files. Draws Terraform roots, no state needed.",
-      "version": "0.33.0",
+      "version": "0.33.1",
       "category": "development",
       "keywords": [
         "terraform",

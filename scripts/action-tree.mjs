@@ -62,6 +62,9 @@ export function checkLayout(root = ROOT) {
   const name = /^name:\s*(.+)$/m.exec(yml)?.[1]?.trim();
   if (!name) problems.push("action.yml has no name");
   if (!/^description:\s*\S/m.test(yml)) problems.push("action.yml has no description");
+  // The Marketplace refuses a description of 125 characters or more (#1063).
+  const description = /^description:\s*(.*)$/m.exec(yml)?.[1]?.trim() ?? "";
+  if (description.length >= 125) problems.push(`action.yml description is ${description.length} characters; the Marketplace takes fewer than 125`);
   const icon = /^\s+icon:\s*(\S+)/m.exec(yml)?.[1];
   const color = /^\s+color:\s*(\S+)/m.exec(yml)?.[1];
   if (!icon) problems.push("action.yml has no branding icon");
