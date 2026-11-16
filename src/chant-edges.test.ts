@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import type { GraphIR, IREdge, IRNode } from "@intentius/chant";
 import {
   addChantEdges,
+  chantLexicon,
   chantEdgePasses,
   deriveGraphEdges,
   deriveGraphEdgesWithSource,
@@ -167,5 +168,13 @@ describe.skipIf(!real)("deriveGraphEdges over chant's own passes (local chant bu
     const { source } = await deriveGraphEdgesWithSource(ir, withRealPasses);
     expect(source.source).toBe("chant");
     expect(ir.edges).toEqual([]);
+  });
+});
+
+describe("chantLexicon (#1122)", () => {
+  it("returns the k8s plugin that carries the reference catalog, not the first export named k8s", async () => {
+    const lexicon = await chantLexicon("k8s");
+    expect(lexicon).toBeDefined();
+    expect((lexicon as { referenceCatalog?: unknown }).referenceCatalog).toBeDefined();
   });
 });
