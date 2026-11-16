@@ -66,12 +66,9 @@ The same read feeds several places outside behold's own page. Each has a docs pa
 - A GitHub Pages workflow ([templates/github-pages.yml](templates/github-pages.yml), [docs](https://intentius.io/behold/using/pages/)) publishes `behold export` on each push to `main`, so the graph has a stable URL.
 - Grafana's node graph panel draws a published `graph.json` through the Infinity data source, with two ready dashboards ([docs](https://intentius.io/behold/using/grafana/)).
 - Backstage TechDocs can carry a component's graph as an image or a live frame ([docs](https://intentius.io/behold/using/techdocs/)).
-- A Backstage plugin adds an "Infrastructure" tab to a component's page from a published `graph.json`, and loads in Red Hat Developer Hub as a dynamic plugin ([surfaces/backstage-plugin-behold](surfaces/backstage-plugin-behold/README.md)).
-- An `argocd-cm` entry gives annotated Argo CD Applications an "Open in behold" link ([docs](https://intentius.io/behold/using/argocd-link/)), and a UI extension for Argo CD 3.5 and later adds an "Outside the cluster" tab ([docs](https://intentius.io/behold/using/argocd-extension/)).
-- A Headlamp plugin draws the cloud identities, secret stores and Git sources that live objects name ([surfaces/headlamp-behold](surfaces/headlamp-behold/README.md)).
-- `kubectl behold` draws the current context, or one object and its neighbours, and opens the SVG, with a krew manifest and a k9s entry ([surfaces/kubectl-behold](surfaces/kubectl-behold/README.md)).
-- A VS Code extension draws the open folder's Terraform in a panel and opens a card's file at its line ([surfaces/vscode-behold](surfaces/vscode-behold/README.md)).
-- Plugins for Claude Code and Cursor register `behold mcp` ([plugins/](plugins/)). In Claude Code: `claude plugin marketplace add INTENTIUS/behold`, then `claude plugin install behold@behold`.
+- An `argocd-cm` entry gives annotated Argo CD Applications an "Open in behold" link, with nothing to install in Argo CD ([docs](https://intentius.io/behold/using/argocd-link/)).
+- `kubectl behold` draws the current context, or one object and its neighbours, and opens the SVG. Install it with `kubectl krew install behold` ([surfaces/kubectl-behold](surfaces/kubectl-behold/README.md)).
+- A Claude Code plugin registers `behold mcp` and a skill that starts `behold serve`: `claude plugin marketplace add INTENTIUS/behold`, then `claude plugin install behold@behold` ([plugins/claude-code](plugins/claude-code/README.md)).
 
 ## The served page
 
@@ -274,8 +271,8 @@ src/
   viewer/           the single-file and hosted viewer
 web/                the page, unbundled ES modules
 action/             the GitHub Action's code, and the GitLab and Forgejo forms
-surfaces/           Argo CD, Backstage, Headlamp, kubectl and VS Code
-plugins/            Claude Code and Cursor
+surfaces/           integrations that run inside other tools, such as kubectl behold
+plugins/            agent plugins, such as the Claude Code one
 templates/          the GitHub Pages workflow
 docs/               the published site (Astro and Starlight)
 demos.json          the shipped demo catalog
