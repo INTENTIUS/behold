@@ -16,19 +16,20 @@
 # This runs the same src/ as the GitHub Action. A merge request from a fork
 # gets no API call at all: see mergeRequestOf in src/gitlab.mjs.
 
-.behold-variables:
-  variables:
-    BEHOLD_ACTION_REPO: https://github.com/INTENTIUS/behold.git
-    BEHOLD_ACTION_REF: ""
-    BEHOLD_VERSION: latest
-    BEHOLD_PATH: .
-    BEHOLD_MARKER: "behold:changed"
-    BEHOLD_OUT: behold-changed
-    # The cut reads two commits out of git; a full clone has both.
-    GIT_DEPTH: "0"
+# Defaults live in the file's own `variables:`, not on the job: a variable set
+# on the job would win over the project's `variables:`, and BEHOLD_ACTION_REF
+# set there would be ignored. The including file's `variables:` overrides these.
+variables:
+  BEHOLD_ACTION_REPO: https://github.com/INTENTIUS/behold.git
+  BEHOLD_ACTION_REF: ""
+  BEHOLD_VERSION: latest
+  BEHOLD_PATH: .
+  BEHOLD_MARKER: "behold:changed"
+  BEHOLD_OUT: behold-changed
+  # The cut reads two commits out of git; a full clone has both.
+  GIT_DEPTH: "0"
 
 behold:changed:
-  extends: .behold-variables
   stage: test
   image: node:24
   rules:

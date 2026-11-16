@@ -477,12 +477,25 @@ describe("the CI files (#1064)", () => {
     expect(yml).not.toMatch(/glpat-/);
   });
 
+  it("the GitLab template sets its defaults in the file's own variables, so the including project's BEHOLD_ACTION_REF is not overridden", () => {
+    const yml = read("gitlab/behold.gitlab-ci.yml");
+    // Variables on the job win over the project's global variables: found on a local GitLab CE 19.5.5, where a job-level BEHOLD_ACTION_REF: "" made the documented setup fail.
+    const body = yml.split("\n").filter((l) => !l.trimStart().startsWith("#")).join("\n");
+    const job = body.slice(body.indexOf("behold:changed:"));
+    expect(body).toMatch(/^variables:\n(  \S.*\n)*  BEHOLD_ACTION_REF: ""/m);
+    expect(job).not.toMatch(/^ +variables:/m);
+    expect(body).not.toContain("extends:");
+  });
+
   it("the Forgejo workflow pins every action to a commit and swaps the artifact steps", () => {
     const yml = read("forgejo/behold.yml");
     const uses = [...yml.matchAll(/uses: (\S+)/g)].map((m) => m[1]!);
     expect(uses.filter((u) => !/INTENTIUS\/behold@/.test(u)).every((u) => /@[0-9a-f]{40}$/.test(u))).toBe(true);
     expect(yml).toContain('upload: "false"');
     expect(yml).toContain("forgejo/upload-artifact");
+    // v4.3.1 of the fork still carries the GHES check and fails on Forgejo 17.0.1; v5 disables it.
+    expect(yml).toMatch(/forgejo\/upload-artifact@cb8afe72b42edc798abfb8fcb556cf660d894245 # v5/);
+    expect(yml).not.toContain("# v4.3.1\n");
     expect(yml).not.toContain("workflow_run");
   });
 

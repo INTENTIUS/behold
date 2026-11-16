@@ -80,7 +80,7 @@ Past `--budget` cards the cut folds, and its notes say so: first the neighbours 
 
 ## As a Mermaid diagram
 
-`--mermaid` prints the graph as a Mermaid flowchart short enough for a comment on a forge. `--forge` picks the character budget it fits: `gitlab` (2,000 characters), `github` (the default) or `forgejo` (20,000 characters and 250 edges each). The github and forgejo figures are provisional until the forge-limits check in `e2e/forge-limits` confirms them.
+`--mermaid` prints the graph as a Mermaid flowchart short enough for a comment on a forge. `--forge` picks the character budget it fits: `gitlab` (2,000 characters), `github` (the default) or `forgejo` (49,999 characters and 500 edges). The github figures were measured on a public test repository, the gitlab and forgejo figures on a local GitLab CE `19.5.5` and a local Forgejo `17.0.1` with default settings. A Forgejo administrator can lower `MERMAID_MAX_SOURCE_CHARACTERS`, and the budget is then too high for that instance.
 
 ```sh
 npx @intentius/behold graph ./infra --mermaid --forge gitlab
