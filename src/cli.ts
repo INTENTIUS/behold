@@ -322,8 +322,13 @@ Options:
                       (the single-file viewer, behold#1070) and nothing else.
                       Takes no --out or --publish.
   --no-source         export only: leave each card's source text out of the
-                      bundle (a Terraform root's whole file rides on its cards
-                      as attrs.source otherwise).
+                      bundle: a Terraform root's whole file (attrs.source) and
+                      every attribute value that is source text (a heredoc, a
+                      multi-line string, expression text such as for_each, a
+                      string over 120 characters), in every snapshot and in
+                      graph.json. A card shows "value left out (--no-source)".
+                      Names, types, addresses, references, edges and short
+                      single-line values stay.
   --publish <s3://b/p/views/name>
                       export only: also upload the bundle there, each file
                       with its content type, signed with AWS credentials from

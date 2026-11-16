@@ -294,7 +294,7 @@ export function settleOpening(want: Opening, axes: Pick<ExportAxes, "environment
 /** Capture the estate `cfg` observes into a static bundle at `outDir`. */
 export interface ExportOptions {
   name?: string;
-  /** `--no-source`: leave each card's source text (a Terraform root's whole file, in `attrs.source`) out of the bundle. */
+  /** `--no-source`: leave each card's source text (a Terraform root's whole file, in `attrs.source`, and every attribute value that is source text) out of the bundle. */
   noSource?: boolean;
   /** Where a terragucci report key opens from the bundle (#491): relative to it, `../../` by default, since the estate job uploads it to `<prefix>/views/behold/`. */
   reportsBase?: string;
@@ -611,12 +611,71 @@ export async function runSingleFile(cfg: ServerOptions, file: string, opts: Expo
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 
-/** Delete `attrs.source` wherever an object carries `attrs`. */
+/** What a card shows where `--no-source` left a value out, so the gap reads as a choice and not a blank. */
+export const VALUE_LEFT_OUT = "value left out (--no-source)";
+
+/** A string longer than this is not a short scalar: it is prose or a script, and `--no-source` leaves it out. */
+const SHORT_SCALAR_MAX = 120;
+
+/** Keys whose strings name something in the graph (an address, a file, a rule), however long. */
+const STRUCTURAL_KEYS = new Set([
+  "address", "type", "name", "file", "root", "block", "mode", "kind", "lexicon", "id", "scope", "expansion", "code", "argument",
+  "callers", "instanceKeys", "_stackOf", "_placeholder", "_rule", "rule", "via",
+]);
+
+/** Keys whose string is an expression, and the ones that hold the expressions chant could not evaluate. */
+const EXPRESSION_KEYS = new Set(["expression", "for_each", "count"]);
+const STOPPED_KEY = "stopped";
+
+/** A reference: `aws_vpc.main.id`, `module.x["k"].arn`, `local.groups`, `each.value`. It names something; it is not a computation. */
+const REFERENCE = /^[A-Za-z_][\w-]*(?:\.[\w-]+|\.\*|\[[^\]\n]{0,80}\])*$/;
+const INTERPOLATED_REFERENCE = /\$\{\s*([A-Za-z_][\w-]*(?:\.[\w-]+|\.\*|\[[^\]\n]{0,80}\])*)\s*\}/g;
+
+/**
+ * Is this string source text? A line break (a heredoc body, a multi-line
+ * string or expression, a comment inside one), a heredoc opener, an
+ * interpolation that computes something, or length past a short scalar all
+ * say yes. A reference, alone or inside `${}`, and a short single-line
+ * literal say no. Under an expression key (`for_each`, `count`, an
+ * `expression`, a `stopped` entry) only a reference stays.
+ */
+export function isSourceText(v: string, expression: boolean): boolean {
+  if (/[\r\n]/.test(v) || v.includes("<<")) return true;
+  const bare = v.replace(INTERPOLATED_REFERENCE, "ref");
+  if (bare.includes("${") || bare.includes("%{")) return true;
+  if (expression) return !REFERENCE.test(v.trim()) && !/^\$\{[^}]*\}$/.test(v.trim());
+  return v.length > SHORT_SCALAR_MAX;
+}
+
+function scrubValue(v: unknown, key: string, structural: boolean, expression: boolean): unknown {
+  if (typeof v === "string") return structural || !isSourceText(v, expression) ? v : VALUE_LEFT_OUT;
+  if (Array.isArray(v)) return v.map((x) => scrubValue(x, key, structural, false));
+  if (!isRecord(v)) return v;
+  const out: Record<string, unknown> = {};
+  for (const [k, x] of Object.entries(v)) {
+    const stopped = key === STOPPED_KEY;
+    out[k] = scrubValue(x, k, structural || STRUCTURAL_KEYS.has(k), stopped || (EXPRESSION_KEYS.has(k) && typeof x === "string"));
+  }
+  return out;
+}
+
+/**
+ * `--no-source`: leave the text a card carries out of everything the bundle
+ * writes. `attrs.source` (a Terraform root's file) goes whole. Every other
+ * attribute value that is source text is replaced by {@link VALUE_LEFT_OUT}:
+ * heredoc bodies, multi-line strings, expression text and long strings, at
+ * any depth of `attrs` (the body, the evaluated arguments, a stack's
+ * instances). Names, types, addresses, references, numbers, booleans and
+ * short single-line literals stay, as do the graph's edges and groups.
+ */
 function dropSource(v: unknown): void {
   if (Array.isArray(v)) return v.forEach(dropSource);
   if (!isRecord(v)) return;
-  if (isRecord(v.attrs)) delete v.attrs.source;
-  for (const x of Object.values(v)) dropSource(x);
+  if (isRecord(v.attrs)) {
+    delete v.attrs.source;
+    v.attrs = scrubValue(v.attrs, "attrs", false, false);
+  }
+  for (const [k, x] of Object.entries(v)) if (k !== "attrs") dropSource(x);
 }
 
 /** One snapshot as the bundle keeps it. Bodies that are not JSON pass through. */

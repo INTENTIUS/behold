@@ -37,7 +37,9 @@ env:
   # Sub-folder of the site to write the export into, for a repository whose
   # Pages site holds something else too. Empty puts it at the site root.
   SITE_PATH: ""
-  # Leave each card's source text out of the published bundle.
+  # Leave each card's source text out of the published bundle: the root's
+  # file, and every attribute value that is a heredoc, a multi-line string,
+  # expression text or a string over 120 characters.
   NO_SOURCE: "true"
   # A command to run in PROJECT_DIR before the export, such as "npm ci", when
   # the estate needs its own chant and lexicons installed.
@@ -160,14 +162,14 @@ With either set, the step prints a warning and the job carries on.
 
 ## Source text stays out
 
-The template exports with `--no-source`, so no Terraform root's source text is in the published snapshots. A Pages site is read by anyone with the URL, and a state of the graph is enough for most links. To check it, put a distinctive comment in a `.tf` file, export the way the workflow does, and search the folder:
+The template exports with `--no-source`. That leaves out each root's source file and every attribute value that is source text: heredoc bodies, multi-line strings, multi-line expressions with their comments, `for_each` and `count` expressions, and single-line strings over 120 characters. A card shows `value left out (--no-source)` in their place. Names, types, addresses, references, edges, numbers and short single-line literals stay in the snapshots, `graph.json` and `behold.html`. [What it leaves out](/behold/using/export/#what-it-leaves-out) lists the rule. A Pages site is read by anyone with the URL, and a state of the graph is enough for most links. The flag does not look for secrets: a short literal value is published as written. To check it, put a distinctive line in a heredoc and a comment in a `for_each` expression in a `.tf` file, export the way the workflow does, and search the folder:
 
 ```sh
 npx behold export . --no-source --out _site
 grep -r "my-marker-comment" _site || echo "no source text in the bundle"
 ```
 
-Set `NO_SOURCE: "false"` in the workflow to publish the source text with the graph.
+Set `NO_SOURCE: "false"` in the workflow to publish the source file and every value with the graph.
 
 ## A repository that already uses Pages
 
