@@ -424,6 +424,13 @@ export const sharedBox = (ns: string) => `shared in ${ns}`;
  * namespace for objects several applications share, and the cards outside the
  * cluster (or in a folder read beside it) those objects name. Everything else
  * is left out and counted.
+ *
+ * Each application's box is titled with its health, `checkout · 2/2 ready`
+ * (the IR's `boxTitles`, which src/render.ts paints and the document's group
+ * title carries). Each `dependsOn` is drawn between the boxes, from the card
+ * that names the other application (the ConfigMap whose value holds its
+ * Service's address) to that application's Service, with the components
+ * view's label.
  */
 export function logicalOfApps(objects: GraphIR, apps: ClusterApps): { ir: GraphIR; leftOut: number } {
   const members = memberIndex(apps);
@@ -459,9 +466,45 @@ export function logicalOfApps(objects: GraphIR, apps: ClusterApps): { ir: GraphI
     if (outside.length) byStack[box] = outside;
   }
   const nodes = objects.nodes.filter((n) => keep.has(n.id));
-  const edges = objects.edges.filter((e) => keep.has(e.from) && keep.has(e.to));
+  const edges = [...objects.edges.filter((e) => keep.has(e.from) && keep.has(e.to)), ...dependsOnEdges(apps, keep)];
+  const boxTitles: Record<string, string> = {};
+  for (const app of apps.ir.nodes) {
+    if (!byStack[app.id]) continue;
+    const desired = rec(rec(app.attrs).status).desiredReplicas;
+    if (typeof desired === "number") boxTitles[app.id] = `${app.id} · ${applicationSubtitle(rec(app.attrs)).replace(/^Application · /, "")}`;
+  }
   const groups = { byStack } as unknown as GraphIR["groups"];
-  return { ir: { ...objects, nodes, edges, groups, dangling: [] } as GraphIR, leftOut: objects.nodes.length - nodes.length };
+  return { ir: { ...objects, nodes, edges, groups, dangling: [], ...(Object.keys(boxTitles).length ? { boxTitles } : {}) } as GraphIR, leftOut: objects.nodes.length - nodes.length };
+}
+
+/**
+ * Each application-to-application `dependsOn` as an edge between two drawn
+ * cards: from the member chant found the reference in (its `viaAttr` reads
+ * `ConfigMap checkout-config data.PAYMENTS_URL`), or the workload when that
+ * card is not drawn, to the other application's Service, or its workload.
+ */
+function dependsOnEdges(apps: ClusterApps, drawn: ReadonlySet<string>): IREdge[] {
+  const membersOf = new Map(apps.ir.nodes.map((n) => [n.id, arr(rec(n.attrs).members).map((m) => ({ id: str(rec(m).id) ?? "", role: str(rec(m).role) }))] as const));
+  const pick = (app: string, role: string) => membersOf.get(app)?.find((m) => m.role === role && drawn.has(m.id))?.id;
+  const out: IREdge[] = [];
+  for (const e of apps.ir.edges) {
+    const via = str(e.viaAttr) ?? "";
+    const named = via
+      .split(";")
+      .map((s) => s.trim().split(/\s+/))
+      .flatMap(([kind, name]) => membersOf.get(e.from)?.find((m) => drawn.has(m.id) && m.id.endsWith(`/${kind}/${name}`))?.id ?? []);
+    const from = named[0] ?? pick(e.from, "workload");
+    const to = pick(e.to, "service") ?? pick(e.to, "workload");
+    if (!from || !to) continue;
+    out.push({ from, to, kind: "ref", viaAttr: dependsLabel(via), ...(via ? { field: via } : {}) } as IREdge);
+  }
+  return out;
+}
+
+/** A `dependsOn` edge's label: the names that made it, `depends on: PAYMENTS_URL`. */
+function dependsLabel(via: string): string {
+  const names = [...new Set(via.split(";").map((s) => s.trim().split(/\s+/).pop()?.replace(/^data\./, "")).filter((s): s is string => !!s))];
+  return names.length ? `depends on: ${names.join(", ")}` : "depends on";
 }
 
 // --- The components view -----------------------------------------------------
@@ -490,8 +533,7 @@ export function componentsOfApps(apps: ClusterApps): GraphIR {
   });
   const edges = apps.ir.edges.map((e) => {
     const via = str(e.viaAttr) ?? "";
-    const names = [...new Set(via.split(";").map((s) => s.trim().split(/\s+/).pop()?.replace(/^data\./, "")).filter((s): s is string => !!s))];
-    return { ...e, viaAttr: names.length ? `depends on: ${names.join(", ")}` : "depends on", ...(via ? { field: via } : {}) } as IREdge;
+    return { ...e, viaAttr: dependsLabel(via), ...(via ? { field: via } : {}) } as IREdge;
   });
   const { byWave: _waves, ...groups } = (apps.ir.groups ?? {}) as Record<string, unknown>;
   return { ...apps.ir, nodes, edges, groups: groups as GraphIR["groups"] };

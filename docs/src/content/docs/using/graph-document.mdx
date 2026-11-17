@@ -97,6 +97,8 @@ The default view draws every object. A workload's ReplicaSets and Pods are folde
 
 `--logical` draws a box per application with the objects it manages, and the cards for what they name outside the cluster. `--components` draws one card per application with its health, and an edge to each application whose Service it names in an env value or a ConfigMap. Both need a chant whose cloud lister has `inferK8sComponents`; with an older one the view is empty and its note says so.
 
+In `--logical` each application's box is titled with its ready replicas (`checkout · 2/2 ready`), and an application that names another's Service is drawn with an edge from the card holding the name to that Service. With `--svg` each view is headed with what it shows: "Every object in shop" (`--every-card`), "Objects in shop", "shop grouped by application" or "Applications in shop and what they call", naming the cluster instead when the read took every namespace.
+
 ## Cuts
 
 A document can hold part of the graph. `cut.kind` says which: `whole`, `around` (`behold graph --around <id>`, the cards within `--depth` hops of the ids named) or `changed` (`behold graph --changed <base>..<head>`).

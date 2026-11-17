@@ -461,6 +461,8 @@ export function renderGraph(
     rankdir?: "TB" | "BT" | "LR" | "RL";
     /** The attributes zoom: each card prints what its structured attributes hold (src/attribute-fields.ts). */
     attributes?: boolean;
+    /** behold#1132: the picture's heading, painted in pinhole's title band. Absent, the band is left out. */
+    caption?: { title: string; subtitle: string };
   } = {},
 ): RenderResult {
   if (opts.attributes) irIn = { ...irIn, nodes: irIn.nodes.map((n) => ({ ...n, attrs: { ...n.attrs, [ATTRS_ZOOM]: true } })) };
@@ -513,9 +515,18 @@ export function renderGraph(
       if (title !== undefined) box.title = title;
     }
   }
+  // behold#1132: a box the IR titles itself (`boxTitles`, beside `groups`), such as an application's box with its health. The box keeps its key as `id`.
+  const boxTitles = (irIn as { boxTitles?: Record<string, string> }).boxTitles;
+  if (boxTitles) {
+    for (const box of layout.groups ?? []) {
+      const title = box.id === undefined ? undefined : boxTitles[box.id];
+      if (title !== undefined) box.title = title;
+    }
+  }
   const svg = renderSvg(ir, layout, {
     fit: true,
-    hideTitle: true,
+    hideTitle: !opts.caption,
+    ...(opts.caption ? { title: opts.caption.title, subtitle: opts.caption.subtitle } : {}),
     overrides: face.overrides,
     ...(boxes ? { groups: layout.groups } : {}),
     ...(opts.theme ? { theme: opts.theme as never } : {}),

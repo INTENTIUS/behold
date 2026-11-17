@@ -7,6 +7,7 @@ import { kubeTargetFromKubeconfig } from "@intentius/chant/cloud-lister/index";
 import { relationOf, type InferApps, type InferredApps } from "./cluster-apps.ts";
 import type { GraphDocument } from "./graph-document.ts";
 import { runGraph } from "./graph-cli.ts";
+import { clusterCaption } from "./graph-view.ts";
 import { k8sIconFor } from "./icon-packs.ts";
 import { outsideFields, workloadFields } from "./operator-cards.ts";
 import { outsideTitle, type ChantLister } from "./read-cluster.ts";
@@ -238,11 +239,24 @@ describe("the objects view of a cluster read (#1132)", () => {
 describe("the logical view of a cluster read (#1132)", () => {
   it("boxes the application with what it manages and what that names outside the cluster", async () => {
     const { doc } = await graph(["--logical", "--around", "shop/Deployment/checkout", "--depth", "2"], fakeChant(() => inferred));
-    expect(doc!.nodes).toHaveLength(6);
-    expect(doc!.edges).toHaveLength(5);
-    expect(doc!.edges.every((e) => ["routes to :80 to 8080", "runs as", "reads env from", "mounts", "assumes role"].includes(e.via!))).toBe(true);
+    // Two hops out from the workload reach payments' Service, through the dependsOn the ConfigMap holds.
+    expect(doc!.nodes).toHaveLength(7);
+    expect(doc!.edges).toHaveLength(6);
+    expect(doc!.edges.every((e) => ["routes to :80 to 8080", "runs as", "reads env from", "mounts", "assumes role", "depends on: PAYMENTS_URL"].includes(e.via!))).toBe(true);
     expect(doc!.nodes.find((n) => n.id === "shop/Service/checkout")?.box).toBe("stack:checkout");
+    expect(doc!.nodes.find((n) => n.id === "shop/Service/payments")?.box).toBe("stack:payments");
     expect(doc!.nodes.find((n) => n.id === ROLE)?.box).toBe("stack:Outside the cluster");
+  });
+
+  it("titles each application's box with its health, and draws dependsOn between the boxes", async () => {
+    const { doc } = await graph(["--logical"], fakeChant(() => inferred));
+    expect(doc!.groups.filter((g) => g.kind === "stack").map((g) => g.title)).toEqual(expect.arrayContaining(["checkout · 1/2 ready", "payments · 1/1 ready"]));
+    expect(doc!.edges).toContainEqual(
+      expect.objectContaining({ source: "shop/ConfigMap/checkout-config", target: "shop/Service/payments", via: "depends on: PAYMENTS_URL", field: "ConfigMap checkout-config data.PAYMENTS_URL" }),
+    );
+    const { out } = await graph(["--logical", "--svg"], fakeChant(() => inferred));
+    expect(out).toContain(">checkout · 1/2 ready<");
+    expect(out).not.toContain("all managed");
   });
 
   it("is empty, and says why, when the chant beside behold infers no applications", async () => {
@@ -286,6 +300,28 @@ describe("the components view of a cluster read (#1132)", () => {
     expect(doc!.nodes.every((n) => n.box === undefined)).toBe(true);
     const { out } = await graph(["--components", "--svg"], fakeChant(() => inferred));
     expect(out).not.toContain("wave-");
+  });
+});
+
+describe("each view names itself (#1132)", () => {
+  it("heads the SVG with what the view shows and where it was read", async () => {
+    const heading = (svg: string) => /font-size="(?:2\d|3\d)"[^>]*>([^<]+)</.exec(svg)?.[1];
+    const every = await graph(["--every-card", "--namespace", "shop", "--svg"], fakeChant(() => inferred));
+    expect(heading(every.out)).toBe("Every object in shop");
+    const folded = await graph(["--namespace", "shop", "--svg"], fakeChant(() => inferred));
+    expect(heading(folded.out)).toBe("Objects in shop");
+    expect(folded.out).toContain("--every-card draws them");
+    const logical = await graph(["--logical", "--namespace", "shop", "--svg"], fakeChant(() => inferred));
+    expect(heading(logical.out)).toBe("shop grouped by application");
+    const components = await graph(["--components", "--svg"], fakeChant(() => inferred));
+    expect(components.out).toMatch(/>Applications in cluster [^<]+ and what they call</);
+    expect(components.out).toContain("read from cluster ");
+  });
+
+  it("names the cluster, not a namespace, when the read took every namespace", () => {
+    expect(clusterCaption("logical", false, { context: "prod" })?.title).toBe("cluster prod grouped by application");
+    expect(clusterCaption("objects", true, { context: "prod", namespaces: ["a", "b"] })?.title).toBe("Every object in a, b");
+    expect(clusterCaption("objects", false, undefined)).toBeUndefined();
   });
 });
 
@@ -350,6 +386,8 @@ describe("chant's own inference (#1132)", async () => {
     expect(doc!.nodes.map((n) => n.id).sort()).toEqual(["checkout", "payments"]);
     expect(doc!.edges.map((e) => `${e.source}>${e.target}`)).toEqual(["checkout>payments"]);
     const logical = await graph(["--logical", "--around", "shop/Deployment/checkout", "--depth", "2"], fakeChant(infer));
-    expect(logical.doc!.nodes.map((n) => n.id).sort()).toEqual([ROLE, "shop/ConfigMap/checkout-config", "shop/Deployment/checkout", "shop/Secret/checkout-tls", "shop/Service/checkout", "shop/ServiceAccount/checkout"].sort());
+    expect(logical.doc!.nodes.map((n) => n.id).sort()).toEqual(
+      [ROLE, "shop/ConfigMap/checkout-config", "shop/Deployment/checkout", "shop/Secret/checkout-tls", "shop/Service/checkout", "shop/Service/payments", "shop/ServiceAccount/checkout"].sort(),
+    );
   });
 });

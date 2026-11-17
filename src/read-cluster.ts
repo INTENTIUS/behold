@@ -122,6 +122,8 @@ export interface ClusterInfo {
   observedAt: string;
   /** Kinds the lister could not list, with why (a 403, a kind with no list verb). */
   notListed: { listedType: string; verdict: string; detail?: string }[];
+  /** The namespaces read (`--namespace`); absent when the read took every namespace. */
+  namespaces?: string[];
 }
 
 export interface ReadClusterResult extends ReadGraphResult {
@@ -424,7 +426,7 @@ export async function readCluster(opts: ReadClusterOptions = {}): Promise<ReadCl
   return {
     ...read,
     meta: { estate: 1, note },
-    cluster: { context: found.context, cluster: target.clusterName, kubeconfig: path, observedAt: doc.stamp.observedAt, notListed },
+    cluster: { context: found.context, cluster: target.clusterName, kubeconfig: path, observedAt: doc.stamp.observedAt, notListed, ...(namespaces ? { namespaces } : {}) },
     ...(apps ? { apps } : {}),
   };
 }

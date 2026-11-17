@@ -57,6 +57,18 @@ export interface GraphViewMeta {
   note?: string;
   /** The strip's form of `note`, when there is a shorter true one. */
   noteShort?: string;
+  /**
+   * What the picture is, for someone who opens the SVG cold (behold#1132): a
+   * cluster read's three views each name themselves, since two of them can
+   * hold the same cards. `--svg` paints it as the picture's heading.
+   */
+  caption?: ViewCaption;
+}
+
+/** A picture's heading: what it shows, and a smaller line of where it was read from. */
+export interface ViewCaption {
+  title: string;
+  subtitle: string;
 }
 
 export interface GraphView {
@@ -162,12 +174,14 @@ export async function graphView(dir: string | readonly string[], opts: GraphView
  * why.
  */
 export async function clusterView(
-  read: ReadGraphResult & { apps?: ClusterApps },
+  read: ReadGraphResult & { apps?: ClusterApps; cluster?: { context: string; namespaces?: readonly string[] } },
   opts: Pick<GraphViewOptions, "alike" | "collapse" | "detail"> & { view?: ClusterViewKind } = {},
 ): Promise<GraphView> {
   const view = opts.view ?? "objects";
   const everyCard = opts.alike === false;
-  const empty = (zoom: Zoom): GraphView => ({ ir: { ...read.ir, nodes: [], edges: [], groups: {}, dangling: [] } as GraphIR, meta: { estate: read.meta.estate, zoom, note: [read.meta.note, NO_APPS_NOTE].filter(Boolean).join(" · ") }, read });
+  const caption = clusterCaption(view, everyCard, read.cluster);
+  const done = (v: GraphView): GraphView => (caption ? { ...v, meta: { ...v.meta, caption } } : v);
+  const empty = (zoom: Zoom): GraphView => done({ ir: { ...read.ir, nodes: [], edges: [], groups: {}, dangling: [] } as GraphIR, meta: { estate: read.meta.estate, zoom, note: [read.meta.note, NO_APPS_NOTE].filter(Boolean).join(" · ") }, read });
   if (view === "components") {
     if (!read.apps) return empty("components");
     const ir = componentsOfApps(read.apps);
@@ -179,7 +193,7 @@ export async function clusterView(
     ]
       .filter(Boolean)
       .join(" · ");
-    return { ir, meta: { estate: read.meta.estate, zoom: "components", ...(note ? { note } : {}) }, read };
+    return done({ ir, meta: { estate: read.meta.estate, zoom: "components", ...(note ? { note } : {}) }, read });
   }
   if (view === "logical" && !read.apps) return empty("logical");
   const objects = operatorObjects(read.ir, read.apps, { everyCard });
@@ -194,15 +208,33 @@ export async function clusterView(
   }
   const n = view === "logical" ? 0 : (ir.dangling?.length ?? 0);
   // The route's wording is for a project's source (a workflow in another repo); a cluster's references name objects the read did not list.
-  return viewOf(
-    { ...read, ir },
-    {
-      ...opts,
-      ...(view === "logical" ? { zoom: "logical" as Zoom } : {}),
-      operator: [folded, repeats, leftOut].filter(Boolean).join(" · ") || undefined,
-      danglingText: n ? `${n} ${n === 1 ? "reference names an object" : "references name objects"} this read did not list` : "",
-    },
+  return done(
+    await viewOf(
+      { ...read, ir },
+      {
+        ...opts,
+        ...(view === "logical" ? { zoom: "logical" as Zoom } : {}),
+        operator: [folded, repeats, leftOut].filter(Boolean).join(" · ") || undefined,
+        danglingText: n ? `${n} ${n === 1 ? "reference names an object" : "references name objects"} this read did not list` : "",
+      },
+    ),
   );
+}
+
+/**
+ * The heading of a cluster read's view (behold#1132). The objects view with
+ * `--every-card` is every object the read listed; without it, the same objects
+ * with the runtime and bookkeeping ones folded, which the subtitle says. The
+ * scope is the namespaces read, or the cluster when the read took them all.
+ */
+export function clusterCaption(view: ClusterViewKind, everyCard: boolean, cluster: { context: string; namespaces?: readonly string[] } | undefined): ViewCaption | undefined {
+  if (!cluster) return undefined;
+  const scope = cluster.namespaces?.length ? cluster.namespaces.join(", ") : `cluster ${cluster.context}`;
+  const from = `read from cluster ${cluster.context}`;
+  if (view === "components") return { title: `Applications in ${scope} and what they call`, subtitle: `one card per application · ${from}` };
+  if (view === "logical") return { title: `${scope} grouped by application`, subtitle: `one box per application, with its ready replicas · ${from}` };
+  if (everyCard) return { title: `Every object in ${scope}`, subtitle: from };
+  return { title: `Objects in ${scope}`, subtitle: `ReplicaSets, Pods and bookkeeping folded into their cards (--every-card draws them) · ${from}` };
 }
 
 async function viewOf(
