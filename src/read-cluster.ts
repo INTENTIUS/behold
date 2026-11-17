@@ -45,6 +45,7 @@ import type { GraphIR } from "@intentius/chant";
 import { parseYAML } from "@intentius/chant/yaml";
 import { runExecPlugin, ExecPluginError, type ExecRunner, type ExecUser } from "./kube-exec.ts";
 import { readComposed, type ReadGraphResult } from "./read-graph.ts";
+import { drawnApps, type ClusterApps, type InferApps } from "./cluster-apps.ts";
 // @ts-expect-error plain browser ESM with no declarations
 import { outsideRefs } from "../web/outside-refs.js";
 
@@ -86,6 +87,11 @@ export interface ReadClusterOptions {
   runExec?: ExecRunner;
   /** Replaces chant's `indexCloud` and `kubeTargetFromKubeconfig`; tests pass fakes. */
   chant?: ChantLister;
+  /**
+   * Nodes another source of a joined read holds (behold#1115, src/joined-read.ts),
+   * as chant's catalog reads them. A placeholder for a target among them is not made.
+   */
+  held?: readonly object[];
 }
 
 /** The parts of chant's lister this module calls, held loosely. */
@@ -94,6 +100,8 @@ export interface ChantLister {
   noneStore(): Promise<unknown>;
   lexicons(): Promise<unknown[]>;
   kubeTarget(text: string, opts: { context?: string; baseDir?: string }): { server: string; token?: string; tls?: object; contextName: string; clusterName: string };
+  /** chant's applications of a read (`inferK8sComponents`, chant#5252), when the chant beside behold has it. */
+  inferApps?: InferApps;
 }
 
 interface IndexDoc {
@@ -114,11 +122,20 @@ export interface ClusterInfo {
   observedAt: string;
   /** Kinds the lister could not list, with why (a 403, a kind with no list verb). */
   notListed: { listedType: string; verdict: string; detail?: string }[];
+  /** The namespaces read (`--namespace`); absent when the read took every namespace. */
+  namespaces?: string[];
 }
 
 export interface ReadClusterResult extends ReadGraphResult {
   cluster: ClusterInfo;
+  /**
+   * The applications chant infers from the read (behold#1132, src/cluster-apps.ts),
+   * keyed by the drawn ids. Absent when the chant beside behold has no
+   * `inferK8sComponents`.
+   */
+  apps?: ClusterApps;
 }
+
 
 /** chant's lister and index pipeline, found at run time. */
 export async function chantLister(): Promise<ChantLister> {
@@ -143,6 +160,7 @@ export async function chantLister(): Promise<ChantLister> {
     noneStore: () => openStore(planStore({ store: "none", cwd: process.cwd(), env: {}, defaultStoreDir: () => process.cwd(), command: "behold graph" }), process.cwd()),
     lexicons: async () => (await lexiconsOf("kubernetes")).lexicons,
     kubeTarget: listerMod.kubeTargetFromKubeconfig as ChantLister["kubeTarget"],
+    ...(typeof listerMod.inferK8sComponents === "function" ? { inferApps: listerMod.inferK8sComponents as InferApps } : {}),
   };
 }
 
@@ -245,7 +263,7 @@ export function drawnIds(nodes: readonly ListedNode[]): Map<string, string> {
 }
 
 /** The lister's graph drawn: new ids, a box per namespace, and no edge to a card that was not listed. */
-function drawIr(graph: GraphIR): { ir: GraphIR; dropped: number } {
+function drawIr(graph: GraphIR): { ir: GraphIR; dropped: number; ids: Map<string, string> } {
   const ids = drawnIds(graph.nodes as unknown as ListedNode[]);
   const idOf = (id: string) => ids.get(id);
   const nodes = graph.nodes.map((n) => ({ ...n, id: idOf(n.id)! }));
@@ -258,7 +276,7 @@ function drawIr(graph: GraphIR): { ir: GraphIR; dropped: number } {
   }
   // A namespace the read left out is the box, not a missing target.
   const dangling = (graph.dangling ?? []).filter((d) => !(d.path === "metadata.namespace") && idOf(d.from)).map((d) => ({ ...d, from: idOf(d.from)! }));
-  return { ir: { ...graph, nodes, edges, groups, dangling } as unknown as GraphIR, dropped: graph.edges.length - edges.length };
+  return { ir: { ...graph, nodes, edges, groups, dangling } as unknown as GraphIR, dropped: graph.edges.length - edges.length, ids };
 }
 
 /**
@@ -280,6 +298,33 @@ interface OutsideResult {
   notes: { code: string; waitsOn?: string }[];
 }
 
+/** The longest outside card title drawn whole; past it the card is titled with the name's last part, and its rows hold the whole name. */
+const OUTSIDE_TITLE_MAX = 40;
+
+/**
+ * The short name an outside card is titled with (behold#1132): an IAM role's
+ * name, a Google service account's account part, a repository's name, or the
+ * card's label when it fits. The card's rows hold the whole ARN or address
+ * (src/operator-cards.ts).
+ */
+export function outsideTitle(kind: string, attrs: Record<string, unknown>): string | undefined {
+  const s = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+  if (kind === "CloudIdentity") {
+    if (s(attrs.role)) return s(attrs.role);
+    if (s(attrs.email)) return s(attrs.email)!.split("@")[0];
+    if (s(attrs.clientId)) return `identity ${s(attrs.clientId)!.slice(0, 8)}`;
+  }
+  if (s(attrs.repoURL)) {
+    const repo = s(attrs.repoURL)!.replace(/\/+$/, "").replace(/\.git$/, "");
+    return repo.slice(repo.lastIndexOf("/") + 1) || repo;
+  }
+  const label = s(attrs.label);
+  if (!label) return undefined;
+  if (label.length <= OUTSIDE_TITLE_MAX) return label;
+  const tail = label.split(/[/\s]/).filter(Boolean).pop() ?? label;
+  return tail.length <= OUTSIDE_TITLE_MAX ? tail : `${tail.slice(0, OUTSIDE_TITLE_MAX - 1)}\u2026`;
+}
+
 /** The box the placeholder cards sit in. */
 export const OUTSIDE_BOX = "Outside the cluster";
 
@@ -290,7 +335,7 @@ export const OUTSIDE_BOX = "Outside the cluster";
  * edge starts at the drawn card of the object that names it. A field the live
  * read masked gives no card, and is counted so the note can say so.
  */
-export function addOutsideCards(ir: GraphIR): { ir: GraphIR; cards: number; masked: number } {
+export function addOutsideCards(ir: GraphIR, held: readonly object[] = []): { ir: GraphIR; cards: number; masked: number } {
   const listed = ir.nodes as unknown as { id: string; attrs?: Record<string, unknown>; listedType?: string }[];
   const key = (group: string, kind: string, ns: string, name: string) => `${group}/${kind}/${ns}/${name}`;
   const idByRef = new Map<string, string>();
@@ -305,10 +350,14 @@ export function addOutsideCards(ir: GraphIR): { ir: GraphIR; cards: number; mask
     manifests.push({ ...(maskedAsListed(n.attrs ?? {}) as Record<string, unknown>), apiVersion: group ? `${group}/${version}` : version, kind });
     idByRef.set(key(group, kind, kind === "ClusterSecretStore" ? "" : meta.namespace || "default", meta.name ?? ""), n.id);
   }
-  const out = outsideRefs(manifests, { graph: { nodes: ir.nodes } }) as OutsideResult;
+  const out = outsideRefs(manifests, { graph: { nodes: [...ir.nodes, ...held] } }) as OutsideResult;
   const masked = out.notes.filter((n) => n.code === "masked").length;
   if (!out.cards.length) return { ir, cards: 0, masked };
-  const cards = out.cards.map((c) => ({ id: c.id, kind: c.kind, lexicon: "outside", attrs: { ...(c.attrs ?? {}), ...(c.label ? { label: c.label } : {}) } }));
+  const cards = out.cards.map((c) => {
+    const attrs: Record<string, unknown> = { ...(c.attrs ?? {}), ...(c.label ? { label: c.label } : {}) };
+    const title = outsideTitle(c.kind, attrs);
+    return { id: c.id, kind: c.kind, lexicon: "outside", attrs: { ...attrs, ...(title ? { _title: title } : {}) } };
+  });
   const edges = out.edges.flatMap((e) => {
     const from = idByRef.get(e.from);
     return from ? [{ from, to: e.to, kind: "ref", viaAttr: e.viaAttr, inferred: true }] : [];
@@ -358,10 +407,11 @@ export async function readCluster(opts: ReadClusterOptions = {}): Promise<ReadCl
     throw new ClusterReadRefusal("read", `context ${found.context}: ${(e as Error).message}`, "check that the cluster is reachable and the credential is accepted. Nothing was written.");
   }
 
-  const { ir: drawn, dropped } = drawIr(doc.graph);
+  const { ir: drawn, dropped, ids } = drawIr(doc.graph);
+  const apps = chant.inferApps ? drawnApps(chant.inferApps(doc.graph), ids) : undefined;
   const members = [{ name: found.context, dir: "", kind: "chant" as const }];
   const composed = await readComposed(drawn, members, [], { k8sContext: found.context });
-  const outside = addOutsideCards(composed.ir);
+  const outside = addOutsideCards(composed.ir, opts.held);
   const read = { ...composed, ir: outside.ir };
   const notListed = doc.coverage.filter((c) => c.verdict !== "listed").map((c) => ({ listedType: c.listedType, verdict: c.verdict, ...(c.detail ? { detail: c.detail } : {}) }));
   const clauses = [
@@ -369,12 +419,14 @@ export async function readCluster(opts: ReadClusterOptions = {}): Promise<ReadCl
     notListed.length ? `${new Set(notListed.map((n) => n.listedType)).size} kinds not listed (${[...new Set(notListed.map((n) => n.verdict))].join(", ")})` : undefined,
     dropped ? `${dropped} edges to objects outside the read are left out` : undefined,
     outside.cards ? `${outside.cards} ${outside.cards === 1 ? "card" : "cards"} for what the objects name outside the cluster` : undefined,
+    apps ? `${apps.ir.nodes.length} ${apps.ir.nodes.length === 1 ? "application" : "applications"}` : undefined,
     outside.masked ? `${outside.masked} reference ${outside.masked === 1 ? "field is masked by the live read and draws" : "fields are masked by the live read and draw"} no card (chant#5116)` : undefined,
   ].filter(Boolean);
   const note = [read.meta.note, clauses.join(" · ")].filter(Boolean).join(" · ");
   return {
     ...read,
     meta: { estate: 1, note },
-    cluster: { context: found.context, cluster: target.clusterName, kubeconfig: path, observedAt: doc.stamp.observedAt, notListed },
+    cluster: { context: found.context, cluster: target.clusterName, kubeconfig: path, observedAt: doc.stamp.observedAt, notListed, ...(namespaces ? { namespaces } : {}) },
+    ...(apps ? { apps } : {}),
   };
 }

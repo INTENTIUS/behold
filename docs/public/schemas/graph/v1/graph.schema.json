@@ -78,6 +78,7 @@
         "detail__root": { "type": "string", "description": "The Terraform root that applies it." },
         "detail__namespace": { "type": "string", "description": "The Kubernetes namespace it lives in." },
         "detail__release": { "type": "string", "description": "The Helm release that installs it." },
+        "read": { "enum": ["cluster", "folder"], "description": "Which source a read of a cluster took the card from: the cluster, or a folder read beside it. Absent on a read of a folder alone." },
         "attrs": { "type": "object", "description": "The graph IR's attributes. 'source' is present only when it was asked for." }
       }
     },
@@ -92,6 +93,7 @@
         "inferred": { "type": "boolean", "description": "True when behold or chant joined the two rather than a reader stating it." },
         "rule": { "type": "string", "description": "On an inferred edge, the join that drew it: behold:<pass>, or chant's catalog rule id. On the edge to a placeholder card (a reference that names nothing) and on each edge of a reference that names several candidates, the rule of that reference." },
         "via": { "type": "string", "description": "The consumer-side attribute the reference flows through." },
+        "field": { "type": "string", "description": "When via names the relationship (runs as, routes to :80), the field the reference was found in." },
         "diff": { "enum": ["added", "removed"], "description": "In a 'changed' cut, set when the edge exists in one revision only." }
       }
     },

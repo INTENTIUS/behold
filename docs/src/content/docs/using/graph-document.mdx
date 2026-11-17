@@ -58,6 +58,8 @@ The node and edge field names are the ones Grafana's node graph panel reads (`id
 - `status`, `color` and `mainstat` are present when a drift overlay painted the card, and `change` when a plan was read and would change it.
 - Every edge's `source` and `target` is a node in the same document. An inferred edge carries `rule`, the join that drew it: `behold:<pass>`, or chant's catalog rule id. The edge to a placeholder card (a reference that names nothing) and each edge of a reference that names several nodes carry the rule of that reference too, and the placeholder is a node of the kind it was looking for, with `lexicon` `behold`.
 - No field holds an absolute path, and a card's source text (`attrs.source`) is left out unless it was asked for.
+- `read` is present on a read of a cluster: which source the card came from (`cluster` or `folder`).
+- `field` is present on an edge whose `via` names the relationship (`runs as`, `routes to :80`): the field the reference was found in.
 
 ## From the command line
 
@@ -69,6 +71,33 @@ npx @intentius/behold graph ./infra --detail 3 -o graph.json
 ```
 
 `@intentius/behold` installs without the Kubernetes client, an optional peer, so a CI job can run `npx @intentius/behold graph ./infra` on a Terraform folder with a small install. `--context` reads a cluster instead and needs the client: `npm i @intentius/chant-k8s-client` next to behold (or `npx -p @intentius/behold -p @intentius/chant-k8s-client behold graph --context <name>`). Without it the command stops with one line naming that package. `--source` keeps the cards' source text. `--ir` prints the unversioned `{ir, meta}` snapshot instead of the document.
+
+### A cluster and the folder that declares what it uses
+
+`--context` with a directory reads both into one graph:
+
+```sh
+npx @intentius/behold graph --context prod ./infra -o graph.json
+npx @intentius/behold graph --context prod --infra ./infra --svg -o graph.svg
+```
+
+chant's reference catalog joins what the cluster's objects name to the cards the folder declares: a ServiceAccount's `eks.amazonaws.com/role-arn` or `iam.gke.io/gcp-service-account` annotation to the `aws_iam_role` or `google_service_account`, and an ExternalSecret's key, through its store, to the `aws_secretsmanager_secret` or `google_secret_manager_secret`. Those edges carry chant's rule id. A placeholder card is drawn only for what the folder does not hold, and the notes say so. Each card carries `read`, the source it came from: `cluster` (a placeholder too, since a cluster object named it) or `folder`. On a read of a cluster alone every card has `read: "cluster"`.
+
+### Applications in a cluster
+
+On a read of a cluster, chant infers the applications from the objects (`inferK8sComponents`). Each top-level workload starts one, and the labels a Helm release or an Argo CD application leaves group workloads into one. An application takes in the objects its workloads use. Three views draw them.
+
+```sh
+npx @intentius/behold graph --context prod --around shop/Deployment/checkout --svg -o objects.svg
+npx @intentius/behold graph --context prod --logical --around shop/Deployment/checkout --svg -o logical.svg
+npx @intentius/behold graph --context prod --components --svg -o components.svg
+```
+
+The default view draws every object. A workload's ReplicaSets and Pods are folded into its card. The objects the API server keeps for itself, such as an EndpointSlice or the `default` ServiceAccount, are folded into the card they serve. `--every-card` draws them again. Each edge says what the reference means: `routes to` with the Service's ports, `runs as`, `reads env from`, `mounts`, `assumes role`. A reference in a pod template is drawn once, from the workload. A workload card shows how many of its replicas are ready, its image and its Pods' restarts. The Pods' names are in `attrs._workload.pods`.
+
+`--logical` draws a box per application with the objects it manages, and the cards for what they name outside the cluster. `--components` draws one card per application with its health, and an edge to each application whose Service it names in an env value or a ConfigMap. Both need a chant whose cloud lister has `inferK8sComponents`; with an older one the view is empty and its note says so.
+
+In `--logical` each application's box is titled with its ready replicas (`checkout · 2/2 ready`), and an application that names another's Service is drawn with an edge from the card holding the name to that Service. With `--svg` each view is headed with what it shows: "Every object in shop" (`--every-card`), "Objects in shop", "shop grouped by application" or "Applications in shop and what they call", naming the cluster instead when the read took every namespace.
 
 ## Cuts
 

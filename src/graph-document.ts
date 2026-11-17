@@ -97,6 +97,8 @@ export interface GraphDocumentNode {
   detail__namespace?: string;
   /** The Helm release that installs it. */
   detail__release?: string;
+  /** Which source a read of a cluster took the card from (behold#1115): the cluster, or a folder read beside it. Absent on a read of a folder alone. */
+  read?: "cluster" | "folder";
   /** The graph IR's attributes. `source` is left out unless it was asked for. */
   attrs: Record<string, unknown>;
 }
@@ -115,6 +117,8 @@ export interface GraphDocumentEdge {
   rule?: string;
   /** The consumer-side attribute the reference flows through. */
   via?: string;
+  /** When `via` names the relationship (`runs as`, `routes to :80`, behold#1132): the field the reference was found in. */
+  field?: string;
   /** In a `changed` cut (#1059): `added` or `removed` when the edge exists in one revision only. */
   diff?: "added" | "removed";
 }

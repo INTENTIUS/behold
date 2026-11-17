@@ -1,6 +1,6 @@
 {
   "name": "@intentius/behold",
-  "version": "0.33.2",
+  "version": "0.33.3",
   "license": "Apache-2.0",
   "type": "module",
   "description": "Your infrastructure repo as a graph, from the files. Draws Terraform roots, no state needed.",
@@ -57,7 +57,7 @@
   "dependencies": {
     "@cdktn/hcl2json": "^0.24.0",
     "@hono/node-server": "^2.0.5",
-    "@intentius/chant": "^0.124.101",
+    "@intentius/chant": "^0.124.102",
     "@intentius/chant-lexicon-k8s": "0.124.101",
     "@intentius/chant-lexicon-otel": "0.124.101",
     "@intentius/chant-lexicon-prometheus": "0.124.101",
@@ -72,7 +72,7 @@
     "tsx": "^4.19.0"
   },
   "peerDependencies": {
-    "@ladybugdb/core": ">=0.22.0",
+    "@ladybugdb/core": ">=0.22.1",
     "playwright-core": "^1.62.0",
     "@intentius/chant-k8s-client": "^0.124.100"
   },

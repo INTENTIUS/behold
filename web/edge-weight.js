@@ -19,6 +19,9 @@
 // placeholder card ("dangling"), and one that names several gets a dotted edge
 // to each candidate ("ambiguous"). src/catalog-draw.ts adds the card and the
 // edges and marks them (`dangling: true`, `ambiguous: { of, rule, value }`).
+// behold#1132: the key says what such an edge is to someone reading the
+// picture (a field of one object names or selects the other), not how chant
+// found it.
 //
 // Only references are weighed: a CI edge (needs, calls, triggers, …) keeps its
 // own kind's style (./edge-kind.js).
@@ -27,7 +30,7 @@
 export const WEIGHTS = {
   wired: "wired: the traffic path",
   reference: "reference: names another",
-  joined: "joined: exact match by rule",
+  joined: "joined: a field names or selects the other object",
   inferred: "inferred: matched by name",
   plumbing: "plumbing: identity, keys, logs",
   dangling: "dangling: names nothing declared (dashed card)",

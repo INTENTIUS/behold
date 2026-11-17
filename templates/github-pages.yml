@@ -95,6 +95,17 @@ jobs:
           cd "$PROJECT_DIR"
           npx --yes "@intentius/behold@$BEHOLD_VERSION" export . $flags --out "$out"
 
+      - name: Draw the README images
+        run: |
+          set -eu
+          out="$PWD/_site"
+          if [ -n "$SITE_PATH" ]; then out="$out/$SITE_PATH"; fi
+          mkdir -p "$out"
+          cd "$PROJECT_DIR"
+          for theme in dark light; do
+            npx --yes "@intentius/behold@$BEHOLD_VERSION" graph . --svg --theme "$theme" -o "$out/graph-$theme.svg"
+          done
+
       - name: Check the size
         run: |
           set -eu
@@ -130,4 +141,6 @@ jobs:
             echo "### behold export published"
             echo
             echo "Site: ${PAGE_URL}${SITE_PATH:+$SITE_PATH/}"
+            echo "README image (dark): ${PAGE_URL}${SITE_PATH:+$SITE_PATH/}graph-dark.svg"
+            echo "README image (light): ${PAGE_URL}${SITE_PATH:+$SITE_PATH/}graph-light.svg"
           } >> "$GITHUB_STEP_SUMMARY"

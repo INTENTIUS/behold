@@ -11,6 +11,8 @@
  *   PDB.spec.selector.matchLabels  ⊆ workload.spec.template.metadata.labels
  *   NetworkPolicy.spec.podSelector ⊆ workload.spec.template.metadata.labels
  *   Ingress …backend.service.name  = Service.metadata.name
+ *   metadata.ownerReferences[]     = uid (or kind + name, same namespace) of the owner
+ *   EndpointSlice label            kubernetes.io/service-name = Service.metadata.name
  *   HPA.spec.scaleTargetRef        = { kind, name } of a workload
  *
  * This pass derives those joins, plus the Flux toolkit's reference contracts
@@ -243,6 +245,7 @@ export function deriveK8sEdges(nodes: readonly IRNode[]): K8sDeclaredEdge[] {
   };
 
   const workloads = k8s.filter((n) => WORKLOAD_KINDS.has(n.kind));
+  const pods = k8s.filter((n) => n.kind === "K8s::Core::Pod");
   // Every object by the identity a reference names: kind + namespace + name.
   const byKindNsName = new Map<string, IRNode>();
   // AppProjects by name alone — see addProject on why the namespace is not part
@@ -306,9 +309,42 @@ export function deriveK8sEdges(nodes: readonly IRNode[]): K8sDeclaredEdge[] {
       const labels = templateLabels(w);
       if (labels && selects(selector, labels)) add(n.id, w.id, viaAttr);
     }
+    // A Pod, listed from a cluster or declared on its own, is selected by its own labels.
+    for (const p of pods) {
+      if (namespaceOf(p) !== namespaceOf(n)) continue;
+      const labels = labelRecord(rec(p.attrs?.metadata)?.labels);
+      if (labels && selects(selector, labels)) add(n.id, p.id, viaAttr);
+    }
+  };
+
+  // Every object by its uid, which a live read carries as a cloud id: what an
+  // `ownerReferences[].uid` names.
+  const byUid = new Map<string, IRNode>();
+  for (const n of k8s) for (const c of n.facts?.cloudIds ?? []) if (c.kind === "k8s-uid") byUid.set(c.value, n);
+  /** An object to the objects that own it, by uid, else by kind and name in its own namespace. */
+  const addOwners = (n: IRNode) => {
+    for (const o of list(rec(n.attrs?.metadata)?.ownerReferences)) {
+      const ref = rec(o);
+      const uid = str(ref?.uid);
+      const kind = str(ref?.kind);
+      const name = str(ref?.name);
+      let owner = uid ? byUid.get(uid) : undefined;
+      if (!owner && kind && name) {
+        owner = k8s.find((c) => shortKind(c.kind) === kind && nameOf(c) === name && namespaceOf(c) === namespaceOf(n));
+      }
+      if (owner) add(n.id, owner.id, "ownerReferences");
+    }
   };
 
   for (const n of k8s) {
+    addOwners(n);
+    // An EndpointSlice names its Service in a label the endpoint controller sets.
+    if (n.kind === "K8s::Discovery::EndpointSlice") {
+      const svc = str(rec(rec(n.attrs?.metadata)?.labels)?.["kubernetes.io/service-name"]);
+      const target = svc ? lookup("K8s::Core::Service", namespaceOf(n), svc) : undefined;
+      if (target) add(n.id, target.id, "service-name");
+      continue;
+    }
     // Service / PDB / NetworkPolicy → the workloads their selector lands on
     // (#166 generalised this from Service-only — see SELECTOR_CARRIERS).
     const carrier = SELECTOR_CARRIERS.find((c) => c.kind === n.kind);

@@ -141,10 +141,11 @@ export function chantLexicon(name: string): Promise<EdgeLexicon | undefined> {
   let p = lexiconCache.get(name);
   if (!p) {
     p = lazy(`@intentius/chant-lexicon-${name}`).then((m) => {
-      for (const v of Object.values(m ?? {})) {
-        if (v && typeof v === "object" && (v as { name?: unknown }).name === name) return v as EdgeLexicon;
-      }
-      return undefined;
+      // A lexicon exports more than one object named after it (k8s has its
+      // capability plugin, its plugin and its serializer, #1122). The one the
+      // passes need is the plugin that carries the reference catalog.
+      const named = Object.values(m ?? {}).filter((v) => v && typeof v === "object" && (v as { name?: unknown }).name === name) as EdgeLexicon[];
+      return named.find((v) => (v as { referenceCatalog?: unknown }).referenceCatalog !== undefined) ?? named[0];
     });
     lexiconCache.set(name, p);
   }

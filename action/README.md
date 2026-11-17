@@ -23,10 +23,10 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: INTENTIUS/behold@behold-v0.33.2
+      - uses: INTENTIUS/behold@behold-v0.33.3
 ```
 
-The action lives in the behold repository, and its tags are behold's release tags (`behold-v<version>`). A tag can be moved, so for a workflow that has write access pin the full commit sha of the release instead, with the tag in a comment: `uses: INTENTIUS/behold@<40-character sha> # behold-v0.33.2`.
+The action lives in the behold repository, and its tags are behold's release tags (`behold-v<version>`). A tag can be moved, so for a workflow that has write access pin the full commit sha of the release instead, with the tag in a comment: `uses: INTENTIUS/behold@<40-character sha> # behold-v0.33.3`.
 
 ## What the comment holds
 
@@ -95,7 +95,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: INTENTIUS/behold@behold-v0.33.2
+      - uses: INTENTIUS/behold@behold-v0.33.3
         with:
           handoff: "true"
 ```
@@ -122,7 +122,7 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
           path: handoff
-      - uses: INTENTIUS/behold@behold-v0.33.2
+      - uses: INTENTIUS/behold@behold-v0.33.3
         with:
           mode: post-comment
           handoff-dir: handoff
@@ -149,6 +149,6 @@ Forgejo Actions runs this action as it is. The `forge` input resolves to `forgej
 
 ## About behold
 
-> behold draws your infrastructure repo as a graph, from the files. Run it in a folder of Terraform and it finds each root and draws it as a box of resources, with an edge for each reference the configuration states. It needs no state file or cloud account, and it runs no terraform binary. It writes nothing into the folder it reads. Terraform roots are what it draws from files today. Kubernetes manifests in a plain directory and the edges between tools are coming. behold works beside the tools a repo already uses.
+> behold draws your infrastructure repo as a graph, from the files. Run it in a folder of Terraform and it finds each root and draws it as a box of resources, with an edge for each reference the configuration states. It needs no state file or cloud account, and it runs no terraform binary. It writes nothing into the folder it reads. The same command draws a Pulumi program and the Kubernetes manifests in a plain directory, since their lexicons come with the install. behold works beside the tools a repo already uses.
 
 To try it on a checkout first, run `npx @intentius/behold serve .`.

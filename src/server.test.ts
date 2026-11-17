@@ -1131,13 +1131,19 @@ describe("estate lenses — the composed IR gets the runtime and logical passes 
   // said NOTHING at all below that tier, rather than asserting the wrong
   // thing. A three-member GitOps estate opened on 0 of its edges with no line
   // saying why.
-  it("without ?runtime=1, below the tier that has the sourceRef/dependsOn edges: the note names detail 3, not silence", { timeout: 20_000 }, async () => {
+  it("without ?runtime=1, below the tier that has the sourceRef/dependsOn edges: only the catalog's namespace containment is drawn, and no note claims nothing references anything", { timeout: 20_000 }, async () => {
     const body = (await (await fluxEstate().app.request("/api/overlay?env=local")).json()) as {
-      ir: { edges: unknown[] };
+      ir: { edges: Array<{ rule?: string; relation?: string }> };
       meta: { note?: string };
     };
-    expect(body.ir.edges).toHaveLength(0);
-    expect(body.meta.note ?? "").toMatch(/detail 3/);
+    // #1122: chant's k8s reference catalog runs, and its metadata.namespace
+    // rule joins each workload to the Namespace it is declared in at every
+    // detail. The sourceRef/dependsOn joins still need detail 3.
+    expect(body.ir.edges.length).toBeGreaterThan(0);
+    for (const e of body.ir.edges) {
+      expect(e.relation).toBe("containment");
+      expect(e.rule ?? "").toMatch(/^k8s:.*:metadata\.namespace$/);
+    }
     expect(body.meta.note ?? "").not.toMatch(/no edges — nothing in this estate references anything else/);
   });
 });

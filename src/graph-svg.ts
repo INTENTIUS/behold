@@ -45,6 +45,8 @@ export interface ToSvgOptions {
   keep?: ReadonlySet<string>;
   /** Draw a flat graph over FLAT_NODE_LIMIT instead of refusing it. */
   allowFlat?: boolean;
+  /** The picture's heading (behold#1132, `GraphViewMeta.caption`). */
+  caption?: { title: string; subtitle: string };
 }
 
 /** The error `toSvg` throws for a flat graph over the limit. */
@@ -85,15 +87,29 @@ export function keepCards(ir: GraphIR, keep: ReadonlySet<string>): GraphIR {
   };
 }
 
+/**
+ * Each box's badge. A box the IR titles itself (`boxTitles`, behold#1132: an
+ * application's box with its health) keeps only the card count, so its badge
+ * says nothing the title already does and both fit the box's header.
+ */
+function badgesOf(ir: GraphIR): Record<string, string> {
+  const badges = boxBadges(ir);
+  for (const key of Object.keys((ir as { boxTitles?: Record<string, string> }).boxTitles ?? {})) {
+    if (badges[key] !== undefined) badges[key] = badges[key]!.split(" · ")[0]!;
+  }
+  return badges;
+}
+
 /** The picture of `ir` as SVG text. */
 export function toSvg(irIn: GraphIR, opts: ToSvgOptions = {}): string {
   const ir = opts.keep ? keepCards(irIn, opts.keep) : irIn;
   const byStack = ir.groups.byStack && Object.keys(ir.groups.byStack).length > 0;
   if (!byStack && !opts.allowFlat && ir.nodes.length > FLAT_NODE_LIMIT) throw new FlatLayoutTooLarge(ir.nodes.length);
   const { svg } = renderGraph(ir, {
-    ...(byStack ? { boxes: "byStack" as const, groupBadges: boxBadges(ir) } : {}),
+    ...(byStack ? { boxes: "byStack" as const, groupBadges: badgesOf(ir) } : {}),
     // renderGraph hands `theme` to pinhole as it is, and pinhole takes the resolved theme, not its name.
     ...(opts.theme ? { theme: getTheme(opts.theme) as never } : {}),
+    ...(opts.caption ? { caption: opts.caption } : {}),
   });
   return svg;
 }

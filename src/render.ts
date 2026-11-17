@@ -39,6 +39,7 @@ import { SUMMARY_LEXICON, summaryCardFields } from "./collapse-lens.ts";
 import { STACK_OF, stackFields } from "./stack-lens.ts";
 import { STACK_LEXICON } from "./stack-order.ts";
 import { routeEdges } from "./edge-route.ts";
+import { applicationFields, outsideFields, workloadFields } from "./operator-cards.ts";
 
 // Lexicon-native icons (#227), step 2 of 2. pinhole resolves a node's glyph
 // through a chain — per-node override → lexicon pack → keyword heuristic →
@@ -81,7 +82,8 @@ function logicalCardFields(node: { attrs: Record<string, unknown> }): Array<{ la
   return [...base, ...stack, ...(typeof i === "string" ? [{ label: "in", value: i }] : []), ...(typeof w === "string" ? [{ label: "with", value: w }] : [])];
 }
 
-registerPack({ lexicon: "k8s", iconFor: k8sIconFor });
+// behold#1132: a workload of a cluster read says its health, image and restarts; any other k8s card keeps pinhole's default.
+registerPack({ lexicon: "k8s", iconFor: k8sIconFor, fields: (node) => workloadFields(node.attrs as Record<string, unknown>) });
 registerPack({ lexicon: "helm", iconFor: helmIconFor });
 // #872: the cloud vendors' own architecture icons, by kind then by service.
 registerPack({ lexicon: "aws", iconFor: awsIconFor, fields: logicalCardFields });
@@ -159,13 +161,14 @@ registerPack({
   lexicon: "chant",
   iconFor: () => undefined,
   fields: (node) =>
-    typeof node.attrs.release === "string"
+    applicationFields(node.attrs as Record<string, unknown>) ??
+    (typeof node.attrs.release === "string"
       ? [
           ...(typeof node.attrs.archetype === "string" ? [{ label: "archetype", value: node.attrs.archetype }] : []),
           { label: "release", value: node.attrs.release },
           ...(typeof node.attrs.since === "string" ? [{ label: "since", value: node.attrs.since }] : []),
         ]
-      : undefined,
+      : undefined),
 });
 
 // #997: a member chant records no component release for (choudoufu,
@@ -191,11 +194,15 @@ registerPack({
 
 // behold#876: the card for everyone outside the estate. Its words say what it
 // is and how many ways in it has; pinhole's keyword glyph for "Internet" is
-// the picture.
+// the picture. behold#1132: a card for what a cluster object names outside
+// the cluster shares the lexicon, and its rows hold the whole ARN or address.
 registerPack({
   lexicon: OUTSIDE_LEXICON,
   iconFor: () => undefined,
-  fields: (node) => [{ label: "the public internet", value: String((node.attrs as { reaches?: unknown } | undefined)?.reaches ?? "") }],
+  fields: (node) =>
+    outsideFields(node.kind, (node.attrs ?? {}) as Record<string, unknown>) ?? [
+      { label: "the public internet", value: String((node.attrs as { reaches?: unknown } | undefined)?.reaches ?? "") },
+    ],
 });
 
 export interface RenderResult {
@@ -454,6 +461,8 @@ export function renderGraph(
     rankdir?: "TB" | "BT" | "LR" | "RL";
     /** The attributes zoom: each card prints what its structured attributes hold (src/attribute-fields.ts). */
     attributes?: boolean;
+    /** behold#1132: the picture's heading, painted in pinhole's title band. Absent, the band is left out. */
+    caption?: { title: string; subtitle: string };
   } = {},
 ): RenderResult {
   if (opts.attributes) irIn = { ...irIn, nodes: irIn.nodes.map((n) => ({ ...n, attrs: { ...n.attrs, [ATTRS_ZOOM]: true } })) };
@@ -506,9 +515,18 @@ export function renderGraph(
       if (title !== undefined) box.title = title;
     }
   }
+  // behold#1132: a box the IR titles itself (`boxTitles`, beside `groups`), such as an application's box with its health. The box keeps its key as `id`.
+  const boxTitles = (irIn as { boxTitles?: Record<string, string> }).boxTitles;
+  if (boxTitles) {
+    for (const box of layout.groups ?? []) {
+      const title = box.id === undefined ? undefined : boxTitles[box.id];
+      if (title !== undefined) box.title = title;
+    }
+  }
   const svg = renderSvg(ir, layout, {
     fit: true,
-    hideTitle: true,
+    hideTitle: !opts.caption,
+    ...(opts.caption ? { title: opts.caption.title, subtitle: opts.caption.subtitle } : {}),
     overrides: face.overrides,
     ...(boxes ? { groups: layout.groups } : {}),
     ...(opts.theme ? { theme: opts.theme as never } : {}),

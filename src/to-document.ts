@@ -121,8 +121,10 @@ function boxesOf(ir: GraphIR): Boxes {
     groups.push({ id: `wave:${key}`, title: key, kind: "wave" });
     for (const id of ids) first(boxOf, id, `wave:${key}`);
   }
+  // behold#1132: a box the IR titles itself, such as a cluster application's with its health.
+  const titles = (ir as { boxTitles?: Record<string, string> }).boxTitles ?? {};
   for (const [key, ids] of Object.entries(g.byStack ?? {})) {
-    groups.push({ id: `stack:${key}`, title: key, kind: "stack" });
+    groups.push({ id: `stack:${key}`, title: titles[key] ?? key, kind: "stack" });
     for (const id of ids) {
       first(stackOf, id, key);
       boxOf.set(id, `stack:${key}`);
@@ -212,6 +214,7 @@ function documentNode(node: IRNode, boxes: Boxes, opts: ToDocumentOptions, membe
   const root = str(a.root);
   const namespace = namespaceOf(node);
   const release = helmRelease(node);
+  const read = (node as { read?: unknown }).read;
   return {
     id: node.id,
     title: cardLabel(node, boxes.stackOf.get(node.id)) ?? node.id,
@@ -228,9 +231,13 @@ function documentNode(node: IRNode, boxes: Boxes, opts: ToDocumentOptions, membe
     ...(root ? { detail__root: root } : {}),
     ...(namespace ? { detail__namespace: namespace } : {}),
     ...(release ? { detail__release: release } : {}),
+    ...(isReadSource(read) ? { read } : {}),
     attrs,
   };
 }
+
+const READ_SOURCES: ReadonlySet<unknown> = new Set(["cluster", "folder"]);
+const isReadSource = (v: unknown): v is NonNullable<GraphDocumentNode["read"]> => READ_SOURCES.has(v);
 
 /** The rule an inferred edge was drawn by: chant's catalog rule, or the behold pass that joined it. */
 function ruleOf(e: Rec): string | undefined {
@@ -273,6 +280,7 @@ export function toDocument(snapshot: GraphSnapshot, opts: ToDocumentOptions): Gr
       inferred,
       ...(inferred && rule ? { rule } : {}),
       ...(via ? { via } : {}),
+      ...(str(e.field) ? { field: e.field as string } : {}),
     });
   }
 

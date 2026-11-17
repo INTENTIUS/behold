@@ -98,6 +98,6 @@ describe("edgeWeights over chant's catalog (behold#1080)", () => {
   it("gives each its legend row even when it is the only weight drawn", () => {
     expect(weightLegend(new Map([["a→b", "joined"]])).map((r) => [r.weight, r.title, r.count])).toEqual([["joined", WEIGHTS.joined, 1]]);
     expect(weightLegend(new Map([["a→b", "dangling"], ["c→d", "ambiguous"], ["c→e", "ambiguous"]])).map((r) => [r.weight, r.count])).toEqual([["dangling", 1], ["ambiguous", 2]]);
-    expect(WEIGHTS.joined).toBe("joined: exact match by rule");
+    expect(WEIGHTS.joined).toBe("joined: a field names or selects the other object");
   });
 });

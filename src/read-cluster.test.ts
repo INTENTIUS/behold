@@ -271,11 +271,55 @@ describe("behold graph --context, arguments and refusals (#1083)", () => {
     }
   });
 
-  it("takes a cluster or a directory, not both, and the cluster flags only with a cluster", async () => {
-    expect((await run(["somedir", "--context", "x"])).err).toContain("two reads");
+  it("takes the cluster flags only with a cluster, and a directory beside a cluster only if it is one (#1115)", async () => {
+    expect((await run(["somedir-that-is-not-there", "--context", "x"])).err).toContain("is not a directory");
+    expect((await run(["--infra", "somedir"])).err).toContain("--infra goes with --context");
     expect((await run(["--context", "x", "--changed", "a..b"])).err).toContain("does not go with --context");
     expect((await run(["--namespace", "a"])).err).toContain("go with --context");
     expect((await run(["--allow-exec-plugin"])).code).toBe(2);
     expect((await run(["--context"])).code).toBe(2);
+  });
+});
+
+describe("readCluster, owner and selector edges (#1114)", () => {
+  const obj = (listedType: string, name: string, uid: string, metadata: Record<string, unknown>, spec: Record<string, unknown> = {}) => ({
+    id: `kubernetes/prod/app/${encodeURIComponent(listedType)}/${name}`,
+    kind: `K8s::${{ Deployment: "Apps", ReplicaSet: "Apps", Pod: "Core", Service: "Core", EndpointSlice: "Discovery" }[listedType.split("/").pop()!]}::${listedType.split("/").pop()}`,
+    lexicon: "k8s",
+    listedType,
+    location: "app",
+    facts: { cloudIds: [{ kind: "k8s-uid", value: uid }] },
+    attrs: { metadata: { name, namespace: "app", ...metadata }, spec },
+  });
+  const owner = (kind: string, name: string, uid: string) => ({ ownerReferences: [{ apiVersion: "apps/v1", kind, name, uid, controller: true }] });
+
+  it("draws Pod to ReplicaSet to Deployment, the Service to its Pods and the EndpointSlice to the Service", async () => {
+    const nodes = [
+      obj("apps/v1/Deployment", "web", "u1", {}),
+      obj("apps/v1/ReplicaSet", "web-1", "u2", owner("Deployment", "web", "u1")),
+      obj("v1/Pod", "web-1-a", "u3", { ...owner("ReplicaSet", "web-1", "u2"), labels: { app: "web" } }),
+      obj("v1/Pod", "web-1-b", "u4", { ...owner("ReplicaSet", "web-1", "u2"), labels: { app: "web" } }),
+      obj("v1/Service", "web", "u5", {}, { selector: { app: "web" } }),
+      obj("discovery.k8s.io/v1/EndpointSlice", "web-xyz", "u6", { labels: { "kubernetes.io/service-name": "web" } }),
+    ];
+    const base = fakeChant();
+    const chant: ChantLister = {
+      ...base,
+      indexCloud: async () => ({
+        doc: { stamp: { observedAt: "2026-01-01T00:00:00.000Z", scope: {} }, coverage: [], notes: [], graph: { version: 1, nodes, edges: [], groups: {} } as unknown as GraphIR },
+      }),
+    };
+    const read = await readCluster({ kubeconfig: write(kubeconfig({ token: "t" })), chant });
+    const edges = new Set(read.ir.edges.map((e) => `${e.from} -> ${e.to}`));
+    for (const e of [
+      "app/ReplicaSet/web-1 -> app/Deployment/web",
+      "app/Pod/web-1-a -> app/ReplicaSet/web-1",
+      "app/Pod/web-1-b -> app/ReplicaSet/web-1",
+      "app/Service/web -> app/Pod/web-1-a",
+      "app/Service/web -> app/Pod/web-1-b",
+      "app/EndpointSlice/web-xyz -> app/Service/web",
+    ]) expect(edges).toContain(e);
+    // One edge per pair, however many passes found it.
+    expect(read.ir.edges.length).toBe(edges.size);
   });
 });

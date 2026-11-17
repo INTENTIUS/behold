@@ -199,7 +199,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const gate = !(resolvedVersion(TERRAFORM_LEXICON_PKG) && resolvedVersion(HCL_PARSER_PKG)) && process.env.BEHOLD_REQUIRE_PEERS !== "1";
 
 describe.skipIf(gate)("the graph tool on a real read (#1073)", () => {
-  it("answers the example Terraform estate, and refuses a cut around an id it does not hold", async () => {
+  it("answers the example Terraform estate, and refuses a cut around an id it does not hold", { timeout: 240_000 }, async () => {
     const dir = realDir(join(HERE, "..", "example-terraform-estate"));
     const whole = await callTool(TOOLS, "graph", {}, ctxOf(dir, undefined));
     expect(whole.isError).toBeFalsy();

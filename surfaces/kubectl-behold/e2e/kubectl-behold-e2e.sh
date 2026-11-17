@@ -100,9 +100,11 @@ if [ -n "$KREW" ]; then
   ok "kubectl krew install from the built archive, then kubectl behold deploy/web -n app"
   kubectl krew uninstall behold >/dev/null 2>&1 || fail "krew uninstall"
   if kubectl behold --help >/dev/null 2>&1; then fail "kubectl behold still resolves after uninstall"; fi
-  left="$(find "$KREW_ROOT" \( -name '*behold*' \) 2>/dev/null || true)"
+  # krew's copy of the plugin index (KREW_ROOT/index) lists behold since
+  # kubernetes-sigs/krew-index#6670; that is the index, not an install.
+  left="$(find "$KREW_ROOT" -path "$KREW_ROOT/index" -prune -o -name '*behold*' -print 2>/dev/null || true)"
   [ -z "$left" ] || fail "uninstall left: $left"
-  ok "kubectl krew uninstall left nothing under KREW_ROOT"
+  ok "kubectl krew uninstall left nothing under KREW_ROOT outside the index"
 else
   echo "SKIP krew: no kubectl-krew on PATH and KREW_BIN unset"
 fi

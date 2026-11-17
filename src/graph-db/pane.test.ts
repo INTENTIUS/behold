@@ -10,7 +10,7 @@ import type { GraphIR } from "@intentius/chant";
 import { createApp } from "../server.ts";
 import { fakeLbug } from "./fake-lbug.ts";
 import { GRAPH_ROUTES, mountGraphPane, type GraphPaneDeps } from "./pane.ts";
-import { LADYBUG_INSTALL, loadLadybug } from "./peer.ts";
+import { LADYBUG_FLOOR, LADYBUG_INSTALL, LADYBUG_RANGE, loadLadybug } from "./peer.ts";
 import { LOCAL_INDEX_DIR } from "./sources.ts";
 
 const FIXTURES = join(import.meta.dirname, "__fixtures__");
@@ -109,6 +109,18 @@ describe("without the optional peer", () => {
   it("the peer loader never throws", async () => {
     await expect(loadLadybug(missingPeer)).resolves.toMatchObject({ ok: false, refusal: { code: "graph-peer-missing" } });
     await expect(loadLadybug(async () => ({ nothing: true }))).resolves.toMatchObject({ ok: false });
+  });
+
+  it("refuses a peer below the floor, which counts multi-hop matches wrongly, and declares that floor (behold#1121)", async () => {
+    const at = (VERSION: string) => async () => ({ ...fakeLbug().module, VERSION });
+    const old = await loadLadybug(at("0.22.0"));
+    expect(old).toMatchObject({ ok: false, refusal: { code: "graph-peer-missing", install: LADYBUG_INSTALL } });
+    expect(old.ok ? "" : old.refusal.detail).toContain(`0.22.0 is installed, and the pane needs ${LADYBUG_FLOOR} or newer`);
+    await expect(loadLadybug(at("0.21.2"))).resolves.toMatchObject({ ok: false });
+    await expect(loadLadybug(at(LADYBUG_FLOOR))).resolves.toMatchObject({ ok: true });
+    await expect(loadLadybug(at("0.22.3"))).resolves.toMatchObject({ ok: true });
+    const pkg = JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "package.json"), "utf8"));
+    expect(pkg.peerDependencies["@ladybugdb/core"]).toBe(LADYBUG_RANGE);
   });
 });
 

@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: INTENTIUS/behold@behold-v0.33.2
+      - uses: INTENTIUS/behold@behold-v0.33.3
 ```
 
 [action/README.md](action/README.md) lists the inputs and shows the GitLab and Forgejo forms.
@@ -55,7 +55,7 @@ npx @intentius/behold graph ./infra --changed origin/main...HEAD -o cut.json
 npx @intentius/behold graph ./infra --around prod/prod/aws_vpc.main --depth 2
 ```
 
-`--context <name>` draws a live Kubernetes cluster instead of a directory, through chant's read-only lister: API discovery, then a list per kind, a box per namespace and one for cluster-scoped objects. `--namespace` and `--types` narrow it. Nothing is written to the cluster. A kubeconfig user that runs an exec plugin (the EKS, GKE and AKS command line tools write these) is refused unless you pass `--allow-exec-plugin`.
+`--context <name>` draws a live Kubernetes cluster instead of a directory, through chant's read-only lister: API discovery, then a list per kind, a box per namespace and one for cluster-scoped objects. `--namespace` and `--types` narrow it. Nothing is written to the cluster. Add a directory (`--context prod ./infra`) and the folder is drawn in the same graph, with chant's reference catalog joining a ServiceAccount's cloud role annotation or an ExternalSecret's key to the Terraform that declares it. The cluster read also draws the edge from a Service to the Pods its selector picks, from an object to its owner, and from an EndpointSlice to its Service. `--logical` and `--components` group the objects by application, with each application's health ([the graph document](https://intentius.io/behold/using/graph-document/) has the views). A kubeconfig user that runs an exec plugin (the EKS, GKE and AKS command line tools write these) is refused unless you pass `--allow-exec-plugin`.
 
 `behold graph --help` lists every flag.
 
@@ -63,11 +63,11 @@ npx @intentius/behold graph ./infra --around prod/prod/aws_vpc.main --depth 2
 
 The same read feeds several places outside behold's own page. Each has a docs page or a README with the setup.
 
-- A GitHub Pages workflow ([templates/github-pages.yml](templates/github-pages.yml), [docs](https://intentius.io/behold/using/pages/)) publishes `behold export` on each push to `main`, so the graph has a stable URL.
+- A GitHub Pages workflow ([templates/github-pages.yml](templates/github-pages.yml), [docs](https://intentius.io/behold/using/pages/)) publishes `behold export` on each push to `main`, so the graph has a stable URL. It also writes `graph-dark.svg` and `graph-light.svg` beside the export, for a README to embed.
 - Grafana's node graph panel draws a published `graph.json` through the Infinity data source, with two ready dashboards ([docs](https://intentius.io/behold/using/grafana/)).
 - Backstage TechDocs can carry a component's graph as an image or a live frame ([docs](https://intentius.io/behold/using/techdocs/)).
 - An `argocd-cm` entry gives annotated Argo CD Applications an "Open in behold" link, with nothing to install in Argo CD ([docs](https://intentius.io/behold/using/argocd-link/)).
-- `kubectl behold` draws the current context, or one object and its neighbours, and opens the SVG. Install it with `kubectl krew install behold` ([surfaces/kubectl-behold](surfaces/kubectl-behold/README.md)).
+- `kubectl behold` draws the current context, or one object and its neighbours, and opens the SVG. Install it with `kubectl krew install behold`; the current plugin is `0.1.1` ([surfaces/kubectl-behold](surfaces/kubectl-behold/README.md)).
 - A Claude Code plugin registers `behold mcp` and a skill that starts `behold serve`: `claude plugin marketplace add INTENTIUS/behold`, then `claude plugin install behold@behold` ([plugins/claude-code](plugins/claude-code/README.md)).
 
 ## The served page
@@ -247,7 +247,7 @@ Three peers are left out of a plain `npm install`. Each path that needs one stop
 |---|---|
 | `@intentius/chant-k8s-client` | reading a kubeconfig on the served page: the context lookups, the kubectl context pills and `behold doctor` |
 | `playwright-core` | `behold shot` and the `shot` MCP tool |
-| `@ladybugdb/core` | Cypher queries in the graph pane |
+| `@ladybugdb/core`, `0.22.1` or newer | Cypher queries in the graph pane; `0.22.0` and earlier count multi-hop matches wrongly, so behold refuses them |
 
 `behold graph` (including `--context`), `export`, `index` and `mcp` run without the Kubernetes client.
 
