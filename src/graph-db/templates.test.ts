@@ -84,6 +84,24 @@ describe("templates", () => {
     expect(expandTemplate("drift", chantNode, { env: "prod" })).toMatchObject({ query: "web/aws_instance.web", env: "prod", reads: "live" });
   });
 
+  it("a member's node goes into a search template by the member's own id, which is what chant workspace search matches", () => {
+    // example-three-cloud's aws member: the composed IR keys the subnet `aws/aws/aws:ec2/...`, and
+    // `->*aws/aws/aws:ec2/...` lit nothing there while `->*aws/aws:ec2/...` lit the subnet's six dependents.
+    const rows = emptyRows();
+    const id = (m: string, local: string) => ({ id: `${m}/${local}`, kind: "k", lexicon: "pulumi", attrs: {} });
+    rowsFromChantIr({ version: 1, nodes: [id("aws", "aws/aws:ec2/subnet:Subnet::public"), id("gcp", "networkVpc")], edges: [], groups: {} }, { members: ["aws", "gcp"], readAt, from: "x" }, rows);
+    rowsFromChantIr({ version: 1, nodes: [{ id: "aws_instance.web", kind: "aws_instance", lexicon: "terraform", attrs: {} }], edges: [], groups: {} }, { member: "web", readAt, from: "x" }, rows);
+    rowsFromChantIr({ version: 1, nodes: [{ id: "bucket", kind: "k", lexicon: "aws", attrs: {} }], edges: [], groups: {} }, { readAt, from: "x" }, rows);
+    const row = (key: string) => rows.resources.find((r) => r.key === key)!;
+    expect(expandTemplate("dependents", row("aws/aws/aws:ec2/subnet:Subnet::public")).query).toBe("->*aws/aws:ec2/subnet:Subnet::public");
+    expect(expandTemplate("dependencies", row("gcp/networkVpc")).query).toBe("<-*networkVpc");
+    expect(expandTemplate("paths-to-kind", row("web/aws_instance.web"), { kind: "aws_vpc" }).query).toBe("aws_instance.web ->*kind:aws_vpc");
+    // A single project's node is keyed by its id already.
+    expect(expandTemplate("drift", row("bucket"), { env: "local" }).query).toBe("bucket");
+    // Cypher still binds the session key.
+    expect(expandTemplate("ownership", row("gcp/networkVpc")).params).toEqual({ key: "gcp/networkVpc" });
+  });
+
   it("a Cypher template takes the node and its inputs as parameters, never spliced into the text", () => {
     const x = expandTemplate("ownership", engineNode);
     expect(x.language).toBe("cypher");
