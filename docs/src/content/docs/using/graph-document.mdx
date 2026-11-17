@@ -85,6 +85,17 @@ chant's reference catalog joins what the cluster's objects name to the cards the
 
 When the folder declares the cluster itself (an `aws_eks_cluster`, a `google_container_cluster` or an `azurerm_kubernetes_cluster`), its card joins the context: an edge goes from it to each Namespace, with the rule `behold:context`, and a note names it. The cluster's `name` is matched against the context name and the kubeconfig's cluster entry, where `aws eks update-kubeconfig` writes the cluster's ARN, `gcloud` writes `gke_<project>_<location>_<name>` and `az aks get-credentials` writes the name. A folder that declares no such cluster, or several that match, joins none.
 
+### What the cluster's apps deploy from git
+
+`--git` reads the path each Argo CD Application and Flux Kustomization deploys from, out of a local clone, and draws its manifests beside the live objects:
+
+```sh
+npx @intentius/behold graph --context prod --git ../deploy -o graph.json
+npx @intentius/behold graph --context prod ./infra --git https://github.com/org/deploy=../deploy
+```
+
+An Application's paths are the ones chant's catalog reads (`spec.source.path`, `spec.sources[].path`). A Kustomization's path is `spec.path` in the GitRepository its `sourceRef` names. `--git <dir>` holds every repository whose URL is that directory or one of its git remotes; `--git <url>=<dir>` holds one URL. Nothing is fetched: an app whose repository no clone holds is named in a note and not read. The clone's working tree is read, and the note names the revision the app tracks. The cards sit in a box named for the app, with ids under `<app>/git/`.
+
 ### Applications in a cluster
 
 On a read of a cluster, chant infers the applications from the objects (`inferK8sComponents`). Each top-level workload starts one, and the labels a Helm release or an Argo CD application leaves group workloads into one. An application takes in the objects its workloads use. Three views draw them.

@@ -1,8 +1,9 @@
 /**
  * One graph of a live cluster and a folder that declares what it uses
- * (behold#1115): `behold graph --context <ctx> <dir>`.
+ * (behold#1115): `behold graph --context <ctx> <dir>`, and the GitOps sources
+ * its apps deploy from (behold#1123): `--git <clone>`.
  *
- *     readJoined({ cluster, dir, detail? }) => Promise<ReadJoinedResult>
+ *     readJoined({ cluster, dir?, git?, detail? }) => Promise<ReadJoinedResult>
  *
  * Each source is read as it is read alone, so each keeps its own edges, boxes
  * and notes: the folder through `readGraph` (src/read-graph.ts), the cluster
@@ -28,7 +29,7 @@
  * was read.
  *
  * Each card carries `read`, the source it came from: `cluster` (placeholders
- * too, since cluster objects named them) or `folder`.
+ * too, since cluster objects named them), `folder` or `git`.
  *
  * Untyped kinds. The live read keeps an ExternalSecret, a SecretStore and a
  * ClusterSecretStore under their listed type (`external-secrets.io/v1/ExternalSecret`,
@@ -38,6 +39,16 @@
  * handed over under the kind the lexicon's own group rule (`k8sKindByRule`)
  * gives, when that is a kind the k8s catalog names. The drawn card keeps its
  * listed kind.
+ *
+ * GitOps sources (behold#1123). Given `git`, the local clones the caller
+ * named, each Argo CD Application and Flux Kustomization the cluster holds has
+ * the path it deploys from read as a folder (src/gitops-source.ts says how the
+ * path and the clone are found; nothing is fetched). The cards are drawn with
+ * their ids under `<app>/git/`, in a box named `<app> from git`, beside the
+ * live objects, with `read: "git"`. They are not handed to the catalog pass:
+ * what joins a git manifest to the live object it declares is the drift
+ * against git (behold#1118). The clone's working tree is read, and the note
+ * names the revision the app tracks.
  *
  * The cluster's own resource (behold#1123). A folder that declares the cluster
  * the context serves (an `aws_eks_cluster`, a `google_container_cluster`, an
@@ -60,15 +71,17 @@
  * alone, as src/chant-edges.ts does. Without the pass the two graphs are drawn
  * side by side with no edge between them, and the note says why.
  */
-import { basename, resolve } from "node:path";
+import { existsSync, statSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
 import type { GraphIR, IREdge, IRNode } from "@intentius/chant";
 import { managedClusterName, MANAGED_CLUSTER_KINDS } from "./cluster-anchor.ts";
+import { cloneFor, gitOpsSources, type GitClone, type GitOpsSource, type GitPathRule, type SourceNode } from "./gitops-source.ts";
 import { contextBindsCluster } from "./k8s-target.ts";
 import { readCluster, type ReadClusterOptions, type ReadClusterResult } from "./read-cluster.ts";
 import { readGraph, type ReadGraphResult } from "./read-graph.ts";
 
-/** Where a card of a joined read was read from. `index` and `git` are the cloud index and a GitOps source. */
-export type ReadSource = "cluster" | "folder";
+/** Where a card of a joined read was read from: the cluster, the folder, or a GitOps source's path in git. `index`, the cloud index, comes later. */
+export type ReadSource = "cluster" | "folder" | "git";
 
 type Rec = Record<string, unknown>;
 
@@ -78,6 +91,8 @@ export interface JoinCatalog {
   identities: ReadonlyArray<{ kind: string }>;
   scopes?: ReadonlyArray<{ kind: string }>;
   declaredNode?(node: IRNode, block?: IRNode): { kind: string; attrs: Rec; nonLiteral: number } | undefined;
+  /** The repository paths a node names (chant#5102): an Argo CD Application's source paths. */
+  pathRefs?: GitPathRule[];
 }
 
 /** A node as chant's pass takes it: an IR node with the member that holds it. */
@@ -103,8 +118,14 @@ export interface JoinDeps {
 export interface ReadJoinedOptions {
   /** The cluster half: everything `readCluster` takes. */
   cluster: ReadClusterOptions;
-  /** The folder half: what `behold graph <dir>` reads. */
-  dir: string;
+  /** The folder half: what `behold graph <dir>` reads. Left out, no folder is read. */
+  dir?: string;
+  /**
+   * The local clones the GitOps sources are read from (behold#1123). Given,
+   * each Argo CD Application and Flux Kustomization the cluster holds has its
+   * path read from the clone that holds its repository; nothing is fetched.
+   */
+  git?: readonly GitClone[];
   detail?: number;
   deps?: JoinDeps;
 }
@@ -122,11 +143,21 @@ export interface JoinInfo {
   pass: boolean;
   /** The folder card of the cluster the context serves (behold#1123), when the folder declares it. */
   cluster?: string;
+  /** With `git`: each GitOps source found, the clone it was read from and the cards it gave. */
+  git?: GitRead[];
+}
+
+/** A GitOps source of a joined read, with what was read for it. */
+export interface GitRead extends GitOpsSource {
+  /** The clone that holds the repository; absent when none does. */
+  clone?: string;
+  /** Cards read from the path: 0 when it was not read. */
+  cards: number;
 }
 
 export interface ReadJoinedResult extends ReadClusterResult {
-  /** The folder read, for the document's member paths. */
-  folder: ReadGraphResult;
+  /** The folder read, for the document's member paths; absent when no folder was read. */
+  folder?: ReadGraphResult;
   joined: JoinInfo;
 }
 
@@ -226,7 +257,22 @@ export function markRead<T extends { ir: GraphIR }>(read: T, source: ReadSource)
   return { ...read, ir: { ...read.ir, nodes: read.ir.nodes.map((n) => stamp(n, source)) } };
 }
 
-/** Read a cluster and a folder into one graph. The module header says how. */
+/** A git read's graph with every id under `<app>/git/`, and every card in one box for the app. */
+function underApp(ir: GraphIR, app: string, box: string): { nodes: IRNode[]; edges: IREdge[]; groups: Rec; dangling: unknown[] } {
+  const id = (x: string) => `${app}/git/${x}`;
+  const groups: Rec = { byStack: { [box]: ir.nodes.map((n) => id(n.id)) } };
+  for (const [k, v] of Object.entries((ir.groups ?? {}) as Record<string, Record<string, string[]>>)) {
+    if (k !== "byStack") groups[k] = Object.fromEntries(Object.entries(v).map(([key, list]) => [key, list.map(id)]));
+  }
+  return {
+    nodes: ir.nodes.map((n) => ({ ...n, id: id(n.id), ...(n.instanceOf !== undefined ? { instanceOf: id(n.instanceOf) } : {}) }) as IRNode),
+    edges: ir.edges.map((e) => ({ ...e, from: id(e.from), to: id(e.to) })),
+    groups,
+    dangling: (ir.dangling ?? []).map((d) => ({ ...d, from: id(d.from) })),
+  };
+}
+
+/** Read a cluster with a folder, the GitOps sources its apps name, or both, into one graph. The module header says how. */
 export async function readJoined(opts: ReadJoinedOptions): Promise<ReadJoinedResult> {
   const deps = { ...defaultDeps, ...(opts.deps ?? {}) };
   const detail = opts.detail;
@@ -235,9 +281,13 @@ export async function readJoined(opts: ReadJoinedOptions): Promise<ReadJoinedRes
   // The catalog reads every argument, so the members it is handed are read at detail 3; the drawn folder keeps the detail asked for.
   let raw: IRNode[] = [];
   const keep = (ir: GraphIR) => void (raw = structuredClone(ir.nodes));
-  const folder = await readGraph(opts.dir, detail === 3 ? { ...graphOpts, composed: keep } : graphOpts);
-  if (detail !== 3) await readGraph(opts.dir, { ...graphOpts, detail: 3, composed: keep });
-  const names = folder.members.map((m) => m.name);
+  let folder: ReadGraphResult | undefined;
+  if (opts.dir !== undefined) {
+    folder = await readGraph(opts.dir, detail === 3 ? { ...graphOpts, composed: keep } : graphOpts);
+    if (detail !== 3) await readGraph(opts.dir, { ...graphOpts, detail: 3, composed: keep });
+  }
+  const folderIr = folder?.ir ?? ({ nodes: [], edges: [], groups: {} } as unknown as GraphIR);
+  const names = folder?.members.map((m) => m.name) ?? [];
 
   const catalogs = new Map<string, JoinCatalog>();
   const catalogOf = async (lexicon: string) => {
@@ -255,12 +305,13 @@ export async function readJoined(opts: ReadJoinedOptions): Promise<ReadJoinedRes
     const view = (await catalogOf(n.lexicon))?.declaredNode?.(n, n.instanceOf !== undefined ? rawById.get(n.instanceOf) : undefined);
     held.push(view ? { id: n.id, kind: view.kind, lexicon: n.lexicon, attrs: view.attrs } : n);
   }
+  // `--index` (behold#1123, waiting on chant#5245) reads the cloud account here: its nodes join `held`, so a placeholder is not made for what the index holds, and the pass below.
 
   const cluster = await readCluster({ ...opts.cluster, held });
   const context = cluster.cluster.context;
 
   // The cluster's own resource: matched on the names it was declared with, drawn on the card the folder shows.
-  const drawnFolder = new Set(folder.ir.nodes.map((n) => n.id));
+  const drawnFolder = new Set(folderIr.nodes.map((n) => n.id));
   const views = held as Array<{ id: string; kind: string; attrs?: Rec }>;
   const own = contextCluster(views.filter((v) => drawnFolder.has(v.id)), [context, cluster.cluster.cluster]);
   const anchors: IREdge[] = [];
@@ -289,16 +340,53 @@ export async function readJoined(opts: ReadJoinedOptions): Promise<ReadJoinedRes
       clusterNodes.push({ ...n, member: context });
     }
   }
+
+  // The GitOps sources: each app's path, read from the clone the caller named, as a folder of its own.
+  const gitReads: GitRead[] = [];
+  const gitNotes: string[] = [];
+  const gitParts: Array<ReturnType<typeof underApp>> = [];
+  if (opts.git) {
+    for (const src of gitOpsSources(clusterNodes as unknown as SourceNode[], k8s?.pathRefs ?? [])) {
+      const where = `${src.path || "."} in ${src.repo}`;
+      const clone = cloneFor(src.repo, opts.git);
+      const entry: GitRead = { ...src, cards: 0 };
+      gitReads.push(entry);
+      if (!clone) {
+        gitNotes.push(`${src.app} deploys from ${src.repo}, which no --git clone holds, so it is not read (behold fetches nothing: pass --git <dir> or --git <url>=<dir>)`);
+        continue;
+      }
+      entry.clone = clone;
+      const dir = join(clone, src.path);
+      if (!existsSync(dir) || !statSync(dir).isDirectory()) {
+        gitNotes.push(`${src.app} deploys from ${where}, and ${clone} has no directory ${src.path || "."}`);
+        continue;
+      }
+      let read: ReadGraphResult;
+      try {
+        read = await readGraph(dir, graphOpts);
+      } catch (e) {
+        gitNotes.push(`${src.app} deploys from ${where}, which could not be read: ${(e as Error).message}`);
+        continue;
+      }
+      const part = underApp(read.ir, src.app, `${src.app} from git`);
+      gitParts.push(part);
+      entry.cards = part.nodes.length;
+      gitNotes.push(
+        `${part.nodes.length} ${part.nodes.length === 1 ? "card" : "cards"} of ${src.app} from git (${src.path || "."} in the working tree of ${clone}${src.revision ? `; the app tracks ${src.revision}` : ""})`,
+      );
+    }
+  }
+
   const folderNodes: PassNode[] = raw.map((n) => ({ ...n, member: memberOf(n.id, names) }));
   const passNodes = [...clusterNodes, ...folderNodes];
   for (const l of new Set(passNodes.map((n) => n.lexicon))) await catalogOf(l);
 
   const pass = catalogs.size ? await deps.catalogPass() : undefined;
-  const sourceOf = new Map<string, ReadSource>([...cluster.ir.nodes.map((n) => [n.id, "cluster"] as const), ...folder.ir.nodes.map((n) => [n.id, "folder"] as const)]);
-  const joined = new Set([...cluster.ir.edges, ...folder.ir.edges, ...anchors].map((e) => `${e.from}\0${e.to}`));
+  const sourceOf = new Map<string, ReadSource>([...cluster.ir.nodes.map((n) => [n.id, "cluster"] as const), ...folderIr.nodes.map((n) => [n.id, "folder"] as const)]);
+  const joined = new Set([...cluster.ir.edges, ...folderIr.edges, ...anchors].map((e) => `${e.from}\0${e.to}`));
   const added: IREdge[] = [];
   let ambiguous = 0;
-  if (pass) {
+  if (pass && folder) {
     const found = pass(passNodes, [...catalogs].map(([lexicon, catalog]) => ({ lexicon, catalog })));
     for (const { member: _m, ...e } of found.edges) {
       const from = sourceOf.get(e.from);
@@ -320,42 +408,47 @@ export async function readJoined(opts: ReadJoinedOptions): Promise<ReadJoinedRes
 
   const placeholders = cluster.ir.nodes.filter((n) => n.lexicon === "outside").length;
   // The folder as the person named it; its member boxes may be named otherwise.
-  const label = basename(resolve(opts.dir));
+  const label = opts.dir !== undefined ? basename(resolve(opts.dir)) : "";
   const crossing = added.filter((e) => sourceOf.get(e.from) !== sourceOf.get(e.to)).length;
-  const joinNote = [
-    pass
-      ? `joined with ${label}: ${crossing} ${crossing === 1 ? "edge" : "edges"} between cluster objects and its cards, drawn by chant's reference catalog`
-      : `joined with ${label}: the chant beside behold has no catalog pass (${CATALOG_PASS}), so no edge joins the cluster to it`,
-    placeholders ? `${placeholders} ${placeholders === 1 ? "card stands" : "cards stand"} for what neither the cluster nor ${label} holds` : undefined,
-    ambiguous ? `${ambiguous} ${ambiguous === 1 ? "reference names" : "references name"} several of its cards and ${ambiguous === 1 ? "draws" : "draw"} no edge` : undefined,
-    own.id
-      ? `cluster ${context} is ${own.id}`
-      : own.matched.length > 1
-        ? `cluster ${context} is named by ${own.matched.length} of its clusters (${own.matched.join(", ")}), so none is joined to it`
-        : own.declared
-          ? `${label} declares ${own.declared} ${own.declared === 1 ? "cluster" : "clusters"}, and the context names none of them`
-          : undefined,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const joinNote = folder
+    ? [
+        pass
+          ? `joined with ${label}: ${crossing} ${crossing === 1 ? "edge" : "edges"} between cluster objects and its cards, drawn by chant's reference catalog`
+          : `joined with ${label}: the chant beside behold has no catalog pass (${CATALOG_PASS}), so no edge joins the cluster to it`,
+        placeholders ? `${placeholders} ${placeholders === 1 ? "card stands" : "cards stand"} for what neither the cluster nor ${label} holds` : undefined,
+        ambiguous ? `${ambiguous} ${ambiguous === 1 ? "reference names" : "references name"} several of its cards and ${ambiguous === 1 ? "draws" : "draw"} no edge` : undefined,
+        own.id
+          ? `cluster ${context} is ${own.id}`
+          : own.matched.length > 1
+            ? `cluster ${context} is named by ${own.matched.length} of its clusters (${own.matched.join(", ")}), so none is joined to it`
+            : own.declared
+              ? `${label} declares ${own.declared} ${own.declared === 1 ? "cluster" : "clusters"}, and the context names none of them`
+              : undefined,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : undefined;
+  const gitNote = opts.git && !gitReads.length ? "no Argo CD Application or Flux Kustomization in the read names a git path" : gitNotes.join(" · ") || undefined;
 
+  let groups = joinGroups(clusterGroups, (folderIr.groups ?? {}) as Rec, rename);
+  for (const part of gitParts) groups = joinGroups(groups, part.groups, new Map());
   const ir = {
-    ...folder.ir,
+    ...folderIr,
     ...cluster.ir,
-    nodes: [...cluster.ir.nodes.map((n) => stamp(n, "cluster")), ...folder.ir.nodes.map((n) => stamp(n, "folder"))],
-    edges: [...cluster.ir.edges, ...folder.ir.edges, ...anchors, ...added],
-    groups: joinGroups(clusterGroups, (folder.ir.groups ?? {}) as Rec, rename),
-    dangling: [...(cluster.ir.dangling ?? []), ...(folder.ir.dangling ?? [])],
+    nodes: [...cluster.ir.nodes.map((n) => stamp(n, "cluster")), ...folderIr.nodes.map((n) => stamp(n, "folder")), ...gitParts.flatMap((p) => p.nodes.map((n) => stamp(n, "git")))],
+    edges: [...cluster.ir.edges, ...folderIr.edges, ...anchors, ...added, ...gitParts.flatMap((p) => p.edges)],
+    groups,
+    dangling: [...(cluster.ir.dangling ?? []), ...(folderIr.dangling ?? []), ...gitParts.flatMap((p) => p.dangling)],
   } as unknown as GraphIR;
 
   return {
     ir,
-    members: [...cluster.members, ...folder.members],
-    run: [...cluster.run, ...folder.run],
-    meta: { estate: cluster.meta.estate + folder.meta.estate, note: [cluster.meta.note, folder.meta.note, joinNote].filter(Boolean).join(" · ") },
+    members: [...cluster.members, ...(folder?.members ?? [])],
+    run: [...cluster.run, ...(folder?.run ?? [])],
+    meta: { estate: cluster.meta.estate + (folder?.meta.estate ?? 0), note: [cluster.meta.note, folder?.meta.note, joinNote, gitNote].filter(Boolean).join(" · ") },
     cluster: cluster.cluster,
     ...(cluster.apps ? { apps: cluster.apps } : {}),
-    folder,
-    joined: { members: names, edges: added.length, placeholders, ambiguous, pass: !!pass, ...(own.id ? { cluster: own.id } : {}) },
+    ...(folder ? { folder } : {}),
+    joined: { members: names, edges: added.length, placeholders, ambiguous, pass: !!pass, ...(own.id ? { cluster: own.id } : {}), ...(opts.git ? { git: gitReads } : {}) },
   };
 }

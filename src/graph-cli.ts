@@ -8,7 +8,9 @@
  * directory (behold#1083, src/read-cluster.ts): chant's read-only lister over
  * the kubeconfig's context, nothing written, no project needed. Given a
  * directory too (or `--infra <dir>`), it draws the cluster and the folder as
- * one graph (behold#1115, src/joined-read.ts).
+ * one graph (behold#1115, src/joined-read.ts). `--git` adds the paths its
+ * Argo CD Applications and Flux Kustomizations deploy from, read from local
+ * clones (behold#1123).
  *
  * Exit codes: 0 printed, 1 the directory or cluster could not be read (chant
  * refused the workspace declaration, the cluster did not answer), 2 a usage
@@ -29,6 +31,7 @@ import { clusterView, graphView, type GraphView } from "./graph-view.ts";
 import { ReadGraphError } from "./read-graph.ts";
 import { ClusterReadRefusal, readCluster, type ChantLister } from "./read-cluster.ts";
 import { markRead, readJoined } from "./joined-read.ts";
+import type { GitClone } from "./gitops-source.ts";
 import { documentScrubber } from "./graph-document-context.ts";
 
 export interface GraphCliIO {
@@ -49,6 +52,7 @@ export function graphUsage(prog = "behold graph"): string {
        ${prog} --context <name> [--kubeconfig <file>] [--namespace <ns,...>] [--types <t,...>] [--allow-exec-plugin]
        ${prog} --context <name> --logical | --components
        ${prog} --context <name> <dir> | --infra <dir>
+       ${prog} --context <name> [<dir>] --git <clone> | --git <url>=<clone>
        ${prog} [dir] --around <id>[,<id>...] [--depth n] [--up | --down]
 
 Read a directory into behold's graph and print it. Starts no server.
@@ -114,6 +118,16 @@ ${Object.keys(PENDING_FORMATS)
                  and an edge to each application it depends on.
   --infra <dir>  With --context: the folder to draw with the cluster, the
                  same as giving it as dir.
+  --git <clone>  With --context: draw what each Argo CD Application and Flux
+                 Kustomization deploys from git beside the live objects. The
+                 path the app names is read from <clone>, a local clone,
+                 when the app's repository URL is that directory (a file://
+                 URL or a path) or one of its git remotes. --git <url>=<clone>
+                 names the URL it holds. Repeat it for more repositories.
+                 Nothing is fetched: an app whose repository no clone holds
+                 is named in a note and not read. The clone's working tree
+                 is read, whatever revision the app tracks. Each card from
+                 it is in a box named for the app.
   --kubeconfig <file>
                  The kubeconfig to read (default: the first path in
                  KUBECONFIG, then ~/.kube/config). Alone it reads that file's
@@ -137,8 +151,10 @@ ${Object.keys(PENDING_FORMATS)
 
 interface Parsed {
   dir: string;
-  /** A cluster and a directory, drawn as one graph (behold#1115). */
+  /** A cluster and a directory or GitOps sources, drawn as one graph (behold#1115, behold#1123). */
   joined: boolean;
+  /** A directory was named. */
+  folder: boolean;
   format: string;
   out?: string;
   detail?: number;
@@ -158,6 +174,8 @@ interface Parsed {
   allowExec: boolean;
   /** With --context: the operator's view (behold#1132). */
   view?: "logical" | "components";
+  /** With --context: the local clones GitOps sources are read from (behold#1123). */
+  git?: GitClone[];
 }
 
 function parse(argv: readonly string[]): Parsed | { error: string } | { help: true } {
@@ -181,6 +199,7 @@ function parse(argv: readonly string[]): Parsed | { error: string } | { help: tr
   let allowExec = false;
   let infra = false;
   let view: "logical" | "components" | undefined;
+  const git: GitClone[] = [];
   const formats = new Set([...GRAPH_FORMATS.map((f) => f.name), ...Object.keys(PENDING_FORMATS)]);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
@@ -214,6 +233,14 @@ function parse(argv: readonly string[]): Parsed | { error: string } | { help: tr
       if (dir !== undefined && dir !== v) return { error: `one directory only (got ${dir} and ${v})` };
       dir = v;
       infra = true;
+    } else if (a === "--git") {
+      const v = argv[++i];
+      if (!v) return { error: "--git needs a local clone: <dir> or <url>=<dir>" };
+      // <url>=<dir> when what comes before the last = looks like a URL (a scheme, or user@host:path).
+      const at = v.lastIndexOf("=");
+      const url = at > 0 ? v.slice(0, at) : undefined;
+      if (url && /:/.test(url) && v.slice(at + 1)) git.push({ url, dir: v.slice(at + 1) });
+      else git.push({ dir: v });
     } else if (a === "--namespace" || a === "--namespaces" || a === "--types") {
       const v = argv[++i]?.split(",").map((x) => x.trim()).filter(Boolean);
       if (!v?.length) return { error: `${a} needs one or more names, comma separated` };
@@ -256,7 +283,8 @@ function parse(argv: readonly string[]): Parsed | { error: string } | { help: tr
   const cluster = context !== undefined || kubeconfig !== undefined;
   if (infra && !cluster) return { error: "--infra goes with --context: it names the folder to draw beside the cluster" };
   if (cluster && changed) return { error: "--changed reads two commits of a directory; it does not go with --context" };
-  const joined = cluster && dir !== undefined;
+  if (git.length && !cluster) return { error: "--git goes with --context: it reads the paths a cluster's apps deploy from" };
+  const joined = cluster && (dir !== undefined || git.length > 0);
   if (!cluster && (namespaces || types || allowExec)) return { error: "--namespace, --types and --allow-exec-plugin go with --context" };
   if (!cluster && view) return { error: `--${view} goes with --context: it draws the applications chant infers from a cluster read` };
   if (forge && format !== "mermaid") return { error: "--forge goes with --mermaid" };
@@ -269,6 +297,7 @@ function parse(argv: readonly string[]): Parsed | { error: string } | { help: tr
   return {
     dir: dir ?? ".",
     joined,
+    folder: dir !== undefined,
     format: format ?? "json",
     ...(out ? { out } : {}),
     ...(detail !== undefined ? { detail } : {}),
@@ -287,6 +316,7 @@ function parse(argv: readonly string[]): Parsed | { error: string } | { help: tr
     ...(budget !== undefined ? { budget } : {}),
     ...(direction ? { direction } : {}),
     ...(view ? { view } : {}),
+    ...(git.length ? { git } : {}),
   };
 }
 
@@ -312,7 +342,7 @@ export async function runGraph(argv: readonly string[], io: GraphCliIO): Promise
   const format = graphFormat(parsed.format)!;
   const cluster = parsed.context !== undefined || parsed.kubeconfig !== undefined;
   const dir = resolve(parsed.dir);
-  if ((!cluster || parsed.joined) && (!existsSync(dir) || !statSync(dir).isDirectory())) {
+  if ((!cluster || parsed.folder) && (!existsSync(dir) || !statSync(dir).isDirectory())) {
     stderr(`${io.prog ?? "behold graph"}: ${parsed.dir} is not a directory\n`);
     return 2;
   }
@@ -366,10 +396,12 @@ export async function runGraph(argv: readonly string[], io: GraphCliIO): Promise
       };
       const viewOpts = { alike: parsed.alike, ...(parsed.detail !== undefined ? { detail: parsed.detail } : {}), ...(parsed.view ? { view: parsed.view } : {}) };
       if (parsed.joined) {
-        const read = await readJoined({ cluster: clusterOpts, dir, ...(parsed.detail !== undefined ? { detail: parsed.detail } : {}) });
+        const read = await readJoined({ cluster: clusterOpts, ...(parsed.folder ? { dir } : {}), ...(parsed.git ? { git: parsed.git } : {}), ...(parsed.detail !== undefined ? { detail: parsed.detail } : {}) });
         view = await clusterView(read, viewOpts);
-        // The folder is what was read from disk, so the document's origin and member paths are its.
-        document = documentOptions({ projectDir: dir, ...(read.folder.workspace ? { workspace: read.folder.workspace } : {}), behold: io.version });
+        // The folder is what was read from disk, so the document's origin and member paths are its. With no folder, as for a cluster alone.
+        document = read.folder
+          ? documentOptions({ projectDir: dir, ...(read.folder.workspace ? { workspace: read.folder.workspace } : {}), behold: io.version })
+          : { generator: { behold: io.version }, origin: { dir: "." }, members: {}, scrub: documentScrubber(resolve("."), []) };
       } else {
         const read = await readCluster(clusterOpts);
         view = await clusterView(markRead(read, "cluster"), viewOpts);
