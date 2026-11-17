@@ -124,6 +124,9 @@ Usage:
           per-user data directory). Read-only: it lists through each cloud's
           inventory API, refuses every action flag, and starts no server.
           The graph pane of serve and preview loads what it writes.
+          Typing needs the cloud's chant lexicon beside behold (for aws,
+          @intentius/chant-lexicon-aws); without it every node is of unknown
+          kind and the command prints a note naming the package.
 
   mcp     A stdio MCP server for a coding agent: capabilities returns
           chant's capability catalog (read it first), ask returns chant's
