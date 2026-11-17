@@ -1,9 +1,10 @@
 /**
  * One graph of a live cluster and a folder that declares what it uses
- * (behold#1115): `behold graph --context <ctx> <dir>`, and the GitOps sources
- * its apps deploy from (behold#1123): `--git <clone>`.
+ * (behold#1115): `behold graph --context <ctx> <dir>`, the GitOps sources
+ * its apps deploy from (behold#1123): `--git <clone>`, and the cloud index of
+ * the account it runs in (behold#1123): `--index aws`.
  *
- *     readJoined({ cluster, dir?, git?, detail? }) => Promise<ReadJoinedResult>
+ *     readJoined({ cluster, dir?, git?, index?, detail? }) => Promise<ReadJoinedResult>
  *
  * Each source is read as it is read alone, so each keeps its own edges, boxes
  * and notes: the folder through `readGraph` (src/read-graph.ts), the cluster
@@ -29,7 +30,7 @@
  * was read.
  *
  * Each card carries `read`, the source it came from: `cluster` (placeholders
- * too, since cluster objects named them), `folder` or `git`.
+ * too, since cluster objects named them), `folder`, `index` or `git`.
  *
  * Untyped kinds. The live read keeps an ExternalSecret, a SecretStore and a
  * ClusterSecretStore under their listed type (`external-secrets.io/v1/ExternalSecret`,
@@ -67,6 +68,26 @@
  * endpoint a cloud assigns. One match joins; none or several join nothing,
  * and the note says which.
  *
+ * The cloud index (behold#1123). Given `index`, the substrates named (`aws`,
+ * `azure`, `gcp`), the newest version of each scope of that substrate in the
+ * index stores is read: behold's per-user store, where `behold index` writes
+ * (src/behold-index.ts), and with a folder its project's `local` and
+ * `git-ref` stores (src/graph-db/sources.ts finds them). The read lists
+ * nothing and uses no cloud credential: the index is filled only when the
+ * person runs `behold index <substrate>`, and a substrate with no version
+ * stored is named in a note that says so. Its nodes go to the pass beside the
+ * cluster's through chant's `indexedMemberNodes` (chant#5245), each in the
+ * member its document's scope key names, where chant's rules join a
+ * ServiceAccount's IRSA annotation to the `AWS::IAM::Role` of that ARN and an
+ * ExternalSecret's key to the `AWS::SecretsManager::Secret` in its store's
+ * region. They join `held` as the folder's do, so no placeholder is made for
+ * what the index holds. An account holds far more than the cluster names, so
+ * only the indexed resources an edge from the cluster or the folder reaches
+ * are drawn, in a box per scope, `<substrate> <scope> (index)`; the note says
+ * how many were read and how many drawn. The lexicon that types the
+ * substrate (`@intentius/chant-lexicon-aws` for aws) gives the pass the
+ * resource's identities; without it the note says so.
+ *
  * chant's modules are found at run time under specifiers the bundler leaves
  * alone, as src/chant-edges.ts does. Without the pass the two graphs are drawn
  * side by side with no edge between them, and the note says why.
@@ -76,12 +97,26 @@ import { basename, join, resolve } from "node:path";
 import type { GraphIR, IREdge, IRNode } from "@intentius/chant";
 import { managedClusterName, MANAGED_CLUSTER_KINDS } from "./cluster-anchor.ts";
 import { cloneFor, gitOpsSources, type GitClone, type GitOpsSource, type GitPathRule, type SourceNode } from "./gitops-source.ts";
+import { findGitIndex, findIndexDir, LOCAL_INDEX_DIR, userIndexDir, type Found } from "./graph-db/sources.ts";
+import type { IndexDocument } from "./graph-db/types.ts";
 import { contextBindsCluster } from "./k8s-target.ts";
 import { readCluster, type ReadClusterOptions, type ReadClusterResult } from "./read-cluster.ts";
 import { readGraph, type ReadGraphResult } from "./read-graph.ts";
 
-/** Where a card of a joined read was read from: the cluster, the folder, or a GitOps source's path in git. `index`, the cloud index, comes later. */
-export type ReadSource = "cluster" | "folder" | "git";
+/** Where a card of a joined read was read from: the cluster, the folder, the cloud index, or a GitOps source's path in git. */
+export type ReadSource = "cluster" | "folder" | "index" | "git";
+
+/** The substrates `--index` reads. */
+export const INDEX_SUBSTRATES = ["aws", "azure", "gcp"] as const;
+export type IndexSubstrate = (typeof INDEX_SUBSTRATES)[number];
+
+/** An index version found in a store. */
+export interface StoredIndex {
+  doc: IndexDocument;
+  /** The file or ref it was read from. */
+  from: string;
+  version: string;
+}
 
 type Rec = Record<string, unknown>;
 
@@ -106,6 +141,9 @@ interface PassResult {
 
 export type CatalogPassFn = (nodes: readonly PassNode[], catalogs: ReadonlyArray<{ lexicon: string; catalog: JoinCatalog }>) => PassResult;
 
+/** chant's `indexedMemberNodes` (chant#5245): an index document's nodes, each in the member its scope key names. */
+export type IndexedMemberNodesFn = (doc: IndexDocument) => PassNode[];
+
 export interface JoinDeps {
   /** chant's `runCatalogPass`, or undefined when the chant beside behold has none. */
   catalogPass?: () => Promise<CatalogPassFn | undefined>;
@@ -113,6 +151,10 @@ export interface JoinDeps {
   catalog?: (lexicon: string) => Promise<JoinCatalog | undefined>;
   /** The k8s lexicon's group rule, listed type to kind, or undefined. */
   kindByRule?: () => Promise<((listedType: string) => string | undefined) | undefined>;
+  /** chant's `indexedMemberNodes`, or undefined when the chant beside behold has none. */
+  indexedNodes?: () => Promise<IndexedMemberNodesFn | undefined>;
+  /** The newest version of each scope of `substrate` in the index stores, with the stores looked in. `dir` is the folder, when one was read. */
+  indexes?: (substrate: IndexSubstrate, dir?: string) => { found: StoredIndex[]; stores: string[] };
 }
 
 export interface ReadJoinedOptions {
@@ -126,6 +168,8 @@ export interface ReadJoinedOptions {
    * path read from the clone that holds its repository; nothing is fetched.
    */
   git?: readonly GitClone[];
+  /** The substrates whose stored cloud index joins the read (behold#1123). Nothing is listed: the newest stored version of each scope is read. */
+  index?: readonly IndexSubstrate[];
   detail?: number;
   deps?: JoinDeps;
 }
@@ -145,6 +189,23 @@ export interface JoinInfo {
   cluster?: string;
   /** With `git`: each GitOps source found, the clone it was read from and the cards it gave. */
   git?: GitRead[];
+  /** With `index`: each index version read, and how many of its resources were drawn. */
+  index?: IndexRead[];
+}
+
+/** An index version a joined read took in. */
+export interface IndexRead {
+  substrate: string;
+  /** The account, subscription or project. */
+  scopeId: string;
+  scopeKey: string;
+  version: string;
+  from: string;
+  observedAt: string;
+  /** Resources the version holds. */
+  nodes: number;
+  /** Of those, the ones drawn: what an edge from the cluster or the folder reaches. */
+  drawn: number;
 }
 
 /** A GitOps source of a joined read, with what was read for it. */
@@ -162,6 +223,8 @@ export interface ReadJoinedResult extends ReadClusterResult {
 }
 
 const CATALOG_PASS = "@intentius/chant/workspace/catalog-edges";
+/** The release that ships `indexedMemberNodes` and the k8s rules to indexed resources (chant#5245). */
+export const INDEXED_NODES_CHANT = "0.124.104";
 const K8S_LISTED_TYPES = "@intentius/chant-lexicon-k8s/listed-types";
 
 async function lazy(specifier: string): Promise<Rec | undefined> {
@@ -191,7 +254,34 @@ const defaultDeps: Required<JoinDeps> = {
     const m = await lazy(K8S_LISTED_TYPES);
     return typeof m?.k8sKindByRule === "function" ? (m.k8sKindByRule as (t: string) => string | undefined) : undefined;
   },
+  indexedNodes: async () => {
+    const m = await lazy(CATALOG_PASS);
+    return typeof m?.indexedMemberNodes === "function" ? (m.indexedMemberNodes as IndexedMemberNodesFn) : undefined;
+  },
+  indexes: (substrate, dir) => storedIndexes(substrate, dir),
 };
+
+/** The newest version of each scope of `substrate`: behold's per-user store, and with a folder its project's `local` and `git-ref` stores. */
+export function storedIndexes(substrate: IndexSubstrate, dir?: string, env: NodeJS.ProcessEnv = process.env): { found: StoredIndex[]; stores: string[] } {
+  const found: Found = { documents: [], notes: [] };
+  const stores = [userIndexDir(env)];
+  findIndexDir(stores[0]!, found);
+  if (dir !== undefined) {
+    stores.push(join(dir, LOCAL_INDEX_DIR));
+    findIndexDir(join(dir, LOCAL_INDEX_DIR), found);
+    findGitIndex(dir, found);
+  }
+  // One version per scope: the newest, whichever store holds it (version names sort in time order).
+  const newest = new Map<string, StoredIndex>();
+  for (const d of found.documents) {
+    if (d.kind !== "index") continue;
+    const scope = d.doc.stamp.scope as { kind?: string; substrate?: string };
+    if (scope.kind !== "cloud" || scope.substrate !== substrate) continue;
+    const had = newest.get(d.doc.stamp.scopeKey);
+    if (!had || had.version < d.version) newest.set(d.doc.stamp.scopeKey, { doc: d.doc, from: d.from, version: d.version });
+  }
+  return { found: [...newest.values()], stores };
+}
 
 /** The member a folder node belongs to: the longest member name its id starts with. */
 function memberOf(id: string, names: readonly string[]): string {
@@ -305,7 +395,36 @@ export async function readJoined(opts: ReadJoinedOptions): Promise<ReadJoinedRes
     const view = (await catalogOf(n.lexicon))?.declaredNode?.(n, n.instanceOf !== undefined ? rawById.get(n.instanceOf) : undefined);
     held.push(view ? { id: n.id, kind: view.kind, lexicon: n.lexicon, attrs: view.attrs } : n);
   }
-  // `--index` (behold#1123, waiting on chant#5245) reads the cloud account here: its nodes join `held`, so a placeholder is not made for what the index holds, and the pass below.
+  // The cloud index: its nodes join `held`, so a placeholder is not made for what the index holds, and the pass below.
+  const indexNodes: PassNode[] = [];
+  const indexReads: IndexRead[] = [];
+  const indexNotes: string[] = [];
+  const boxOf = new Map<string, string>();
+  if (opts.index?.length) {
+    const toNodes = await deps.indexedNodes();
+    for (const substrate of new Set(opts.index)) {
+      const { found, stores } = deps.indexes(substrate, opts.dir);
+      if (!found.length) {
+        indexNotes.push(`no ${substrate} index is stored (looked in ${stores.join(", ")}): run behold index ${substrate} to fill one`);
+        continue;
+      }
+      if (!toNodes) {
+        indexNotes.push(`the chant beside behold has no indexedMemberNodes (${CATALOG_PASS}, chant ${INDEXED_NODES_CHANT}), so the ${substrate} index is not joined`);
+        continue;
+      }
+      // The newest read of a resource wins when two scopes of one account hold it.
+      found.sort((a, b) => (a.doc.stamp.observedAt < b.doc.stamp.observedAt ? 1 : a.doc.stamp.observedAt > b.doc.stamp.observedAt ? -1 : 0));
+      for (const f of found) {
+        const scopeId = (f.doc.stamp.scope as { scopeId?: string }).scopeId ?? f.doc.stamp.scopeKey;
+        const box = `${substrate} ${scopeId} (index)`;
+        const nodes = toNodes(f.doc).filter((n) => !boxOf.has(n.id));
+        for (const n of nodes) boxOf.set(n.id, box);
+        indexNodes.push(...nodes);
+        indexReads.push({ substrate, scopeId, scopeKey: f.doc.stamp.scopeKey, version: f.version, from: f.from, observedAt: f.doc.stamp.observedAt, nodes: f.doc.graph.nodes.length, drawn: 0 });
+      }
+    }
+    held.push(...indexNodes);
+  }
 
   const cluster = await readCluster({ ...opts.cluster, held });
   const context = cluster.cluster.context;
@@ -378,15 +497,22 @@ export async function readJoined(opts: ReadJoinedOptions): Promise<ReadJoinedRes
   }
 
   const folderNodes: PassNode[] = raw.map((n) => ({ ...n, member: memberOf(n.id, names) }));
-  const passNodes = [...clusterNodes, ...folderNodes];
+  const passNodes = [...clusterNodes, ...folderNodes, ...indexNodes];
   for (const l of new Set(passNodes.map((n) => n.lexicon))) await catalogOf(l);
+  for (const l of new Set(indexNodes.map((n) => n.lexicon))) {
+    if (!catalogs.has(l)) indexNotes.push(`@intentius/chant-lexicon-${l} is not installed beside behold, so its indexed resources are matched by no identity of theirs`);
+  }
 
   const pass = catalogs.size ? await deps.catalogPass() : undefined;
-  const sourceOf = new Map<string, ReadSource>([...cluster.ir.nodes.map((n) => [n.id, "cluster"] as const), ...folderIr.nodes.map((n) => [n.id, "folder"] as const)]);
+  const sourceOf = new Map<string, ReadSource>([
+    ...cluster.ir.nodes.map((n) => [n.id, "cluster"] as const),
+    ...folderIr.nodes.map((n) => [n.id, "folder"] as const),
+    ...indexNodes.map((n) => [n.id, "index"] as const),
+  ]);
   const joined = new Set([...cluster.ir.edges, ...folderIr.edges, ...anchors].map((e) => `${e.from}\0${e.to}`));
   const added: IREdge[] = [];
   let ambiguous = 0;
-  if (pass && folder) {
+  if (pass && (folder || indexNodes.length)) {
     const found = pass(passNodes, [...catalogs].map(([lexicon, catalog]) => ({ lexicon, catalog })));
     for (const { member: _m, ...e } of found.edges) {
       const from = sourceOf.get(e.from);
@@ -398,7 +524,21 @@ export async function readJoined(opts: ReadJoinedOptions): Promise<ReadJoinedRes
       joined.add(key);
       added.push(e);
     }
-    ambiguous = found.ambiguous.filter((a) => sourceOf.get(a.from) === "cluster" && a.candidates.some((c) => sourceOf.get(c) === "folder")).length;
+    ambiguous = found.ambiguous.filter((a) => sourceOf.get(a.from) === "cluster" && a.candidates.some((c) => sourceOf.get(c) === "folder" || sourceOf.get(c) === "index")).length;
+  }
+
+  // The indexed resources an edge reaches are drawn, each in its scope's box.
+  const drawnIndex = new Set(added.flatMap((e) => [e.from, e.to]).filter((id) => sourceOf.get(id) === "index"));
+  const indexCards = indexNodes.filter((n) => drawnIndex.has(n.id)).map(({ member: _m, ...n }) => n as IRNode);
+  const indexBoxes: Record<string, string[]> = {};
+  for (const n of indexCards) (indexBoxes[boxOf.get(n.id)!] ??= []).push(n.id);
+  for (const r of indexReads) r.drawn = indexNodes.filter((n) => n.member === r.scopeKey && drawnIndex.has(n.id)).length;
+  if (indexReads.length) {
+    const read = indexReads.reduce((t, r) => t + r.nodes, 0);
+    const toIndex = added.filter((e) => sourceOf.get(e.to) === "index" && sourceOf.get(e.from) !== "index").length;
+    indexNotes.unshift(
+      `joined with the ${[...new Set(indexReads.map((r) => r.substrate))].join(" and ")} index (${indexReads.map((r) => `${r.scopeId} as of ${r.observedAt}`).join(", ")}): ${read} indexed ${read === 1 ? "resource" : "resources"} read, ${indexCards.length} drawn, ${toIndex} ${toIndex === 1 ? "edge" : "edges"} to ${indexCards.length === 1 ? "it" : "them"} drawn by chant's reference catalog`,
+    );
   }
 
   // A folder box named like a namespace box is kept apart.
@@ -409,7 +549,7 @@ export async function readJoined(opts: ReadJoinedOptions): Promise<ReadJoinedRes
   const placeholders = cluster.ir.nodes.filter((n) => n.lexicon === "outside").length;
   // The folder as the person named it; its member boxes may be named otherwise.
   const label = opts.dir !== undefined ? basename(resolve(opts.dir)) : "";
-  const crossing = added.filter((e) => sourceOf.get(e.from) !== sourceOf.get(e.to)).length;
+  const crossing = added.filter((e) => sourceOf.get(e.from) !== sourceOf.get(e.to) && (sourceOf.get(e.from) === "folder" || sourceOf.get(e.to) === "folder")).length;
   const joinNote = folder
     ? [
         pass
@@ -428,14 +568,21 @@ export async function readJoined(opts: ReadJoinedOptions): Promise<ReadJoinedRes
         .filter(Boolean)
         .join(" · ")
     : undefined;
+  const indexNote = indexNotes.join(" · ") || undefined;
   const gitNote = opts.git && !gitReads.length ? "no Argo CD Application or Flux Kustomization in the read names a git path" : gitNotes.join(" · ") || undefined;
 
   let groups = joinGroups(clusterGroups, (folderIr.groups ?? {}) as Rec, rename);
   for (const part of gitParts) groups = joinGroups(groups, part.groups, new Map());
+  if (indexCards.length) groups = joinGroups(groups, { byStack: indexBoxes }, new Map());
   const ir = {
     ...folderIr,
     ...cluster.ir,
-    nodes: [...cluster.ir.nodes.map((n) => stamp(n, "cluster")), ...folderIr.nodes.map((n) => stamp(n, "folder")), ...gitParts.flatMap((p) => p.nodes.map((n) => stamp(n, "git")))],
+    nodes: [
+      ...cluster.ir.nodes.map((n) => stamp(n, "cluster")),
+      ...folderIr.nodes.map((n) => stamp(n, "folder")),
+      ...indexCards.map((n) => stamp(n, "index")),
+      ...gitParts.flatMap((p) => p.nodes.map((n) => stamp(n, "git"))),
+    ],
     edges: [...cluster.ir.edges, ...folderIr.edges, ...anchors, ...added, ...gitParts.flatMap((p) => p.edges)],
     groups,
     dangling: [...(cluster.ir.dangling ?? []), ...(folderIr.dangling ?? []), ...gitParts.flatMap((p) => p.dangling)],
@@ -445,10 +592,10 @@ export async function readJoined(opts: ReadJoinedOptions): Promise<ReadJoinedRes
     ir,
     members: [...cluster.members, ...(folder?.members ?? [])],
     run: [...cluster.run, ...(folder?.run ?? [])],
-    meta: { estate: cluster.meta.estate + (folder?.meta.estate ?? 0), note: [cluster.meta.note, folder?.meta.note, joinNote, gitNote].filter(Boolean).join(" · ") },
+    meta: { estate: cluster.meta.estate + (folder?.meta.estate ?? 0), note: [cluster.meta.note, folder?.meta.note, joinNote, indexNote, gitNote].filter(Boolean).join(" · ") },
     cluster: cluster.cluster,
     ...(cluster.apps ? { apps: cluster.apps } : {}),
     ...(folder ? { folder } : {}),
-    joined: { members: names, edges: added.length, placeholders, ambiguous, pass: !!pass, ...(own.id ? { cluster: own.id } : {}), ...(opts.git ? { git: gitReads } : {}) },
+    joined: { members: names, edges: added.length, placeholders, ambiguous, pass: !!pass, ...(own.id ? { cluster: own.id } : {}), ...(opts.index?.length ? { index: indexReads } : {}), ...(opts.git ? { git: gitReads } : {}) },
   };
 }

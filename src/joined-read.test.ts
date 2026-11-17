@@ -7,7 +7,7 @@ import type { GraphIR } from "@intentius/chant";
 import { kubeTargetFromKubeconfig } from "@intentius/chant/cloud-lister/index";
 import { runGraph } from "./graph-cli.ts";
 import type { GraphDocument } from "./graph-document.ts";
-import { readJoined } from "./joined-read.ts";
+import { readJoined, storedIndexes } from "./joined-read.ts";
 import type { ChantLister } from "./read-cluster.ts";
 import { HCL_PARSER_PKG, resolvedVersion, TERRAFORM_LEXICON_PKG } from "./terraform-member.ts";
 
@@ -341,5 +341,150 @@ describe("behold graph --context <ctx> <dir> (#1115)", () => {
     const r = await graph(["--kubeconfig", kubeconfigFile(), "--json"], fakeChant(objects()));
     expect(r.code).toBe(0);
     expect((JSON.parse(r.out) as GraphDocument).nodes.every((n) => n.read === "cluster")).toBe(true);
+  });
+});
+
+// behold#1123: the cloud index joined to a cluster read. The index versions are
+// what `behold index aws` wrote for floci (chant#5245's fixtures), kept in a
+// scratch store; chant's `indexedMemberNodes` hands them to the catalog pass,
+// and the aws lexicon gives the pass the role's and the secret's identities.
+const awsLexicon = resolvedVersion("@intentius/chant-lexicon-aws");
+const noAws = !awsLexicon && process.env.BEHOLD_REQUIRE_PEERS !== "1";
+const ACCOUNT = "111122223333";
+
+const indexedRole = (account: string, name: string) => {
+  const arn = `arn:aws:iam::${account}:role/${name}`;
+  return {
+    id: `aws/${account}/global/AWS::IAM::Role/${name}`,
+    kind: "AWS::IAM::Role",
+    lexicon: "aws",
+    attrs: { Path: "/", RoleName: name },
+    physicalId: name,
+    nativeId: name,
+    listedType: "AWS::IAM::Role",
+    location: "global",
+    facts: { cloudIds: [{ kind: "arn", value: arn }, { kind: "import-id", value: name }], observedAt: "2026-11-17T04:19:31.444Z" },
+  };
+};
+const indexedSecret = (account: string, region: string, name: string) => {
+  const arn = `arn:aws:secretsmanager:${region}:${account}:secret:${name}-7HZH6J`;
+  return {
+    id: `aws/${account}/${region}/AWS::SecretsManager::Secret/${arn}`,
+    kind: "AWS::SecretsManager::Secret",
+    lexicon: "aws",
+    attrs: { Name: name },
+    physicalId: arn,
+    nativeId: arn,
+    listedType: "AWS::SecretsManager::Secret",
+    location: region,
+    facts: { cloudIds: [{ kind: "arn", value: arn }], observedAt: "2026-11-17T04:19:31.482Z" },
+  };
+};
+const indexVersion = (account: string, nodes: object[], observedAt = "2026-11-17T04:19:31.411Z") => ({
+  index: "v1",
+  stamp: { source: { kind: "cloud", name: "behold index" }, scope: { kind: "cloud", substrate: "aws", scopeId: account, locations: ["us-east-1"], types: "*" }, scopeKey: `cloud/aws/${account}/fe73c8a16670`, observedAt, digest: "0".repeat(64) },
+  coverage: [],
+  graph: { version: 1, nodes, edges: [], groups: {} },
+});
+
+/** A scratch store laid out as chant's `index` family, as behold index writes it. */
+function indexStore(versions: Array<{ name: string; doc: object }>): string {
+  const root = join(scratch(), "index");
+  for (const v of versions) {
+    const doc = v.doc as { stamp: { scopeKey: string } };
+    const dir = join(root, doc.stamp.scopeKey);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, v.name), JSON.stringify(v.doc));
+  }
+  return root;
+}
+
+const accountIndex = () => indexVersion(ACCOUNT, [indexedRole(ACCOUNT, "app"), indexedRole(ACCOUNT, "unrelated"), indexedSecret(ACCOUNT, "us-east-1", "app/token"), indexedSecret(ACCOUNT, "us-east-1", "app/other")]);
+
+describe("the cloud index joined to a cluster read (#1123)", () => {
+  it("reads the newest version of each aws scope in the store, and nothing of another substrate", () => {
+    const older = indexVersion(ACCOUNT, [], "2026-11-16T00:00:00.000Z");
+    const gcp = { ...indexVersion("demo-proj", []), stamp: { ...indexVersion("demo-proj", []).stamp, scope: { kind: "cloud", substrate: "gcp", scopeId: "demo-proj" }, scopeKey: "cloud/gcp/demo-proj/0123456789ab" } };
+    const root = indexStore([
+      { name: "20261116T000000Z-aaaaaaaaaaaa.json", doc: older },
+      { name: "20261117T041931Z-bbbbbbbbbbbb.json", doc: accountIndex() },
+      { name: "20261117T041931Z-cccccccccccc.json", doc: gcp },
+    ]);
+    const { found, stores } = storedIndexes("aws", undefined, { BEHOLD_INDEX_DIR: root });
+    expect(stores).toEqual([root]);
+    expect(found.map((f) => f.version)).toEqual(["20261117T041931Z-bbbbbbbbbbbb.json"]);
+    expect(found[0]!.doc.graph.nodes).toHaveLength(4);
+  });
+
+  it.skipIf(noAws)("draws the role a ServiceAccount assumes and the secret an ExternalSecret reads as indexed cards, with edges from the cluster objects", async () => {
+    const read = await readJoined({
+      cluster: { kubeconfig: kubeconfigFile(), chant: fakeChant(objects(`arn:aws:iam::${ACCOUNT}:role/app`)) },
+      index: ["aws"],
+      deps: { indexes: () => ({ found: [{ doc: accountIndex() as never, from: "store", version: "20261117T041931Z-bbbbbbbbbbbb.json" }], stores: ["store"] }) },
+    });
+    const role = `aws/${ACCOUNT}/global/AWS::IAM::Role/app`;
+    const secret = `aws/${ACCOUNT}/us-east-1/AWS::SecretsManager::Secret/arn:aws:secretsmanager:us-east-1:${ACCOUNT}:secret:app/token-7HZH6J`;
+    const edge = (from: string, to: string) => read.ir.edges.find((e) => e.from === from && e.to === to) as (GraphIR["edges"][number] & { rule?: string; origin?: string }) | undefined;
+    expect(edge("app/ServiceAccount/app", role)).toMatchObject({ origin: "derived", rule: 'k8s:K8s::Core::ServiceAccount:metadata.annotations["eks.amazonaws.com/role-arn"]' });
+    expect(edge("app/ExternalSecret/app-creds", secret)).toMatchObject({ origin: "derived", viaAttr: "remoteRef.key via aws" });
+    // Only what an edge reaches is drawn, each card marked as read from the index, in the account's box.
+    const fromIndex = read.ir.nodes.filter((n) => (n as { read?: string }).read === "index");
+    expect(fromIndex.map((n) => n.id).sort()).toEqual([role, secret].sort());
+    expect((read.ir.groups as { byStack: Record<string, string[]> }).byStack[`aws ${ACCOUNT} (index)`]?.sort()).toEqual([role, secret].sort());
+    // The index holds the role and app/token, so neither is a placeholder; app/db-password stays one.
+    expect(read.ir.nodes.some((n) => n.id.startsWith("outside:identity:"))).toBe(false);
+    expect(read.ir.nodes.find((n) => n.kind === "SecretProvider")?.attrs).toMatchObject({ keys: ["app/db-password"] });
+    expect(read.joined.index).toMatchObject([{ substrate: "aws", scopeId: ACCOUNT, nodes: 4, drawn: 2 }]);
+    expect(read.meta.note).toContain(`joined with the aws index (${ACCOUNT} as of 2026-11-17T04:19:31.411Z): 4 indexed resources read, 2 drawn, 2 edges to them drawn by chant's reference catalog`);
+  });
+
+  it.skipIf(noAws)("gives a role of that name in another account no edge, and keeps the placeholder", async () => {
+    const other = "444455556666";
+    const read = await readJoined({
+      cluster: { kubeconfig: kubeconfigFile(), chant: fakeChant(objects(`arn:aws:iam::${ACCOUNT}:role/app`)) },
+      index: ["aws"],
+      deps: { indexes: () => ({ found: [{ doc: indexVersion(other, [indexedRole(other, "app")]) as never, from: "store", version: "v" }], stores: ["store"] }) },
+    });
+    expect(read.ir.nodes.some((n) => (n as { read?: string }).read === "index")).toBe(false);
+    expect(read.ir.edges.some((e) => e.from === "app/ServiceAccount/app" && e.to.startsWith("aws/"))).toBe(false);
+  });
+
+  it("names the store it looked in when it holds no index of the substrate", async () => {
+    const read = await readJoined({ cluster: { kubeconfig: kubeconfigFile(), chant: fakeChant(objects()) }, index: ["aws"], deps: { indexes: () => ({ found: [], stores: ["/scratch/index"] }) } });
+    expect(read.joined.index).toEqual([]);
+    expect(read.meta.note).toContain("no aws index is stored (looked in /scratch/index): run behold index aws to fill one");
+  });
+
+  it("says so when the chant beside behold has no indexedMemberNodes", async () => {
+    const read = await readJoined({
+      cluster: { kubeconfig: kubeconfigFile(), chant: fakeChant(objects()) },
+      index: ["aws"],
+      deps: { indexedNodes: async () => undefined, indexes: () => ({ found: [{ doc: accountIndex() as never, from: "store", version: "v" }], stores: ["store"] }) },
+    });
+    expect(read.ir.nodes.some((n) => (n as { read?: string }).read === "index")).toBe(false);
+    expect(read.meta.note).toContain("has no indexedMemberNodes");
+  });
+
+  it.skipIf(noAws)("behold graph --context --index aws prints the indexed role with read: index", async () => {
+    const root = indexStore([{ name: "20261117T041931Z-bbbbbbbbbbbb.json", doc: accountIndex() }]);
+    const before = process.env.BEHOLD_INDEX_DIR;
+    process.env.BEHOLD_INDEX_DIR = root;
+    try {
+      const r = await graph(["--kubeconfig", kubeconfigFile(), "--index", "aws", "--json"], fakeChant(objects(`arn:aws:iam::${ACCOUNT}:role/app`)));
+      expect(r.err).toBe("");
+      expect(r.code).toBe(0);
+      const doc = JSON.parse(r.out) as GraphDocument;
+      const role = doc.nodes.find((n) => n.kind === "AWS::IAM::Role")!;
+      expect(role.read).toBe("index");
+      expect(doc.edges.some((e) => e.source === "app/ServiceAccount/app" && e.target === role.id)).toBe(true);
+    } finally {
+      if (before === undefined) delete process.env.BEHOLD_INDEX_DIR;
+      else process.env.BEHOLD_INDEX_DIR = before;
+    }
+  });
+
+  it("behold graph refuses --index without --context, and a substrate it does not read", async () => {
+    expect((await graph(["--index", "aws"], fakeChant([]))).err).toContain("--index goes with --context");
+    expect((await graph(["--kubeconfig", "k", "--index", "kubernetes"], fakeChant([]))).err).toContain("--index takes aws, azure, gcp");
   });
 });

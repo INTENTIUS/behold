@@ -14,14 +14,19 @@ import { CHANT_RELEASE, PUBLISHED_CHANT } from "./chant-release.ts";
 const TERRAFORM = "@intentius/chant-lexicon-terraform";
 const PULUMI = "@intentius/chant-lexicon-pulumi";
 const K8S = "@intentius/chant-lexicon-k8s";
+const AWS = "@intentius/chant-lexicon-aws";
 /** The k8s lexicon and the two it depends on, held at the release exactly: their peer ranges on chant move with every release, so a range here would let a fresh resolve pull a newer lexicon and a newer chant with it (behold#1056). */
 const K8S_SET = [K8S, "@intentius/chant-lexicon-otel", "@intentius/chant-lexicon-prometheus"];
 
 export interface ChantRelease {
   version: string;
   released: boolean;
-  /** The release the lexicons and chant-k8s-client are on, when it is older than `version`: a train publishes only the members that changed, so core can move ahead of them. Defaults to `version`. */
-  lexicons?: string;
+  /**
+   * The release the lexicons and chant-k8s-client are on, when it is older than `version`: a train publishes only the members that
+   * changed, so core can move ahead of them. One version for all of them, or one per package name; a package the map leaves out, and
+   * every package when this is absent, takes `version`.
+   */
+  lexicons?: string | Readonly<Record<string, string>>;
 }
 
 /** One file the switch decides. `want` is the whole text it should hold. */
@@ -47,19 +52,21 @@ export function chantRange(r: ChantRelease): string {
   return `^${chantVersion(r)}`;
 }
 
-/** The release a lexicon dependency or an exact lexicon pin names: `lexicons` when core moved ahead of them, else as {@link chantVersion}. */
-export function lexiconVersion(r: ChantRelease): string {
-  return r.released ? (r.lexicons ?? r.version) : PUBLISHED_CHANT;
+/** The release `pkg`'s dependency or exact pin names: its entry in `lexicons` when core moved ahead of it, else as {@link chantVersion}. */
+export function lexiconVersion(r: ChantRelease, pkg: string): string {
+  if (!r.released) return PUBLISHED_CHANT;
+  const l = r.lexicons;
+  return (typeof l === "string" ? l : l?.[pkg]) ?? r.version;
 }
 
-/** The range a lexicon dependency is given. */
-export function lexiconRange(r: ChantRelease): string {
-  return `^${lexiconVersion(r)}`;
+/** The range `pkg`'s dependency is given. */
+export function lexiconRange(r: ChantRelease, pkg: string): string {
+  return `^${lexiconVersion(r, pkg)}`;
 }
 
-function setDeps(deps: Json | undefined, names: readonly string[], range: string): Json {
+function setDeps(deps: Json | undefined, names: readonly string[], range: string | ((name: string) => string)): Json {
   const out: Json = { ...(deps ?? {}) };
-  for (const n of names) if (n in out) out[n] = range;
+  for (const n of names) if (n in out) out[n] = typeof range === "string" ? range : range(n);
   return out;
 }
 
@@ -79,7 +86,7 @@ const EDITS: { file: string; edit: Edit }[] = [
     edit: (d, r) => ({
       ...d,
       pins: r.released
-        ? [{ package: TERRAFORM, version: lexiconVersion(r) }, { package: PULUMI, version: lexiconVersion(r) }]
+        ? [{ package: TERRAFORM, version: lexiconVersion(r, TERRAFORM) }, { package: PULUMI, version: lexiconVersion(r, PULUMI) }]
         : [{ path: `node_modules/${TERRAFORM}` }, { path: `node_modules/${PULUMI}` }],
     }),
   },
@@ -89,8 +96,8 @@ const EDITS: { file: string; edit: Edit }[] = [
   {
     file: "example-three-cloud/package.json",
     edit: (d, r) => {
-      const deps = setDeps(setDeps(d.dependencies as Json, ["@intentius/chant"], chantRange(r)), ["@intentius/chant-lexicon-aws", "@intentius/chant-lexicon-gcp", TERRAFORM], lexiconRange(r));
-      if (r.released) deps[PULUMI] = lexiconRange(r);
+      const deps = setDeps(setDeps(d.dependencies as Json, ["@intentius/chant"], chantRange(r)), [AWS, "@intentius/chant-lexicon-gcp", TERRAFORM], (n) => lexiconRange(r, n));
+      if (r.released) deps[PULUMI] = lexiconRange(r, PULUMI);
       else delete deps[PULUMI];
       const sorted = Object.fromEntries(Object.keys(deps).sort().map((k) => [k, deps[k]]));
       return { ...d, dependencies: sorted };
@@ -101,10 +108,10 @@ const EDITS: { file: string; edit: Edit }[] = [
   // the release once it is out, when they move with the floors. A demo copy
   // and the e2e scripts re-pin a copy at whatever lexicon is installed
   // (src/demo-pins.ts), so a local build stamped at the release still serves.
-  { file: "example-terraform-estate/chant.workspace.json", edit: (d, r) => ({ ...d, pins: pinAt(d.pins as Pin[], TERRAFORM, lexiconVersion(r)) }) },
-  { file: "example-choudoufu-estate/chant.workspace.json", edit: (d, r) => ({ ...d, pins: pinAt(d.pins as Pin[], TERRAFORM, lexiconVersion(r)) }) },
-  { file: "e2e/fixtures/pulumi-workspace/chant.workspace.json", edit: (d, r) => ({ ...d, pins: pinAt(d.pins as Pin[], PULUMI, lexiconVersion(r)) }) },
-  { file: "e2e/fixtures/k8s-workspace/chant.workspace.json", edit: (d, r) => ({ ...d, pins: pinAt(d.pins as Pin[], K8S, lexiconVersion(r)) }) },
+  { file: "example-terraform-estate/chant.workspace.json", edit: (d, r) => ({ ...d, pins: pinAt(d.pins as Pin[], TERRAFORM, lexiconVersion(r, TERRAFORM)) }) },
+  { file: "example-choudoufu-estate/chant.workspace.json", edit: (d, r) => ({ ...d, pins: pinAt(d.pins as Pin[], TERRAFORM, lexiconVersion(r, TERRAFORM)) }) },
+  { file: "e2e/fixtures/pulumi-workspace/chant.workspace.json", edit: (d, r) => ({ ...d, pins: pinAt(d.pins as Pin[], PULUMI, lexiconVersion(r, PULUMI)) }) },
+  { file: "e2e/fixtures/k8s-workspace/chant.workspace.json", edit: (d, r) => ({ ...d, pins: pinAt(d.pins as Pin[], K8S, lexiconVersion(r, K8S)) }) },
   // behold's own chant dependencies.
   {
     file: "package.json",
@@ -117,10 +124,10 @@ const EDITS: { file: string; edit: Edit }[] = [
   },
 ];
 
-/** behold's own chant dependencies in one map: chant at the release's range, the ranged lexicons and the k8s client at the lexicons' range, the k8s set at the lexicons' release exactly. */
+/** behold's own chant dependencies in one map: chant at the release's range, the ranged lexicons and the k8s client at their range, the k8s set at their release exactly. */
 function behold(deps: Json | undefined, r: ChantRelease): Json {
-  const ranged = setDeps(setDeps(deps, ["@intentius/chant"], chantRange(r)), ["@intentius/chant-k8s-client", TERRAFORM, "@intentius/chant-lexicon-sql", PULUMI], lexiconRange(r));
-  return setDeps(ranged, K8S_SET, lexiconVersion(r));
+  const ranged = setDeps(setDeps(deps, ["@intentius/chant"], chantRange(r)), ["@intentius/chant-k8s-client", TERRAFORM, "@intentius/chant-lexicon-sql", PULUMI, AWS], (n) => lexiconRange(r, n));
+  return setDeps(ranged, K8S_SET, (n) => lexiconVersion(r, n));
 }
 
 /** Every file the switch decides, read from `repo`, with what it should hold. */

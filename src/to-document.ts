@@ -236,7 +236,7 @@ function documentNode(node: IRNode, boxes: Boxes, opts: ToDocumentOptions, membe
   };
 }
 
-const READ_SOURCES: ReadonlySet<unknown> = new Set(["cluster", "folder", "git"]);
+const READ_SOURCES: ReadonlySet<unknown> = new Set(["cluster", "folder", "index", "git"]);
 const isReadSource = (v: unknown): v is NonNullable<GraphDocumentNode["read"]> => READ_SOURCES.has(v);
 
 /** The rule an inferred edge was drawn by: chant's catalog rule, or the behold pass that joined it. */

@@ -25,11 +25,11 @@ describe("CHANT_RELEASE (behold#1005)", () => {
   // release, where the floors already are.
   it("the exact pins name the published chant while unreleased, and move with the floors once released", () => {
     const pin = (file: string, pkg: string) => (json(file).pins as { package?: string; version?: string }[]).find((p) => p.package === pkg)?.version;
-    const want = lexiconVersion(CHANT_RELEASE);
-    expect(pin("example-terraform-estate/chant.workspace.json", "@intentius/chant-lexicon-terraform")).toBe(want);
-    expect(pin("example-choudoufu-estate/chant.workspace.json", "@intentius/chant-lexicon-terraform")).toBe(want);
-    expect(pin("e2e/fixtures/pulumi-workspace/chant.workspace.json", "@intentius/chant-lexicon-pulumi")).toBe(want);
-    expect(pin("e2e/fixtures/k8s-workspace/chant.workspace.json", "@intentius/chant-lexicon-k8s")).toBe(want);
+    const want = (pkg: string) => lexiconVersion(CHANT_RELEASE, pkg);
+    expect(pin("example-terraform-estate/chant.workspace.json", "@intentius/chant-lexicon-terraform")).toBe(want("@intentius/chant-lexicon-terraform"));
+    expect(pin("example-choudoufu-estate/chant.workspace.json", "@intentius/chant-lexicon-terraform")).toBe(want("@intentius/chant-lexicon-terraform"));
+    expect(pin("e2e/fixtures/pulumi-workspace/chant.workspace.json", "@intentius/chant-lexicon-pulumi")).toBe(want("@intentius/chant-lexicon-pulumi"));
+    expect(pin("e2e/fixtures/k8s-workspace/chant.workspace.json", "@intentius/chant-lexicon-k8s")).toBe(want("@intentius/chant-lexicon-k8s"));
     const pins = (r: { version: string; released: boolean }) =>
       Object.fromEntries(chantReleaseFiles(REPO, r).filter((f) => f.file.endsWith("chant.workspace.json") && f.file !== "example-three-cloud/chant.workspace.json").map((f) => [f.file, (JSON.parse(f.want) as { pins: { version?: string }[] }).pins[0].version]));
     expect(Object.values(pins({ version: "0.124.99", released: false }))).toEqual([PUBLISHED_CHANT, PUBLISHED_CHANT, PUBLISHED_CHANT, PUBLISHED_CHANT]);
@@ -38,14 +38,15 @@ describe("CHANT_RELEASE (behold#1005)", () => {
 
   // The README's install line for the terraform reader names behold's own range.
   it("example-terraform-estate/README.md's install line names the range behold declares", () => {
-    expect(readFileSync(join(REPO, "example-terraform-estate", "README.md"), "utf8")).toContain(`@intentius/chant-lexicon-terraform@${lexiconRange(CHANT_RELEASE)} `);
+    expect(readFileSync(join(REPO, "example-terraform-estate", "README.md"), "utf8")).toContain(`@intentius/chant-lexicon-terraform@${lexiconRange(CHANT_RELEASE, "@intentius/chant-lexicon-terraform")} `);
   });
 
   it("behold's chant dependencies take the range the switch gives", () => {
     const pkg = json("package.json");
     expect(pkg.dependencies["@intentius/chant"]).toBe(chantRange(CHANT_RELEASE));
-    expect(pkg.dependencies["@intentius/chant-lexicon-sql"]).toBe(lexiconRange(CHANT_RELEASE));
-    expect(pkg.dependencies["@intentius/chant-lexicon-k8s"]).toBe(lexiconVersion(CHANT_RELEASE));
+    expect(pkg.dependencies["@intentius/chant-lexicon-sql"]).toBe(lexiconRange(CHANT_RELEASE, "@intentius/chant-lexicon-sql"));
+    expect(pkg.dependencies["@intentius/chant-lexicon-k8s"]).toBe(lexiconVersion(CHANT_RELEASE, "@intentius/chant-lexicon-k8s"));
+    expect(pkg.devDependencies["@intentius/chant-lexicon-aws"]).toBe(lexiconRange(CHANT_RELEASE, "@intentius/chant-lexicon-aws"));
   });
 
   it("unreleased, a dependency stays at the published chant", () => {
@@ -84,5 +85,20 @@ describe("CHANT_RELEASE (behold#1005)", () => {
     expect(files["example-three-cloud/package.json"].dependencies).toMatchObject({ "@intentius/chant": "^0.124.102", "@intentius/chant-lexicon-terraform": "^0.124.101" });
     expect(files["example-three-cloud/chant.workspace.json"].pins[0].version).toBe("0.124.101");
     expect(files["e2e/fixtures/k8s-workspace/chant.workspace.json"].pins[0].version).toBe("0.124.101");
+  });
+
+  // Each lexicon on the release its own train left it at (chant 0.124.104 with k8s and aws on 0.124.103).
+  it("released with a version per lexicon, each dependency and pin names its own", () => {
+    const r = { version: "0.124.104", released: true, lexicons: { "@intentius/chant-lexicon-k8s": "0.124.103", "@intentius/chant-lexicon-aws": "0.124.103", "@intentius/chant-lexicon-terraform": "0.124.102" } };
+    expect(lexiconVersion(r, "@intentius/chant-lexicon-sql")).toBe("0.124.104");
+    const files = Object.fromEntries(chantReleaseFiles(REPO, r).map((f) => [f.file, JSON.parse(f.want)]));
+    const deps = { ...files["package.json"].dependencies, ...files["package.json"].devDependencies };
+    expect(deps["@intentius/chant"]).toBe("^0.124.104");
+    expect(deps["@intentius/chant-lexicon-k8s"]).toBe("0.124.103");
+    expect(deps["@intentius/chant-lexicon-aws"]).toBe("^0.124.103");
+    expect(deps["@intentius/chant-lexicon-terraform"]).toBe("^0.124.102");
+    expect(files["example-three-cloud/package.json"].dependencies["@intentius/chant-lexicon-aws"]).toBe("^0.124.103");
+    expect(files["example-terraform-estate/chant.workspace.json"].pins[0].version).toBe("0.124.102");
+    expect(files["e2e/fixtures/k8s-workspace/chant.workspace.json"].pins[0].version).toBe("0.124.103");
   });
 });

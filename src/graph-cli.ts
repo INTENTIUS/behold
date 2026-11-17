@@ -10,7 +10,8 @@
  * directory too (or `--infra <dir>`), it draws the cluster and the folder as
  * one graph (behold#1115, src/joined-read.ts). `--git` adds the paths its
  * Argo CD Applications and Flux Kustomizations deploy from, read from local
- * clones (behold#1123).
+ * clones, and `--index aws|azure|gcp` the stored cloud index that
+ * `behold index` wrote (behold#1123).
  *
  * Exit codes: 0 printed, 1 the directory or cluster could not be read (chant
  * refused the workspace declaration, the cluster did not answer), 2 a usage
@@ -30,7 +31,7 @@ import { isSvgTheme, SVG_THEMES, FlatLayoutTooLarge, type SvgTheme } from "./gra
 import { clusterView, graphView, type GraphView } from "./graph-view.ts";
 import { ReadGraphError } from "./read-graph.ts";
 import { ClusterReadRefusal, readCluster, type ChantLister } from "./read-cluster.ts";
-import { markRead, readJoined } from "./joined-read.ts";
+import { INDEX_SUBSTRATES, markRead, readJoined, type IndexSubstrate } from "./joined-read.ts";
 import type { GitClone } from "./gitops-source.ts";
 import { documentScrubber } from "./graph-document-context.ts";
 
@@ -53,6 +54,7 @@ export function graphUsage(prog = "behold graph"): string {
        ${prog} --context <name> --logical | --components
        ${prog} --context <name> <dir> | --infra <dir>
        ${prog} --context <name> [<dir>] --git <clone> | --git <url>=<clone>
+       ${prog} --context <name> [<dir>] --index aws|azure|gcp
        ${prog} [dir] --around <id>[,<id>...] [--depth n] [--up | --down]
 
 Read a directory into behold's graph and print it. Starts no server.
@@ -128,6 +130,17 @@ ${Object.keys(PENDING_FORMATS)
                  is named in a note and not read. The clone's working tree
                  is read, whatever revision the app tracks. Each card from
                  it is in a box named for the app.
+  --index <substrate>
+                 With --context: join the cloud index of aws, azure or gcp
+                 that behold index wrote: the newest version of each scope
+                 in behold's per-user store, and with a dir its project's
+                 index stores. Nothing is listed and no cloud credential is
+                 used; run behold index <substrate> first to fill it. chant's
+                 reference catalog joins a ServiceAccount's role ARN to the
+                 indexed role and an ExternalSecret's key to the indexed
+                 secret. Only the indexed resources a cluster object or a
+                 folder card names are drawn, in a box per account. Repeat
+                 it for more substrates.
   --kubeconfig <file>
                  The kubeconfig to read (default: the first path in
                  KUBECONFIG, then ~/.kube/config). Alone it reads that file's
@@ -176,6 +189,8 @@ interface Parsed {
   view?: "logical" | "components";
   /** With --context: the local clones GitOps sources are read from (behold#1123). */
   git?: GitClone[];
+  /** With --context: the substrates whose stored cloud index joins the read (behold#1123). */
+  index?: IndexSubstrate[];
 }
 
 function parse(argv: readonly string[]): Parsed | { error: string } | { help: true } {
@@ -200,6 +215,7 @@ function parse(argv: readonly string[]): Parsed | { error: string } | { help: tr
   let infra = false;
   let view: "logical" | "components" | undefined;
   const git: GitClone[] = [];
+  const index: IndexSubstrate[] = [];
   const formats = new Set([...GRAPH_FORMATS.map((f) => f.name), ...Object.keys(PENDING_FORMATS)]);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
@@ -241,6 +257,10 @@ function parse(argv: readonly string[]): Parsed | { error: string } | { help: tr
       const url = at > 0 ? v.slice(0, at) : undefined;
       if (url && /:/.test(url) && v.slice(at + 1)) git.push({ url, dir: v.slice(at + 1) });
       else git.push({ dir: v });
+    } else if (a === "--index") {
+      const v = argv[++i];
+      if (!v || !(INDEX_SUBSTRATES as readonly string[]).includes(v)) return { error: `--index takes ${INDEX_SUBSTRATES.join(", ")}` };
+      if (!index.includes(v as IndexSubstrate)) index.push(v as IndexSubstrate);
     } else if (a === "--namespace" || a === "--namespaces" || a === "--types") {
       const v = argv[++i]?.split(",").map((x) => x.trim()).filter(Boolean);
       if (!v?.length) return { error: `${a} needs one or more names, comma separated` };
@@ -284,7 +304,8 @@ function parse(argv: readonly string[]): Parsed | { error: string } | { help: tr
   if (infra && !cluster) return { error: "--infra goes with --context: it names the folder to draw beside the cluster" };
   if (cluster && changed) return { error: "--changed reads two commits of a directory; it does not go with --context" };
   if (git.length && !cluster) return { error: "--git goes with --context: it reads the paths a cluster's apps deploy from" };
-  const joined = cluster && (dir !== undefined || git.length > 0);
+  if (index.length && !cluster) return { error: "--index goes with --context: it joins a cloud index to a cluster read (behold index reads one alone)" };
+  const joined = cluster && (dir !== undefined || git.length > 0 || index.length > 0);
   if (!cluster && (namespaces || types || allowExec)) return { error: "--namespace, --types and --allow-exec-plugin go with --context" };
   if (!cluster && view) return { error: `--${view} goes with --context: it draws the applications chant infers from a cluster read` };
   if (forge && format !== "mermaid") return { error: "--forge goes with --mermaid" };
@@ -317,6 +338,7 @@ function parse(argv: readonly string[]): Parsed | { error: string } | { help: tr
     ...(direction ? { direction } : {}),
     ...(view ? { view } : {}),
     ...(git.length ? { git } : {}),
+    ...(index.length ? { index } : {}),
   };
 }
 
@@ -396,7 +418,7 @@ export async function runGraph(argv: readonly string[], io: GraphCliIO): Promise
       };
       const viewOpts = { alike: parsed.alike, ...(parsed.detail !== undefined ? { detail: parsed.detail } : {}), ...(parsed.view ? { view: parsed.view } : {}) };
       if (parsed.joined) {
-        const read = await readJoined({ cluster: clusterOpts, ...(parsed.folder ? { dir } : {}), ...(parsed.git ? { git: parsed.git } : {}), ...(parsed.detail !== undefined ? { detail: parsed.detail } : {}) });
+        const read = await readJoined({ cluster: clusterOpts, ...(parsed.folder ? { dir } : {}), ...(parsed.git ? { git: parsed.git } : {}), ...(parsed.index ? { index: parsed.index } : {}), ...(parsed.detail !== undefined ? { detail: parsed.detail } : {}) });
         view = await clusterView(read, viewOpts);
         // The folder is what was read from disk, so the document's origin and member paths are its. With no folder, as for a cluster alone.
         document = read.folder
