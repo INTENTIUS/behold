@@ -30,6 +30,7 @@ import { HCL_PARSER_PKG } from "./terraform-member.ts";
 import { runShot } from "./shot-cli.ts";
 import { runGraph } from "./graph-cli.ts";
 import { runIndex } from "./behold-index.ts";
+import { exitAfterDrain } from "./exit-after-drain.ts";
 import { listCheckouts, type RepoTarget, type ViewRepos } from "./view-repos.ts";
 import {
   bootScratchFloci,
@@ -416,17 +417,17 @@ export async function run(argv: string[]): Promise<void> {
 
   if (cmd === "shot") {
     // Exit at once: the app a shot starts in-process may leave timers behind it.
-    process.exit(await runShot(rest));
+    return exitAfterDrain(await runShot(rest));
   }
 
   if (cmd === "graph") {
     // behold#1058: reads files and prints; it starts no server.
-    process.exit(await runGraph(rest, { version: beholdVersion() }));
+    return exitAfterDrain(await runGraph(rest, { version: beholdVersion() }));
   }
 
   if (cmd === "index") {
     // behold#1026: read-only; it starts no server and reaches no action route.
-    process.exit(await runIndex(rest, { version: beholdVersion() }));
+    return exitAfterDrain(await runIndex(rest, { version: beholdVersion() }));
   }
 
   if (cmd === "mcp") {
@@ -439,7 +440,7 @@ export async function run(argv: string[]): Promise<void> {
       process.stderr.write("behold mcp needs @modelcontextprotocol/sdk, which is not installed; reinstall @intentius/behold\n");
       process.exit(1);
     }
-    process.exit(await runMcp(rest));
+    return exitAfterDrain(await runMcp(rest));
   }
 
   if (cmd !== "serve") {
