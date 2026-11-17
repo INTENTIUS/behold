@@ -59,7 +59,7 @@ elif [ "$(uname -s)" = "Darwin" ]; then
   echo "three-cloud: no floci-az certificate at $TLS_DIR/cert.pem, so choudoufu cannot reach floci-az from macOS: run choudoufu's scripts/floci-az-mac-cert.sh once and trust what it prints" >&2
 fi
 boot "${FLOCI_AZ_CONTAINER:-chant-floci-az}" "${FLOCI_AZ_PORT:-4577}" 4577 \
-  "${FLOCI_AZ_IMAGE:-ghcr.io/lex00/floci-az:7f079c2}" /_floci/health \
+  "${FLOCI_AZ_IMAGE:-ghcr.io/lex00/floci-az:61c830e}" /_floci/health \
   -e FLOCI_AZ_SERVICES_CONTAINER_APPS_MOCKED=false "${TLS[@]}"
 boot "${FLOCI_GCP_CONTAINER:-chant-floci-gcp}" "${FLOCI_GCP_PORT:-4588}" 4588 \
   "${FLOCI_GCP_IMAGE:-ghcr.io/lex00/floci-gcp:641e6e8}" /_floci-gcp/health
