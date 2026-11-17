@@ -81,9 +81,20 @@ npx @intentius/behold graph --context prod ./infra -o graph.json
 npx @intentius/behold graph --context prod --infra ./infra --svg -o graph.svg
 ```
 
-chant's reference catalog joins what the cluster's objects name to the cards the folder declares: a ServiceAccount's `eks.amazonaws.com/role-arn` or `iam.gke.io/gcp-service-account` annotation to the `aws_iam_role` or `google_service_account`, and an ExternalSecret's key, through its store, to the `aws_secretsmanager_secret` or `google_secret_manager_secret`. Those edges carry chant's rule id. A placeholder card is drawn only for what the folder does not hold, and the notes say so. Each card carries `read`, the source it came from: `cluster` (a placeholder too, since a cluster object named it) or `folder`. On a read of a cluster alone every card has `read: "cluster"`.
+chant's reference catalog joins what the cluster's objects name to the cards the folder declares: a ServiceAccount's `eks.amazonaws.com/role-arn` or `iam.gke.io/gcp-service-account` annotation to the `aws_iam_role` or `google_service_account`, and an ExternalSecret's key, through its store, to the `aws_secretsmanager_secret` or `google_secret_manager_secret`. Those edges carry chant's rule id. A placeholder card is drawn only for what the folder does not hold, and the notes say so. Each card carries `read`, the source it came from: `cluster` (a placeholder too, since a cluster object named it), `folder`, `index` or `git`. On a read of a cluster alone every card has `read: "cluster"`.
 
 When the folder declares the cluster itself (an `aws_eks_cluster`, a `google_container_cluster` or an `azurerm_kubernetes_cluster`), its card joins the context: an edge goes from it to each Namespace, with the rule `behold:context`, and a note names it. The cluster's `name` is matched against the context name and the kubeconfig's cluster entry, where `aws eks update-kubeconfig` writes the cluster's ARN, `gcloud` writes `gke_<project>_<location>_<name>` and `az aks get-credentials` writes the name. A folder that declares no such cluster, or several that match, joins none.
+
+### The cloud index of the account the cluster uses
+
+`--index aws` (or `azure`, `gcp`) joins the cloud index that `behold index` wrote to the cluster read:
+
+```sh
+npx @intentius/behold index aws --account 111122223333 --regions us-east-1 --types AWS::IAM::Role,AWS::SecretsManager::Secret
+npx @intentius/behold graph --context prod --index aws -o graph.json
+```
+
+The graph reads the newest version of each scope of that substrate in behold's per-user index store, and with a directory its project's index stores too. It lists nothing and uses no cloud credential, so the index is only as fresh as the last `behold index` run, and the note says when each version was observed. chant's reference catalog joins a ServiceAccount's `eks.amazonaws.com/role-arn` annotation to the indexed `AWS::IAM::Role` with that ARN, and an ExternalSecret's key, through its store, to the `AWS::SecretsManager::Secret` of that name in the store's region. A role of the same name in another account gets no edge. An account holds far more than a cluster names, so only the indexed resources a cluster object or a folder card reaches are drawn, in a box named `<substrate> <account> (index)`, with `read: "index"`. The aws index needs `@intentius/chant-lexicon-aws` installed beside behold, which types the listed resources and gives the catalog their identities.
 
 ### What the cluster's apps deploy from git
 
