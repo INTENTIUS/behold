@@ -13,8 +13,9 @@
  * as an export, so it is found as a file under the installed chant's package
  * directory. When it is there and differs from the vendored copy, the pane
  * lays it out and builds with that, falling back to the vendored layout with
- * a note when it cannot. The published chant behold builds against
- * (src/chant-release.ts) has no schema, and the vendored layout is used.
+ * a note when it cannot. The chant behold builds against
+ * (src/chant-release.ts) keeps its schema under dist/, which this lookup does
+ * not read, so the vendored layout is used.
  *
  * The drift check (`npm run check:graph-layout`, and ./layout.test.ts) fails
  * when the vendored schema's bytes are not the recorded sha256, when a

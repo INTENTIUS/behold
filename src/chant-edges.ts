@@ -24,26 +24,24 @@
  *    in one scope (an account with no region): a value joins across the whole
  *    graph, as the matcher's did, and chant's rules (target kinds, ambiguity)
  *    decide what it joins to.
- *  - `value-match`: neither, so today's matcher runs, as before. This is what
- *    the published chant gets (it has no `reconstructIndexedEdges`), and what
- *    a graph with a lexicon chant has no catalog for gets (azure, gcp, k8s
- *    and terraform have none yet). A graph is never half one and half the
- *    other: mixing chant's rules and behold's on one picture would make an
- *    edge's meaning depend on which half it is in.
+ *  - `value-match`: a lexicon of the graph has no catalog beside behold
+ *    (the pulumi lexicon has none, and choudoufu roster nodes carry a
+ *    lexicon name chant has no plugin for), so today's matcher runs. A graph
+ *    is never half one and half the other: mixing chant's rules and behold's
+ *    on one picture would make an edge's meaning depend on which half it is
+ *    in.
  *
- * The passes are looked for under specifiers the type checker and the
- * bundler leave alone, as src/behold-index.ts does for chant's `runCloudIndex`: a local
- * build of chant's integration branch has them (under tsx and vitest), the
- * published chant and the bundled dist/cli.js do not.
+ * The passes are a static import from `@intentius/chant/graph-refs`, which
+ * every chant behold accepts carries (src/chant-release.ts, behold#1005).
  *
- * TODO(behold#1005): src/chant-release.ts says `released: true` (chant
- * 0.124.54), and this step still waits on chant#4535's note: the pulumi
- * lexicon has no `referenceCatalog` yet, and choudoufu roster nodes need
- * mapping to the terraform lexicon. Then import the passes statically,
- * delete src/value-match.ts and the `value-match` source here, and leave a
- * graph whose lexicon has no catalog with the edges chant gives it.
+ * TODO(behold#1030): delete src/value-match.ts and the `value-match` source
+ * here once the pulumi lexicon has a `referenceCatalog` and choudoufu roster
+ * nodes are mapped to the terraform lexicon (chant#4535's note on
+ * behold#1005); a graph whose lexicon has no catalog then keeps the edges
+ * chant gives it.
  */
 import type { GraphIR, IREdge, IRNode } from "@intentius/chant";
+import { reconstructIdentityEdges, reconstructIndexedEdges } from "@intentius/chant/graph-refs";
 import { addValueMatchEdges } from "./value-match.ts";
 
 /** chant's `IndexedNodeScope` (graph-refs.ts): the scope a node's identifiers are unique in. */
@@ -84,8 +82,8 @@ export type EdgeSource =
   | { source: "value-match"; reason: string };
 
 export interface DeriveEdgeDeps {
-  /** chant's passes, or undefined when the chant beside behold has none. */
-  passes?: () => Promise<ChantEdgePasses | undefined>;
+  /** chant's passes; tests pass fakes. */
+  passes?: () => Promise<ChantEdgePasses>;
   /** A lexicon's plugin, or undefined when it is not installed. */
   lexicon?: (name: string) => Promise<EdgeLexicon | undefined>;
 }
@@ -116,18 +114,9 @@ async function lazy(specifier: string): Promise<Lazy> {
   }
 }
 
-export const GRAPH_REFS_SPECIFIER = "@intentius/chant/graph-refs";
-
-let passesCached: Promise<ChantEdgePasses | undefined> | undefined;
-
-/** chant#4522's and #4523's passes, or undefined. Looked up once per process. */
-export function chantEdgePasses(): Promise<ChantEdgePasses | undefined> {
-  passesCached ??= lazy(GRAPH_REFS_SPECIFIER).then((m) =>
-    typeof m?.reconstructIndexedEdges === "function" && typeof m?.reconstructIdentityEdges === "function"
-      ? (m as unknown as ChantEdgePasses)
-      : undefined,
-  );
-  return passesCached;
+/** chant#4522's and #4523's passes. */
+export function chantEdgePasses(): Promise<ChantEdgePasses> {
+  return Promise.resolve({ reconstructIndexedEdges, reconstructIdentityEdges } as unknown as ChantEdgePasses);
 }
 
 const lexiconCache = new Map<string, Promise<EdgeLexicon | undefined>>();
@@ -184,8 +173,8 @@ export function addChantEdges(ir: GraphIR, passes: ChantEdgePasses, lexicons: re
 }
 
 /**
- * The inferred edges of a declared graph, from chant when it can draw them and
- * from today's matcher when it cannot (see the module doc). Mutates and
+ * The inferred edges of a declared graph, from chant when its catalogs cover the
+ * graph's lexicons and from today's matcher when they do not (see the module doc). Mutates and
  * returns `ir`, the contract `addValueMatchEdges` had, so it composes in the
  * same pipelines.
  */
@@ -199,10 +188,6 @@ export async function deriveGraphEdgesWithSource(ir: GraphIR, deps: DeriveEdgeDe
     return { ir, source: { source: "graph", edges: ir.edges.filter(isChantDerivedEdge).length } };
   }
   const passes = await (deps.passes ?? chantEdgePasses)();
-  if (!passes) {
-    addValueMatchEdges(ir);
-    return { ir, source: { source: "value-match", reason: `the chant beside behold has no reconstructIndexedEdges/reconstructIdentityEdges (${GRAPH_REFS_SPECIFIER}, chant#4522/#4523)` } };
-  }
   const names = [...new Set(ir.nodes.map((n) => n.lexicon).filter((l): l is string => typeof l === "string" && l !== ""))].sort();
   const lexicons: EdgeLexicon[] = [];
   const uncovered: string[] = [];

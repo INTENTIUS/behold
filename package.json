@@ -89,6 +89,7 @@
   },
   "devDependencies": {
     "@intentius/chant-k8s-client": "^0.124.101",
+    "@ladybugdb/core": "0.22.3",
     "@types/node": "^26.4.1",
     "playwright": "^1.62.1",
     "typescript": "^7.0.2",

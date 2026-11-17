@@ -35,7 +35,8 @@ import { resolveChant } from "./chant.ts";
 import { floorFor, floorMet, floorRefusal } from "./chant-floors.ts";
 import { MAX_BODY_BYTES } from "./layout.ts";
 import type { Workspace, WorkspaceMember } from "./workspace.ts";
-import { notReachedRecord, type DriftLine, type DriftRecord, type DriftStartLine } from "./drift-line.ts";
+import { driftExpected, type DriftExpected, type DriftStartLine } from "@intentius/chant/drift-record";
+import type { DriftLine, DriftRecord } from "./drift-tone.ts";
 import { streamDrift, type DriftStreamAsk, type StreamTransport } from "./workspace-reader.ts";
 
 /**
@@ -124,7 +125,7 @@ export async function runDriftStream(o: DriftRunOptions): Promise<void> {
       if (line.type === "drift-start") {
         sawStart = true;
         open.set(line.read, line);
-        o.emit({ run: o.run, kind: "start", member: name, ...(ask.resource ? { resource: ask.resource } : {}), read: line.read, expected: line.expected.map((e) => e.address) });
+        o.emit({ run: o.run, kind: "start", member: name, ...(ask.resource ? { resource: ask.resource } : {}), read: line.read, expected: driftExpected(line).map((e) => e.address) });
       } else if (line.type === "drift-record") {
         const { type: _type, ...r } = line;
         answered.add(r.address);
@@ -132,7 +133,7 @@ export async function runDriftStream(o: DriftRunOptions): Promise<void> {
       } else {
         const start = open.get(line.read);
         open.delete(line.read);
-        const expected = new Map((start?.expected ?? []).map((e) => [e.address, e]));
+        const expected = new Map((start ? driftExpected(start) : []).map((e) => [e.address, e]));
         for (const a of line.notReached ?? []) if (!expected.has(a)) expected.set(a, { address: a });
         const at = line.at ?? start?.at ?? now();
         const head: DriftStartLine = start ?? { type: "drift-start", drift: "v1", member: line.member, engine: line.engine, read: line.read, expected: [] };
@@ -247,4 +248,24 @@ export function driftStreamRoutes(app: Hono, opts: DriftStreamRouteOptions): voi
       });
     return c.json({ run: run.id, member: member.name, kind: member.kind }, 202);
   });
+}
+
+/**
+ * The record chant's fold gives an expected address that settled with no
+ * record (`notReachedRecord` in chant's drift-record.ts): not-observed,
+ * reason `not-reached`, at the settle's time, else the start's.
+ */
+export function notReachedRecord(start: DriftStartLine, expected: DriftExpected, at: string): DriftRecord {
+  return {
+    member: start.member,
+    engine: start.engine,
+    address: expected.address,
+    node: expected.node ?? null,
+    ...(expected.instanceOf !== undefined && expected.node ? { instanceOf: expected.instanceOf } : {}),
+    observedAt: at,
+    read: start.read,
+    status: "not-observed",
+    unobserved: { reason: "not-reached", detail: `the ${start.read} read settled without reporting ${expected.address}` },
+    evidence: { tool: start.engine },
+  };
 }

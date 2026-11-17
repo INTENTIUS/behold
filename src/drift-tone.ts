@@ -30,6 +30,58 @@
  * omission WITH its `unowned[]` row is `unclaimed`, as before, and `warn`.
  */
 
+import {
+  decodeDriftLine as chantDecodeDriftLine,
+  DRIFT_STATUSES,
+  type DriftLine as ChantDriftLine,
+  type DriftRecord as ChantDriftRecord,
+  type DriftRecordLine as ChantDriftRecordLine,
+  type DriftStatus,
+} from "@intentius/chant/drift-record";
+
+/**
+ * A record as a card reads it. chant's `DriftRecord`, except that `status` may
+ * be one a newer chant added: behold#995 paints such a status neutral and
+ * labelled unknown ({@link toneFor}), so {@link decodeDriftLine} keeps it
+ * rather than refusing the line as chant does.
+ */
+export type DriftRecord = Omit<ChantDriftRecord, "status"> & { status: DriftStatus | (string & {}) };
+
+export type DriftRecordLine = DriftRecord & { type: "drift-record" };
+
+/** chant's line types, with {@link DriftRecordLine} for the record. */
+export type DriftLine = Exclude<ChantDriftLine, ChantDriftRecordLine> | DriftRecordLine;
+
+const isKnownStatus = (s: unknown): boolean => (DRIFT_STATUSES as readonly unknown[]).includes(s);
+
+/**
+ * Read one line of the stream with chant's own decoder (a line it refuses
+ * throws chant's error). Two lines are adjusted first, from behold#995: a
+ * record whose status chant does not list is checked as a `recorded` record
+ * without the fields only other statuses carry, then keeps its own status;
+ * and a settle line's counts of such a status are dropped.
+ */
+export function decodeDriftLine(text: string): DriftLine {
+  let v: unknown;
+  try {
+    v = JSON.parse(text);
+  } catch {
+    return chantDecodeDriftLine(text) as DriftLine;
+  }
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return chantDecodeDriftLine(text) as DriftLine;
+  const o = v as Record<string, unknown>;
+  if (o.type === "drift-record" && typeof o.status === "string" && o.status !== "" && !isKnownStatus(o.status)) {
+    const { attributes: _a, unobserved: _u, attributesUnobserved: _x, ...rest } = o;
+    const line = chantDecodeDriftLine(JSON.stringify({ ...rest, status: "recorded" })) as DriftRecordLine;
+    return { ...line, status: o.status };
+  }
+  if (o.type === "drift-settle" && typeof o.counts === "object" && o.counts !== null && Object.keys(o.counts).some((s) => !isKnownStatus(s))) {
+    const counts = Object.fromEntries(Object.entries(o.counts).filter(([s]) => isKnownStatus(s)));
+    return chantDecodeDriftLine(JSON.stringify({ ...o, counts })) as DriftLine;
+  }
+  return chantDecodeDriftLine(text) as DriftLine;
+}
+
 /** The pinhole status a card is painted with (`attrs._status`). */
 export type CardTone = "good" | "warn" | "accent" | "neutral" | "runtime";
 

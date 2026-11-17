@@ -1,6 +1,6 @@
 // behold#995: the one (status, read) table every card colours through.
 import { describe, expect, it } from "vitest";
-import { DRIFT_STATUSES, DRIFT_READS } from "./drift-line.ts";
+import { DRIFT_STATUSES, DRIFT_READS } from "@intentius/chant/drift-record";
 import { DRIFT_TONE_TABLE, TABLE_READS, TABLE_STATUSES, toneFor } from "./drift-tone.ts";
 
 describe("the (status, read) table", () => {
