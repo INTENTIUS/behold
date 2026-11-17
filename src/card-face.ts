@@ -57,9 +57,19 @@
  * nor the character. The one cost is measurement — pinhole sizes a fitted card
  * from the string it is given, so a card whose label was minted is a few pixels
  * wider than its twin.
+ *
+ * **The line under the title (behold#1132).** pinhole sizes a fitted card's
+ * width for `kind · lexicon` as if it started at the card's left edge, but
+ * paints it beside the 30px icon, so a line of twenty characters or more on a
+ * narrow card is cut short (`ServiceAccount · k…`). The cards of a cluster
+ * read's operator view (`_title`, `_subtitle`) get their minted id padded with
+ * {@link INVISIBLE} until the card is wide enough for the whole line, up to
+ * pinhole's widest fitted card, past which the line ends in an ellipsis. A card
+ * may also name its own line (`_subtitle`), which replaces `kind · lexicon` on
+ * the paint; its rows are then the ones its lexicon's pack gives.
  */
 import type { GraphIR, IRNode } from "@intentius/chant";
-import type { NodeOverride } from "@intentius/pinhole";
+import { cardFootprint, resolveFields, type Field, type NodeOverride } from "@intentius/pinhole";
 import { CHOUDOUFU_LEXICON, choudoufuCardFields } from "./choudoufu-card.ts";
 import { isTerraformCard } from "./terraform-lens.ts";
 
@@ -72,6 +82,45 @@ const ID_ATTRS = ["data-node-id", "data-edge-from", "data-edge-to"] as const;
  * one — chant composes ids out of member names and Terraform addresses — so a
  * minted id can only ever collide with another minted id, which is counted. */
 const INVISIBLE = "\u200b";
+
+/** pinhole 0.6's card painter: a line under the title starts 46px in (past the
+ * icon), stops 8px short of the right edge and takes 6px a character
+ * (paint/svg.ts `nodeCard`). Its widest fitted card is 420px. */
+const SUB_INSET = 54;
+const SUB_CH = 6;
+const FIT_MAX = 420;
+
+/** The kind, lexicon and rows a card is painted with, when behold#1132 changes them. */
+interface Face {
+  kind: string;
+  lexicon: string;
+  fields?: Field[];
+}
+
+/**
+ * A cluster read's operator card: its own second line (`_subtitle`), or the
+ * last word of its kind (`_title`, the line below a title that is the object's
+ * name). Undefined for every other card, which pinhole paints as it is.
+ */
+function operatorFace(n: IRNode): Face | undefined {
+  const sub = n.attrs?._subtitle;
+  if (typeof sub === "string" && sub) return { kind: sub, lexicon: "", fields: resolveFields(n) };
+  if (typeof n.attrs?._title !== "string") return undefined;
+  return { kind: n.kind.includes("::") ? n.kind.split("::").pop()! : n.kind, lexicon: n.lexicon };
+}
+
+/** `label` with as many {@link INVISIBLE} as the card needs to be wide enough for its whole second line. */
+function fitSubtitle(n: IRNode, label: string, face: Face): string {
+  const sub = [face.kind, face.lexicon].filter(Boolean).join(" \u00b7 ");
+  const need = SUB_INSET + sub.length * SUB_CH;
+  const override = face.fields ? { fields: face.fields } : undefined;
+  let id = label;
+  for (;;) {
+    const w = cardFootprint({ ...n, id, kind: face.kind, lexicon: face.lexicon } as IRNode, { fit: true, ...(override ? { override } : {}) }).w;
+    if (w >= need || w >= FIT_MAX) return id;
+    id += INVISIBLE;
+  }
+}
 
 /** pinhole's own attribute escaping (`esc`, paint/svg.ts), so the ids put back
  * on the SVG are byte-identical to the ones taken off it. */
@@ -229,9 +278,15 @@ export function cardFaces(ir: GraphIR, boxes?: Record<string, string[]>, opts: C
   // nothing and `restore` strips.
   const minted = new Map<string, string>();
   const used = new Set<string>();
+  const faces = new Map<string, Face>();
+  for (const n of ir.nodes) {
+    const face = operatorFace(n);
+    if (face) faces.set(n.id, face);
+  }
   for (const n of ir.nodes) {
     const label = wanted.get(n.id) ?? n.id;
-    let id = label;
+    const face = faces.get(n.id);
+    let id = face ? fitSubtitle(n, label, face) : label;
     while (used.has(id)) id += INVISIBLE;
     used.add(id);
     if (id !== n.id) minted.set(n.id, id);
@@ -239,13 +294,15 @@ export function cardFaces(ir: GraphIR, boxes?: Record<string, string[]>, opts: C
 
   const overrides: Record<string, NodeOverride> = {};
   const choudoufu = ir.nodes.some((n) => n.lexicon === CHOUDOUFU_LEXICON);
-  if (minted.size === 0 && !choudoufu) return { ir, overrides, display: minted, restore: (svg) => svg };
+  if (minted.size === 0 && !choudoufu && faces.size === 0) return { ir, overrides, display: minted, restore: (svg) => svg };
   const nodes = ir.nodes.map((n) => {
     const display = minted.get(n.id) ?? n.id;
     if (n.lexicon !== CHOUDOUFU_LEXICON) {
-      // behold#1132: a card titled with its object's name wears its kind's last word, so the line below the title fits a card sized for the name.
-      const short = typeof n.attrs?._title === "string" && n.kind.includes("::") ? n.kind.split("::").pop()! : n.kind;
-      return display === n.id && short === n.kind ? n : { ...n, id: display, kind: short };
+      // behold#1132: a card titled with its object's name wears its kind's last word, and a card with its own second line wears that.
+      const face = faces.get(n.id);
+      if (!face) return display === n.id ? n : { ...n, id: display };
+      if (face.fields) overrides[display] = { fields: face.fields };
+      return display === n.id && face.kind === n.kind && face.lexicon === n.lexicon ? n : { ...n, id: display, kind: face.kind, lexicon: face.lexicon };
     }
     // The card's second line is `kind · lexicon`, and for a choudoufu card the
     // kind IS the Terraform type — the thing the icon already stands for — so

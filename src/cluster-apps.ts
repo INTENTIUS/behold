@@ -36,6 +36,7 @@
  * src/read-cluster.ts.
  */
 import type { GraphIR, IREdge, IRNode } from "@intentius/chant";
+import { applicationSubtitle } from "./operator-cards.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -470,6 +471,14 @@ export function logicalOfApps(objects: GraphIR, apps: ClusterApps): { ir: GraphI
  * its status colour (all its replicas ready is good, fewer is warn, none to
  * count is left neutral), and each `dependsOn` labelled with the names that
  * made it, the full list kept as `field`.
+ *
+ * A card's second line is `Application · <ready>/<desired> ready`
+ * (`_subtitle`, src/card-face.ts) rather than `Component · chant`: the read
+ * found it in the cluster, and the line says what it is there.
+ *
+ * chant's `groups.byWave` is left off. A wave is the order an apply would run
+ * in, and nothing is applied from a cluster read; the `dependsOn` arrows
+ * already say which application calls which.
  */
 export function componentsOfApps(apps: ClusterApps): GraphIR {
   const nodes = apps.ir.nodes.map((n) => {
@@ -477,12 +486,13 @@ export function componentsOfApps(apps: ClusterApps): GraphIR {
     const ready = status.readyReplicas;
     const desired = status.desiredReplicas;
     const paint = typeof ready === "number" && typeof desired === "number" ? (desired > 0 && ready === desired ? "good" : ready < desired ? "warn" : undefined) : undefined;
-    return paint ? ({ ...n, attrs: { ...n.attrs, _status: paint } } as IRNode) : n;
+    return { ...n, attrs: { ...n.attrs, _subtitle: applicationSubtitle(rec(n.attrs)), ...(paint ? { _status: paint } : {}) } } as IRNode;
   });
   const edges = apps.ir.edges.map((e) => {
     const via = str(e.viaAttr) ?? "";
     const names = [...new Set(via.split(";").map((s) => s.trim().split(/\s+/).pop()?.replace(/^data\./, "")).filter((s): s is string => !!s))];
     return { ...e, viaAttr: names.length ? `depends on: ${names.join(", ")}` : "depends on", ...(via ? { field: via } : {}) } as IREdge;
   });
-  return { ...apps.ir, nodes, edges };
+  const { byWave: _waves, ...groups } = (apps.ir.groups ?? {}) as Record<string, unknown>;
+  return { ...apps.ir, nodes, edges, groups: groups as GraphIR["groups"] };
 }

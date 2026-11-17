@@ -5,7 +5,7 @@
  * - A workload card: ready over desired replicas, its image and its Pods'
  *   restarts. The Pods' names are in the card's attributes, not on its face.
  * - An application card (chant's component of a cluster read): the same
- *   health, and its namespace.
+ *   health on the line under its title, and its restarts and namespace.
  * - A card for something outside the cluster: the whole ARN or address, over
  *   as many rows as it takes, where the card's title is its short name.
  *
@@ -45,16 +45,30 @@ export function workloadFields(attrs: Rec): Field[] | undefined {
   ];
 }
 
-/** An application card of a cluster read (`attrs.inferredFrom: kubernetes`), or undefined for a declared component. */
+/**
+ * An application card's second line: `Application · 2/3 ready`, or
+ * `Application` alone when its workload has no replica count.
+ */
+export function applicationSubtitle(attrs: Rec): string {
+  const status = rec(attrs.status);
+  const desired = num(status.desiredReplicas);
+  return desired !== undefined ? `Application · ${num(status.readyReplicas) ?? 0}/${desired} ready` : "Application";
+}
+
+/**
+ * An application card of a cluster read (`attrs.inferredFrom: kubernetes`),
+ * or undefined for a declared component. Ready over desired is on the line
+ * under the title ({@link applicationSubtitle}); a row says so only when there
+ * is no count to put there.
+ */
 export function applicationFields(attrs: Rec): Field[] | undefined {
   if (attrs.inferredFrom !== "kubernetes") return undefined;
   const status = rec(attrs.status);
-  const ready = num(status.readyReplicas);
   const desired = num(status.desiredReplicas);
   const restarts = num(status.restarts);
   const ns = typeof attrs.namespace === "string" ? attrs.namespace : Array.isArray(attrs.namespaces) ? attrs.namespaces.join(", ") : undefined;
   return [
-    { label: "ready", value: desired !== undefined ? `${ready ?? 0}/${desired}` : "no replica count" },
+    ...(desired === undefined ? [{ label: "ready", value: "no replica count" }] : []),
     ...(restarts !== undefined ? [{ label: "restarts", value: String(restarts) }] : []),
     ...(ns ? [{ label: "namespace", value: ns }] : []),
   ];

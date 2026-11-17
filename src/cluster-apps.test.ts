@@ -274,7 +274,18 @@ describe("the components view of a cluster read (#1132)", () => {
   it("paints the same picture as an SVG, with the health on each card", async () => {
     const { out } = await graph(["--components", "--svg"], fakeChant(() => inferred));
     expect(out).toContain("depends on: PAYMENTS_URL");
-    expect(out).toMatch(/ready: <\/tspan><tspan[^>]*>1\/2</);
+    expect(out).toMatch(/font-size="11">Application · 1\/2 ready<\/text>/);
+    expect(out).toMatch(/font-size="11">Application · 1\/1 ready<\/text>/);
+    expect(out).not.toContain("Component · chant");
+    expect(out).toMatch(/restarts: <\/tspan><tspan[^>]*>3</);
+  });
+
+  it("draws no apply waves: nothing is applied from a cluster read", async () => {
+    const { doc } = await graph(["--components"], fakeChant(() => inferred));
+    expect(doc!.groups ?? []).toEqual([]);
+    expect(doc!.nodes.every((n) => n.box === undefined)).toBe(true);
+    const { out } = await graph(["--components", "--svg"], fakeChant(() => inferred));
+    expect(out).not.toContain("wave-");
   });
 });
 
@@ -317,6 +328,13 @@ describe("the outside card's text (#1132)", () => {
     expect(out).toContain("shop-checkout-runtime");
     expect(out).toContain("arn:aws:iam::123456789012:role/shop-checkout-runtime");
     expect(out).not.toContain("the public in");
+  });
+
+  it("widens a card for the whole line under its title, rather than cutting it short", async () => {
+    const { out } = await graph(["--svg"], fakeChant(() => inferred));
+    expect(out).toContain(">ServiceAccount · k8s</text>");
+    expect(out).not.toMatch(/font-size="11">[^<]*…<\/text>/);
+    expect(out).not.toContain("\u200b");
   });
 
   it("finds a k8s icon by the kind's last word", () => {
