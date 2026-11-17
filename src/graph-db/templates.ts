@@ -97,15 +97,27 @@ export function applies(t: Template, r: Pick<ResourceRow, "source">): boolean {
   return !t.sources || t.sources.includes(r.source);
 }
 
+/**
+ * The id a chant search query names a node by. A member's node is keyed
+ * `<member>/<id>` (scope key `chant/<member>`), and `chant workspace search`
+ * matches a pattern's id against each member's own ids, so the member prefix
+ * comes off. A single project's node (`chant/.`) is keyed by its id already.
+ */
+export function searchIdOf(node: Pick<ResourceRow, "key"> & { scopeKey?: string }): string {
+  const member = node.scopeKey?.startsWith("chant/") ? node.scopeKey.slice("chant/".length) : undefined;
+  if (member && member !== "." && node.key.startsWith(`${member}/`)) return node.key.slice(member.length + 1);
+  return node.key;
+}
+
 /** Fill one template for one node. */
-export function expandTemplate(name: string, node: Pick<ResourceRow, "key" | "source">, inputs: Record<string, string> = {}): Expanded {
+export function expandTemplate(name: string, node: Pick<ResourceRow, "key" | "source"> & { scopeKey?: string }, inputs: Record<string, string> = {}): Expanded {
   const t = TEMPLATES.find((x) => x.name === name);
   if (!t) throw new TemplateError(`no template ${name} (there are ${TEMPLATES.map((x) => x.name).join(", ")})`, "template-unknown");
   if (!applies(t, node)) throw new TemplateError(`${name} applies to ${t.sources!.join(", ")} nodes, and ${node.key} is a ${node.source} node`, "template-not-applicable");
   for (const i of t.inputs) if (!inputs[i.name]) throw new TemplateError(`${name} needs ${i.name}: ${i.description}`, "template-input");
   for (const k of Object.keys(inputs)) if (!t.inputs.some((i) => i.name === k)) throw new TemplateError(`${name} takes no input ${k}`, "template-input");
   if (t.language === "cypher") return { template: t.name, language: "cypher", reads: t.reads, query: t.query, params: { key: node.key, ...inputs } };
-  let q = t.query.replace("{{node}}", node.key);
+  let q = t.query.replace("{{node}}", searchIdOf(node));
   let env: string | undefined;
   for (const i of t.inputs) {
     const v = inputs[i.name]!;

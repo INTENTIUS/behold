@@ -153,6 +153,29 @@ export function searchFloorRefusal(target: SearchTarget): WorkspaceRefusal | und
 }
 
 /**
+ * A `cap:` term (INTENTIUS/chant#4375), negated or not, as one of the query's
+ * whitespace-separated terms. behold reads no more of the grammar than that.
+ */
+export function usesCapability(q: string): boolean {
+  return /(^|\s)[!-]?cap:/.test(q);
+}
+
+/**
+ * behold#1027: `chant workspace search` answers a capability term from the
+ * composed declared graph only, and refuses it with `--live` or `--snapshot`
+ * (chant's workspace/search-cli.js). So over a workspace, or a bare Terraform
+ * folder's one-member workspace, a capability query drops the view's env,
+ * snapshot and plan and asks the declared graph, the one answer chant gives.
+ * chant's provenance line on the document says the answer is declared. One
+ * project's `chant search` reads a capability live, so its ask is unchanged.
+ */
+export function askFor(target: SearchTarget, ask: SearchAsk): SearchAsk {
+  if ((target.kind !== "workspace" && target.kind !== "terraform") || !usesCapability(ask.q)) return ask;
+  const { env: _env, snapshot: _snapshot, plan: _plan, ...declared } = ask;
+  return declared;
+}
+
+/**
  * Run one search, through the reader. One chant call. The document comes
  * back as chant printed it, a refused query or a failed live read included;
  * a chant below the floor, or a target behold can't search, is a refusal.
@@ -163,6 +186,7 @@ export async function runSearch(
   reader: (root: string, env?: Record<string, string>) => WorkspaceReader,
 ): Promise<{ ok: true; document: WorkspaceDocument } | { ok: false; refusal: WorkspaceRefusal }> {
   if (target.kind === "refused") return { ok: false, refusal: target.refusal };
+  ask = askFor(target, ask);
   const tooOld = searchFloorRefusal(target);
   if (tooOld) return { ok: false, refusal: tooOld };
   const noEnv = planRefusal(target, ask);
