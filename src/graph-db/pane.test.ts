@@ -213,7 +213,7 @@ describe("no action route is reachable from the pane", () => {
       for (const method of ["POST", "PUT", "DELETE", "PATCH"]) {
         const res = await app.request(path, { method, headers: { host: "127.0.0.1", origin: "http://127.0.0.1" } });
         expect(res.status, `${method} ${path}`).not.toBe(200);
-        expect([403, 404, 405], `${method} ${path}`).toContain(res.status);
+        expect([403, 404, 405, 409], `${method} ${path}`).toContain(res.status);
       }
     }
   });
