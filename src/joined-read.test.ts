@@ -307,13 +307,14 @@ describe("the GitOps source: an app's manifests from git beside the live objects
     expect(read.meta.note).toContain("https://git.example.test/team/other, which no --git clone holds");
   });
 
-  it.skipIf(gate)("behold graph --context --git prints the git cards beside the live ones", SLOW, async () => {
+  it.skipIf(gate)("behold graph --context --git prints the git cards beside the live ones, with read: git", SLOW, async () => {
     const dir = gitRepo();
     const r = await graph(["--kubeconfig", kubeconfigFile(), "--git", dir, "--json"], fakeChant(gitObjects(`file://${dir}`)));
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
     const doc = JSON.parse(r.out) as GraphDocument;
-    expect(doc.nodes.filter((n) => n.id.startsWith("argocd/Application/guestbook/git/")).map((n) => n.kind).sort()).toEqual(["K8s::Apps::Deployment", "K8s::Core::Service"]);
+    expect(doc.nodes.filter((n) => n.read === "git").map((n) => n.kind).sort()).toEqual(["K8s::Apps::Deployment", "K8s::Core::Service"]);
+    expect(doc.nodes.filter((n) => n.read === "git").every((n) => n.id.startsWith("argocd/Application/guestbook/git/"))).toBe(true);
   });
 });
 
