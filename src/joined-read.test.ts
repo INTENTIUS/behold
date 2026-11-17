@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -30,16 +31,16 @@ const scratch = (): string => {
   return d;
 };
 
-function kubeconfigFile(): string {
+function kubeconfigFile(names: { context: string; cluster: string } = { context: "k3d-demo", cluster: "demo" }): string {
   const file = join(scratch(), "kubeconfig");
   writeFileSync(
     file,
     JSON.stringify({
       apiVersion: "v1",
       kind: "Config",
-      "current-context": "k3d-demo",
-      clusters: [{ name: "demo", cluster: { server: "https://203.0.113.9:443", "insecure-skip-tls-verify": true } }],
-      contexts: [{ name: "k3d-demo", context: { cluster: "demo", user: "admin" } }],
+      "current-context": names.context,
+      clusters: [{ name: names.cluster, cluster: { server: "https://203.0.113.9:443", "insecure-skip-tls-verify": true } }],
+      contexts: [{ name: names.context, context: { cluster: names.cluster, user: "admin" } }],
       users: [{ name: "admin", user: { token: "t" } }],
     }),
   );
@@ -116,6 +117,29 @@ resource "aws_secretsmanager_secret" "app_token" {
   return dir;
 }
 
+// behold#1123: a folder that declares the EKS cluster the context serves, and one that declares another.
+const EKS_ARN = "arn:aws:eks:us-east-1:111122223333:cluster/demo";
+const eksFolders = new Map<string, string>();
+function eksFolder(name: string): string {
+  const known = eksFolders.get(name);
+  if (known) return known;
+  const dir = join(scratch(), `eks-${name}`);
+  eksFolders.set(name, dir);
+  mkdirSync(dir);
+  writeFileSync(
+    join(dir, "main.tf"),
+    `resource "aws_eks_cluster" "main" {
+  name     = "${name}"
+  role_arn = "arn:aws:iam::111122223333:role/eks"
+  vpc_config {
+    subnet_ids = []
+  }
+}
+`,
+  );
+  return dir;
+}
+
 async function graph(argv: string[], chant: ChantLister): Promise<{ code: number; out: string; err: string }> {
   let out = "";
   let err = "";
@@ -165,6 +189,132 @@ describe("readJoined, a cluster and a folder as one graph (#1115)", () => {
     expect(read.joined.pass).toBe(false);
     expect(read.joined.edges).toBe(0);
     expect(read.meta.note).toContain("no catalog pass");
+  });
+});
+
+describe("the cluster's own resource joins the context it serves (#1123)", () => {
+  // `aws eks update-kubeconfig` names the cluster entry by its ARN, and the context too unless --alias renames it.
+  it.skipIf(gate)("joins the aws_eks_cluster the kubeconfig's cluster ARN names, with an edge to each namespace", SLOW, async () => {
+    const read = await readJoined({ cluster: { kubeconfig: kubeconfigFile({ context: "prod", cluster: EKS_ARN }), chant: fakeChant(objects()) }, dir: eksFolder("demo") });
+    const eks = read.ir.nodes.find((n) => n.kind === "aws_eks_cluster")!;
+    expect(eks).toBeDefined();
+    expect(read.joined.cluster).toBe(eks.id);
+    const edge = read.ir.edges.find((e) => e.from === eks.id && e.to === "cluster/Namespace/app") as { viaAttr?: string; join?: string; inferred?: boolean } | undefined;
+    expect(edge).toMatchObject({ viaAttr: "runs-on", join: "context", inferred: true });
+    expect(read.meta.note).toContain(`cluster prod is ${eks.id}`);
+  });
+
+  it.skipIf(gate)("joins it by the context name when the cluster entry is named otherwise", SLOW, async () => {
+    const read = await readJoined({ cluster: { kubeconfig: kubeconfigFile({ context: EKS_ARN, cluster: "kubernetes" }), chant: fakeChant(objects()) }, dir: eksFolder("demo") });
+    expect(read.joined.cluster).toBe(read.ir.nodes.find((n) => n.kind === "aws_eks_cluster")!.id);
+  });
+
+  it.skipIf(gate)("joins nothing when the folder's cluster is another one, and says so", SLOW, async () => {
+    const read = await readJoined({ cluster: { kubeconfig: kubeconfigFile({ context: "prod", cluster: EKS_ARN }), chant: fakeChant(objects()) }, dir: eksFolder("other") });
+    expect(read.joined.cluster).toBeUndefined();
+    expect(read.ir.edges.some((e) => (e as { join?: string }).join === "context")).toBe(false);
+    expect(read.meta.note).toContain("declares 1 cluster, and the context names none of them");
+  });
+});
+
+// behold#1123: a local repository an Argo CD Application and a Flux Kustomization deploy from.
+const GUESTBOOK = `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guestbook
+  namespace: guestbook
+spec:
+  selector:
+    matchLabels: { app: guestbook }
+  template:
+    metadata:
+      labels: { app: guestbook }
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.27
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: guestbook
+  namespace: guestbook
+spec:
+  selector: { app: guestbook }
+  ports: [{ port: 80 }]
+`;
+let repo: string | undefined;
+function gitRepo(): string {
+  if (repo) return repo;
+  const dir = join(scratch(), "deploy-repo");
+  repo = dir;
+  mkdirSync(join(dir, "apps", "guestbook"), { recursive: true });
+  writeFileSync(join(dir, "apps", "guestbook", "all.yaml"), GUESTBOOK);
+  execFileSync("git", ["init", "-q", dir]);
+  execFileSync("git", ["-C", dir, "remote", "add", "origin", "https://git.example.test/team/deploy.git"]);
+  return dir;
+}
+
+const gitObjects = (repoURL: string): Obj[] => [
+  ...objects(),
+  {
+    listedType: "argoproj.io/v1alpha1/Application",
+    location: "argocd",
+    name: "guestbook",
+    attrs: { spec: { project: "default", source: { repoURL, path: "apps/guestbook", targetRevision: "main" }, destination: { server: "https://kubernetes.default.svc", namespace: "guestbook" } } },
+  },
+  { listedType: "apps/v1/Deployment", location: "guestbook", name: "guestbook", typed: "K8s::Apps::Deployment" },
+];
+
+const fluxObjects = (): Obj[] => [
+  ...objects(),
+  { listedType: "source.toolkit.fluxcd.io/v1/GitRepository", location: "flux-system", name: "deploy", attrs: { spec: { url: "ssh://git@git.example.test/team/deploy.git", ref: { branch: "main" }, interval: "1m" } } },
+  { listedType: "kustomize.toolkit.fluxcd.io/v1/Kustomization", location: "flux-system", name: "guestbook", attrs: { spec: { path: "./apps/guestbook", sourceRef: { kind: "GitRepository", name: "deploy" }, interval: "1m", prune: true } } },
+];
+
+describe("the GitOps source: an app's manifests from git beside the live objects (#1123)", () => {
+  it.skipIf(gate)("reads the path an Argo CD Application names from the local clone given with --git <dir>", SLOW, async () => {
+    const dir = gitRepo();
+    const read = await readJoined({ cluster: { kubeconfig: kubeconfigFile(), chant: fakeChant(gitObjects(`file://${dir}`)) }, git: [{ dir }] });
+    const fromGit = read.ir.nodes.filter((n) => (n as { read?: string }).read === "git");
+    expect(fromGit.map((n) => n.kind).sort()).toEqual(["K8s::Apps::Deployment", "K8s::Core::Service"]);
+    expect(fromGit.every((n) => n.id.startsWith("argocd/Application/guestbook/git/"))).toBe(true);
+    // The live Deployment is drawn beside the one git declares.
+    expect(read.ir.nodes.some((n) => n.id === "guestbook/Deployment/guestbook" && (n as { read?: string }).read === "cluster")).toBe(true);
+    const box = (read.ir.groups as { byStack: Record<string, string[]> }).byStack["argocd/Application/guestbook from git"];
+    expect(box?.sort()).toEqual(fromGit.map((n) => n.id).sort());
+    expect(read.joined.git).toMatchObject([{ app: "argocd/Application/guestbook", path: "apps/guestbook", revision: "main", cards: 2 }]);
+    expect(read.meta.note).toContain("2 cards of argocd/Application/guestbook from git");
+  });
+
+  it.skipIf(gate)("finds the clone by its remote, so an https repoURL reads with no fetch", SLOW, async () => {
+    const read = await readJoined({ cluster: { kubeconfig: kubeconfigFile(), chant: fakeChant(gitObjects("https://git.example.test/team/deploy")) }, git: [{ dir: gitRepo() }] });
+    expect(read.ir.nodes.filter((n) => (n as { read?: string }).read === "git")).toHaveLength(2);
+  });
+
+  it.skipIf(gate)("reads a Flux Kustomization's path in the GitRepository it names, from --git <url>=<dir>", SLOW, async () => {
+    const read = await readJoined({ cluster: { kubeconfig: kubeconfigFile(), chant: fakeChant(fluxObjects()) }, git: [{ url: "ssh://git@git.example.test/team/deploy.git", dir: gitRepo() }] });
+    const fromGit = read.ir.nodes.filter((n) => (n as { read?: string }).read === "git");
+    expect(fromGit).toHaveLength(2);
+    expect(fromGit.every((n) => n.id.startsWith("flux-system/Kustomization/guestbook/git/"))).toBe(true);
+    expect(read.joined.git).toMatchObject([{ via: "Kustomization", path: "apps/guestbook", revision: "main" }]);
+  });
+
+  it.skipIf(gate)("reads nothing for a repository no clone holds, and says how to give one", SLOW, async () => {
+    const read = await readJoined({ cluster: { kubeconfig: kubeconfigFile(), chant: fakeChant(gitObjects("https://git.example.test/team/other")) }, git: [{ dir: gitRepo() }] });
+    expect(read.ir.nodes.some((n) => (n as { read?: string }).read === "git")).toBe(false);
+    expect(read.joined.git).toMatchObject([{ app: "argocd/Application/guestbook", cards: 0 }]);
+    expect(read.meta.note).toContain("https://git.example.test/team/other, which no --git clone holds");
+  });
+
+  it.skipIf(gate)("behold graph --context --git prints the git cards beside the live ones, with read: git", SLOW, async () => {
+    const dir = gitRepo();
+    const r = await graph(["--kubeconfig", kubeconfigFile(), "--git", dir, "--json"], fakeChant(gitObjects(`file://${dir}`)));
+    expect(r.err).toBe("");
+    expect(r.code).toBe(0);
+    const doc = JSON.parse(r.out) as GraphDocument;
+    expect(doc.nodes.filter((n) => n.read === "git").map((n) => n.kind).sort()).toEqual(["K8s::Apps::Deployment", "K8s::Core::Service"]);
+    expect(doc.nodes.filter((n) => n.read === "git").every((n) => n.id.startsWith("argocd/Application/guestbook/git/"))).toBe(true);
   });
 });
 

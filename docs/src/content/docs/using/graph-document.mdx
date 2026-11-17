@@ -58,7 +58,7 @@ The node and edge field names are the ones Grafana's node graph panel reads (`id
 - `status`, `color` and `mainstat` are present when a drift overlay painted the card, and `change` when a plan was read and would change it.
 - Every edge's `source` and `target` is a node in the same document. An inferred edge carries `rule`, the join that drew it: `behold:<pass>`, or chant's catalog rule id. The edge to a placeholder card (a reference that names nothing) and each edge of a reference that names several nodes carry the rule of that reference too, and the placeholder is a node of the kind it was looking for, with `lexicon` `behold`.
 - No field holds an absolute path, and a card's source text (`attrs.source`) is left out unless it was asked for.
-- `read` is present on a read of a cluster: which source the card came from (`cluster` or `folder`).
+- `read` is present on a read of a cluster: which source the card came from (`cluster`, `folder`, or `git` for the path an app deploys from).
 - `field` is present on an edge whose `via` names the relationship (`runs as`, `routes to :80`): the field the reference was found in.
 
 ## From the command line
@@ -82,6 +82,19 @@ npx @intentius/behold graph --context prod --infra ./infra --svg -o graph.svg
 ```
 
 chant's reference catalog joins what the cluster's objects name to the cards the folder declares: a ServiceAccount's `eks.amazonaws.com/role-arn` or `iam.gke.io/gcp-service-account` annotation to the `aws_iam_role` or `google_service_account`, and an ExternalSecret's key, through its store, to the `aws_secretsmanager_secret` or `google_secret_manager_secret`. Those edges carry chant's rule id. A placeholder card is drawn only for what the folder does not hold, and the notes say so. Each card carries `read`, the source it came from: `cluster` (a placeholder too, since a cluster object named it) or `folder`. On a read of a cluster alone every card has `read: "cluster"`.
+
+When the folder declares the cluster itself (an `aws_eks_cluster`, a `google_container_cluster` or an `azurerm_kubernetes_cluster`), its card joins the context: an edge goes from it to each Namespace, with the rule `behold:context`, and a note names it. The cluster's `name` is matched against the context name and the kubeconfig's cluster entry, where `aws eks update-kubeconfig` writes the cluster's ARN, `gcloud` writes `gke_<project>_<location>_<name>` and `az aks get-credentials` writes the name. A folder that declares no such cluster, or several that match, joins none.
+
+### What the cluster's apps deploy from git
+
+`--git` reads the path each Argo CD Application and Flux Kustomization deploys from, out of a local clone, and draws its manifests beside the live objects:
+
+```sh
+npx @intentius/behold graph --context prod --git ../deploy -o graph.json
+npx @intentius/behold graph --context prod ./infra --git https://github.com/org/deploy=../deploy
+```
+
+An Application's paths are the ones chant's catalog reads (`spec.source.path`, `spec.sources[].path`). A Kustomization's path is `spec.path` in the GitRepository its `sourceRef` names. `--git <dir>` holds every repository whose URL is that directory or one of its git remotes; `--git <url>=<dir>` holds one URL. Nothing is fetched: an app whose repository no clone holds is named in a note and not read. The clone's working tree is read, and the note names the revision the app tracks. The cards sit in a box named for the app, with ids under `<app>/git/` and `read: "git"`.
 
 ### Applications in a cluster
 
