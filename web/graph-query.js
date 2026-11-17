@@ -31,6 +31,17 @@ export function templateUrl(name, node, inputs = {}) {
   return `/api/graphdb/template?${q}`;
 }
 
+/**
+ * The resolve answer's candidates as the page lists them. When the reference
+ * named more than one node (a cloud id that chant, an engine and an index all
+ * know), each candidate can be opened: resolving its key lands on that one
+ * node, with its templates.
+ */
+export function candidateItems(body) {
+  const many = !body?.resolved && (body?.candidates?.length ?? 0) > 1;
+  return (body?.candidates ?? []).map((c) => ({ key: c.key, label: `${c.key} (${c.kind}, ${c.source}, matched by ${c.matchedBy})`, open: many }));
+}
+
 /** One line per source: what it is and when it was read ("declared" when nothing was read live). */
 export function sourceLines(sources) {
   return (sources ?? []).map((s) => {
@@ -143,9 +154,20 @@ export function initGraphPane(doc = document, fetchJson = (u) => fetch(u, { head
     const list = $("g-candidates");
     list.innerHTML = "";
     if (r.status !== 200) return;
-    for (const c of r.body.candidates) {
+    for (const c of candidateItems(r.body)) {
       const li = doc.createElement("li");
-      li.textContent = `${c.key} (${c.kind}, ${c.source}, matched by ${c.matchedBy})`;
+      li.textContent = c.label;
+      if (c.open) {
+        const b = doc.createElement("button");
+        b.type = "button";
+        b.textContent = "open";
+        b.title = `Resolve ${c.key}`;
+        b.addEventListener("click", () => {
+          $("g-ref").value = c.key;
+          $("g-resolve-form").requestSubmit();
+        });
+        li.append(" ", b);
+      }
       list.append(li);
     }
     const menu = $("g-templates");

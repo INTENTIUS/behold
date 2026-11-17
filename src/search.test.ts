@@ -92,6 +92,27 @@ describe("runSearch: one chant call through the reader, behind the floor", () =>
     expect(r.calls).toEqual([["workspace", "search", "--explain", "--json", "--", "->a"]]);
   });
 
+  it("sends a capability query over a workspace as a declared read, the only one chant answers it with, whatever env the view is in (#1027)", async () => {
+    // chant workspace search refuses a cap: term with --live or --snapshot ("a capability term over a workspace
+    // answers from the composed declared graph"), and the estate view of an --env serve always carries its env.
+    const q = "aws/aws:ec2/subnet:Subnet::public cap:internet-reachable(80)";
+    for (const ask of [{ q, env: "local" }, { q, env: "local", snapshot: "latest" }, { q, env: "local", plan: true as const }, { q: `!cap:encrypted-at-rest kind:aws_s3_bucket`, env: "prod" }]) {
+      const r = recording(doc);
+      await runSearch({ kind: "workspace", root: "/w", chant: "0.124.46" }, ask, r.reader);
+      expect(r.calls).toEqual([["workspace", "search", "--explain", "--json", "--", ask.q]]);
+    }
+    const tf = recording(doc);
+    await runSearch({ kind: "terraform", dir: "/tf", root: "/w", chant: "0.124.46" }, { q, env: "local" }, tf.reader);
+    expect(tf.calls).toEqual([["workspace", "search", "--explain", "--json", "--", q]]);
+    // One project's chant search reads a capability live, so its env stays; a term that only mentions cap: is no capability.
+    const p = recording(doc);
+    await runSearch({ kind: "project", dir: "/p", chant: "0.124.46" }, { q: "cap:internet-reachable(22)", env: "prod" }, p.reader);
+    expect(p.calls).toEqual([["search", "--live", "--env", "prod", "--explain", "--json", "--", "cap:internet-reachable(22)"]]);
+    const w = recording(doc);
+    await runSearch({ kind: "workspace", root: "/w", chant: "0.124.46" }, { q: "attr:name=cap:x", env: "prod" }, w.reader);
+    expect(w.calls).toEqual([["workspace", "search", "--live", "--env", "prod", "--explain", "--json", "--", "attr:name=cap:x"]]);
+  });
+
   it("reads one project with plain chant search", async () => {
     const r = recording(doc);
     await runSearch({ kind: "project", dir: "/p", chant: "0.124.46" }, { q: "a", env: "prod" }, r.reader);

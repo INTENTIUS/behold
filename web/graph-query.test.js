@@ -1,6 +1,6 @@
 // behold#1027: the graph pane page's pure helpers.
 import { describe, expect, it } from "vitest";
-import { circleLayout, drawSvg, queryUrl, refusalText, resolveUrl, rowsTable, sourceLines, templateUrl } from "./graph-query.js";
+import { candidateItems, circleLayout, drawSvg, queryUrl, refusalText, resolveUrl, rowsTable, sourceLines, templateUrl } from "./graph-query.js";
 
 describe("the routes the page asks", () => {
   it("are GETs with the query in the URL", () => {
@@ -45,5 +45,18 @@ describe("what an answer shows", () => {
     const t = refusalText({ error: "needs the peer", code: "graph-peer-missing", install: "npm i -g @ladybugdb/core", stillWorks: ["chant search"] });
     expect(t).toContain("Install: npm i -g @ladybugdb/core");
     expect(t).toContain("Still works: chant search");
+  });
+});
+
+describe("the resolve answer's candidates", () => {
+  const cand = (key, source) => ({ key, kind: "aws:ec2/subnet:Subnet", source, matchedBy: "cloud-id" });
+  it("can each be opened when a cloud id names several nodes, and not when it lands on one", () => {
+    const many = candidateItems({ resolved: false, candidates: [cand("aws/aws/subnet", "chant"), cand("aws/plunge/subnet", "engine")] });
+    expect(many).toEqual([
+      { key: "aws/aws/subnet", label: "aws/aws/subnet (aws:ec2/subnet:Subnet, chant, matched by cloud-id)", open: true },
+      { key: "aws/plunge/subnet", label: "aws/plunge/subnet (aws:ec2/subnet:Subnet, engine, matched by cloud-id)", open: true },
+    ]);
+    expect(candidateItems({ resolved: true, candidates: [cand("aws/aws/subnet", "chant")] })[0].open).toBe(false);
+    expect(candidateItems({ resolved: false, candidates: [] })).toEqual([]);
   });
 });
