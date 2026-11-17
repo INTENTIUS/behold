@@ -213,6 +213,7 @@ import {
   MAX_BODY_BYTES,
 } from "./layout.ts";
 import { emulatorDirs, emulatorsDown, emulatorsUp, mergedEnv, type EmulatorInfo } from "./emulator.ts";
+import { indexOnlyRefusal, servesNoProject } from "./index-only.ts";
 import { productRefusal, refusedWrite, servedProductRepo, terragucciRefusal } from "./terragucci-repo.ts";
 import { repoBase, servedChoudoufu, terragucciRoutes, type TerragucciOptions } from "./terragucci-view.ts";
 import { terragucciSource } from "./terragucci-source.ts";
@@ -1137,6 +1138,15 @@ export function createApp(
     if (!what) return next();
     const repo = guardedRepo();
     if (what && repo) return c.json(productRefusal(repo, what), 409);
+    await next();
+  });
+
+  // behold#1026: no chant project here (an index store, an empty directory): behold only reads.
+  // Asked per request, since a project switch changes cfg.projectDir (src/index-only.ts).
+  app.use("*", async (c, next) => {
+    if (cfg.public || cfg.carveReport || cfg.terralithDemo || cfg.projectDirs || cfg.workspace || guardedRepo()) return next();
+    const refusal = indexOnlyRefusal(c.req.method, c.req.path);
+    if (refusal && servesNoProject(cfg.projectDir)) return c.json(refusal, 409);
     await next();
   });
 
