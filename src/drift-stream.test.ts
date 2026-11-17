@@ -1,7 +1,7 @@
 // behold#998: the streamed drift run, over a transport that prints recorded lines.
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { decodeDriftLine } from "./drift-line.ts";
+import { decodeDriftLine } from "./drift-tone.ts";
 import { Hono } from "hono";
 import { CHANT_FLOORS, DRIFT_STREAM_CHANT_FLOOR, floorFor } from "./chant-floors.ts";
 import { driftStreamRoutes, resourceBlocks, runDriftStream, toneFor, type DriftFrame } from "./drift-stream.ts";

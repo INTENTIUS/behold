@@ -22,10 +22,10 @@
  * refused whole, as {@link WorkspaceReadError}: within a version chant only
  * adds fields, and a new version can change what one means.
  */
+import { decodeDriftLine, type DriftLine } from "./drift-tone.ts";
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { pipeLines, resolveChant, runChantRaw } from "./chant.ts";
-import { decodeDriftLine, type DriftLine } from "./drift-line.ts";
 import { healthProblems, HEALTH_SCHEMA, type HealthDocument } from "./runtime-health.ts";
 
 /** The read contract version behold reads (chant's `reference/workspace-read-contract`). */
@@ -450,7 +450,7 @@ export function rootReader(root: string, env?: Record<string, string>): Workspac
 /**
  * behold#998: `chant workspace drift --member <name> [--read <read>]
  * [--resource <addr>] --stream`, run at the workspace root. It prints chant's
- * drift stream (src/drift-line.ts): NDJSON, one `drift-start`, a
+ * drift stream (src/drift-tone.ts): NDJSON, one `drift-start`, a
  * `drift-record` per instance as its read finishes, one `drift-settle`. Unlike
  * every read above it is not one document, so it does not go through
  * {@link documentOf} or the read budget's buffered spawn: each stdout line is

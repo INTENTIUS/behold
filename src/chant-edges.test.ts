@@ -49,13 +49,7 @@ function fakePasses(catalogEdges: DerivedEdge[], identityEdges: DerivedEdge[] = 
 
 const matcherEdge = { from: "db", to: "group", kind: "ref", viaAttr: "DBSubnetGroupName", inferred: true, join: "value-match" };
 
-describe("deriveGraphEdges: value-match fallback (chant has no passes)", () => {
-  it("runs today's matcher when the chant beside behold has no reconstructIndexedEdges", async () => {
-    const { ir, source } = await deriveGraphEdgesWithSource(rds(), { passes: async () => undefined });
-    expect(source.source).toBe("value-match");
-    expect(ir.edges).toEqual([matcherEdge]);
-  });
-
+describe("deriveGraphEdges: value-match fallback (a lexicon has no catalog)", () => {
   it("runs today's matcher when a lexicon of the graph has no catalog beside behold, and runs no chant pass", async () => {
     const passes = fakePasses([derived("db", "group")]);
     const ir = rds();
@@ -78,7 +72,7 @@ describe("deriveGraphEdges: value-match fallback (chant has no passes)", () => {
 
   it("keeps addValueMatchEdges' contract: mutates and returns the same graph", async () => {
     const ir = rds();
-    expect(await deriveGraphEdges(ir, { passes: async () => undefined })).toBe(ir);
+    expect(await deriveGraphEdges(ir, { passes: async () => fakePasses([]) })).toBe(ir);
   });
 });
 
@@ -145,13 +139,10 @@ describe("deriveGraphEdges: chant's edges", () => {
   });
 });
 
-// With a local build of chant's integration branch beside behold the real
-// passes are found, and these run them. Against the published chant (no
-// reconstructIndexedEdges) they are skipped and the fallback tests above are
-// the ones that speak.
+// chant's own passes, run over a declared graph.
 const real = await chantEdgePasses();
 
-describe.skipIf(!real)("deriveGraphEdges over chant's own passes (local chant build)", () => {
+describe("deriveGraphEdges over chant's own passes", () => {
   const withRealPasses = { passes: async () => real, lexicon: async () => awsLexicon };
 
   it("draws the RDS instance to its subnet group with the catalog rule that matched", async () => {

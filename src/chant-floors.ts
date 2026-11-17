@@ -21,7 +21,7 @@
  * src/chant-release.ts, so any module may import it.
  *
  * A read that came with the multi-engine chant release takes its floor from
- * `CHANT_RELEASE.version` (src/chant-release.ts, behold#1005), 0.124.54, so
+ * `CHANT_RELEASE.version` (src/chant-release.ts, behold#1005), so
  * the one edit there moves every such floor.
  */
 import { meetsFloor } from "./floor.ts";

@@ -32,8 +32,7 @@
  */
 import type { GraphIR } from "@intentius/chant";
 import { decomposeAddress } from "./choudoufu-refs.ts";
-import { decodeDriftLine, type DriftRecord } from "./drift-line.ts";
-import { toneFor } from "./drift-tone.ts";
+import { decodeDriftLine, toneFor, type DriftRecord } from "./drift-tone.ts";
 import { instanceBlockIdOf, instanceParentOf } from "./instance-cards.ts";
 import type { Workspace, WorkspaceMember } from "./workspace.ts";
 import { driftArgs, WorkspaceReadError, type WorkspaceReader } from "./workspace-reader.ts";
@@ -49,7 +48,7 @@ export interface DriftRead {
   skipped: string[];
 }
 
-/** Read a drift document. Each record is checked by the stream's decoder (src/drift-line.ts), so both paths accept the same records. */
+/** Read a drift document. Each record is checked by the stream's decoder (src/drift-tone.ts), so both paths accept the same records. */
 export function driftDocumentOf(doc: Record<string, unknown>): DriftRead {
   const skipped: string[] = [];
   const records: DriftRecord[] = [];
