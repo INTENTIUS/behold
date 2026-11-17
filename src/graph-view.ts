@@ -38,6 +38,7 @@ import { readGraph, type ReadGraphOptions, type ReadGraphResult } from "./read-g
 import { stackAlike, stackNote } from "./stack-lens.ts";
 import { paintTerraformPlan, readTerraformPlan, terraformPlanNote, type MemberPlanAnswer, type PlanReadDeps } from "./terraform-plan.ts";
 import { danglingNote, unchangedZoomNote, type Zoom } from "./zoom-notes.ts";
+import { componentsOfApps, logicalOfApps, NO_APPS_NOTE, operatorObjects, type ClusterApps, type ClusterViewKind } from "./cluster-apps.ts";
 
 export interface GraphViewOptions extends ReadGraphOptions {
   /** Stack alike cards and count crowded references, as the route does unless `?alike=0`. Default true. */
@@ -56,6 +57,18 @@ export interface GraphViewMeta {
   note?: string;
   /** The strip's form of `note`, when there is a shorter true one. */
   noteShort?: string;
+  /**
+   * What the picture is, for someone who opens the SVG cold (behold#1132): a
+   * cluster read's three views each name themselves, since two of them can
+   * hold the same cards. `--svg` paints it as the picture's heading.
+   */
+  caption?: ViewCaption;
+}
+
+/** A picture's heading: what it shows, and a smaller line of where it was read from. */
+export interface ViewCaption {
+  title: string;
+  subtitle: string;
 }
 
 export interface GraphView {
@@ -151,16 +164,85 @@ export async function graphView(dir: string | readonly string[], opts: GraphView
  * A cluster read through a kubeconfig context (behold#1083, src/read-cluster.ts)
  * with the same lenses over it: stacking alike cards and collapse. There is no
  * plan to paint. The refusals `readCluster` throws pass through.
+ *
+ * behold#1132: `view` picks the operator's view (src/cluster-apps.ts). The
+ * objects view folds runtime and bookkeeping objects into the card they serve,
+ * unless `alike` is false (`--every-card`), and labels each edge with its
+ * relationship. The logical view boxes those cards by application, and the
+ * components view is chant's component graph of the read. Both need the
+ * applications chant infers; without them the view is empty and the note says
+ * why.
  */
-export async function clusterView(read: ReadGraphResult, opts: Pick<GraphViewOptions, "alike" | "collapse" | "detail"> = {}): Promise<GraphView> {
-  const n = read.ir.dangling?.length ?? 0;
+export async function clusterView(
+  read: ReadGraphResult & { apps?: ClusterApps; cluster?: { context: string; namespaces?: readonly string[] } },
+  opts: Pick<GraphViewOptions, "alike" | "collapse" | "detail"> & { view?: ClusterViewKind } = {},
+): Promise<GraphView> {
+  const view = opts.view ?? "objects";
+  const everyCard = opts.alike === false;
+  const caption = clusterCaption(view, everyCard, read.cluster);
+  const done = (v: GraphView): GraphView => (caption ? { ...v, meta: { ...v.meta, caption } } : v);
+  const empty = (zoom: Zoom): GraphView => done({ ir: { ...read.ir, nodes: [], edges: [], groups: {}, dangling: [] } as GraphIR, meta: { estate: read.meta.estate, zoom, note: [read.meta.note, NO_APPS_NOTE].filter(Boolean).join(" · ") }, read });
+  if (view === "components") {
+    if (!read.apps) return empty("components");
+    const ir = componentsOfApps(read.apps);
+    const shared = read.apps.shared.filter((s) => s.role !== "bookkeeping").length;
+    const note = [
+      read.meta.note,
+      shared ? `${shared} ${shared === 1 ? "object is" : "objects are"} used by more than one application and drawn in none` : undefined,
+      ...read.apps.notes,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return done({ ir, meta: { estate: read.meta.estate, zoom: "components", ...(note ? { note } : {}) }, read });
+  }
+  if (view === "logical" && !read.apps) return empty("logical");
+  const objects = operatorObjects(read.ir, read.apps, { everyCard });
+  const folded = objects.folded ? `${objects.folded} runtime and bookkeeping ${objects.folded === 1 ? "object is" : "objects are"} folded into the card ${objects.folded === 1 ? "it serves" : "they serve"} (--every-card draws them)` : undefined;
+  const repeats = everyCard && objects.repeats ? `${objects.repeats} pod template ${objects.repeats === 1 ? "reference is" : "references are"} drawn once, from the workload` : undefined;
+  let ir = objects.ir;
+  let leftOut: string | undefined;
+  if (view === "logical") {
+    const logical = logicalOfApps(ir, read.apps!);
+    ir = logical.ir;
+    leftOut = logical.leftOut ? `${logical.leftOut} ${logical.leftOut === 1 ? "object belongs" : "objects belong"} to no application and ${logical.leftOut === 1 ? "is" : "are"} left out` : undefined;
+  }
+  const n = view === "logical" ? 0 : (ir.dangling?.length ?? 0);
   // The route's wording is for a project's source (a workflow in another repo); a cluster's references name objects the read did not list.
-  return viewOf(read, { ...opts, danglingText: n ? `${n} ${n === 1 ? "reference names an object" : "references name objects"} this read did not list` : "" });
+  return done(
+    await viewOf(
+      { ...read, ir },
+      {
+        ...opts,
+        ...(view === "logical" ? { zoom: "logical" as Zoom } : {}),
+        operator: [folded, repeats, leftOut].filter(Boolean).join(" · ") || undefined,
+        danglingText: n ? `${n} ${n === 1 ? "reference names an object" : "references name objects"} this read did not list` : "",
+      },
+    ),
+  );
 }
 
-async function viewOf(read: ReadGraphResult, opts: Pick<GraphViewOptions, "alike" | "collapse" | "terraformPlan" | "detail"> & { danglingText?: string }): Promise<GraphView> {
+/**
+ * The heading of a cluster read's view (behold#1132). The objects view with
+ * `--every-card` is every object the read listed; without it, the same objects
+ * with the runtime and bookkeeping ones folded, which the subtitle says. The
+ * scope is the namespaces read, or the cluster when the read took them all.
+ */
+export function clusterCaption(view: ClusterViewKind, everyCard: boolean, cluster: { context: string; namespaces?: readonly string[] } | undefined): ViewCaption | undefined {
+  if (!cluster) return undefined;
+  const scope = cluster.namespaces?.length ? cluster.namespaces.join(", ") : `cluster ${cluster.context}`;
+  const from = `read from cluster ${cluster.context}`;
+  if (view === "components") return { title: `Applications in ${scope} and what they call`, subtitle: `one card per application · ${from}` };
+  if (view === "logical") return { title: `${scope} grouped by application`, subtitle: `one box per application, with its ready replicas · ${from}` };
+  if (everyCard) return { title: `Every object in ${scope}`, subtitle: from };
+  return { title: `Objects in ${scope}`, subtitle: `ReplicaSets, Pods and bookkeeping folded into their cards (--every-card draws them) · ${from}` };
+}
+
+async function viewOf(
+  read: ReadGraphResult,
+  opts: Pick<GraphViewOptions, "alike" | "collapse" | "terraformPlan" | "detail"> & { danglingText?: string; zoom?: Zoom; operator?: string },
+): Promise<GraphView> {
   const { alike, collapse, terraformPlan } = opts;
-  const zoom = zoomOf(opts.detail);
+  const zoom = opts.zoom ?? zoomOf(opts.detail);
   // The plan paints the read's own IR, as the route paints the IR it read.
   const planNote = terraformPlan ? await paintPlans(read.ir, read, terraformPlan) : undefined;
   const expanded = read.ir;
@@ -174,7 +256,7 @@ async function viewOf(read: ReadGraphResult, opts: Pick<GraphViewOptions, "alike
     sameZoom: unchangedZoomNote(zoom, read.members.map((m) => m.kind)),
     plan: planNote,
     dangling: opts.danglingText !== undefined ? opts.danglingText || undefined : danglingNote(expanded),
-    shaped: shaped.note,
+    shaped: [opts.operator, shaped.note].filter(Boolean).join(" · ") || undefined,
   });
   // behold#1080: chant's dangling and ambiguous references, drawn on what the stacking left.
   return { ir: drawCatalog(shaped.ir), meta: { estate: read.meta.estate, zoom, ...note }, read };

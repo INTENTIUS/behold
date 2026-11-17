@@ -201,8 +201,13 @@ describe("the reader ships with behold (#909)", () => {
       expect(manifest.peerDependencies?.[pkg], pkg).toBeUndefined();
       expect(manifest.devDependencies?.[pkg], pkg).toBeUndefined();
     }
-    // The lexicon's chant peer is met by behold's own chant: same floor.
-    expect(manifest.dependencies?.[TERRAFORM_LEXICON_PKG]).toBe(manifest.dependencies?.["@intentius/chant"]);
+    // The lexicon's chant peer is met by behold's own chant: the same 0.x
+    // minor, and chant's floor at or above the lexicon's (a train can move
+    // core ahead of the lexicons; src/chant-release.ts).
+    const floor = (range: string | undefined) => (range ?? "").replace(/^\^/, "").split(".").map(Number);
+    const [lex, chant] = [floor(manifest.dependencies?.[TERRAFORM_LEXICON_PKG]), floor(manifest.dependencies?.["@intentius/chant"])];
+    expect(chant.slice(0, 2)).toEqual(lex.slice(0, 2));
+    expect(chant[2]).toBeGreaterThanOrEqual(lex[2]);
   });
 
   it("resolves from behold's own install, so the probe passes with no extra step", () => {

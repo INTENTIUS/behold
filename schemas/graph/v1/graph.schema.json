@@ -93,6 +93,7 @@
         "inferred": { "type": "boolean", "description": "True when behold or chant joined the two rather than a reader stating it." },
         "rule": { "type": "string", "description": "On an inferred edge, the join that drew it: behold:<pass>, or chant's catalog rule id. On the edge to a placeholder card (a reference that names nothing) and on each edge of a reference that names several candidates, the rule of that reference." },
         "via": { "type": "string", "description": "The consumer-side attribute the reference flows through." },
+        "field": { "type": "string", "description": "When via names the relationship (runs as, routes to :80), the field the reference was found in." },
         "diff": { "enum": ["added", "removed"], "description": "In a 'changed' cut, set when the edge exists in one revision only." }
       }
     },

@@ -117,6 +117,8 @@ export interface GraphDocumentEdge {
   rule?: string;
   /** The consumer-side attribute the reference flows through. */
   via?: string;
+  /** When `via` names the relationship (`runs as`, `routes to :80`, behold#1132): the field the reference was found in. */
+  field?: string;
   /** In a `changed` cut (#1059): `added` or `removed` when the edge exists in one revision only. */
   diff?: "added" | "removed";
 }

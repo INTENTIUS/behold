@@ -121,8 +121,10 @@ function boxesOf(ir: GraphIR): Boxes {
     groups.push({ id: `wave:${key}`, title: key, kind: "wave" });
     for (const id of ids) first(boxOf, id, `wave:${key}`);
   }
+  // behold#1132: a box the IR titles itself, such as a cluster application's with its health.
+  const titles = (ir as { boxTitles?: Record<string, string> }).boxTitles ?? {};
   for (const [key, ids] of Object.entries(g.byStack ?? {})) {
-    groups.push({ id: `stack:${key}`, title: key, kind: "stack" });
+    groups.push({ id: `stack:${key}`, title: titles[key] ?? key, kind: "stack" });
     for (const id of ids) {
       first(stackOf, id, key);
       boxOf.set(id, `stack:${key}`);
@@ -278,6 +280,7 @@ export function toDocument(snapshot: GraphSnapshot, opts: ToDocumentOptions): Gr
       inferred,
       ...(inferred && rule ? { rule } : {}),
       ...(via ? { via } : {}),
+      ...(str(e.field) ? { field: e.field as string } : {}),
     });
   }
 

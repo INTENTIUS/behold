@@ -27,7 +27,8 @@
  * `npx tsx scripts/chant-release.ts --check` fails when a written file
  * disagrees with this line (src/chant-release.test.ts runs it).
  */
-export const CHANT_RELEASE = { version: "0.124.101", released: true } as const;
+// 0.124.102's train published core alone; the lexicons and chant-k8s-client stay on 0.124.101, whose peer range on chant takes 0.124.102.
+export const CHANT_RELEASE = { version: "0.124.102", released: true, lexicons: "0.124.101" } as const;
 
 /** The newest chant on npm, the range a dependency keeps while {@link CHANT_RELEASE} is unreleased. */
 export const PUBLISHED_CHANT = "0.124.58";

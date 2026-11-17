@@ -105,7 +105,8 @@ export const GRAPH_FORMATS: readonly GraphFormat[] = [
     emit: (input) => {
       // The painter takes the IR, so a cut is passed as the card ids the cut document kept.
       const keep = input.cut ? new Set(graphDocument(input).nodes.map((n) => n.id)) : undefined;
-      return toSvg(input.view.ir, { ...(input.theme ? { theme: input.theme } : {}), ...(keep ? { keep } : {}) });
+      const caption = input.view.meta.caption;
+      return toSvg(input.view.ir, { ...(input.theme ? { theme: input.theme } : {}), ...(keep ? { keep } : {}), ...(caption ? { caption } : {}) });
     },
   },
 ];

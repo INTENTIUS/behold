@@ -221,8 +221,22 @@ const K8S_MARK_BY_PREFIX: Array<[string, string]> = [
 /** The chart and release kinds `src/helm-releases.ts` puts on the graph. */
 const HELM_MARK_KINDS = new Set(["Helm::Chart", "Helm::Release"]);
 
+/**
+ * A kind by its last word (`Deployment`), as a card of a cluster read is
+ * painted (behold#1132, src/card-face.ts), when one family names it.
+ */
+const K8S_KIND_BY_WORD: ReadonlyMap<string, string> = (() => {
+  const seen = new Map<string, string | null>();
+  for (const kind of Object.keys(K8S_ICON_BY_KIND)) {
+    const word = kind.split("::").pop()!;
+    seen.set(word, seen.has(word) ? null : kind);
+  }
+  return new Map([...seen].filter((e): e is [string, string] => e[1] !== null));
+})();
+
 /** The icon for a `k8s` lexicon kind, or undefined to fall through. */
-export function k8sIconFor(kind: string): PackGlyph | undefined {
+export function k8sIconFor(kindIn: string): PackGlyph | undefined {
+  const kind = kindIn.includes("::") ? kindIn : (K8S_KIND_BY_WORD.get(kindIn) ?? kindIn);
   for (const [prefix, rel] of K8S_MARK_BY_PREFIX) {
     if (kind.startsWith(prefix)) return iconOrFallthrough(rel);
   }
