@@ -30,16 +30,16 @@ const scratch = (): string => {
   return d;
 };
 
-function kubeconfigFile(): string {
+function kubeconfigFile(names: { context: string; cluster: string } = { context: "k3d-demo", cluster: "demo" }): string {
   const file = join(scratch(), "kubeconfig");
   writeFileSync(
     file,
     JSON.stringify({
       apiVersion: "v1",
       kind: "Config",
-      "current-context": "k3d-demo",
-      clusters: [{ name: "demo", cluster: { server: "https://203.0.113.9:443", "insecure-skip-tls-verify": true } }],
-      contexts: [{ name: "k3d-demo", context: { cluster: "demo", user: "admin" } }],
+      "current-context": names.context,
+      clusters: [{ name: names.cluster, cluster: { server: "https://203.0.113.9:443", "insecure-skip-tls-verify": true } }],
+      contexts: [{ name: names.context, context: { cluster: names.cluster, user: "admin" } }],
       users: [{ name: "admin", user: { token: "t" } }],
     }),
   );
@@ -116,6 +116,29 @@ resource "aws_secretsmanager_secret" "app_token" {
   return dir;
 }
 
+// behold#1123: a folder that declares the EKS cluster the context serves, and one that declares another.
+const EKS_ARN = "arn:aws:eks:us-east-1:111122223333:cluster/demo";
+const eksFolders = new Map<string, string>();
+function eksFolder(name: string): string {
+  const known = eksFolders.get(name);
+  if (known) return known;
+  const dir = join(scratch(), `eks-${name}`);
+  eksFolders.set(name, dir);
+  mkdirSync(dir);
+  writeFileSync(
+    join(dir, "main.tf"),
+    `resource "aws_eks_cluster" "main" {
+  name     = "${name}"
+  role_arn = "arn:aws:iam::111122223333:role/eks"
+  vpc_config {
+    subnet_ids = []
+  }
+}
+`,
+  );
+  return dir;
+}
+
 async function graph(argv: string[], chant: ChantLister): Promise<{ code: number; out: string; err: string }> {
   let out = "";
   let err = "";
@@ -165,6 +188,31 @@ describe("readJoined, a cluster and a folder as one graph (#1115)", () => {
     expect(read.joined.pass).toBe(false);
     expect(read.joined.edges).toBe(0);
     expect(read.meta.note).toContain("no catalog pass");
+  });
+});
+
+describe("the cluster's own resource joins the context it serves (#1123)", () => {
+  // `aws eks update-kubeconfig` names the cluster entry by its ARN, and the context too unless --alias renames it.
+  it.skipIf(gate)("joins the aws_eks_cluster the kubeconfig's cluster ARN names, with an edge to each namespace", SLOW, async () => {
+    const read = await readJoined({ cluster: { kubeconfig: kubeconfigFile({ context: "prod", cluster: EKS_ARN }), chant: fakeChant(objects()) }, dir: eksFolder("demo") });
+    const eks = read.ir.nodes.find((n) => n.kind === "aws_eks_cluster")!;
+    expect(eks).toBeDefined();
+    expect(read.joined.cluster).toBe(eks.id);
+    const edge = read.ir.edges.find((e) => e.from === eks.id && e.to === "cluster/Namespace/app") as { viaAttr?: string; join?: string; inferred?: boolean } | undefined;
+    expect(edge).toMatchObject({ viaAttr: "runs-on", join: "context", inferred: true });
+    expect(read.meta.note).toContain(`cluster prod is ${eks.id}`);
+  });
+
+  it.skipIf(gate)("joins it by the context name when the cluster entry is named otherwise", SLOW, async () => {
+    const read = await readJoined({ cluster: { kubeconfig: kubeconfigFile({ context: EKS_ARN, cluster: "kubernetes" }), chant: fakeChant(objects()) }, dir: eksFolder("demo") });
+    expect(read.joined.cluster).toBe(read.ir.nodes.find((n) => n.kind === "aws_eks_cluster")!.id);
+  });
+
+  it.skipIf(gate)("joins nothing when the folder's cluster is another one, and says so", SLOW, async () => {
+    const read = await readJoined({ cluster: { kubeconfig: kubeconfigFile({ context: "prod", cluster: EKS_ARN }), chant: fakeChant(objects()) }, dir: eksFolder("other") });
+    expect(read.joined.cluster).toBeUndefined();
+    expect(read.ir.edges.some((e) => (e as { join?: string }).join === "context")).toBe(false);
+    expect(read.meta.note).toContain("declares 1 cluster, and the context names none of them");
   });
 });
 

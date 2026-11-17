@@ -83,6 +83,8 @@ npx @intentius/behold graph --context prod --infra ./infra --svg -o graph.svg
 
 chant's reference catalog joins what the cluster's objects name to the cards the folder declares: a ServiceAccount's `eks.amazonaws.com/role-arn` or `iam.gke.io/gcp-service-account` annotation to the `aws_iam_role` or `google_service_account`, and an ExternalSecret's key, through its store, to the `aws_secretsmanager_secret` or `google_secret_manager_secret`. Those edges carry chant's rule id. A placeholder card is drawn only for what the folder does not hold, and the notes say so. Each card carries `read`, the source it came from: `cluster` (a placeholder too, since a cluster object named it) or `folder`. On a read of a cluster alone every card has `read: "cluster"`.
 
+When the folder declares the cluster itself (an `aws_eks_cluster`, a `google_container_cluster` or an `azurerm_kubernetes_cluster`), its card joins the context: an edge goes from it to each Namespace, with the rule `behold:context`, and a note names it. The cluster's `name` is matched against the context name and the kubeconfig's cluster entry, where `aws eks update-kubeconfig` writes the cluster's ARN, `gcloud` writes `gke_<project>_<location>_<name>` and `az aks get-credentials` writes the name. A folder that declares no such cluster, or several that match, joins none.
+
 ### Applications in a cluster
 
 On a read of a cluster, chant infers the applications from the objects (`inferK8sComponents`). Each top-level workload starts one, and the labels a Helm release or an Argo CD application leaves group workloads into one. An application takes in the objects its workloads use. Three views draw them.

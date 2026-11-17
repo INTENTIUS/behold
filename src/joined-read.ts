@@ -39,12 +39,31 @@
  * gives, when that is a kind the k8s catalog names. The drawn card keeps its
  * listed kind.
  *
+ * The cluster's own resource (behold#1123). A folder that declares the cluster
+ * the context serves (an `aws_eks_cluster`, a `google_container_cluster`, an
+ * `azurerm_kubernetes_cluster`, or a chant kind in `MANAGED_CLUSTER_KINDS`)
+ * has its card joined to the context: an edge from it to each Namespace the
+ * read listed, `viaAttr: "runs-on"`, and `joined.cluster` names it. The match
+ * is the one src/k8s-target.ts `contextBindsCluster` makes, on the cluster's
+ * literal name as chant's catalog reads it (its identity rule is `name`)
+ * against two names the kubeconfig gives: the context and the cluster entry
+ * the context points at. Each provider's tool embeds the cluster name in
+ * both: `aws eks update-kubeconfig` names the entry by the cluster's ARN
+ * (`arn:aws:eks:<region>:<account>:cluster/<name>`), and the context too
+ * unless `--alias` renames it; `gcloud` writes
+ * `gke_<project>_<location>_<name>`; `az aks get-credentials` writes the
+ * name. The server URL is not compared, because a folder does not hold the
+ * endpoint a cloud assigns. One match joins; none or several join nothing,
+ * and the note says which.
+ *
  * chant's modules are found at run time under specifiers the bundler leaves
  * alone, as src/chant-edges.ts does. Without the pass the two graphs are drawn
  * side by side with no edge between them, and the note says why.
  */
 import { basename, resolve } from "node:path";
 import type { GraphIR, IREdge, IRNode } from "@intentius/chant";
+import { managedClusterName, MANAGED_CLUSTER_KINDS } from "./cluster-anchor.ts";
+import { contextBindsCluster } from "./k8s-target.ts";
 import { readCluster, type ReadClusterOptions, type ReadClusterResult } from "./read-cluster.ts";
 import { readGraph, type ReadGraphResult } from "./read-graph.ts";
 
@@ -101,6 +120,8 @@ export interface JoinInfo {
   ambiguous: number;
   /** Whether chant's catalog pass was found. */
   pass: boolean;
+  /** The folder card of the cluster the context serves (behold#1123), when the folder declares it. */
+  cluster?: string;
 }
 
 export interface ReadJoinedResult extends ReadClusterResult {
@@ -183,6 +204,21 @@ function joinGroups(cluster: Rec, folder: Rec, rename: ReadonlyMap<string, strin
   return out;
 }
 
+/** The kinds of a cluster's own resource: the Terraform providers' and the chant lexicons'. */
+export const CLUSTER_RESOURCE_KINDS: ReadonlySet<string> = new Set(["aws_eks_cluster", "google_container_cluster", "azurerm_kubernetes_cluster", ...MANAGED_CLUSTER_KINDS]);
+
+/** Where the read cluster is among a folder's nodes: the one whose name the context binds, and how many clusters there were to choose from. */
+export function contextCluster(nodes: ReadonlyArray<{ id: string; kind: string; attrs?: Rec }>, names: readonly string[]): { id?: string; declared: number; matched: string[] } {
+  const clusters = nodes.filter((n) => CLUSTER_RESOURCE_KINDS.has(n.kind));
+  const matched = clusters
+    .filter((n) => {
+      const name = managedClusterName(n);
+      return name !== n.id && names.some((k) => contextBindsCluster(k, name) === true);
+    })
+    .map((n) => n.id);
+  return { ...(matched.length === 1 ? { id: matched[0] } : {}), declared: clusters.length, matched };
+}
+
 const stamp = (n: IRNode, read: ReadSource): IRNode => ({ ...n, read }) as IRNode;
 
 /** A read whose every card is marked as read from `source`, for a read of one source with the field a joined read carries. */
@@ -223,6 +259,19 @@ export async function readJoined(opts: ReadJoinedOptions): Promise<ReadJoinedRes
   const cluster = await readCluster({ ...opts.cluster, held });
   const context = cluster.cluster.context;
 
+  // The cluster's own resource: matched on the names it was declared with, drawn on the card the folder shows.
+  const drawnFolder = new Set(folder.ir.nodes.map((n) => n.id));
+  const views = held as Array<{ id: string; kind: string; attrs?: Rec }>;
+  const own = contextCluster(views.filter((v) => drawnFolder.has(v.id)), [context, cluster.cluster.cluster]);
+  const anchors: IREdge[] = [];
+  if (own.id) {
+    for (const n of cluster.ir.nodes) {
+      if (n.kind === "K8s::Core::Namespace" || (n as { listedType?: string }).listedType === "v1/Namespace") {
+        anchors.push({ from: own.id, to: n.id, kind: "ref", viaAttr: "runs-on", inferred: true, join: "context" } as unknown as IREdge);
+      }
+    }
+  }
+
   // The cluster's listed objects for the pass, with an untyped kind the k8s catalog names handed over under that kind.
   const k8s = await catalogOf("k8s");
   const kindByRule = k8s ? await deps.kindByRule() : undefined;
@@ -246,7 +295,7 @@ export async function readJoined(opts: ReadJoinedOptions): Promise<ReadJoinedRes
 
   const pass = catalogs.size ? await deps.catalogPass() : undefined;
   const sourceOf = new Map<string, ReadSource>([...cluster.ir.nodes.map((n) => [n.id, "cluster"] as const), ...folder.ir.nodes.map((n) => [n.id, "folder"] as const)]);
-  const joined = new Set([...cluster.ir.edges, ...folder.ir.edges].map((e) => `${e.from}\0${e.to}`));
+  const joined = new Set([...cluster.ir.edges, ...folder.ir.edges, ...anchors].map((e) => `${e.from}\0${e.to}`));
   const added: IREdge[] = [];
   let ambiguous = 0;
   if (pass) {
@@ -279,6 +328,13 @@ export async function readJoined(opts: ReadJoinedOptions): Promise<ReadJoinedRes
       : `joined with ${label}: the chant beside behold has no catalog pass (${CATALOG_PASS}), so no edge joins the cluster to it`,
     placeholders ? `${placeholders} ${placeholders === 1 ? "card stands" : "cards stand"} for what neither the cluster nor ${label} holds` : undefined,
     ambiguous ? `${ambiguous} ${ambiguous === 1 ? "reference names" : "references name"} several of its cards and ${ambiguous === 1 ? "draws" : "draw"} no edge` : undefined,
+    own.id
+      ? `cluster ${context} is ${own.id}`
+      : own.matched.length > 1
+        ? `cluster ${context} is named by ${own.matched.length} of its clusters (${own.matched.join(", ")}), so none is joined to it`
+        : own.declared
+          ? `${label} declares ${own.declared} ${own.declared === 1 ? "cluster" : "clusters"}, and the context names none of them`
+          : undefined,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -287,7 +343,7 @@ export async function readJoined(opts: ReadJoinedOptions): Promise<ReadJoinedRes
     ...folder.ir,
     ...cluster.ir,
     nodes: [...cluster.ir.nodes.map((n) => stamp(n, "cluster")), ...folder.ir.nodes.map((n) => stamp(n, "folder"))],
-    edges: [...cluster.ir.edges, ...folder.ir.edges, ...added],
+    edges: [...cluster.ir.edges, ...folder.ir.edges, ...anchors, ...added],
     groups: joinGroups(clusterGroups, (folder.ir.groups ?? {}) as Rec, rename),
     dangling: [...(cluster.ir.dangling ?? []), ...(folder.ir.dangling ?? [])],
   } as unknown as GraphIR;
@@ -300,6 +356,6 @@ export async function readJoined(opts: ReadJoinedOptions): Promise<ReadJoinedRes
     cluster: cluster.cluster,
     ...(cluster.apps ? { apps: cluster.apps } : {}),
     folder,
-    joined: { members: names, edges: added.length, placeholders, ambiguous, pass: !!pass },
+    joined: { members: names, edges: added.length, placeholders, ambiguous, pass: !!pass, ...(own.id ? { cluster: own.id } : {}) },
   };
 }
