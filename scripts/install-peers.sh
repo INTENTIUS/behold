@@ -3,8 +3,10 @@
 # (#465): choudoufu at behold's floor. chant's terraform lexicon and
 # @cdktn/hcl2json used to be installed here too; since #909 they are behold
 # dependencies and `npm ci` installs them, so this only checks they resolved.
-# CI's `peers` job runs it, then the tests with BEHOLD_REQUIRE_PEERS=1, which
-# turns a skip into a failure.
+# CI no longer runs it (the peers job went in d39ad4b). Run it by hand, then
+# the tests with BEHOLD_REQUIRE_PEERS=1, which turns a skip into a failure.
+# @ladybugdb/core is a devDependency, so `npm ci` installs it; CI's unit test
+# step sets BEHOLD_REQUIRE_LADYBUG=1 so a missing engine fails (behold#1126).
 #
 # choudoufu is a release binary, checked against the release's SHA256SUMS, put
 # in $PEERS_DIR/bin; the script prints that directory for the caller's PATH.

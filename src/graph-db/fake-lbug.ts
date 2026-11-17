@@ -67,8 +67,20 @@ export function fakeLbug(
  * vite's own resolve error rather than ERR_MODULE_NOT_FOUND, so
  * `importLadybug` never reaches its global fallback there; this looks in the
  * global roots itself (behold#1121).
+ *
+ * `BEHOLD_REQUIRE_LADYBUG=1` (CI's unit test step, where `npm ci` installs
+ * the dev dependency) makes a missing engine throw here, so the test file
+ * fails instead of its real-engine suites skipping (behold#1126).
  */
 export async function realLadybug(): ReturnType<typeof loadLadybug> {
+  const found = await findLadybug();
+  if (!found.ok && process.env.BEHOLD_REQUIRE_LADYBUG === "1") {
+    throw new Error(`BEHOLD_REQUIRE_LADYBUG=1 but the real engine is not available: ${found.refusal.detail ?? found.refusal.error}`);
+  }
+  return found;
+}
+
+async function findLadybug(): ReturnType<typeof loadLadybug> {
   const beside = await loadLadybug();
   if (beside.ok) return beside;
   for (const g of globalNodeModules()) {
