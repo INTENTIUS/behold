@@ -27,7 +27,7 @@
  * chant's, in packages/core/src/lifecycle/cloud-index.ts and
  * packages/core/src/cloud-lister/.
  *
- * chant 0.124.54 has `runCloudIndex` (src/chant-release.ts, behold#1005),
+ * chant ships `runCloudIndex` (src/chant-release.ts, behold#1005),
  * and it is still found at run time under a specifier the type checker and
  * the bundler leave alone. A static import would pull chant's CLI plugin
  * loader, and through it the TypeScript compiler, into dist/cli.js (the

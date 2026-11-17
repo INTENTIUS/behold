@@ -1,10 +1,9 @@
 /**
  * behold#1005: the chant release behold's newest reads need, set in one place.
  *
- * chant 0.124.58 is on npm. 0.124.54 (0.124.53 was cut and never published) was the
- * first release with the drift record and its stream, the adoption report,
- * `member-outputs` and the pulumi lexicon; 0.124.58 adds the template-request
- * module and the product actions (chant#4650-4655), and behold depends on it.
+ * `version` is the chant release behold depends on. 0.124.54 was the first
+ * release with the drift record and its stream, the adoption report,
+ * `member-outputs` and the pulumi lexicon.
  *
  * Everything that names that release reads this constant:
  *

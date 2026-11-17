@@ -14,7 +14,7 @@
  *   GET /api/graphdb              what is loaded, from where, read when; the peer's state
  *   GET /api/graphdb/query        ?cypher=&params=<JSON object>: one read-only Cypher query
  *   GET /api/graphdb/resolve      ?ref=: a name, id, address or cloud id to candidates and templates
- *   GET /api/graphdb/templates    the template catalog (chant's, or behold's stub of it on an older chant)
+ *   GET /api/graphdb/templates    the template catalog (chant's)
  *   GET /api/graphdb/template     ?name=&node=&in.<input>=: one template filled for one node, run when it is Cypher
  *   GET /graph                    the pane's page (web/graph.html)
  *   GET /api/graphdb/index-versions, /api/graphdb/index-diff
