@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CHANT_RELEASE, PUBLISHED_CHANT } from "./chant-release.ts";
+import { lexiconVersion } from "./chant-release-sync.ts";
 import { discoverTerraformRoots } from "./terraform-member.ts";
 import { installedVersion, TERRAFORM_LEXICON } from "./workspace-convert.ts";
 
@@ -68,9 +69,10 @@ describe("the bundled estates' workspace declarations", () => {
     const deps = (JSON.parse(readFileSync(join(REPO, "example-three-cloud", "package.json"), "utf8")) as { dependencies: Record<string, string> }).dependencies;
     expect(CHANT_RELEASE.released).toBe(true);
     expect(CHANT_RELEASE.version.split(".").map(Number)).toSatisfy(([a, b, c]: number[]) => a > 0 || b > 124 || (b === 124 && c >= 100));
-    expect(decl.pins).toEqual([{ package: TERRAFORM_LEXICON, version: CHANT_RELEASE.version }, { package: PULUMI_LEXICON, version: CHANT_RELEASE.version }]);
-    expect(deps[TERRAFORM_LEXICON]).toBe(`^${CHANT_RELEASE.version}`);
-    expect(deps[PULUMI_LEXICON]).toBe(`^${CHANT_RELEASE.version}`);
+    const lex = lexiconVersion(CHANT_RELEASE);
+    expect(decl.pins).toEqual([{ package: TERRAFORM_LEXICON, version: lex }, { package: PULUMI_LEXICON, version: lex }]);
+    expect(deps[TERRAFORM_LEXICON]).toBe(`^${lex}`);
+    expect(deps[PULUMI_LEXICON]).toBe(`^${lex}`);
     expect(deps["@intentius/chant"]).toBe(`^${CHANT_RELEASE.version}`);
     const dns = readFileSync(join(REPO, "example-three-cloud", "dns", "src", "route53.ts"), "utf8");
     const gcp = readFileSync(join(REPO, "example-three-cloud", "gcp", "src", "site.ts"), "utf8");
@@ -116,12 +118,12 @@ describe("the bundled estates' workspace declarations", () => {
   // (src/demo-pins.ts), so both serve.
   const installed = installedVersion(TERRAFORM_LEXICON, REPO);
   it.skipIf(!installed && !REQUIRE_PEERS)("pins the terraform lexicon at the chant npm installs beside behold", () => {
-    const want = CHANT_RELEASE.released ? CHANT_RELEASE.version : PUBLISHED_CHANT;
+    const want = lexiconVersion(CHANT_RELEASE);
     for (const example of ["example-terraform-estate", "example-choudoufu-estate"]) {
       const pin = declaration(example).pins?.find((p) => p.package === TERRAFORM_LEXICON);
       expect(pin?.version, example).toBe(want);
     }
-    const served = CHANT_RELEASE.released ? [CHANT_RELEASE.version] : [PUBLISHED_CHANT, CHANT_RELEASE.version];
+    const served = CHANT_RELEASE.released ? [lexiconVersion(CHANT_RELEASE)] : [PUBLISHED_CHANT, CHANT_RELEASE.version];
     expect(served, `the terraform lexicon installed beside behold is ${installed}`).toContain(installed);
   });
 });
