@@ -23,6 +23,8 @@ jobs:
         run: npm run tsc
       - name: unit tests
         run: npm test
+        env:
+          BEHOLD_REQUIRE_LADYBUG: '1'
       - name: icons module matches web/icons
         run: npm run check:icons
       - name: build

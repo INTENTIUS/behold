@@ -4,7 +4,7 @@
 // and its relationship patterns do not require distinct relationships, so a `->()<-` step can come
 // back over the edge it went out on. A template whose answer depends on either shows here as a wrong
 // count. Runs when the optional peer is installed (beside behold or `npm i -g @ladybugdb/core`);
-// otherwise it skips, as the real-engine cases in db.test.ts do.
+// otherwise it skips, as the real-engine cases in db.test.ts do, unless BEHOLD_REQUIRE_LADYBUG=1 (CI), which fails.
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
