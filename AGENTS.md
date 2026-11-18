@@ -69,10 +69,10 @@ gets a row in src/scratch.test.ts.
 
 ### Merging
 
-No merge queue yet: open the pull request with the local gate passing and
-stop; the orchestrator merges. Pull requests merge one at a time, in order,
-each rebased onto what landed; no `gh pr merge --auto`. A repository admin
-may push a tested integration branch's merge to `main` directly.
+main has a merge queue. Open the pull request with the local gate passing
+and queue it with `gh pr merge <n> --auto --squash`; the queue tests it on
+top of main and merges it. `--delete-branch` is refused while the queue is
+on.
 
 ### Workbench and release
 
