@@ -28,81 +28,34 @@
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { LbugConnection, LbugDatabase, LbugModule, LbugQueryResult } from "./peer.ts";
+import type { LbugConnection, LbugDatabase, LbugModule, LbugPreparedStatement, LbugQueryResult } from "./peer.ts";
 import type { LoadedRows } from "./rows.ts";
-import type { GraphLayout } from "./layout-gen.ts";
 import { GRAPH_LAYOUT } from "./layout.generated.ts";
+import { QUERY_TIMEOUT_MS, loadRows, queryRefusal, readQuery, type BuildEngine, type CypherAnswer, type ReadEngine } from "./cypher.ts";
+
+// behold#1162: the rules live in ./cypher.ts, which the exported page's WebAssembly build shares.
+export {
+  CypherRefused,
+  ENGINE_WRITE_REFUSAL,
+  MAX_QUERY_LENGTH,
+  MAX_ROWS,
+  QUERY_TIMEOUT_MS,
+  WRITE_CLAUSES,
+  answerOf,
+  checkReadQuery,
+  parseParams,
+  plain,
+  statementsFor,
+  stripLiterals,
+  writeClause,
+  type CypherAnswer,
+} from "./cypher.ts";
 
 /** Where session databases live. */
 export function graphDbDir(env: NodeJS.ProcessEnv = process.env, home: string = homedir()): string {
   if (env.BEHOLD_GRAPH_DIR) return env.BEHOLD_GRAPH_DIR;
   const data = env.XDG_DATA_HOME || join(home, ".local", "share");
   return join(data, "behold", "graph");
-}
-
-/** The words a query may not hold as a clause. */
-export const WRITE_CLAUSES = [
-  "CREATE",
-  "MERGE",
-  "SET",
-  "DELETE",
-  "DETACH",
-  "REMOVE",
-  "DROP",
-  "ALTER",
-  "COPY",
-  "LOAD",
-  "INSTALL",
-  "UNINSTALL",
-  "ATTACH",
-  "EXPORT",
-  "IMPORT",
-  "CALL",
-  "CHECKPOINT",
-  "USE",
-  "BEGIN",
-  "COMMIT",
-  "ROLLBACK",
-] as const;
-
-/** A query refused before it ran. */
-export class CypherRefused extends Error {
-  constructor(
-    message: string,
-    readonly code: "cypher-write" | "cypher-invalid" | "cypher-empty" | "cypher-too-long",
-  ) {
-    super(message);
-  }
-}
-
-/** The query with string literals, backquoted names and comments blanked, so a word inside them is not a clause. */
-export function stripLiterals(q: string): string {
-  return q
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/\/\/[^\n]*/g, " ")
-    .replace(/'(?:[^'\\]|\\.)*'/g, "''")
-    .replace(/"(?:[^"\\]|\\.)*"/g, '""')
-    .replace(/`[^`]*`/g, "``");
-}
-
-/** The first write clause in a query, if it holds one. */
-export function writeClause(q: string): string | undefined {
-  const bare = stripLiterals(q).toUpperCase();
-  // A property or label named like a clause (`r.set`, `:Copy`) is not one.
-  const words = bare.split(/[^A-Z_.:$]+/).filter(Boolean);
-  return WRITE_CLAUSES.find((w) => words.includes(w));
-}
-
-export const MAX_QUERY_LENGTH = 8_000;
-
-/** Refuse a query that writes, before it reaches the engine. */
-export function checkReadQuery(q: string): string {
-  const s = q.trim();
-  if (!s) throw new CypherRefused("an empty query", "cypher-empty");
-  if (s.length > MAX_QUERY_LENGTH) throw new CypherRefused(`a query is at most ${MAX_QUERY_LENGTH} characters`, "cypher-too-long");
-  const w = writeClause(s);
-  if (w) throw new CypherRefused(`The graph is read-only: ${w} would write the database, a file, or load code, and is refused. Ask with MATCH ... RETURN.`, "cypher-write");
-  return s;
 }
 
 /**
@@ -112,58 +65,6 @@ export function checkReadQuery(q: string): string {
  * schema uses that layout's statements instead (./layout.ts `activeLayout`).
  */
 export const SCHEMA: readonly string[] = GRAPH_LAYOUT.ddl;
-
-/** The DDL and the insert statement per table for one layout, in build order. */
-export function statementsFor(layout: GraphLayout): { ddl: readonly string[]; inserts: { resource: string; cloudId: string; knownAs: string; ref: string } } {
-  const ins = (t: string): string => {
-    const s = layout.inserts[t];
-    if (!s) throw new Error(`graph build: the layout has no ${t} table`);
-    return s;
-  };
-  return { ddl: layout.ddl, inserts: { resource: ins("Resource"), cloudId: ins("CloudId"), knownAs: ins("KNOWN_AS"), ref: ins("REF") } };
-}
-
-const all = async (r: LbugQueryResult | LbugQueryResult[]): Promise<LbugQueryResult> => (Array.isArray(r) ? r[r.length - 1]! : r);
-
-/** A value from LadybugDB as JSON: bigints as numbers (or strings past 2^53), nodes and rels as their properties. */
-export function plain(v: unknown): unknown {
-  if (typeof v === "bigint") return Number.isSafeInteger(Number(v)) ? Number(v) : v.toString();
-  if (v instanceof Date) return v.toISOString();
-  if (v instanceof Map) return Object.fromEntries([...v].map(([k, x]) => [String(k), plain(x)]));
-  if (Array.isArray(v)) return v.map(plain);
-  if (v && typeof v === "object") {
-    const o: Record<string, unknown> = {};
-    for (const [k, x] of Object.entries(v)) {
-      // `_id`, `_src`, `_dst` are the engine's internal offsets: meaningless outside this database.
-      if (k === "_id" || k === "_src" || k === "_dst") continue;
-      o[k === "_label" ? "label" : k] = plain(x);
-    }
-    return o;
-  }
-  return v;
-}
-
-export interface CypherAnswer {
-  columns: string[];
-  rows: Record<string, unknown>[];
-  /** Every Resource key the answer holds, in order: what `show` focuses. */
-  keys: string[];
-  truncated: boolean;
-}
-
-/** The Resource keys under a value: a node with a `key`, or a column named `key` / `*.key`. */
-function keysIn(v: unknown, out: Set<string>, column?: string): void {
-  if (typeof v === "string" && column && /(^|\.)key$/.test(column)) out.add(v);
-  else if (Array.isArray(v)) v.forEach((x) => keysIn(x, out, column));
-  else if (v && typeof v === "object") {
-    const o = v as Record<string, unknown>;
-    if (o.label === "Resource" && typeof o.key === "string") out.add(o.key);
-    for (const x of Object.values(o)) if (x && typeof x === "object") keysIn(x, out);
-  }
-}
-
-export const MAX_ROWS = 2_000;
-export const QUERY_TIMEOUT_MS = 15_000;
 
 /** The session database. */
 export class GraphDb {
@@ -183,18 +84,7 @@ export class GraphDb {
     const c = new lbug.Connection(w);
     await c.init();
     try {
-      const st = statementsFor(rows.layout ?? GRAPH_LAYOUT);
-      for (const ddl of st.ddl) await c.query(ddl);
-      const run = async (stmt: string, list: readonly object[]) => {
-        if (!list.length) return;
-        const p = await c.prepare(stmt);
-        if (!p.isSuccess()) throw new Error(`graph build: ${p.getErrorMessage()}`);
-        for (const params of list) await c.execute(p, params as Record<string, unknown>);
-      };
-      await run(st.inserts.resource, rows.resources);
-      await run(st.inserts.cloudId, rows.cloudIds);
-      await run(st.inserts.knownAs, rows.knownAs);
-      await run(st.inserts.ref, rows.refs);
+      await loadRows(buildEngine(c), rows);
     } finally {
       await c.close();
       await w.close();
@@ -209,19 +99,7 @@ export class GraphDb {
 
   /** Run one read-only Cypher query with its parameters. */
   async query(cypher: string, params: Record<string, unknown> = {}): Promise<CypherAnswer> {
-    const q = checkReadQuery(cypher);
-    const p = await this.conn.prepare(q);
-    if (!p.isSuccess()) throw new CypherRefused(p.getErrorMessage(), "cypher-invalid");
-    if (!p.isReadOnly()) throw new CypherRefused("The graph is read-only, and LadybugDB says this query writes. Ask with MATCH ... RETURN.", "cypher-write");
-    const res = await all(await this.conn.execute(p, params));
-    const columns = await res.getColumnNames();
-    const got = await res.getAll();
-    res.close();
-    const truncated = got.length > MAX_ROWS;
-    const rows = got.slice(0, MAX_ROWS).map((r) => plain(r) as Record<string, unknown>);
-    const keys = new Set<string>();
-    for (const r of rows) for (const [col, v] of Object.entries(r)) keysIn(v, keys, col);
-    return { columns, rows, keys: [...keys], truncated };
+    return readQuery(readEngine(this.conn), cypher, params);
   }
 
   /**
@@ -231,17 +109,7 @@ export class GraphDb {
    * message when the engine did.
    */
   async refusal(cypher: string): Promise<string | undefined> {
-    let q: string;
-    try {
-      q = checkReadQuery(cypher);
-    } catch (e) {
-      if (e instanceof CypherRefused) return e.message;
-      throw e;
-    }
-    const p = await this.conn.prepare(q);
-    if (!p.isSuccess()) return p.getErrorMessage();
-    if (!p.isReadOnly()) return "LadybugDB does not report it read-only";
-    return undefined;
+    return queryRefusal(readEngine(this.conn), cypher);
   }
 
   /** Close the database and remove its file (behold's own, and nothing else). */
@@ -255,6 +123,50 @@ export class GraphDb {
     return this.lbug.VERSION;
   }
 }
+
+const all = async (r: LbugQueryResult | LbugQueryResult[]): Promise<LbugQueryResult> => (Array.isArray(r) ? r[r.length - 1]! : r);
+
+/** `@ladybugdb/core`'s connection as ./cypher.ts reads a database. */
+function readEngine(conn: LbugConnection): ReadEngine {
+  return {
+    async prepare(statement) {
+      const p = await conn.prepare(statement);
+      if (!p.isSuccess()) return { error: p.getErrorMessage(), run: notPrepared };
+      return {
+        readOnly: p.isReadOnly(),
+        async run(params) {
+          const res = await all(await conn.execute(p, params));
+          const columns = await res.getColumnNames();
+          const rows = await res.getAll();
+          res.close();
+          return { columns, rows };
+        },
+      };
+    },
+  };
+}
+
+/** `@ladybugdb/core`'s connection as ./cypher.ts builds a database. */
+function buildEngine(conn: LbugConnection): BuildEngine {
+  return {
+    async query(statement) {
+      await conn.query(statement);
+    },
+    async prepare(statement) {
+      const p: LbugPreparedStatement = await conn.prepare(statement);
+      if (!p.isSuccess()) return { error: p.getErrorMessage(), run: notPrepared };
+      return {
+        async run(params) {
+          await conn.execute(p, params);
+        },
+      };
+    },
+  };
+}
+
+const notPrepared = async (): Promise<never> => {
+  throw new Error("graph: a statement that did not prepare was run");
+};
 
 /** The database file and the files LadybugDB keeps beside it (`.wal`, `.shadow`, `.tmp`), and nothing else. */
 export function removeSessionFiles(path: string): void {
