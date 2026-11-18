@@ -11,7 +11,7 @@ roots. It needs no state file and no cloud account, and it writes nothing into
 the folder.
 
 1. Start the serve in the background from the repo root, so the session stays
-   free: run `npx -y @intentius/behold@0.33.3 serve .` as a background process
+   free: run `npx -y @intentius/behold@0.34.0 serve .` as a background process
    that you do not wait on to exit. If port 4600 is taken, add `--port 4601` (or any
    free port).
 2. Read the background output until the line that starts with `behold` and
