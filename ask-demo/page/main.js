@@ -43,7 +43,7 @@ import { createAskPane } from "../../web/kiosk-ask.js";
 import { answerDrawing, drawSvg, refusalText, rowsTable } from "../../web/graph-query.js";
 import { bindEngineBadge } from "../../web/engine-badge.js";
 import { applyKeyLight, cardIndex, focusLayout, lightKeys, reserveBox, wantsFocus, zoomFrame } from "../../web/key-light.js";
-import { PROMPT_TYPE_MS, REVEAL_MARK_MS, ROWS_AFTER_MS, answerHeadline, callLine, callTitle, countWords, countdownWords, cypherFill, knownResources, pairedKeys, resourceDetails, resourceFacts, rowKeys, loadRows, loopOf, loopTiming, narrationProblems, newSteps, pageClock, paneOpen, revealAt, panView, parseParams, recordedAnswer, recordedWords, sourceTitle, sourceWords, turnState, visitorDraft, zoomView } from "./play.js";
+import { PROMPT_TYPE_MS, REVEAL_MARK_MS, ROWS_AFTER_MS, answerHeadline, cardResources, rowsNaming, callLine, callTitle, countWords, countdownWords, cypherFill, knownResources, pairedKeys, resourceDetails, resourceFacts, rowKeys, loadRows, loopOf, loopTiming, narrationProblems, newSteps, pageClock, paneOpen, revealAt, panView, parseParams, recordedAnswer, recordedWords, sourceTitle, sourceWords, turnState, visitorDraft, zoomView } from "./play.js";
 
 const $ = (id) => document.getElementById(id);
 const html = document.documentElement;
@@ -60,7 +60,7 @@ const clock = () => pageTime.now();
 /** The answer drawing's side, in its own units: smaller than the /graph page's, so its words read in a narrow pane. */
 const DRAW_SIZE = 420;
 
-const state = { loops: 0, revealed: [], draft: null, narration: null, cards: new Map(), known: new Map(), facts: null, answer: null, answerLight: { ids: [], why: "" }, selected: null, loop: null, timing: null, startedAt: 0, questionGiven: false, phase: "idle", doneAt: 0, held: false, db: null, engine: "waiting", touched: false, zoomedAt: -Infinity, gesture: false, paneChosen: null };
+const state = { dragEndedAt: -Infinity, folded: new Map(), loops: 0, revealed: [], draft: null, narration: null, cards: new Map(), known: new Map(), facts: null, answer: null, answerLight: { ids: [], why: "" }, selected: null, loop: null, timing: null, startedAt: 0, questionGiven: false, phase: "idle", doneAt: 0, held: false, db: null, engine: "waiting", touched: false, zoomedAt: -Infinity, gesture: false, paneChosen: null };
 
 /** A recorded turn leaves the view alone this long after the visitor last zoomed or dragged it, in ms. */
 const VISITOR_VIEW_MS = 4000;
@@ -237,6 +237,8 @@ function viewTo(box, ms = 700) {
 function showEstate(on) {
   html.dataset.estate = on ? "loaded" : "empty";
   $("ad-estate-graph").setAttribute("aria-hidden", on ? "false" : "true");
+  // behold#1216: the cards take focus only while they show.
+  for (const g of svg ? svg.querySelectorAll("[data-node-id][role]") : []) g.setAttribute("tabindex", on ? "0" : "-1");
 }
 
 /**
@@ -313,7 +315,7 @@ const coarse = typeof matchMedia === "function" ? matchMedia("(pointer: coarse)"
 
 function zoomHint() {
   $("ad-zoom-hint").textContent =
-    coarse && coarse.matches ? "Pinch to zoom and move" : oneColumn && oneColumn.matches ? "Pinch or Ctrl+scroll to zoom, drag to move" : "Scroll to zoom, drag to move";
+    coarse && coarse.matches ? "Pinch to zoom and move, tap a card for its details" : oneColumn && oneColumn.matches ? "Pinch or Ctrl+scroll to zoom, drag to move, click a card" : "Scroll to zoom, drag to move, click a card for its details";
 }
 
 function wireZoom() {
@@ -366,6 +368,7 @@ function wireZoom() {
   });
   const endDrag = (e) => {
     if (!drag || e.pointerId !== drag.id) return;
+    if (drag.moved) state.dragEndedAt = performance.now();
     drag = null;
     state.gesture = false;
     delete host.dataset.dragging;
@@ -452,7 +455,7 @@ function markSelectable() {
   if (!a) return false;
   let any = false;
   for (const g of $("g-draw").querySelectorAll(".g-node[data-key]")) {
-    g.setAttribute("tabindex", "0");
+    g.setAttribute("tabindex", html.dataset.estate === "loaded" ? "0" : "-1");
     g.setAttribute("role", "button");
     g.setAttribute("aria-label", `Show ${g.textContent.trim() || g.getAttribute("data-key")} on the estate graph`);
     any = true;
@@ -474,14 +477,13 @@ function markSelectable() {
  */
 function select(keys, from) {
   const a = state.answer;
-  if (!a || !keys.length) return;
+  if (!keys.length || (!a && !isEstateCard(from))) return;
   state.selected = { keys, from };
   hold();
   const ids = lightKeys({ keys }, state.cards);
   lightEstate(ids, ids.length ? "" : "The estate graph draws no card for this resource (an indexed cloud or cluster object).", { select: true });
   html.dataset.selected = keys.join("\n");
-  for (const g of $("g-draw").querySelectorAll(".g-node[data-key]")) g.classList.toggle("sel", keys.includes(g.getAttribute("data-key")));
-  for (const tr of $("g-rows").querySelectorAll("tbody tr")) tr.classList.toggle("sel", tr === from);
+  markAnswer(keys, from);
   const d = resourceDetails(keys[0], state.facts);
   const card = $("ad-detail");
   card.textContent = "";
@@ -513,13 +515,84 @@ function select(keys, from) {
   if (typeof card.scrollIntoView === "function") card.scrollIntoView({ block: "nearest", behavior: reduced() ? "auto" : "smooth" });
 }
 
+/** Whether `el` is a card of the estate graph (behold#1216). */
+const isEstateCard = (el) => !!(el && el.closest && el.closest("#ad-estate-graph [data-node-id]"));
+
+/**
+ * Mark what the answer pane shows of `keys`: the drawing's nodes, and the row
+ * selected, or (behold#1216, a card picked on the estate graph) every row
+ * that names one of them.
+ */
+function markAnswer(keys, from) {
+  const a = state.answer;
+  for (const g of $("g-draw").querySelectorAll(".g-node[data-key]")) g.classList.toggle("sel", keys.includes(g.getAttribute("data-key")));
+  const rows = isEstateCard(from) && a ? new Set(rowsNaming(a.body, a.picture, keys)) : new Set();
+  for (const tr of $("g-rows").querySelectorAll("tbody tr")) tr.classList.toggle("sel", tr === from || rows.has(Number(tr.dataset.row)));
+  for (const g of svg ? svg.querySelectorAll("[data-node-id].sel") : []) g.classList.remove("sel");
+  if (isEstateCard(from)) from.closest("[data-node-id]").classList.add("sel");
+}
+
+/** The name a resource goes by in the details card: its name, or its key. */
+const resourceName = (k) => (state.facts && state.facts.resources.get(k)?.name) || k;
+
+/**
+ * behold#1216: a card picked on the estate graph. A card that draws one
+ * resource selects it, with its details. A stacked card lights itself, marks
+ * every row that names one of its resources, and lists them, each one a
+ * button that selects it.
+ */
+function pickCard(g) {
+  const id = g.getAttribute("data-node-id");
+  const keys = state.folded.get(id) || [id];
+  if (keys.length === 1) return select(keys, g);
+  state.selected = { keys, from: g };
+  hold();
+  lightEstate([id], "", { select: true });
+  html.dataset.selected = keys.join("\n");
+  markAnswer(keys, g);
+  const card = $("ad-detail");
+  card.textContent = "";
+  const head = document.createElement("h3");
+  head.textContent = id;
+  const p = document.createElement("p");
+  p.textContent = `This card stacks ${keys.length} resources alike. Pick one for its details:`;
+  const list = document.createElement("ul");
+  list.className = "ad-folded";
+  for (const k of keys) {
+    const li = document.createElement("li");
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = resourceName(k);
+    b.title = k;
+    b.addEventListener("click", () => select([k], g));
+    li.append(b);
+    list.append(li);
+  }
+  card.append(head, p, list);
+  card.hidden = false;
+  if (typeof card.scrollIntoView === "function") card.scrollIntoView({ block: "nearest", behavior: reduced() ? "auto" : "smooth" });
+}
+
+/** behold#1216: every card of the estate graph can be reached with Tab and picked with Enter. */
+function markCards() {
+  if (!svg) return;
+  for (const g of svg.querySelectorAll("[data-node-id]")) {
+    if (!g.querySelector("rect")) continue;
+    const id = g.getAttribute("data-node-id");
+    const n = (state.folded.get(id) || [id]).length;
+    g.setAttribute("tabindex", html.dataset.estate === "loaded" ? "0" : "-1");
+    g.setAttribute("role", "button");
+    g.setAttribute("aria-label", n > 1 ? `${id}: ${n} resources stacked; show them` : `Show the details of ${id}`);
+  }
+}
+
 /** Clear the selection; with `relight`, the estate graph goes back to the answer's own light and frame. */
 function clearSelection({ relight = true } = {}) {
   if (!state.selected) return;
   state.selected = null;
   delete html.dataset.selected;
   $("ad-detail").hidden = true;
-  for (const el of document.querySelectorAll("#g-draw .sel, #g-rows .sel")) el.classList.remove("sel");
+  for (const el of document.querySelectorAll("#g-draw .sel, #g-rows .sel, #ad-estate-graph .sel")) el.classList.remove("sel");
   if (relight) lightEstate(state.answerLight.ids, state.answerLight.why);
 }
 
@@ -549,7 +622,25 @@ function wireSelect() {
   addEventListener("keydown", (e) => {
     if (e.key === "Escape" && state.selected) clearSelection();
   });
+  // behold#1216: a card of the estate graph, by click, tap or Enter. A drag that just moved the view picks nothing.
+  const host = $("ad-estate-graph");
+  const cardOf = (e) => (e.target && e.target.closest ? e.target.closest("[data-node-id]") : null);
+  host.addEventListener("click", (e) => {
+    const g = cardOf(e);
+    if (!g || performance.now() - state.dragEndedAt < DRAG_CLICK_MS || html.dataset.estate !== "loaded") return;
+    pickCard(g);
+  });
+  host.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const g = cardOf(e);
+    if (!g) return;
+    e.preventDefault();
+    pickCard(g);
+  });
 }
+
+/** A click this soon after a drag that moved the view is the drag's end, not a pick. */
+const DRAG_CLICK_MS = 300;
 
 /** behold#1191: one line per source in words, its scope key and raw times on hover. */
 function showSources(sources) {
@@ -838,6 +929,7 @@ async function boot() {
   if (problems.length) throw new Error(`narration.json: ${problems.join("; ")}`);
   state.narration = narration;
   state.cards = cardIndex(estate.nodes);
+  state.folded = cardResources(estate.nodes);
   state.known = knownResources(graphdb);
   state.facts = resourceFacts(graphdb, estate.nodes);
   const words = recordedWords(narration);
@@ -847,6 +939,7 @@ async function boot() {
   $("ad-versions").textContent = words.versions;
   $("ad-note").textContent = narration.note;
   drawEstate(estate);
+  markCards();
   wireZoom();
   wireSelect();
 

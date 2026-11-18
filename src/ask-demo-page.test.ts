@@ -1234,3 +1234,95 @@ describe.runIf(peer.ok)("the focused view of a spread answer (#1203)", () => {
     expect(errors).toEqual([]);
   });
 });
+
+describe.runIf(peer.ok)("picking a card on the estate graph (#1216)", () => {
+  it("selects a card by click, tap or Enter with the answer's details card and rows, lists a stack's resources, clears with Escape, and a drag picks nothing", { timeout: 180_000 }, async () => {
+    const launched = await browserOrNull();
+    if (!launched) {
+      console.warn("ask-demo-page: no browser launches here, so picking a card was not checked");
+      return;
+    }
+    const rec = JSON.parse(readFileSync(RECORDING, "utf8")) as Narration;
+    const qs = questionsOf(rec) as Narration["turns"];
+    const at = qs.findIndex((t) => t.id === "dns-cross-cloud");
+    const q = qs[at]!;
+    const url = await serveDir(recordedOut);
+    const browser = launched.browser as unknown as { newContext(o?: object): Promise<any>; close(): Promise<void> };
+    const errors: string[] = [];
+    const sel = `(() => {
+      const card = document.getElementById("ad-detail");
+      return {
+        selected: (document.documentElement.dataset.selected || "").split("\\\\n").filter(Boolean),
+        hidden: card.hidden, name: card.querySelector("h3") ? card.querySelector("h3").textContent : "", text: card.innerText,
+        folded: [...card.querySelectorAll("ul.ad-folded button")].map((b) => b.title),
+        rows: [...document.querySelectorAll("#g-rows tbody tr")].map((tr, i) => (tr.classList.contains("sel") ? i : -1)).filter((i) => i >= 0),
+        picked: [...document.querySelectorAll("#ad-estate-graph [data-node-id].sel")].map((g) => g.getAttribute("data-node-id")),
+        hint: document.getElementById("ad-zoom-hint").textContent,
+      };
+    })()`;
+    type Sel = { selected: string[]; hidden: boolean; name: string; text: string; folded: string[]; rows: number[]; picked: string[]; hint: string };
+    const cardAt = (id: string) => `#ad-estate-graph [data-node-id="${id}"] rect`;
+    const rowsOf = (pred: (r: Record<string, unknown>) => boolean) => q.rows.map((r, i) => (pred(r) ? i : -1)).filter((i) => i >= 0);
+    try {
+      for (const [name, viewport] of [["desktop", { width: 1440, height: 900 }], ["phone", { width: 390, height: 844 }]] as const) {
+        const phone = name === "phone";
+        const context = await browser.newContext({ reducedMotion: "reduce", viewport, ...(phone ? { isMobile: true, hasTouch: true } : {}) });
+        const page = await context.newPage();
+        page.on("pageerror", (e: Error) => errors.push(e.message));
+        await page.goto(`${url}?pace=4&loop=${at}`, { waitUntil: "domcontentloaded" });
+        await waitFor(page, "the reply", (s) => s.turn === q.id && s.phase === "after");
+        // The whole estate, so every card can be picked.
+        if (await page.evaluate(() => document.documentElement.dataset.view === "focus")) await page.click("#ad-view");
+        const before = (await page.evaluate(sel)) as Sel;
+        expect(before.hint, name).toMatch(phone ? /tap a card/ : /click a card/);
+        expect(await page.evaluate((s: string) => getComputedStyle(document.querySelector(s)!.parentElement!).cursor, cardAt("gcp/webRule"))).toBe("pointer");
+        // A card of the answer: its details, the rows naming it marked, the card itself marked.
+        if (phone) await page.tap(cardAt("gcp/webRule"));
+        else await page.click(cardAt("gcp/webRule"));
+        const one = (await page.evaluate(sel)) as Sel;
+        expect(one.selected, name).toEqual(["gcp/webRule"]);
+        expect([one.hidden, one.name], name).toEqual([false, "webRule"]);
+        expect(one.text, name).toContain("src/site.ts");
+        expect(one.rows, name).toEqual(rowsOf((r) => r.reaches === "gcp/webRule"));
+        expect(one.picked, name).toEqual(["gcp/webRule"]);
+        await page.keyboard.press("Escape");
+        const cleared = (await page.evaluate(sel)) as Sel;
+        expect([cleared.selected, cleared.hidden, cleared.rows, cleared.picked], name).toEqual([[], true, [], []]);
+        // A stacked card lists what it folds, each one selectable; every row naming one of them is marked.
+        if (phone) await page.tap(cardAt("dns/RecordSet ×4"));
+        else await page.click(cardAt("dns/RecordSet ×4"));
+        const stack = (await page.evaluate(sel)) as Sel;
+        expect(stack.folded.length, name).toBe(4);
+        expect(stack.folded, name).toEqual(expect.arrayContaining(["dns/gcpOrigin", "dns/gcpRecord"]));
+        expect(stack.rows, name).toEqual(q.rows.map((_, i) => i));
+        expect(stack.picked, name).toEqual(["dns/RecordSet ×4"]);
+        await page.click('#ad-detail ul.ad-folded button[title="dns/gcpOrigin"]');
+        const folded = (await page.evaluate(sel)) as Sel;
+        expect([folded.selected, folded.name], name).toEqual([["dns/gcpOrigin"], "gcp.three-cloud.example."]);
+        expect(folded.rows, name).toEqual(rowsOf((r) => r.key === "dns/gcpOrigin"));
+        await page.keyboard.press("Escape");
+        // The keyboard: Tab reaches a card, Enter picks it.
+        await page.focus('#ad-estate-graph [data-node-id="gcp/webProxy"]');
+        await page.keyboard.press("Enter");
+        expect(((await page.evaluate(sel)) as Sel).selected, name).toEqual(["gcp/webProxy"]);
+        await page.keyboard.press("Escape");
+        expect(((await page.evaluate(sel)) as Sel).selected, name).toEqual([]);
+        if (!phone) {
+          // A drag that starts on a card moves the view and picks nothing.
+          const box = await page.locator(cardAt("gcp/webUrlMap")).first().boundingBox();
+          const from = await viewBoxOf(page);
+          await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+          await page.mouse.down();
+          await page.mouse.move(box!.x + box!.width / 2 + 60, box!.y + box!.height / 2 + 30, { steps: 6 });
+          await page.mouse.up();
+          expect(await viewBoxOf(page)).not.toEqual(from);
+          expect(((await page.evaluate(sel)) as Sel).selected).toEqual([]);
+        }
+        await context.close();
+      }
+    } finally {
+      await browser.close();
+    }
+    expect(errors).toEqual([]);
+  });
+});

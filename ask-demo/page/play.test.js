@@ -10,6 +10,8 @@ import {
   LINKS,
   AFTER_MS,
   answerHeadline,
+  cardResources,
+  rowsNaming,
   pairedKeys,
   resourceDetails,
   resourceFacts,
@@ -372,6 +374,21 @@ describe("what the answer found, and one of its resources (#1198)", () => {
     expect(answerHeadline(null, body, picture)).toBe(`7 rows, ${picture.nodes.length} resources`);
     expect(answerHeadline(null, { rows: [{ x: 1 }] }, { nodes: [] })).toBe("1 row");
     expect(answerHeadline(null, { rows: [{ x: 1 }] }, { nodes: [{ key: "a" }] })).toBe("1 row, 1 resource");
+  });
+
+  it("knows the resources each estate card draws, and the rows that name them (#1216)", () => {
+    const folded = cardResources(ESTATE.ir.nodes);
+    // A stacked card lists its folded resources; any other card draws itself.
+    const stack = folded.get("dns/RecordSet ×4");
+    expect(stack).toHaveLength(4);
+    expect(stack).toEqual(expect.arrayContaining(["dns/gcpOrigin", "dns/gcpRecord"]));
+    expect(folded.get("gcp/webRule")).toEqual(["gcp/webRule"]);
+    expect(cardResources([{ id: "a", attrs: { _stackOf: [{ id: "x" }, { id: 3 }, null] } }, { id: 7 }, null])).toEqual(new Map([["a", ["x"]]]));
+    // The rows a picked card marks: every row naming one of its resources in a key column.
+    expect(rowsNaming(body, picture, ["gcp/webRule"])).toEqual(q.rows.map((r, i) => (r.reaches === "gcp/webRule" ? i : -1)).filter((i) => i >= 0));
+    expect(rowsNaming(body, picture, stack)).toEqual(q.rows.map((_, i) => i));
+    expect(rowsNaming(body, picture, ["gcp/nowhere"])).toEqual([]);
+    expect(rowsNaming(null, picture, ["gcp/webRule"])).toEqual([]);
   });
 
   it("selects a row's two ends, or a resource with every key it is paired with", () => {

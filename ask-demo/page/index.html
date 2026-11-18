@@ -92,6 +92,15 @@
       #ad-estate g[data-edge-from][data-kl="path"] path:first-of-type { stroke: var(--pending); stroke-width: 3; }
       @keyframes kl-pulse { 0% { opacity: 1; } 35% { opacity: 0.35; } 70%, 100% { opacity: 1; } }
       #ad-estate [data-node-id][data-kl-pulse] { animation: kl-pulse 0.9s ease-in-out 1; }
+      /* behold#1216: a card can be picked: pointer, hover and focus outlines, and the picked one marked. */
+      #ad-estate [data-node-id][role] { cursor: pointer; }
+      #ad-estate-graph[data-dragging] [data-node-id][role] { cursor: grabbing; }
+      #ad-estate [data-node-id][role]:hover rect:first-of-type { stroke: var(--fg); stroke-width: 2.5; }
+      #ad-estate [data-node-id][role]:focus { outline: none; }
+      #ad-estate [data-node-id][role]:focus-visible rect:first-of-type { stroke: var(--foreign); stroke-width: 4; }
+      #ad-estate [data-node-id].sel rect:first-of-type { stroke: var(--foreign); stroke-width: 4; }
+      #ad-detail ul.ad-folded { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+      #ad-detail ul.ad-folded button { font: 12px var(--font-mono); padding: 2px 8px; }
 
       /* behold#1192: the part a question turn has just shown is marked for a moment (main.js sets data-reveal). Reduced motion marks nothing. */
       @keyframes ad-reveal { 0%, 35% { outline-color: var(--pending); } 100% { outline-color: transparent; } }
