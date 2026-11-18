@@ -1,0 +1,173 @@
+---
+title: The graph database
+description: behold loads every source it finds for an estate into one read-only LadybugDB database. Ask it in Cypher from the graph pane, over HTTP, or through the ask tool of behold mcp.
+---
+
+When `behold serve` serves an estate, the graph pane at `/graph` loads everything behold can find about it into one database and answers Cypher over it. The database is [LadybugDB](https://ladybugdb.com/), an embedded property-graph database, and behold opens it read-only.
+
+## What it holds
+
+The pane loads its rows on the first request to it, from four kinds of source:
+
+- every member's chant IR, the same read the estate view draws;
+- engine graph documents: `engine-graph.json` beside a member, any `*.json` under `.behold/graph/`, and for a choudoufu member the output of `choudoufu live-graph -json .`, which reads no cloud;
+- the latest index version of each scope, from the project's `.chant/store/index/`, from `_index/` on `refs/chant/snapshots`, and from behold's per-user index store, where `behold index` writes;
+- cloud listings dropped under `.behold/graph/`.
+
+Every attribute value is masked with chant's list of secret-bearing keys before it becomes a row, whatever its source. The database itself is built on the first Cypher query, in a file under `$BEHOLD_GRAPH_DIR` (else `$XDG_DATA_HOME/behold/graph`, else `~/.local/share/behold/graph`), and is then closed and opened again read-only. Nothing is written in the project. A project switch, or `GET /api/graphdb?rebuild=1`, reads every source again, and the next query builds a new database and removes the old file.
+
+Every answer carries `sources`: for each source, where behold found it, how many nodes and edges it gave, when it read the world (`observedAt`, null for a declared source) and when behold read it (`readAt`).
+
+A public serve (`--public`) refuses the pane, because engine documents and index versions hold cloud ids.
+
+## Install the engine
+
+Cypher needs the optional peer `@ladybugdb/core`, version 0.22.1 or newer. It is a native addon, so behold does not depend on it. Install it beside behold, or globally:
+
+```sh
+npm i -g @ladybugdb/core
+```
+
+behold looks for it beside itself first, then in the global `node_modules`. An older release is refused like a missing one, because 0.22.0 and earlier count some multi-hop matches wrongly.
+
+Without the peer, the pane's header shows the refusal, and a Cypher query or a Cypher template answers 503 with code `graph-peer-missing`, the install line, and what still works:
+
+- chant search queries (`ask` with `query`, the `q` view key);
+- resolving a resource by name, IR id, block address or cloud id;
+- templates that expand to a chant search path pattern.
+
+`GET /api/graphdb` says whether the peer loaded, and its version, under `peer`. `behold doctor` does not check for it.
+
+## The model
+
+Two node tables and two edge tables:
+
+| Table | Holds |
+|---|---|
+| `Resource` | One node from one source. Keyed by `key`. |
+| `CloudId` | A cloud id (an ARN, an instance id, a Kubernetes UID), keyed by `value`, with its `kind`. |
+| `KNOWN_AS` | `(Resource)-[:KNOWN_AS]->(CloudId)`: the ids a resource is known by. |
+| `REF` | `(Resource)-[:REF]->(Resource)`: one resource refers to another. |
+
+A `Resource` has these properties: `key`, `source` (`chant`, `engine`, `index` or `cloud`), `scopeKey`, `version`, `id`, `kind`, `lexicon`, `listedType`, `location`, `nativeId`, `name`, `address`, `ownership` (chant's: `owned` or `foreign`), `engineOwnership` (the engine's: `bound`, `unowned`, `pending` or `foreign`), `attrs`, `tags`, `facts` and `observedAt`. `attrs`, `tags` and `facts` are JSON strings. A chant member's node is keyed `<member>/<id>`, as `chant workspace search` prints it, with `scopeKey` `chant/<member>`. An index node's key starts with its index scope, such as `cloud/aws/<account>/<digest>/`.
+
+A `REF` edge has `kind`, `viaAttr` (the attribute that holds the reference), `toAttr`, `grain`, `origin`, `rule`, `relation` and `ambiguous`. `origin` is `declared`, `observed` or `derived`. A derived edge joins an attribute value on one node to another source's node with that cloud id; its `rule` names the kind of id, such as `identity:arn`, and `ambiguous` is true when the value names more than one node. The same object seen by two sources is two `Resource` nodes that share a `CloudId`.
+
+The column layout comes from chant's graph schema, so a field a newer chant adds becomes a column without a new behold. `GET /api/graphdb` lists the tables and the schema the layout came from.
+
+These queries ran on the [ask demo](/behold/using/ask-demo/)'s three-cloud estate. How many nodes each kind of source gave (3 rows there):
+
+```cypher
+MATCH (r:Resource)
+RETURN r.source AS source, count(*) AS n
+ORDER BY source
+```
+
+Which DNS records reach resources declared in another member, with the record kind as a parameter, `{"record": "AWS::Route53::RecordSet"}` (7 rows):
+
+```cypher
+MATCH (rec:Resource {kind: $record})-[:REF*1..4]->(dep:Resource {source: 'chant'})
+WHERE dep.scopeKey <> rec.scopeKey
+RETURN DISTINCT rec.key AS key, rec.name AS record, dep.key AS reaches, dep.kind AS kind
+ORDER BY record, reaches
+```
+
+Which Kubernetes service accounts use an IAM role, and through which annotation (2 rows):
+
+```cypher
+MATCH (sa:Resource {kind: 'K8s::Core::ServiceAccount'})-[e:REF]->(role:Resource {kind: 'AWS::IAM::Role'})
+RETURN sa.key AS key, sa.name AS serviceAccount, role.key AS roleKey, role.name AS role, e.viaAttr AS via, e.rule AS rule
+ORDER BY serviceAccount
+```
+
+Everything resolved upward from the GCP forwarding rule, with `{"key": "gcp/webRule"}` (4 rows):
+
+```cypher
+MATCH (o:Resource)-[:REF*1..6]->(r:Resource {key: $key})
+RETURN DISTINCT o.key AS key, o.kind AS kind, o.scopeKey AS scope
+```
+
+## Ways in
+
+### The graph pane
+
+Open `/graph` on a running serve. The header shows the engine's version and the counts of what was loaded. The pane has:
+
+- a Cypher box with a parameters field that takes a JSON object, such as `{"k": "aws_s3_bucket"}` for `$k`;
+- Start from a resource, which takes a name, an IR id, a block address or a cloud id, lists the candidates, and offers the templates that apply to the one it lands on;
+- What changed between two reads, which diffs two versions of one index scope, also from the project's configured chant snapshot store, and draws what changed;
+- Sources, and when each was read, with any notes from loading.
+
+An answer shows its rows and draws the resources it holds with the edges between them. Its "open in the estate view" link goes to the estate view with those members in front.
+
+### HTTP
+
+Every route is a GET, and none acts.
+
+| Route | Answers |
+|---|---|
+| `GET /api/graphdb` | The sources with their read times, the counts, the tables and layout, the notes, and `peer`. `?rebuild=1` reloads. |
+| `GET /api/graphdb/query?cypher=&params=` | One read-only query. `params` is a JSON object; values are strings, numbers, booleans or null. |
+| `GET /api/graphdb/resolve?ref=` | The candidates for a name, id, address or cloud id, with the templates that apply when there is one. |
+| `GET /api/graphdb/templates` | The template catalog, each entry with its `origin`, and the refused project entries. |
+| `GET /api/graphdb/template?name=&node=&in.<input>=` | One template filled for one node by its key. A Cypher template runs; a search template answers the search to run. |
+| `GET /api/graphdb/index-versions` | Every indexed scope with its versions, oldest first, and the store each is in. |
+| `GET /api/graphdb/index-diff?scope=&from=&to=` | What changed between two versions of one scope, and the overlay to draw. Versions of two different scopes are refused. |
+
+A query answers `columns`, `rows`, `keys` (every `Resource` key in the answer), `truncated`, `draw` (the nodes and edges the pane draws), `link` and `sources`. A refused query answers 400 with `{error, code, remedy}`.
+
+```sh
+curl -sG http://127.0.0.1:4600/api/graphdb/query \
+  --data-urlencode 'cypher=MATCH (r:Resource) RETURN r.source AS source, count(*) AS n ORDER BY source'
+```
+
+### The ask tool
+
+`behold mcp`'s `ask` tool takes, beside a chant search `query`, one of:
+
+- `cypher`, a read-only query, with `params` as a JSON string;
+- `resource`, a name, id, address or cloud id to resolve, which answers the candidates and the templates that apply;
+- `resource` with `template`, which runs that template on the one node `resource` resolves to, with `inputs` as a JSON object of strings.
+
+```json
+{ "resource": "webRule", "template": "dependents-all" }
+```
+
+The answer is the route's, with `drawn: false`: `ask` never moves the person's tab; `show` with the `node` and `focus` from the answer's `link` draws it there. With no serve running, behold answers in the tool's own process. [Driving it from an agent](/behold/using/agents/) covers the other tools.
+
+## Templates
+
+A template is a named question with the resource filled in, so a click in the pane and `ask` with `template` run the same query. Each is either a chant search path pattern or Cypher. A search template keeps working without the peer and opens in the estate view; a Cypher template binds the resource as `$key` and each input as `$<name>`, as parameters, and needs the peer. The catalog chant ships has `dependents-all`, `dependencies-all`, `ownership`, `same-object`, `readers` and `history` in Cypher, and `dependents`, `dependencies`, `paths-to-kind`, `capability` and `drift` as search.
+
+A project adds its own in `.chant/templates.json`, at the workspace root (the folder holding `chant.workspace.json`) or at the project root when there is no workspace:
+
+```json
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "bucket-users",
+      "title": "Who uses this bucket",
+      "question": "Which resources reference this bucket?",
+      "kinds": ["aws_s3_bucket"],
+      "inputs": [{ "name": "node", "kind": "resource", "description": "the bucket" }],
+      "reads": "session",
+      "query": { "kind": "cypher", "text": "MATCH (u:Resource)-[:REF]->(b:Resource {key: $key}) RETURN u.key AS key ORDER BY key" }
+    }
+  ]
+}
+```
+
+A `"kind": "path"` query is a search template, and fills in `{{<name>}}`. A `scope` input is the environment the query reads, and behold takes one. `kinds` and `sources` limit the nodes a template is offered on. An entry chant refuses, one with more than one scope input, and one LadybugDB cannot bind or does not report read-only (checked when the database opens, without running it) is listed under `refused` with the file and field, such as `.chant/templates.json templates[1].title`. Edits to the file show after a project switch or a rebuild.
+
+## Limits
+
+- Queries are read-only. A query holding a clause that writes the database or a file, or loads code (`CREATE`, `MERGE`, `SET`, `DELETE`, `DETACH`, `REMOVE`, `DROP`, `ALTER`, `COPY`, `LOAD`, `INSTALL`, `UNINSTALL`, `ATTACH`, `EXPORT`, `IMPORT`, `CALL`, `CHECKPOINT`, `USE`, `BEGIN`, `COMMIT`, `ROLLBACK`) outside strings and comments is refused with code `cypher-write` before it reaches the engine. A query LadybugDB does not report read-only is refused the same way, and the database is open read-only besides.
+- A query that does not parse or bind is refused with `cypher-invalid` and the engine's message; an empty one with `cypher-empty`.
+- A query is at most 8,000 characters (`cypher-too-long`).
+- An answer holds at most 2,000 rows; past that, `truncated` is true.
+- A query on `behold serve` stops after 15 seconds.
+
+## In an exported bundle
+
+`behold export --graphdb` carries the pane's rows, masked again, and LadybugDB's WebAssembly build, so the bundle's `/graph` page answers Cypher, resolve and templates in the browser with the same read-only check and the same row and length caps. The browser build has no query timeout. The page offers only what works without a server: search templates are disabled unless the export captured their query with `--q`, and there is no index diff. The engine's worker file is about 23.4 MiB, and the export stops if it or `graphdb.json` is over the 25 MiB a Cloudflare static file may be. [Export a snapshot](/behold/using/export/#cypher-in-the-bundle) has the details, and the [ask demo](/behold/using/ask-demo/) is a bundle of this kind with a recorded agent session.

@@ -350,6 +350,7 @@ export const ROOMS = [
 		],
 		reference: [
 			{ label: 'The contract', href: 'using/agents#the-contract' },
+			{ label: 'The graph database', href: 'using/graph-database' },
 			{ label: 'AGENTS.md', href: 'https://github.com/INTENTIUS/behold/blob/main/AGENTS.md' },
 		],
 	},

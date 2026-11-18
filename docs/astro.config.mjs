@@ -95,6 +95,7 @@ export default defineConfig({
 						{ label: 'Collision marks', slug: 'using/collisions' },
 						{ label: 'Export a snapshot', slug: 'using/export' },
 						{ label: 'The graph document', slug: 'using/graph-document' },
+						{ label: 'The graph database', slug: 'using/graph-database' },
 						{ label: 'Publish to GitHub Pages', slug: 'using/pages' },
 						{ label: 'A graph in TechDocs', slug: 'using/techdocs' },
 						{ label: 'Open in behold from Argo CD', slug: 'using/argocd-link' },
