@@ -271,12 +271,22 @@ export function turnSources(sources: readonly SourceStamp[]): TurnSource[] {
   }));
 }
 
+/**
+ * The reply a question's turn carries (behold#1174): what ran and how many
+ * rows came back, then the question's own template filled from the rows, then
+ * where the Cypher is. Throws {@link ReplyError} when the template cannot be filled.
+ */
+export function questionReply(template: string, answer: { columns: readonly string[]; rows: ReadonlyArray<Record<string, unknown>> }): string {
+  const n = answer.rows.length;
+  return `behold's query ran and returned ${n} row${n === 1 ? "" : "s"}. ${fillReply(template, answer)} The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.`;
+}
+
 /** One question's turn from its answer. Throws Dropped when the answer is empty or the reply cannot be filled. */
 export function questionTurn(q: Question, answer: GraphAnswer, cards: ReadonlyMap<string, string>): Turn {
   refuseEmpty(answer, q.id);
   let reply: string;
   try {
-    reply = fillReply(q.reply, answer);
+    reply = questionReply(q.reply, answer);
   } catch (e) {
     if (e instanceof ReplyError) throw new Dropped(q.id, `the reply cannot be filled: ${e.message}`);
     throw e;
@@ -378,4 +388,27 @@ export function checkQuestions(questions: readonly Question[]): void {
 export function validateNarration(doc: unknown, schema: object): string[] {
   const check = new Ajv2020({ allErrors: true, strict: false }).compile(schema);
   return check(doc) ? [] : (check.errors ?? []).map((e) => `${e.instancePath || "/"} ${e.message ?? ""}`.trim());
+}
+
+/**
+ * Fill every question turn's reply again from the templates in `questions`,
+ * matching turns by id and leaving everything else as it is (behold#1174).
+ * The load turn is kept. Throws naming the turn whose template no longer fills.
+ */
+export function refillNarration<N extends { turns: Array<{ id: string; kind: string; columns: string[]; rows: Array<Record<string, unknown>>; reply: string }> }>(doc: N, questions: readonly Question[]): N {
+  const byId = new Map(questions.map((q) => [q.id, q]));
+  return {
+    ...doc,
+    turns: doc.turns.map((t) => {
+      if (t.kind !== "question") return t;
+      const q = byId.get(t.id);
+      if (!q) throw new Error(`turn ${t.id} has no question in scripts/ask-demo/questions.ts`);
+      try {
+        return { ...t, reply: questionReply(q.reply, t) };
+      } catch (e) {
+        if (e instanceof ReplyError) throw new Error(`turn ${t.id}: the reply cannot be filled: ${e.message}`);
+        throw e;
+      }
+    }),
+  };
 }

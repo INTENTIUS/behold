@@ -201,6 +201,13 @@ e2e-multi-engine:
 ask-demo-record *args:
     bash e2e/lib/safe-env.sh npx tsx scripts/ask-demo/record.ts {{args}}
 
+# behold#1174: fill the replies in ask-demo/narration.json again from the
+# templates in scripts/ask-demo/questions.ts and each turn's recorded rows.
+# No emulators; nothing but the replies changes. Fails naming a turn whose
+# template no longer fills.
+ask-demo-refill *files:
+    npx tsx scripts/ask-demo/refill.ts {{files}}
+
 # behold#1163: the ask demo page as a static bundle in dist-ask-demo/ (or the
 # folder given): ask-demo/narration.json played over the estate the recorder
 # kept in ask-demo/estate/, LadybugDB's WebAssembly build for a visitor's
