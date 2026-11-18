@@ -43,8 +43,11 @@ export function narrationProblems(n) {
 
 export const questionsOf = (n) => n.turns.filter((t) => t.kind === "question");
 
-/** A turn as one beat of the prompt pane: the prompt typed, the agent's reading line when the turn has one, the busy line, the reply. The turn rides along for the page. */
-export const beatOf = (turn) => ({ prompt: turn.prompt, ...(turn.reading ? { reading: turn.reading } : {}), status: turn.busy, reply: turn.reply, turn });
+/** behold#1192: how long a question's busy line shows, so its query can be read in the Cypher box before the answer comes. */
+export const QUERY_READ_MS = 2_500;
+
+/** A turn as one beat of the prompt pane: the prompt typed, the agent's reading line when the turn has one, the busy line, the reply. The turn rides along for the page. A question's busy line holds for {@link QUERY_READ_MS}. */
+export const beatOf = (turn) => ({ prompt: turn.prompt, ...(turn.reading ? { reading: turn.reading } : {}), status: turn.busy, reply: turn.reply, turn, ...(turn.kind === "question" ? { busyMs: QUERY_READ_MS } : {}) });
 
 /**
  * Loop `i`: the load turn, then question `i` (counting round). `steps` are
@@ -97,6 +100,29 @@ export function paneOpen({ phase, sinceDoneMs = 0, chosen = null }) {
   if (chosen === true || chosen === false) return chosen;
   return sinceDoneMs < PANE_BEAT_MS;
 }
+
+// --- The order a question turn reveals in (behold#1192) ----------------------
+
+/** A question turn's steps, in the order they show: its query, then the answer drawn and framed on the estate, then the rows. */
+export const REVEAL_STEPS = ["query", "answer", "rows"];
+/** How long the step that has just changed stays marked, in ms. */
+export const REVEAL_MARK_MS = 1_400;
+
+/**
+ * Which of a question turn's steps show once the prompt pane has reached
+ * `at`: "busy" (its busy line, behold running the query), "light" (its reply
+ * starts) or "done" (its reply has printed). Each step includes the ones
+ * before it, so a step shows even when the event before it never came. Under
+ * reduced motion the reply prints at once, so the steps show together as it
+ * starts.
+ */
+export function revealAt(at, { reduced = false } = {}) {
+  const upTo = { busy: 1, light: 2, done: 3 }[at] || 0;
+  return REVEAL_STEPS.slice(0, reduced && upTo ? REVEAL_STEPS.length : upTo);
+}
+
+/** The steps in `want` not yet in `shown`, in order: what to show and mark now. */
+export const newSteps = (shown, want) => want.filter((s) => !shown.includes(s));
 
 /** What the /graph pane's boxes show for a turn: its Cypher and parameters, and the call the agent made. */
 export function cypherFill(turn) {

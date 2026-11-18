@@ -198,7 +198,8 @@ export function beatTiming(beat, { reduced = false, msPerChar = TYPE_MS, replyMs
   const readingMs = beat.reading && hasLine(beat) && !reduced ? beat.reading.length * replyMs : 0;
   const readingAt = cursor + typing;
   const busyAt = readingAt + readingMs;
-  const busy = beat.reply && hasLine(beat) && !reduced ? BUSY_MIN_MS : 0;
+  // A beat may hold its busy line longer than BUSY_MIN_MS (`busyMs`; behold#1192: the ask demo's query, read while behold runs it).
+  const busy = beat.reply && hasLine(beat) && !reduced ? Math.max(BUSY_MIN_MS, Number.isFinite(beat.busyMs) ? beat.busyMs : 0) : 0;
   const replyAt = busyAt + busy;
   const replyType = beat.reply && !reduced ? replyOf(beat, reply).length * replyMs : 0;
   const diffMs = reduced ? 0 : diffLines(beat).length * DIFF_MS;

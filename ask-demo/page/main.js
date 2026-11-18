@@ -8,6 +8,9 @@
  *   - the prompt pane at the bottom is the kiosk's (web/kiosk-ask.js), given
  *     one step per turn; it types the prompt, shows the busy line and types
  *     the reply, and tells the page through `behold:ask-*` window events;
+ *   - a question shows in order (behold#1192): its query while the busy line
+ *     shows, its answer drawn and lit as the reply starts, its rows as the
+ *     reply finishes, each part marked for a moment;
  *   - as a reply starts, the estate graph above lights the cards the turn
  *     names (web/key-light.js, by key), and the /graph pane beside it fills
  *     its Cypher box with the turn's query and draws the recorded answer, its
@@ -35,7 +38,7 @@ import { createAskPane } from "../../web/kiosk-ask.js";
 import { answerDrawing, drawSvg, refusalText, rowsTable } from "../../web/graph-query.js";
 import { bindEngineBadge } from "../../web/engine-badge.js";
 import { applyKeyLight, cardIndex, lightKeys, zoomFrame } from "../../web/key-light.js";
-import { PROMPT_TYPE_MS, answerHeadline, callLine, callTitle, countWords, cypherFill, knownResources, pairedKeys, resourceDetails, resourceFacts, rowKeys, loadRows, loopOf, loopTiming, narrationProblems, paneOpen, panView, parseParams, recordedAnswer, recordedWords, sourceTitle, sourceWords, zoomView } from "./play.js";
+import { PROMPT_TYPE_MS, REVEAL_MARK_MS, answerHeadline, callLine, callTitle, countWords, cypherFill, knownResources, pairedKeys, resourceDetails, resourceFacts, rowKeys, loadRows, loopOf, loopTiming, narrationProblems, newSteps, paneOpen, revealAt, panView, parseParams, recordedAnswer, recordedWords, sourceTitle, sourceWords, zoomView } from "./play.js";
 
 const $ = (id) => document.getElementById(id);
 const html = document.documentElement;
@@ -50,7 +53,7 @@ const clock = () => T0 + (Date.now() - T0) * PACE;
 /** The answer drawing's side, in its own units: smaller than the /graph page's, so its words read in a narrow pane. */
 const DRAW_SIZE = 420;
 
-const state = { loops: 0, narration: null, cards: new Map(), known: new Map(), facts: null, answer: null, answerLight: { ids: [], why: "" }, selected: null, loop: null, timing: null, startedAt: 0, questionGiven: false, phase: "idle", doneAt: 0, held: false, db: null, engine: "waiting", touched: false, zoomedAt: -Infinity, gesture: false, paneChosen: null };
+const state = { loops: 0, revealed: [], narration: null, cards: new Map(), known: new Map(), facts: null, answer: null, answerLight: { ids: [], why: "" }, selected: null, loop: null, timing: null, startedAt: 0, questionGiven: false, phase: "idle", doneAt: 0, held: false, db: null, engine: "waiting", touched: false, zoomedAt: -Infinity, gesture: false, paneChosen: null };
 
 /** A recorded turn leaves the view alone this long after the visitor last zoomed or dragged it, in ms. */
 const VISITOR_VIEW_MS = 4000;
@@ -281,21 +284,27 @@ function wireZoom() {
 /**
  * Show an answer: its rows, and its drawing with both ends of each row
  * (behold#1190, `answerDrawing` over the resources the recording loaded), so
- * a recorded turn and a visitor's query draw alike.
+ * a recorded turn and a visitor's query draw alike. A recorded turn shows the
+ * drawing and the rows at different moments (behold#1192).
  */
-function showAnswer(answer, turn = null) {
+function showAnswer(answer, { turn = null, draw = true, rows = true } = {}) {
   const { status, body } = answer;
-  clearSelection({ relight: false });
+  if (draw) clearSelection({ relight: false });
   const picture = status === 200 && body.draw ? answerDrawing(body, state.known) : { nodes: [], edges: [], lit: [] };
   const lit = picture.lit;
   $("g-error").textContent = status === 200 ? "" : refusalText(body);
-  $("g-draw").innerHTML = picture.nodes.length ? drawSvg(picture, DRAW_SIZE, lit) : "";
-  $("g-rows").innerHTML = status === 200 && body.columns ? rowsTable(body.columns, body.rows) : "";
-  showSources(status === 200 ? body.sources : []);
-  html.dataset.answerLit = lit.join("\n");
-  // behold#1198: what the answer found in one line, and its resources selectable.
-  const rows = status === 200 && Array.isArray(body.rows) ? body.rows : [];
-  $("ad-headline").textContent = status === 200 && body.columns && body.draw && rows.length ? answerHeadline(turn, body, picture) : "";
+  if (draw) {
+    $("g-draw").innerHTML = picture.nodes.length ? drawSvg(picture, DRAW_SIZE, lit) : "";
+    html.dataset.answerLit = lit.join("\n");
+    // behold#1198: what the answer found in one line, shown with its drawing.
+    const found = status === 200 && Array.isArray(body.rows) ? body.rows : [];
+    $("ad-headline").textContent = status === 200 && body.columns && body.draw && found.length ? answerHeadline(turn, body, picture) : "";
+  }
+  if (rows) {
+    $("g-rows").innerHTML = status === 200 && body.columns ? rowsTable(body.columns, body.rows) : "";
+    showSources(status === 200 ? body.sources : []);
+  }
+  // behold#1198: the answer's resources are selectable as each part shows.
   state.answer = status === 200 ? { body, picture } : null;
   const selectable = markSelectable();
   $("ad-answer-hint").textContent = selectable ? "Click a node or a row, or press Enter on it, to show it on the estate graph. Escape clears it." : "";
@@ -474,12 +483,68 @@ function onTurn(turn) {
     lightEstate(turn.light, "", { auto: true });
     return;
   }
-  const fill = cypherFill(turn);
-  $("g-cypher").value = fill.cypher;
-  $("g-params").value = fill.params;
-  $("ad-pane-title").textContent = "Cypher";
-  showCall(fill.call, callTitle(turn));
-  showAnswer(recordedAnswer(turn), turn);
+  reveal(turn, "light");
+}
+
+/** The parts of the page each reveal step changes, marked briefly as it shows. */
+const REVEAL_MARKS = { query: ["g-cypher-form"], answer: ["ad-estate", "g-draw"], rows: ["g-rows"] };
+const markTimers = new Map();
+
+function mark(step) {
+  if (reduced()) return;
+  for (const id of REVEAL_MARKS[step]) {
+    const el = $(id);
+    clearTimeout(markTimers.get(id));
+    // Restarted, so a mark that is still fading runs again from the start.
+    el.removeAttribute("data-reveal");
+    void el.offsetWidth;
+    el.setAttribute("data-reveal", step);
+    markTimers.set(id, setTimeout(() => el.removeAttribute("data-reveal"), REVEAL_MARK_MS / PACE));
+  }
+}
+
+function unmark() {
+  for (const [id, t] of markTimers) {
+    clearTimeout(t);
+    $(id).removeAttribute("data-reveal");
+  }
+  markTimers.clear();
+}
+
+/**
+ * behold#1192: a question turn shows in order, as the prompt pane reaches
+ * `at` (play.js `revealAt`): its query while the busy line shows, then the
+ * answer drawn and framed on the estate graph as the reply starts, then the
+ * rows as it finishes. The step that changed is marked for a moment.
+ */
+function reveal(turn, at) {
+  if (!state.loop || turn !== state.loop.question) return;
+  const steps = newSteps(state.revealed, revealAt(at, { reduced: reduced() }));
+  for (const step of steps) {
+    state.revealed.push(step);
+    showStep(turn, step);
+    mark(step);
+  }
+  html.dataset.revealed = state.revealed.join(" ");
+}
+
+function showStep(turn, step) {
+  if (step === "query") {
+    const fill = cypherFill(turn);
+    $("g-cypher").value = fill.cypher;
+    $("g-params").value = fill.params;
+    $("ad-pane-title").textContent = "Cypher";
+    showCall(fill.call, callTitle(turn));
+    // What the load turn showed goes: the answer area waits for this query's answer.
+    showAnswer({ status: 200, body: {} });
+    return;
+  }
+  const answer = recordedAnswer(turn);
+  if (step === "rows") {
+    showAnswer(answer, { turn, draw: false });
+    return;
+  }
+  showAnswer(answer, { turn, rows: false });
   lightEstate(
     turn.light,
     turn.light.length ? "" : "The estate graph draws no card for what this answer names (indexed cloud and cluster objects). They light in the answer's drawing.",
@@ -530,6 +595,9 @@ function startLoop(i) {
   state.paneChosen = null;
   state.phase = "playing";
   state.badgeTurn = "idle";
+  state.revealed = [];
+  delete html.dataset.revealed;
+  unmark();
   badge.reset();
   html.dataset.loop = String(i);
   delete html.dataset.turn;
@@ -616,7 +684,9 @@ async function boot() {
   // The question's busy line is behold running its query: the badge moves from there until its answer has drawn.
   addEventListener("behold:ask-busy", (e) => {
     const d = e.detail;
-    if (!d || !d.busy || !state.loop || d.step !== state.loop.question.id || state.badgeTurn !== "idle") return;
+    if (!d || !d.busy || !state.loop || d.step !== state.loop.question.id) return;
+    reveal(state.loop.question, "busy");
+    if (state.badgeTurn !== "idle") return;
     state.badgeTurn = "running";
     badge.start();
   });
@@ -633,6 +703,7 @@ async function boot() {
   addEventListener("behold:ask-done", (e) => {
     const turn = e.detail && e.detail.ask && e.detail.ask.turn;
     if (!turn || !state.loop || turn !== state.loop.question) return;
+    reveal(turn, "done");
     state.phase = "after";
     state.doneAt = clock();
     setEditable(true);
