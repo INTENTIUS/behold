@@ -375,6 +375,15 @@ async function playAll(page: Page, reduced: boolean) {
     expect(atQ.answerLit).toEqual(drawn);
     expect(atQ.domAnswerLit.sort()).toEqual([...drawn].sort());
     const after = await waitFor(page, `loop ${i} to finish`, (s) => s.loop === String(i) && s.phase === "after");
+    // behold#1214: Next question is white with black text, and in the visitor's turn it glows, or holds a steady ring under reduced motion.
+    await page.mouse.move(1, 1);
+    const next = await page.evaluate(() => {
+      const s = getComputedStyle(document.getElementById("ad-next")!);
+      return { bg: s.backgroundColor, color: s.color, animation: s.animationName, ring: s.boxShadow };
+    });
+    expect([next.bg, next.color]).toEqual(["rgb(255, 255, 255)", "rgb(11, 14, 20)"]);
+    expect(next.ring).not.toBe("none");
+    expect(next.animation).toBe(reduced ? "none" : "ad-next-glow");
     // behold#1192: the rows and sources are there once the reply has printed (checkRevealLog checks the order).
     // behold#1191: each source in words, its scope key and raw times on hover; the call in words.
     for (const line of sourceWords(q.sources)) expect(after.sources).toContain(line);

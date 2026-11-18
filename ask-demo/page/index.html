@@ -35,7 +35,6 @@
       .ad-loop { display: flex; align-items: center; gap: 10px; white-space: nowrap; font: 12.5px var(--font-mono); color: var(--muted); }
       button { background: var(--surface-box); color: var(--fg); border: 1px solid var(--rule); border-radius: 6px; padding: 4px 10px; font: inherit; cursor: pointer; }
       button:disabled { opacity: 0.5; cursor: not-allowed; }
-      #ad-next.ad-wanted { border-color: var(--pending); }
       /* behold#1193: the Cypher box reads as playback while the recording plays, and as the visitor's once the reply has printed. */
       .ad-turn { margin: 0; display: flex; align-items: baseline; gap: 8px; color: var(--muted); font-size: 12.5px; }
       .ad-turn-tag { flex: none; font: 600 11px var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; border: 1px solid var(--rule); border-radius: 999px; padding: 0 8px; color: var(--ink2); }
@@ -48,6 +47,18 @@
       .ad-countdown { margin: 0; color: var(--ink2); font-size: 12.5px; }
       html[data-held] #ad-stay { display: none; }
       #ad-restore[hidden] { display: none; }
+      /* behold#1214: the way on is the one button that stands out. */
+      #ad-next { background: #ffffff; color: #0b0e14; border: 1px solid #ffffff; font: 700 14px var(--font-ui); padding: 6px 16px; border-radius: 8px; }
+      #ad-next:hover { background: #dfe6ee; border-color: #dfe6ee; }
+      #ad-next:focus-visible { outline: 3px solid var(--pending); outline-offset: 2px; }
+      html[data-phase="after"] #ad-next, #ad-next.ad-wanted { box-shadow: 0 0 0 3px color-mix(in srgb, var(--pending) 70%, transparent); }
+      @media (prefers-reduced-motion: no-preference) {
+        html[data-phase="after"] #ad-next, #ad-next.ad-wanted { animation: ad-next-glow 1.6s ease-in-out infinite; }
+      }
+      @keyframes ad-next-glow {
+        0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--pending) 70%, transparent), 0 0 0 0 transparent; }
+        50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--pending) 70%, transparent), 0 0 18px 4px color-mix(in srgb, var(--pending) 55%, transparent); }
+      }
 
       #ad-main { display: grid; grid-template-columns: minmax(0, 3fr) minmax(320px, 2fr); min-height: 0; }
       #ad-estate { position: relative; min-height: 0; min-width: 0; background: #0b0e14; }
