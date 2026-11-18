@@ -5,20 +5,24 @@ import { describe, expect, it } from "vitest";
 import { BEAT_GAP_MS, playback } from "../../web/kiosk-ask.js";
 import {
   LOOP_MS,
+  MAX_ZOOM,
   MIN_DWELL_MS,
   REDUCED_READ_MS,
   beatOf,
   callLine,
   cypherFill,
+  keepInside,
   drawLight,
   loopOf,
   loopTiming,
   narrationProblems,
+  panView,
   parseParams,
   recordedAnswer,
   recordedDate,
   recordedWords,
   sourceWords,
+  zoomView,
 } from "./play.js";
 
 const HERE = import.meta.dirname;
@@ -151,5 +155,33 @@ describe("a visitor's parameters", () => {
     expect(parseParams(' {"k": 1} ')).toEqual({ ok: true, params: { k: 1 } });
     expect(parseParams("[1]")).toEqual({ ok: false, error: "Parameters are a JSON object." });
     expect(parseParams("{")).toEqual({ ok: false, error: "Parameters are a JSON object." });
+  });
+});
+
+describe("the visitor's zoom (#1175)", () => {
+  const full = { x: 0, y: 0, width: 2000, height: 3000 };
+  it("zooms about a point that stays put, and back out to the full graph", () => {
+    const v = zoomView(full, full, 2, { x: 500, y: 600 });
+    expect(v).toEqual({ x: 250, y: 300, width: 1000, height: 1500 });
+    expect(zoomView(v, full, 0.5, { x: 500, y: 600 })).toEqual(full);
+  });
+  it("stops at the full graph and at MAX_ZOOM", () => {
+    expect(zoomView(full, full, 0.5)).toEqual(full);
+    const deep = zoomView(full, full, 1000);
+    expect(deep.height).toBeCloseTo(3000 / MAX_ZOOM);
+    expect(zoomView(deep, full, 2)).toEqual(deep);
+  });
+  it("zooms a frame that is not the graph's shape by its larger side", () => {
+    const frame = { x: 100, y: 100, width: 1500, height: 300 };
+    const out = zoomView(frame, full, 0.25);
+    expect(out.width).toBe(2000);
+    expect(out.height).toBe(400);
+    expect(out.x).toBe(0);
+  });
+  it("pans inside the graph", () => {
+    const v = { x: 100, y: 100, width: 500, height: 500 };
+    expect(panView(v, full, -400, 50)).toEqual({ x: 0, y: 150, width: 500, height: 500 });
+    expect(panView(v, full, 5000, 5000)).toEqual({ x: 1500, y: 2500, width: 500, height: 500 });
+    expect(keepInside({ x: 0, y: 0, width: 2400, height: 100 }, full)).toEqual({ x: -200, y: 0, width: 2400, height: 100 });
   });
 });
