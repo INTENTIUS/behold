@@ -1,7 +1,7 @@
 {
   "$schema": "./narration.schema.json",
   "format": "behold-ask-demo-narration/1",
-  "recordedAt": "2026-11-18T16:56:39.001Z",
+  "recordedAt": "2026-11-18T17:20:19.219Z",
   "note": "A recording of one run on emulators: example-three-cloud applied to floci, floci-az and floci-gcp, the floci AWS account indexed with behold index aws, and a kind cluster indexed with behold index kubernetes. Each question turn is one behold mcp ask call against behold serve of that estate, with the rows it answered. Nothing here is read when the page plays.",
   "recordCommand": "just ask-demo-record",
   "agentCommand": "behold mcp --url http://localhost:4674",
@@ -137,7 +137,7 @@
           "scopeKey": "chant/aws",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 28,
           "edges": 42
@@ -146,7 +146,7 @@
           "scopeKey": "chant/azure",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 0
@@ -155,7 +155,7 @@
           "scopeKey": "chant/dns",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 12,
           "edges": 15
@@ -164,7 +164,7 @@
           "scopeKey": "chant/gcp",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 11,
           "edges": 11
@@ -173,7 +173,7 @@
           "scopeKey": "engine/choudoufu/three-cloud-azure@azure",
           "source": "engine",
           "name": "choudoufu",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 15
@@ -182,8 +182,8 @@
           "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T16:56:35.506Z",
-          "observedAt": "2026-11-18T16:55:59.438Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
+          "observedAt": "2026-11-18T17:19:41.416Z",
           "nodes": 17,
           "edges": 11
         },
@@ -191,8 +191,8 @@
           "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T16:56:35.506Z",
-          "observedAt": "2026-11-18T16:56:28.385Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
+          "observedAt": "2026-11-18T17:20:08.779Z",
           "nodes": 4,
           "edges": 0
         }
@@ -308,7 +308,7 @@
           "scopeKey": "chant/aws",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 28,
           "edges": 42
@@ -317,7 +317,7 @@
           "scopeKey": "chant/azure",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 0
@@ -326,7 +326,7 @@
           "scopeKey": "chant/dns",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 12,
           "edges": 15
@@ -335,7 +335,7 @@
           "scopeKey": "chant/gcp",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 11,
           "edges": 11
@@ -344,7 +344,7 @@
           "scopeKey": "engine/choudoufu/three-cloud-azure@azure",
           "source": "engine",
           "name": "choudoufu",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 15
@@ -353,8 +353,8 @@
           "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T16:56:35.506Z",
-          "observedAt": "2026-11-18T16:55:59.438Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
+          "observedAt": "2026-11-18T17:19:41.416Z",
           "nodes": 17,
           "edges": 11
         },
@@ -362,8 +362,8 @@
           "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T16:56:35.506Z",
-          "observedAt": "2026-11-18T16:56:28.385Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
+          "observedAt": "2026-11-18T17:20:08.779Z",
           "nodes": 4,
           "edges": 0
         }
@@ -491,7 +491,7 @@
           "scopeKey": "chant/aws",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 28,
           "edges": 42
@@ -500,7 +500,7 @@
           "scopeKey": "chant/azure",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 0
@@ -509,7 +509,7 @@
           "scopeKey": "chant/dns",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 12,
           "edges": 15
@@ -518,7 +518,7 @@
           "scopeKey": "chant/gcp",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 11,
           "edges": 11
@@ -527,7 +527,7 @@
           "scopeKey": "engine/choudoufu/three-cloud-azure@azure",
           "source": "engine",
           "name": "choudoufu",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 15
@@ -536,8 +536,8 @@
           "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T16:56:35.506Z",
-          "observedAt": "2026-11-18T16:55:59.438Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
+          "observedAt": "2026-11-18T17:19:41.416Z",
           "nodes": 17,
           "edges": 11
         },
@@ -545,8 +545,8 @@
           "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T16:56:35.506Z",
-          "observedAt": "2026-11-18T16:56:28.385Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
+          "observedAt": "2026-11-18T17:20:08.779Z",
           "nodes": 4,
           "edges": 0
         }
@@ -575,161 +575,161 @@
       ],
       "rows": [
         {
-          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-01070945a68658109",
+          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-70acaaa48c47cdd56",
           "kind": "AWS::EC2::SecurityGroup",
-          "name": "sg-01070945a68658109",
-          "declaredAs": "aws/aws/aws:ec2/securityGroup:SecurityGroup::web-alb-sg",
-          "declared": "web-alb-sg"
-        },
-        {
-          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-7a1d7ab385f89646e",
-          "kind": "AWS::EC2::SecurityGroup",
-          "name": "sg-7a1d7ab385f89646e",
+          "name": "sg-70acaaa48c47cdd56",
           "declaredAs": "aws/aws/aws:ec2/securityGroup:SecurityGroup::web-task-sg",
           "declared": "web-task-sg"
         },
         {
-          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-18e2fc4a",
-          "kind": "AWS::EC2::Subnet",
-          "name": "subnet-18e2fc4a",
-          "declaredAs": "aws/aws/aws:ec2/subnet:Subnet::network-public-subnet-1",
-          "declared": "network-public-subnet-1"
+          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-72eb9f85f54b50f9d",
+          "kind": "AWS::EC2::SecurityGroup",
+          "name": "sg-72eb9f85f54b50f9d",
+          "declaredAs": "aws/aws/aws:ec2/securityGroup:SecurityGroup::web-alb-sg",
+          "declared": "web-alb-sg"
         },
         {
-          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-aac5af37",
+          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-33900fa9",
           "kind": "AWS::EC2::Subnet",
-          "name": "subnet-aac5af37",
-          "declaredAs": "aws/aws/aws:ec2/subnet:Subnet::network-public-subnet-2",
-          "declared": "network-public-subnet-2"
-        },
-        {
-          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-bba617fc",
-          "kind": "AWS::EC2::Subnet",
-          "name": "subnet-bba617fc",
-          "declaredAs": "aws/aws/aws:ec2/subnet:Subnet::network-private-subnet-2",
-          "declared": "network-private-subnet-2"
-        },
-        {
-          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-d8ed7ac1",
-          "kind": "AWS::EC2::Subnet",
-          "name": "subnet-d8ed7ac1",
+          "name": "subnet-33900fa9",
           "declaredAs": "aws/aws/aws:ec2/subnet:Subnet::network-private-subnet-1",
           "declared": "network-private-subnet-1"
         },
         {
-          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-bb141a8f",
+          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-6b280b90",
+          "kind": "AWS::EC2::Subnet",
+          "name": "subnet-6b280b90",
+          "declaredAs": "aws/aws/aws:ec2/subnet:Subnet::network-public-subnet-2",
+          "declared": "network-public-subnet-2"
+        },
+        {
+          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-d9c2d3df",
+          "kind": "AWS::EC2::Subnet",
+          "name": "subnet-d9c2d3df",
+          "declaredAs": "aws/aws/aws:ec2/subnet:Subnet::network-public-subnet-1",
+          "declared": "network-public-subnet-1"
+        },
+        {
+          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-fe6ca532",
+          "kind": "AWS::EC2::Subnet",
+          "name": "subnet-fe6ca532",
+          "declaredAs": "aws/aws/aws:ec2/subnet:Subnet::network-private-subnet-2",
+          "declared": "network-private-subnet-2"
+        },
+        {
+          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-f5fcd107",
           "kind": "AWS::EC2::VPC",
-          "name": "vpc-bb141a8f",
+          "name": "vpc-f5fcd107",
           "declaredAs": "aws/aws/aws:ec2/vpc:Vpc::network-vpc",
           "declared": "network-vpc"
         }
       ],
       "keys": [
-        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-01070945a68658109",
-        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-7a1d7ab385f89646e",
-        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-18e2fc4a",
-        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-aac5af37",
-        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-bba617fc",
-        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-d8ed7ac1",
-        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-bb141a8f"
+        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-70acaaa48c47cdd56",
+        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-72eb9f85f54b50f9d",
+        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-33900fa9",
+        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-6b280b90",
+        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-d9c2d3df",
+        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-fe6ca532",
+        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-f5fcd107"
       ],
       "light": [
-        "aws/aws/aws:ec2/securityGroup:SecurityGroup::web-alb-sg",
         "aws/aws/aws:ec2/securityGroup:SecurityGroup::web-task-sg",
+        "aws/aws/aws:ec2/securityGroup:SecurityGroup::web-alb-sg",
         "aws/subnet:Subnet ×4",
         "aws/aws/aws:ec2/vpc:Vpc::network-vpc"
       ],
       "draw": {
         "nodes": [
           {
-            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-01070945a68658109",
+            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-70acaaa48c47cdd56",
             "kind": "AWS::EC2::SecurityGroup",
-            "name": "sg-01070945a68658109",
+            "name": "sg-70acaaa48c47cdd56",
             "source": "index",
             "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
           },
           {
-            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-7a1d7ab385f89646e",
+            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-72eb9f85f54b50f9d",
             "kind": "AWS::EC2::SecurityGroup",
-            "name": "sg-7a1d7ab385f89646e",
+            "name": "sg-72eb9f85f54b50f9d",
             "source": "index",
             "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
           },
           {
-            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-18e2fc4a",
+            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-33900fa9",
             "kind": "AWS::EC2::Subnet",
-            "name": "subnet-18e2fc4a",
+            "name": "subnet-33900fa9",
             "source": "index",
             "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
           },
           {
-            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-aac5af37",
+            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-6b280b90",
             "kind": "AWS::EC2::Subnet",
-            "name": "subnet-aac5af37",
+            "name": "subnet-6b280b90",
             "source": "index",
             "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
           },
           {
-            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-bba617fc",
+            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-d9c2d3df",
             "kind": "AWS::EC2::Subnet",
-            "name": "subnet-bba617fc",
+            "name": "subnet-d9c2d3df",
             "source": "index",
             "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
           },
           {
-            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-d8ed7ac1",
+            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-fe6ca532",
             "kind": "AWS::EC2::Subnet",
-            "name": "subnet-d8ed7ac1",
+            "name": "subnet-fe6ca532",
             "source": "index",
             "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
           },
           {
-            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-bb141a8f",
+            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-f5fcd107",
             "kind": "AWS::EC2::VPC",
-            "name": "vpc-bb141a8f",
+            "name": "vpc-f5fcd107",
             "source": "index",
             "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
           }
         ],
         "edges": [
           {
-            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-01070945a68658109",
-            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-bb141a8f",
+            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-70acaaa48c47cdd56",
+            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-f5fcd107",
             "viaAttr": "VpcId",
             "origin": "derived",
             "rule": "aws:AWS::EC2::SecurityGroup:VpcId"
           },
           {
-            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-7a1d7ab385f89646e",
-            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-bb141a8f",
+            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-72eb9f85f54b50f9d",
+            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-f5fcd107",
             "viaAttr": "VpcId",
             "origin": "derived",
             "rule": "aws:AWS::EC2::SecurityGroup:VpcId"
           },
           {
-            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-18e2fc4a",
-            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-bb141a8f",
+            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-33900fa9",
+            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-f5fcd107",
             "viaAttr": "VpcId",
             "origin": "derived",
             "rule": "aws:AWS::EC2::Subnet:VpcId"
           },
           {
-            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-aac5af37",
-            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-bb141a8f",
+            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-6b280b90",
+            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-f5fcd107",
             "viaAttr": "VpcId",
             "origin": "derived",
             "rule": "aws:AWS::EC2::Subnet:VpcId"
           },
           {
-            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-bba617fc",
-            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-bb141a8f",
+            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-d9c2d3df",
+            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-f5fcd107",
             "viaAttr": "VpcId",
             "origin": "derived",
             "rule": "aws:AWS::EC2::Subnet:VpcId"
           },
           {
-            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-d8ed7ac1",
-            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-bb141a8f",
+            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-fe6ca532",
+            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-f5fcd107",
             "viaAttr": "VpcId",
             "origin": "derived",
             "rule": "aws:AWS::EC2::Subnet:VpcId"
@@ -741,7 +741,7 @@
           "scopeKey": "chant/aws",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 28,
           "edges": 42
@@ -750,7 +750,7 @@
           "scopeKey": "chant/azure",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 0
@@ -759,7 +759,7 @@
           "scopeKey": "chant/dns",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 12,
           "edges": 15
@@ -768,7 +768,7 @@
           "scopeKey": "chant/gcp",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 11,
           "edges": 11
@@ -777,7 +777,7 @@
           "scopeKey": "engine/choudoufu/three-cloud-azure@azure",
           "source": "engine",
           "name": "choudoufu",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 15
@@ -786,8 +786,8 @@
           "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T16:56:35.506Z",
-          "observedAt": "2026-11-18T16:55:59.438Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
+          "observedAt": "2026-11-18T17:19:41.416Z",
           "nodes": 17,
           "edges": 11
         },
@@ -795,13 +795,13 @@
           "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T16:56:35.506Z",
-          "observedAt": "2026-11-18T16:56:28.385Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
+          "observedAt": "2026-11-18T17:20:08.779Z",
           "nodes": 4,
           "edges": 0
         }
       ],
-      "reply": "7 of the account's indexed resources carry the aws member's ownership markers, and each matches a resource it declares: sg-01070945a68658109 is web-alb-sg, sg-7a1d7ab385f89646e is web-task-sg, subnet-18e2fc4a is network-public-subnet-1, subnet-aac5af37 is network-public-subnet-2, subnet-bba617fc is network-private-subnet-2, subnet-d8ed7ac1 is network-private-subnet-1 and vpc-bb141a8f is network-vpc."
+      "reply": "7 of the account's indexed resources carry the aws member's ownership markers, and each matches a resource it declares: sg-70acaaa48c47cdd56 is web-task-sg, sg-72eb9f85f54b50f9d is web-alb-sg, subnet-33900fa9 is network-private-subnet-1, subnet-6b280b90 is network-public-subnet-2, subnet-d9c2d3df is network-public-subnet-1, subnet-fe6ca532 is network-private-subnet-2 and vpc-f5fcd107 is network-vpc."
     },
     {
       "id": "aws-account-unmanaged",
@@ -823,14 +823,14 @@
       ],
       "rows": [
         {
+          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-617f6fc6b9d267e6c",
+          "kind": "AWS::EC2::SecurityGroup",
+          "name": "sg-617f6fc6b9d267e6c"
+        },
+        {
           "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-default-us-east-1",
           "kind": "AWS::EC2::SecurityGroup",
           "name": "sg-default-us-east-1"
-        },
-        {
-          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-fd80d041aa33f4f3e",
-          "kind": "AWS::EC2::SecurityGroup",
-          "name": "sg-fd80d041aa33f4f3e"
         },
         {
           "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-default-us-east-1-a",
@@ -859,8 +859,8 @@
         }
       ],
       "keys": [
+        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-617f6fc6b9d267e6c",
         "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-default-us-east-1",
-        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-fd80d041aa33f4f3e",
         "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-default-us-east-1-a",
         "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-default-us-east-1-b",
         "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-default-us-east-1-c",
@@ -871,16 +871,16 @@
       "draw": {
         "nodes": [
           {
-            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-default-us-east-1",
+            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-617f6fc6b9d267e6c",
             "kind": "AWS::EC2::SecurityGroup",
-            "name": "sg-default-us-east-1",
+            "name": "sg-617f6fc6b9d267e6c",
             "source": "index",
             "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
           },
           {
-            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-fd80d041aa33f4f3e",
+            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-default-us-east-1",
             "kind": "AWS::EC2::SecurityGroup",
-            "name": "sg-fd80d041aa33f4f3e",
+            "name": "sg-default-us-east-1",
             "source": "index",
             "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
           },
@@ -956,7 +956,7 @@
           "scopeKey": "chant/aws",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 28,
           "edges": 42
@@ -965,7 +965,7 @@
           "scopeKey": "chant/azure",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 0
@@ -974,7 +974,7 @@
           "scopeKey": "chant/dns",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 12,
           "edges": 15
@@ -983,7 +983,7 @@
           "scopeKey": "chant/gcp",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 11,
           "edges": 11
@@ -992,7 +992,7 @@
           "scopeKey": "engine/choudoufu/three-cloud-azure@azure",
           "source": "engine",
           "name": "choudoufu",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 15
@@ -1001,8 +1001,8 @@
           "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T16:56:35.506Z",
-          "observedAt": "2026-11-18T16:55:59.438Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
+          "observedAt": "2026-11-18T17:19:41.416Z",
           "nodes": 17,
           "edges": 11
         },
@@ -1010,13 +1010,13 @@
           "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T16:56:35.506Z",
-          "observedAt": "2026-11-18T16:56:28.385Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
+          "observedAt": "2026-11-18T17:20:08.779Z",
           "nodes": 4,
           "edges": 0
         }
       ],
-      "reply": "7 resources there have no owner in the workspace: sg-default-us-east-1 (AWS::EC2::SecurityGroup), sg-fd80d041aa33f4f3e (AWS::EC2::SecurityGroup), subnet-default-us-east-1-a (AWS::EC2::Subnet), subnet-default-us-east-1-b (AWS::EC2::Subnet), subnet-default-us-east-1-c (AWS::EC2::Subnet), vpc-default-us-east-1 (AWS::EC2::VPC) and orders-export-archive (AWS::S3::Bucket)."
+      "reply": "7 resources there have no owner in the workspace: sg-617f6fc6b9d267e6c (AWS::EC2::SecurityGroup), sg-default-us-east-1 (AWS::EC2::SecurityGroup), subnet-default-us-east-1-a (AWS::EC2::Subnet), subnet-default-us-east-1-b (AWS::EC2::Subnet), subnet-default-us-east-1-c (AWS::EC2::Subnet), vpc-default-us-east-1 (AWS::EC2::VPC) and orders-export-archive (AWS::S3::Bucket)."
     },
     {
       "id": "serviceaccount-roles",
@@ -1086,7 +1086,7 @@
           "scopeKey": "chant/aws",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 28,
           "edges": 42
@@ -1095,7 +1095,7 @@
           "scopeKey": "chant/azure",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 0
@@ -1104,7 +1104,7 @@
           "scopeKey": "chant/dns",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 12,
           "edges": 15
@@ -1113,7 +1113,7 @@
           "scopeKey": "chant/gcp",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 11,
           "edges": 11
@@ -1122,7 +1122,7 @@
           "scopeKey": "engine/choudoufu/three-cloud-azure@azure",
           "source": "engine",
           "name": "choudoufu",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 15
@@ -1131,8 +1131,8 @@
           "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T16:56:35.506Z",
-          "observedAt": "2026-11-18T16:55:59.438Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
+          "observedAt": "2026-11-18T17:19:41.416Z",
           "nodes": 17,
           "edges": 11
         },
@@ -1140,8 +1140,8 @@
           "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T16:56:35.506Z",
-          "observedAt": "2026-11-18T16:56:28.385Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
+          "observedAt": "2026-11-18T17:20:08.779Z",
           "nodes": 4,
           "edges": 0
         }
@@ -1201,7 +1201,7 @@
           "scopeKey": "chant/aws",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 28,
           "edges": 42
@@ -1210,7 +1210,7 @@
           "scopeKey": "chant/azure",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 0
@@ -1219,7 +1219,7 @@
           "scopeKey": "chant/dns",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 12,
           "edges": 15
@@ -1228,7 +1228,7 @@
           "scopeKey": "chant/gcp",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 11,
           "edges": 11
@@ -1237,7 +1237,7 @@
           "scopeKey": "engine/choudoufu/three-cloud-azure@azure",
           "source": "engine",
           "name": "choudoufu",
-          "readAt": "2026-11-18T16:56:35.506Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 15
@@ -1246,8 +1246,8 @@
           "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T16:56:35.506Z",
-          "observedAt": "2026-11-18T16:55:59.438Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
+          "observedAt": "2026-11-18T17:19:41.416Z",
           "nodes": 17,
           "edges": 11
         },
@@ -1255,8 +1255,8 @@
           "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T16:56:35.506Z",
-          "observedAt": "2026-11-18T16:56:28.385Z",
+          "readAt": "2026-11-18T17:20:15.866Z",
+          "observedAt": "2026-11-18T17:20:08.779Z",
           "nodes": 4,
           "edges": 0
         }
