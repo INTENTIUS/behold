@@ -39,13 +39,16 @@
  */
 import type { Hono, Context } from "hono";
 import type { GraphIR } from "@intentius/chant";
-import { CypherRefused, GraphDb, graphDbDir, type CypherAnswer } from "./db.ts";
+import { GraphDb, graphDbDir } from "./db.ts";
+import { countsOf, listedCatalog, queryAnswer, resolveAnswer, stamps, templateAnswer, type Answer, type PaneReads, type PeerState } from "./answers.ts";
 import { loadLadybug, type PeerImport, type PeerRefusal } from "./peer.ts";
-import { emptyRows, finishRows, rowsFromChantIr, rowsFromEngineGraph, rowsFromIndex, rowsFromListing, type LoadedRows, type SourceStamp } from "./rows.ts";
+import { emptyRows, finishRows, rowsFromChantIr, rowsFromEngineGraph, rowsFromIndex, rowsFromListing, type LoadedRows } from "./rows.ts";
 import { INDEX_DIFF_ROUTES, mountIndexDiff } from "./index-diff-routes.ts";
 import { activeLayout, type ActiveLayout } from "./layout.ts";
 import { findDocuments, type EngineRunner, type Git, type MemberRef } from "./sources.ts";
-import { TemplateError, applies, catalogFor, expandTemplate, resolveResource, withEngineRefusals, type Expanded, type Template, type TemplateCatalog } from "./templates.ts";
+import { catalogFor, withEngineRefusals, type Template, type TemplateCatalog } from "./templates.ts";
+
+export { subgraphOf, viewLinkFor } from "./answers.ts";
 
 /** The chant read the session starts from: one project's IR, or a composed estate with its member names. */
 export interface ChantRead {
@@ -205,7 +208,7 @@ export class GraphSession {
     return this.catalog();
   }
 
-  async peerState(): Promise<{ available: true; version?: string } | { available: false; refusal: PeerRefusal }> {
+  async peerState(): Promise<PeerState> {
     const p = await loadLadybug(this.deps.peer);
     return p.ok ? { available: true, ...(p.lbug.VERSION ? { version: p.lbug.VERSION } : {}) } : { available: false, refusal: p.refusal };
   }
@@ -217,63 +220,6 @@ export class GraphSession {
 }
 
 const ownCypher = (t: Template): boolean => t.origin === "project" && t.language === "cypher";
-
-/** A catalog as the routes list it: the templates and the refused project entries, without its helpers. */
-function listed(cat: TemplateCatalog, engineChecked: boolean) {
-  return { templates: cat.templates, refused: cat.refused, catalog: cat.note, catalogSource: cat.source, engineChecked };
-}
-
-/** The answer's keys, with the edges among them: what the pane draws. */
-export function subgraphOf(rows: LoadedRows, keys: readonly string[]): { nodes: Array<{ key: string; kind: string; name: string; source: string; scopeKey: string }>; edges: Array<{ from: string; to: string; viaAttr: string; origin: string; rule: string }> } {
-  const want = new Set(keys);
-  const nodes = rows.resources.filter((r) => want.has(r.key)).map((r) => ({ key: r.key, kind: r.kind, name: r.name, source: r.source, scopeKey: r.scopeKey }));
-  const edges = rows.refs.filter((e) => want.has(e.from) && want.has(e.to)).map((e) => ({ from: e.from, to: e.to, viaAttr: e.viaAttr, origin: e.origin, rule: e.rule }));
-  return { nodes, edges };
-}
-
-/**
- * The behold view that draws an answer: the members holding its chant nodes
- * (and the chant nodes that share a cloud id with its other nodes) brought
- * forward, the first one selected.
- */
-export function viewLinkFor(origin: string, rows: LoadedRows, keys: readonly string[]): string | null {
-  const byKey = new Map(rows.resources.map((r) => [r.key, r]));
-  const chant = new Set<string>();
-  const valuesOf = new Map<string, string[]>();
-  for (const k of rows.knownAs) valuesOf.set(k.key, [...(valuesOf.get(k.key) ?? []), k.value]);
-  const holders = new Map<string, string[]>();
-  for (const k of rows.knownAs) holders.set(k.value, [...(holders.get(k.value) ?? []), k.key]);
-  for (const key of keys) {
-    const r = byKey.get(key);
-    if (!r) continue;
-    if (r.source === "chant") chant.add(key);
-    else for (const v of valuesOf.get(key) ?? []) for (const h of holders.get(v) ?? []) if (byKey.get(h)?.source === "chant") chant.add(h);
-  }
-  if (!chant.size) return null;
-  const members = [...new Set([...chant].map((k) => byKey.get(k)!.scopeKey.replace(/^chant\//, "")).filter((m) => m !== "."))];
-  const q = new URLSearchParams();
-  if (members.length) q.set("focus", members.join(","));
-  q.set("node", [...chant][0]!);
-  return `${origin}/?${q}`;
-}
-
-const stamps = (rows: LoadedRows): SourceStamp[] => rows.sources;
-
-function parseParams(raw: string | null): Record<string, unknown> {
-  if (!raw) return {};
-  let v: unknown;
-  try {
-    v = JSON.parse(raw);
-  } catch {
-    throw new CypherRefused("params is not JSON", "cypher-invalid");
-  }
-  if (!v || typeof v !== "object" || Array.isArray(v)) throw new CypherRefused("params is a JSON object of parameter names to values", "cypher-invalid");
-  for (const [k, x] of Object.entries(v)) {
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) throw new CypherRefused(`parameter name ${JSON.stringify(k)} is not a name`, "cypher-invalid");
-    if (x !== null && !["string", "number", "boolean"].includes(typeof x)) throw new CypherRefused(`parameter ${k} is a string, a number, a boolean or null`, "cypher-invalid");
-  }
-  return v as Record<string, unknown>;
-}
 
 /** Every route the pane mounts, for the API index and the no-action test. */
 export const GRAPH_ROUTES = [
@@ -292,20 +238,15 @@ export function mountGraphPane(app: Hono, deps: GraphPaneDeps): GraphSession {
   const origin = (c: Context) => new URL(c.req.url).origin;
   const refusePublic = (c: Context) =>
     deps.public ? c.json({ error: "a public view shows the declared source only, and the graph pane loads engine documents and indexes", code: "public", remedy: "Serve without --public to use the graph pane." }, 403) : undefined;
-  const peerMissing = (c: Context, e: GraphPeerMissing, rows?: LoadedRows) => c.json({ ...e.refusal, ...(rows ? { sources: stamps(rows) } : {}) }, 503);
-  const cypherAnswer = (c: Context, rows: LoadedRows, a: CypherAnswer, extra: Record<string, unknown> = {}) =>
-    c.json({ ...extra, columns: a.columns, rows: a.rows, keys: a.keys, truncated: a.truncated, draw: subgraphOf(rows, a.keys), link: viewLinkFor(origin(c), rows, a.keys), sources: stamps(rows) });
-  const runCypher = async (c: Context, cypher: string, params: Record<string, unknown>, extra: Record<string, unknown> = {}) => {
-    const { rows } = await session.rows();
-    try {
-      const db = await session.database();
-      return cypherAnswer(c, rows, await db.query(cypher, params), extra);
-    } catch (e) {
-      if (e instanceof GraphPeerMissing) return peerMissing(c, e, rows);
-      if (e instanceof CypherRefused) return c.json({ error: e.message, code: e.code, remedy: "The graph holds Resource, CloudId, KNOWN_AS and REF; see GET /api/graphdb for what is loaded.", ...extra, sources: stamps(rows) }, 400);
-      throw e;
-    }
-  };
+  const reads = (c: Context): PaneReads => ({
+    origin: origin(c),
+    rows: async () => (await session.rows()).rows,
+    catalog: () => session.offered(),
+    peer: () => session.peerState(),
+    run: async (cypher, params) => (await session.database()).query(cypher, params),
+    refuse: (e, rows) => (e instanceof GraphPeerMissing ? { status: 503, body: { ...e.refusal, sources: stamps(rows) } } : undefined),
+  });
+  const send = (c: Context, a: Answer) => c.json(a.body, a.status as 200);
 
   app.get("/graph", (c) => c.redirect("/graph.html"));
 
@@ -325,7 +266,7 @@ export function mountGraphPane(app: Hono, deps: GraphPaneDeps): GraphSession {
     return c.json({
       peer: await session.peerState(),
       builtAt: built.builtAt,
-      counts: { resources: r.resources.length, cloudIds: r.cloudIds.length, knownAs: r.knownAs.length, refs: r.refs.length, derived: r.refs.filter((e) => e.origin === "derived").length },
+      counts: countsOf(r),
       tables: built.layout.layout.tables.map((t) => t.name),
       layout: {
         from: built.layout.from,
@@ -342,71 +283,26 @@ export function mountGraphPane(app: Hono, deps: GraphPaneDeps): GraphSession {
   app.get("/api/graphdb/query", async (c) => {
     const pub = refusePublic(c);
     if (pub) return pub;
-    const cypher = c.req.query("cypher") ?? "";
-    let params: Record<string, unknown>;
-    try {
-      params = parseParams(c.req.query("params") ?? null);
-    } catch (e) {
-      return c.json({ error: (e as Error).message, code: (e as CypherRefused).code ?? "cypher-invalid" }, 400);
-    }
-    return runCypher(c, cypher, params, { cypher });
+    return send(c, await queryAnswer(reads(c), c.req.query("cypher") ?? "", c.req.query("params") ?? null));
   });
 
   app.get("/api/graphdb/templates", async (c) => {
     const cat = await session.offered();
-    return c.json(listed(cat, session.engineChecked()));
+    return c.json(listedCatalog(cat, session.engineChecked()));
   });
 
   app.get("/api/graphdb/resolve", async (c) => {
     const pub = refusePublic(c);
     if (pub) return pub;
-    const ref = c.req.query("ref") ?? "";
-    if (!ref.trim()) return c.json({ error: "resolve needs ref: a name, an IR id, a block address or a cloud id", code: "resolve-empty" }, 400);
-    const { rows } = await session.rows();
-    const candidates = resolveResource(rows, ref);
-    const peer = await session.peerState();
-    const cat = await session.offered();
-    const one = candidates.length === 1 ? rows.resources.find((r) => r.key === candidates[0]!.key) : undefined;
-    const templates = one
-      ? cat.templates.filter((t) => applies(t, one)).map((t) => ({
-          name: t.name,
-          title: t.title,
-          origin: t.origin,
-          language: t.language,
-          reads: t.reads,
-          inputs: t.inputs,
-          ...(t.note ? { note: t.note } : {}),
-          available: t.language === "search" || peer.available,
-          ...(t.language === "cypher" && !peer.available ? { refusal: peer.refusal.error, install: peer.refusal.install } : {}),
-          ...(t.inputs.length === 0 ? { expanded: expandTemplate(cat.templates, t.name, one) } : {}),
-        }))
-      : [];
-    return c.json({ ref, resolved: candidates.length === 1, candidates, templates, refused: cat.refused, link: viewLinkFor(origin(c), rows, candidates.map((x) => x.key)), sources: stamps(rows) });
+    return send(c, await resolveAnswer(reads(c), c.req.query("ref") ?? ""));
   });
 
   app.get("/api/graphdb/template", async (c) => {
     const pub = refusePublic(c);
     if (pub) return pub;
-    const name = c.req.query("name") ?? "";
-    const nodeKey = c.req.query("node") ?? "";
-    const { rows } = await session.rows();
-    const node = rows.resources.find((r) => r.key === nodeKey);
-    if (!node) return c.json({ error: `no node ${nodeKey}; resolve it first`, code: "template-node", sources: stamps(rows) }, 404);
     const inputs: Record<string, string> = {};
     for (const [k, v] of Object.entries(c.req.queries())) if (k.startsWith("in.") && v[0] !== undefined) inputs[k.slice(3)] = v[0];
-    const cat = await session.offered();
-    let x: Expanded;
-    try {
-      x = expandTemplate(cat.templates, name, node, inputs);
-    } catch (e) {
-      if (e instanceof TemplateError) return c.json({ error: e.message, code: e.code, sources: stamps(rows) }, 400);
-      throw e;
-    }
-    if (x.language === "search") {
-      const q = new URLSearchParams({ q: x.query, ...(x.env ? { env: x.env } : {}) });
-      return c.json({ expanded: x, search: `/api/search?${q}`, link: `${origin(c)}/?${q}`, sources: stamps(rows) });
-    }
-    return runCypher(c, x.query, x.params ?? {}, { expanded: x });
+    return send(c, await templateAnswer(reads(c), c.req.query("name") ?? "", c.req.query("node") ?? "", inputs));
   });
 
   return session;

@@ -16,7 +16,9 @@ import { join, dirname, basename, relative, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { S3Error, S3Object } from "./s3-object.ts";
 import { fileURLToPath } from "node:url";
-import { beholdVersion, createApp, type ServerOptions } from "./server.ts";
+import { beholdVersion, createApp, graphSessionOf, type ServerOptions } from "./server.ts";
+import { GRAPHDB_FILE, GRAPHDB_MODULE_FILE, LBUG_MODULE_FILE, LBUG_WORKER_FILE } from "./graph-db/graphdb-file.ts";
+import { GraphDbExportRefusal, WASM_LICENSE_FILE, WASM_PACKAGE, browserModule, checkAssetSize, findWasmCore, graphDbFile, staticGraphHtml, type WasmCore } from "./graph-db/export-graphdb.ts";
 import { documentOptions } from "./graph-document-context.ts";
 import { toDocument, type GraphSnapshot } from "./to-document.ts";
 import type { GraphDocument } from "./graph-document.ts";
@@ -314,7 +316,15 @@ export interface ExportOptions {
   rev?: string;
   /** behold#1071: the single-file viewer, for a test; by default the one this build carries, if it carries one (src/single-file.ts). */
   viewer?: SingleFileViewer;
+  /** behold#1162: `--graphdb`: carry the graph pane's rows and LadybugDB's WebAssembly build, so the bundle's /graph page answers Cypher. */
+  graphdb?: boolean;
 }
+
+/** behold#1162: the web files only a `--graphdb` bundle carries. */
+export const GRAPHDB_WEB_FILES = ["graph-static.js"] as const;
+
+/** behold#1162: every file `--graphdb` adds, removed before each export so a plain one carries none of them. */
+export const GRAPHDB_FILES = [GRAPHDB_FILE, GRAPHDB_MODULE_FILE, LBUG_MODULE_FILE, LBUG_WORKER_FILE, WASM_LICENSE_FILE, ...GRAPHDB_WEB_FILES] as const;
 
 /** The graph document a bundle carries at its root (behold#1071). */
 export const GRAPH_FILE = "graph.json";
@@ -443,6 +453,21 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
   const settledNote = settleNote(opts.note);
   if ("error" in settledNote) throw new ExportRefusal(settledNote.error);
   const scrub = exportScrubber(cfg);
+  // behold#1162: refused before anything is captured: the engine is missing, or its worker is too big to host.
+  let wasm: WasmCore | undefined;
+  let wasmModule: string | undefined;
+  if (opts.graphdb) {
+    if (cfg.public) throw new ExportRefusal("--graphdb carries the graph pane's rows, which hold engine documents and cloud ids, and a public view shows the declared source only");
+    try {
+      wasm = findWasmCore();
+      checkAssetSize(LBUG_WORKER_FILE, wasm.workerBytes, wasm.version);
+      wasmModule = await browserModule();
+    } catch (e) {
+      if (e instanceof GraphDbExportRefusal) throw new ExportRefusal(`--graphdb: ${e.message}`);
+      throw e;
+    }
+  }
+  for (const f of GRAPHDB_FILES) rmSync(join(outDir, f), { force: true });
 
   // A snapshot's name is its body's hash, so a re-export into the same folder
   // would leave every body that changed beside its replacement. Start clean.
@@ -514,6 +539,8 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
     // behold#1071: the graph document at the bundle root, and the one-file viewer when this build has one.
     ...(graph ? { graph: GRAPH_FILE } : {}),
     ...(graph && viewer ? { viewer: SINGLE_FILE_NAME } : {}),
+    // behold#1162: the graph pane's rows, which the /graph page answers Cypher over.
+    ...(opts.graphdb ? { graphdb: GRAPHDB_FILE } : {}),
     axes,
     keyToFile,
   };
@@ -536,7 +563,45 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
   // recursively; copyFileSync on it died with ENOTSUP mid-export.
   for (const f of readdirSync(webDir())) {
     if (f === "index.html" || f.endsWith(".test.js")) continue;
+    if (!opts.graphdb && (GRAPHDB_WEB_FILES as readonly string[]).includes(f)) continue;
     cpSync(join(webDir(), f), join(outDir, f), { recursive: true });
+  }
+  // behold#1162: the graph pane's rows and the engine that answers them in the page.
+  let graphdbLine = "";
+  if (opts.graphdb && wasm && wasmModule !== undefined) {
+    const status = await app.request("/api/graphdb");
+    const session = graphSessionOf(app);
+    if (!status.ok || !session) throw new ExportRefusal(`--graphdb: the graph pane did not load (${status.status}): ${(await status.text()).slice(0, 300)}`);
+    const file = await graphDbFile(session, (await status.json()) as Record<string, unknown>, {
+      behold: beholdVersion(),
+      wasm,
+      ...(opts.noSource
+        ? {
+            dropSource: (attrs) => {
+              const holder = { attrs };
+              dropSource(holder);
+              return holder.attrs;
+            },
+          }
+        : {}),
+    });
+    const text = scrub(JSON.stringify(file)) + "\n";
+    try {
+      checkAssetSize(GRAPHDB_FILE, Buffer.byteLength(text), wasm.version);
+    } catch (e) {
+      if (e instanceof GraphDbExportRefusal) throw new ExportRefusal(`--graphdb: ${e.message}`);
+      throw e;
+    }
+    writeFileSync(join(outDir, GRAPHDB_FILE), text);
+    writeFileSync(join(outDir, GRAPHDB_MODULE_FILE), wasmModule);
+    copyFileSync(wasm.module, join(outDir, LBUG_MODULE_FILE));
+    copyFileSync(wasm.worker, join(outDir, LBUG_WORKER_FILE));
+    if (wasm.license) {
+      mkdirSync(join(outDir, "licenses"), { recursive: true });
+      copyFileSync(wasm.license, join(outDir, WASM_LICENSE_FILE));
+    }
+    writeFileSync(join(outDir, "graph.html"), staticGraphHtml(readFileSync(join(webDir(), "graph.html"), "utf8")));
+    graphdbLine = `  Graph DB: ${join(outDir, GRAPHDB_FILE)} (${file.rows.resources.length} resources, ${file.rows.refs.length} edges; ${LBUG_WORKER_FILE} ${(wasm.workerBytes / 1024 / 1024).toFixed(1)} MiB, ${WASM_PACKAGE} ${wasm.version})\n`;
   }
   writeFileSync(join(outDir, "README.md"), BUNDLE_README);
   // #394: the bundle redistributes what the SPA vendors — the iTerm2 colour
@@ -571,6 +636,7 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
     `behold export → ${outDir}\n  ${ok} snapshots${failed ? ` (${failed} endpoint error(s) captured as-is)` : ""}\n` +
       (graph ? `  Graph:  ${join(outDir, GRAPH_FILE)} (${graph.nodes.length} nodes, ${graph.edges.length} edges)\n` : "") +
       (graph && viewer ? `  Viewer: ${join(outDir, SINGLE_FILE_NAME)}\n` : "") +
+      graphdbLine +
       `  View:   npx serve ${outDir}\n` +
       `  Deploy: cd ${outDir} && npx wrangler deploy   → https://${name}.<your-account>.workers.dev\n`,
   );

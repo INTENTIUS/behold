@@ -163,7 +163,7 @@ import { attachBehaviour, type BehaviourMember } from "./behaviour.ts";
 import { attachBehaviourDelta, attachDeclaredBehaviour, paintLive, predictMember, trafficFor, type DeltaMember, type PredictMemberDeps } from "./behaviour-delta.ts";
 import { addEstateMemberEdges } from "./estate-edges.ts";
 import { addChoudoufuReferenceEdges, captureChoudoufu, liveCheckToIr, readLiveCheck, setChoudoufuRunner, setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
-import { GRAPH_ROUTES, mountGraphPane, type GraphPaneDeps } from "./graph-db/pane.ts";
+import { GRAPH_ROUTES, mountGraphPane, type GraphPaneDeps, type GraphSession } from "./graph-db/pane.ts";
 import { choudoufuDiffNodes, choudoufuPlanAnswer, paintPlanDrift, readChoudoufuLive, type Runner as ChoudoufuRunner } from "./choudoufu-live.ts";
 import { cachedChoudoufuPlan, setChoudoufuChantDeps, type ChoudoufuChantDeps, type PlanResourceDrift } from "./choudoufu-chant-read.ts";
 import { choudoufuLexiconNote, setEstateLexiconRead, type LexiconRead } from "./choudoufu-refs.ts";
@@ -1056,6 +1056,14 @@ const RUNTIME_LEXICONS = new Set(["k8s"]);
 function cardPrefixesOf(ir: GraphIR): Record<string, string[]> | undefined {
   const byStack = (ir.groups as { byStack?: Record<string, string[]> }).byStack;
   return byStack && Object.keys(byStack).length ? byStack : undefined;
+}
+
+/** behold#1162: each app's graph pane session, for `behold export --graphdb`, which writes its rows. */
+const GRAPH_SESSIONS = new WeakMap<Hono, GraphSession>();
+
+/** The graph pane session `createApp` mounted on `app`. */
+export function graphSessionOf(app: Hono): GraphSession | undefined {
+  return GRAPH_SESSIONS.get(app);
 }
 
 export function createApp(
@@ -2710,7 +2718,7 @@ export function createApp(
   // embedded LadybugDB (the optional peer @ladybugdb/core), queried in Cypher
   // or from a resource name or id. GET routes only (src/graph-db/pane.ts);
   // nothing here acts, and the only file it writes is its own database.
-  mountGraphPane(app, {
+  const graphSession = mountGraphPane(app, {
     projectDir: () => cfg.projectDir,
     members: () => estateMembers(estateDirs()),
     readChant: async () =>
@@ -2721,6 +2729,7 @@ export function createApp(
     ...(cfg.public ? { public: true } : {}),
     ...cfg.graph,
   });
+  GRAPH_SESSIONS.set(app, graphSession);
 
   // #193: the API's front door, for agents. Everything the SPA can see is
   // plain JSON over these routes — this index makes them discoverable without

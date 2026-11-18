@@ -52,7 +52,7 @@ Usage:
   behold export [project-dir] [--out <dir>] [--env <name>] [--name <worker>] [--emulator]
                 [--terragucci <src> [--terragucci-project <p>] [--reports-base <rel>]] [--no-source]
                 [--yodel-report <file|dir>] [--open-env <env>] [--open-zoom <zoom>] [--note <text>] [--q <query>…]
-                [--count-by <kind|module|attr:name>] [--plan]
+                [--count-by <kind|module|attr:name>] [--plan] [--graphdb]
                 [--publish s3://<bucket>/<prefix>/views/<name> [--commit <sha>] [--keep <n>]]
   behold serve <project-dir…> [--port <n>] [--host <addr>] [--allow-host <name,…>] [--hud <url>] [--env <name>] [--poll <secs>] [--local]
                 [--public] [--terragucci <src> [--terragucci-project <p>] [--terragucci-poll <secs>] [--terragucci-runs <src>]]
@@ -373,6 +373,10 @@ Options:
   --plan              export only: capture the plan read too, the cards'
                       plan facts and each --q at the plan depth; it runs
                       terraform plan -lock=false in each root (behold#922).
+  --graphdb           export only: carry the graph pane's rows (graphdb.json)
+                      and LadybugDB's WebAssembly build, so the bundle's /graph
+                      page answers Cypher, resolve and templates in the browser
+                      with the same read-only rules as serve. Adds about 23.5 MiB.
   -h, --help          This text.
   -v, --version       Print the behold version.
 `;
@@ -1230,6 +1234,7 @@ async function runExportCmd(rest: string[]): Promise<void> {
   const queries: string[] = [];
   let countBy: string | undefined;
   let plan = false;
+  let graphdb = false;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a === "--out") {
@@ -1239,6 +1244,7 @@ async function runExportCmd(rest: string[]): Promise<void> {
     else if (a === "--q") queries.push(rest[++i] ?? "");
     else if (a === "--count-by") countBy = rest[++i] ?? "";
     else if (a === "--plan") plan = true;
+    else if (a === "--graphdb") graphdb = true;
     else if (a === "--note") note = rest[++i] ?? "";
     else if (a === "--open-env") openEnv = rest[++i] ?? "";
     else if (a === "--open-zoom") openZoom = rest[++i] ?? "";
@@ -1296,8 +1302,8 @@ async function runExportCmd(rest: string[]): Promise<void> {
   if (singleFile !== undefined) {
     const bad = !singleFile
       ? "--single-file needs the path of the file to write"
-      : outGiven || publish !== undefined || terragucci || yodelReport
-        ? "--single-file writes one file and nothing else, so it takes no --out, --publish, --terragucci or --yodel-report"
+      : outGiven || publish !== undefined || terragucci || yodelReport || graphdb
+        ? "--single-file writes one file and nothing else, so it takes no --out, --publish, --terragucci, --yodel-report or --graphdb"
         : undefined;
     if (bad) {
       process.stderr.write(`behold export: ${bad}\n`);
@@ -1379,6 +1385,7 @@ async function runExportCmd(rest: string[]): Promise<void> {
       ...(settledQueries.queries ? { queries: settledQueries.queries } : {}),
       ...(settledCountBy.countBy ? { countBy: settledCountBy.countBy } : {}),
       ...(plan ? { plan } : {}),
+      ...(graphdb ? { graphdb } : {}),
       ...(destination ? { history: true } : {}),
       ...(commit && !("error" in commit) ? { rev: commit.sha } : {}),
     },

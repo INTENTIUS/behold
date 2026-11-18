@@ -27,6 +27,16 @@ jq '.nodes | length' ./behold-export/graph.json
 
 Once the single-file viewer is built (behold#1070), the export also writes `behold.html`, the same view as one HTML file that opens from disk. `--single-file <path>` writes only that file, reading just the opening view, for a CI artifact. Until then, `--single-file` stops and says so.
 
+## Cypher in the bundle
+
+`--graphdb` makes the bundle's `/graph` page answer Cypher, resolve and templates with no server. The export writes the graph pane's rows to `graphdb.json` (attribute values masked, as `serve` masks them), with the table layout and the template catalog, chant's and the project's `.chant/templates.json`. Beside it go LadybugDB's WebAssembly build (`lbug-wasm.js` and its worker, `lbug_wasm_worker.js`) and `graph-db-wasm.js`, which builds the database in the page. The page draws first and fetches the engine afterwards; the Cypher box says it is loading until the database is ready.
+
+```sh
+npx behold export . --out ./behold-export --graphdb
+```
+
+A query in the page goes through the same read-only check as on `serve`, and is refused in the same words; answers stop at 2,000 rows and a query at 8,000 characters. The worker is about 23.4 MiB at 0.22.3. Cloudflare serves static files up to 25 MiB, so the export stops, naming the file's size and the engine's version, when the worker or `graphdb.json` is larger. The default build needs no cross-origin isolation headers. An export without `--graphdb` carries none of these files.
+
 ## With a live overlay
 
 ```sh
