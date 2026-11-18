@@ -26,6 +26,11 @@
  *     closes (play.js `paneOpen`) so the estate graph and the Cypher pane
  *     take its room; the control at its edge opens it again, which holds
  *     the loop as editing the query does, and the next loop opens it;
+ *   - while the recording plays the Cypher box reads as playback; once the
+ *     question has replied it is the visitor's (behold#1193), lit, with Ask
+ *     and a countdown to the next question that anything they do stops; a
+ *     query they wrote is kept when the loop moves on, never wiped, and a
+ *     hidden tab stops the page's clock;
  *   - after a loop the Cypher box can be edited, and once LadybugDB's
  *     WebAssembly build has loaded (after the first draw), a visitor's query
  *     runs in the page on the recorded rows (graph-db-wasm.js).
@@ -38,7 +43,7 @@ import { createAskPane } from "../../web/kiosk-ask.js";
 import { answerDrawing, drawSvg, refusalText, rowsTable } from "../../web/graph-query.js";
 import { bindEngineBadge } from "../../web/engine-badge.js";
 import { applyKeyLight, cardIndex, lightKeys, zoomFrame } from "../../web/key-light.js";
-import { PROMPT_TYPE_MS, REVEAL_MARK_MS, answerHeadline, callLine, callTitle, countWords, cypherFill, knownResources, pairedKeys, resourceDetails, resourceFacts, rowKeys, loadRows, loopOf, loopTiming, narrationProblems, newSteps, paneOpen, revealAt, panView, parseParams, recordedAnswer, recordedWords, sourceTitle, sourceWords, zoomView } from "./play.js";
+import { PROMPT_TYPE_MS, REVEAL_MARK_MS, answerHeadline, callLine, callTitle, countWords, countdownWords, cypherFill, knownResources, pairedKeys, resourceDetails, resourceFacts, rowKeys, loadRows, loopOf, loopTiming, narrationProblems, newSteps, pageClock, paneOpen, revealAt, panView, parseParams, recordedAnswer, recordedWords, sourceTitle, sourceWords, turnState, visitorDraft, zoomView } from "./play.js";
 
 const $ = (id) => document.getElementById(id);
 const html = document.documentElement;
@@ -46,14 +51,14 @@ const query = new URLSearchParams(location.search);
 const PACE = Math.min(50, Math.max(0.1, Number(query.get("pace")) || 1));
 const motion = typeof matchMedia === "function" ? matchMedia("(prefers-reduced-motion: reduce)") : null;
 const reduced = () => !!(motion && motion.matches);
-const T0 = Date.now();
-/** The page's clock: real time, or faster under `?pace`. */
-const clock = () => T0 + (Date.now() - T0) * PACE;
+/** The page's clock: real time, or faster under `?pace`, stopped while the tab is hidden (behold#1193). */
+const pageTime = pageClock(() => Date.now(), PACE);
+const clock = () => pageTime.now();
 
 /** The answer drawing's side, in its own units: smaller than the /graph page's, so its words read in a narrow pane. */
 const DRAW_SIZE = 420;
 
-const state = { loops: 0, revealed: [], narration: null, cards: new Map(), known: new Map(), facts: null, answer: null, answerLight: { ids: [], why: "" }, selected: null, loop: null, timing: null, startedAt: 0, questionGiven: false, phase: "idle", doneAt: 0, held: false, db: null, engine: "waiting", touched: false, zoomedAt: -Infinity, gesture: false, paneChosen: null };
+const state = { loops: 0, revealed: [], draft: null, narration: null, cards: new Map(), known: new Map(), facts: null, answer: null, answerLight: { ids: [], why: "" }, selected: null, loop: null, timing: null, startedAt: 0, questionGiven: false, phase: "idle", doneAt: 0, held: false, db: null, engine: "waiting", touched: false, zoomedAt: -Infinity, gesture: false, paneChosen: null };
 
 /** A recorded turn leaves the view alone this long after the visitor last zoomed or dragged it, in ms. */
 const VISITOR_VIEW_MS = 4000;
@@ -444,21 +449,38 @@ function clearPane() {
   showAnswer({ status: 200, body: {} });
 }
 
+/**
+ * behold#1193: the Cypher box is playback while the recording plays (read
+ * only, no Ask) and the visitor's once the question's reply has printed: it
+ * lights up with Ask, says the query runs in this page, and counts down to
+ * the next question with a control to stay.
+ */
 function setEditable(on) {
   $("g-cypher").readOnly = !on;
   $("g-params").readOnly = !on;
   html.dataset.phase = state.phase;
+  html.dataset.turnMode = on ? "yours" : "playback";
   const ready = state.engine === "ready";
   const ask = $("g-ask");
   ask.disabled = !on || !ready;
   ask.textContent = on && !ready && state.engine !== "failed" ? "Loading..." : "Ask";
+  $("ad-turn-tag").textContent = on ? "Your turn" : "Playback";
+  $("ad-restore").hidden = !on || !state.draft;
   $("g-hint").textContent = !on
-    ? "The query behold ran for the agent. You can edit it once the answer has printed."
+    ? `Playing the recording. The box shows each query behold ran for the agent, and is yours to edit once the question's reply has printed.${state.draft ? " Your own query is kept for then." : ""}`
     : ready
-      ? "Your turn: edit the query and press Ask. It runs in this page, on the rows the recording loaded."
+      ? "Edit the query and press Ask. It runs in this page, on the rows the recording loaded."
       : state.engine === "failed"
         ? "The graph database did not load in this page, so a query cannot run here."
-        : "Your turn once the graph database has loaded in this page.";
+        : "Edit the query; Ask works once the graph database has loaded in this page.";
+  showCountdown();
+}
+
+/** The countdown to the next question, or that the page waits for the visitor. */
+function showCountdown() {
+  const words = countdownWords(turnState({ phase: state.phase, held: state.held, sinceDoneMs: clock() - state.doneAt, dwellMs: state.timing ? state.timing.dwellMs : 0 }));
+  const el = $("ad-countdown");
+  if (el.textContent !== words) el.textContent = words;
 }
 
 function setEngine(s, detail = "") {
@@ -583,6 +605,8 @@ let badge = null;
 
 function startLoop(i) {
   const n = state.narration;
+  // behold#1193: a query the visitor wrote is kept, never wiped; their next turn offers it back.
+  if (state.phase === "after") state.draft = visitorDraft({ cypher: $("g-cypher").value, params: $("g-params").value }, state.loop && cypherFill(state.loop.question)) || state.draft;
   // behold#1189: the load turn plays in full once; after that the visitor has seen it.
   const quick = state.loops > 0;
   state.loops += 1;
@@ -618,6 +642,7 @@ function tick() {
   if (!state.loop) return;
   const t = clock();
   showPane();
+  showCountdown();
   if (state.phase === "playing" && !state.questionGiven && t - state.startedAt >= state.timing.questionAt) {
     state.questionGiven = true;
     $("ad-count").textContent = countWords(state.loop, true);
@@ -631,6 +656,16 @@ function hold() {
   state.held = true;
   html.dataset.held = "1";
   $("ad-next").classList.add("ad-wanted");
+  showCountdown();
+}
+
+/** behold#1193: the visitor's last query, back in the box. */
+function restoreDraft() {
+  if (!state.draft || state.phase !== "after") return;
+  hold();
+  $("g-cypher").value = state.draft.cypher;
+  $("g-params").value = state.draft.params;
+  $("g-cypher").focus();
 }
 
 async function ask(ev) {
@@ -717,6 +752,21 @@ async function boot() {
     $(id).addEventListener("input", hold);
   }
   $("ad-convo").addEventListener("click", togglePane);
+  // behold#1193: on the visitor's turn anything they do stops the countdown, until they move on.
+  $("ad-stay").addEventListener("click", hold);
+  $("ad-restore").addEventListener("click", restoreDraft);
+  const anything = (e) => {
+    if (state.phase === "after" && !(e.target && e.target.closest && e.target.closest("#ad-next"))) hold();
+  };
+  for (const type of ["pointerdown", "keydown"]) document.addEventListener(type, anything, true);
+  $("ad-pane").addEventListener("wheel", anything, { passive: true });
+  // A hidden tab pauses the loop: the page's clock stops, and the words and the countdown with it.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) pageTime.pause();
+    else pageTime.resume();
+    if (document.hidden) html.dataset.paused = "1";
+    else delete html.dataset.paused;
+  });
   $("ad-next").addEventListener("click", () => {
     startLoop(state.loop ? state.loop.loop + 1 : 0);
   });

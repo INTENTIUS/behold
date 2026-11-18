@@ -36,6 +36,18 @@
       button { background: var(--surface-box); color: var(--fg); border: 1px solid var(--rule); border-radius: 6px; padding: 4px 10px; font: inherit; cursor: pointer; }
       button:disabled { opacity: 0.5; cursor: not-allowed; }
       #ad-next.ad-wanted { border-color: var(--pending); }
+      /* behold#1193: the Cypher box reads as playback while the recording plays, and as the visitor's once the reply has printed. */
+      .ad-turn { margin: 0; display: flex; align-items: baseline; gap: 8px; color: var(--muted); font-size: 12.5px; }
+      .ad-turn-tag { flex: none; font: 600 11px var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; border: 1px solid var(--rule); border-radius: 999px; padding: 0 8px; color: var(--ink2); }
+      html:not([data-turn-mode="yours"]) .ad-yours { display: none; }
+      html[data-turn-mode="yours"] .ad-turn-tag { background: var(--pending); border-color: var(--pending); color: #fff; }
+      html[data-turn-mode="yours"] .ad-turn { color: var(--fg); }
+      html[data-turn-mode="yours"] #g-cypher, html[data-turn-mode="yours"] #g-params { border-color: var(--pending); border-style: solid; color: var(--fg); }
+      html[data-turn-mode="yours"] #g-cypher { box-shadow: 0 0 0 1px color-mix(in srgb, var(--pending) 40%, transparent); }
+      #g-ask:not(:disabled) { background: var(--pending); border-color: var(--pending); color: #fff; font-weight: 600; padding: 4px 16px; }
+      .ad-countdown { margin: 0; color: var(--ink2); font-size: 12.5px; }
+      html[data-held] #ad-stay { display: none; }
+      #ad-restore[hidden] { display: none; }
 
       #ad-main { display: grid; grid-template-columns: minmax(0, 3fr) minmax(320px, 2fr); min-height: 0; }
       #ad-estate { position: relative; min-height: 0; min-width: 0; background: #0b0e14; }
@@ -216,12 +228,13 @@
       </section>
       <section id="ad-pane" aria-label="Graph pane">
         <h2><span class="ad-cypher-head"><span id="ad-pane-title">Cypher</span> <a id="g-engine-badge" class="engine-badge" href="https://ladybugdb.com/" target="_blank" rel="noopener noreferrer" title="LadybugDB answers these queries (opens in a new tab)"><img src="./vendors/ladybugdb.png" width="22" height="22" alt="LadybugDB" /></a></span> <a href="./graph.html">Open the full graph pane</a></h2>
+        <p class="ad-turn"><span id="ad-turn-tag" class="ad-turn-tag">Playback</span><span id="g-hint"></span></p>
         <pre id="g-call"></pre>
         <form id="g-cypher-form">
           <textarea id="g-cypher" spellcheck="false" aria-label="Cypher query" readonly></textarea>
           <input id="g-params" placeholder="Parameters as JSON" aria-label="Parameters" readonly />
-          <div class="ad-row"><button id="g-ask" type="submit" disabled>Ask</button><span id="g-engine" role="status"></span></div>
-          <p id="g-hint"></p>
+          <div class="ad-row ad-yours"><button id="g-ask" type="submit" disabled>Ask</button><button id="ad-restore" type="button" hidden>Use your last query</button><span id="g-engine" role="status"></span></div>
+          <p class="ad-row ad-yours ad-countdown" role="status"><span id="ad-countdown"></span><button id="ad-stay" type="button">Stay on this question</button></p>
         </form>
         <pre id="g-error"></pre>
         <!-- behold#1190: the rows first, so the whole answer shows above the fold; the drawing takes the room after them. -->

@@ -622,6 +622,111 @@ describe.runIf(peer.ok)("the page, in a headless browser", () => {
   });
 });
 
+describe.runIf(peer.ok)("the visitor's turn, in a headless browser (#1193)", () => {
+  it("reads as playback while the recording plays, then lights up as the visitor's with a countdown that any interaction stops, keeps their query, and pauses in a hidden tab", { timeout: 180_000 }, async () => {
+    const launched = await browserOrNull();
+    if (!launched) {
+      console.warn("ask-demo-page: no browser launches here, so the visitor's turn was not checked");
+      return;
+    }
+    const url = await serveDir(out);
+    const browser = launched.browser as unknown as { newContext(o?: object): Promise<any>; close(): Promise<void> };
+    const turnScript = `(() => {
+      const d = document.documentElement.dataset;
+      const shown = (id) => { const e = document.getElementById(id); return !!e && e.getClientRects().length > 0; };
+      return {
+        loop: d.loop || "", phase: d.phase || "", mode: d.turnMode || "", held: d.held || "", paused: d.paused || "",
+        tag: document.getElementById("ad-turn-tag").textContent, hint: document.getElementById("g-hint").textContent,
+        ask: shown("g-ask"), engine: shown("g-engine"), stay: shown("ad-stay"), restore: shown("ad-restore"),
+        countdown: shown("ad-countdown") ? document.getElementById("ad-countdown").textContent : "",
+        cypher: document.getElementById("g-cypher").value, readOnly: document.getElementById("g-cypher").readOnly,
+        askBg: getComputedStyle(document.getElementById("g-ask")).backgroundColor,
+        terminal: document.getElementById("k-ask").innerText,
+      };
+    })()`;
+    type Turn = { loop: string; phase: string; mode: string; held: string; paused: string; tag: string; hint: string; ask: boolean; engine: boolean; stay: boolean; restore: boolean; countdown: string; cypher: string; readOnly: boolean; askBg: string; terminal: string };
+    const until = async (page: Page, what: string, test: (t: Turn) => boolean, ms = 30_000): Promise<Turn> => {
+      const end = Date.now() + ms;
+      let last: Turn | undefined;
+      while (Date.now() < end) {
+        last = (await page.evaluate(turnScript)) as Turn;
+        if (test(last)) return last;
+        await new Promise((r) => setTimeout(r, 40));
+      }
+      throw new Error(`waited ${ms} ms for ${what}; the page showed ${JSON.stringify(last).slice(0, 800)}`);
+    };
+    const mine = "MATCH (r:Resource) RETURN r.key AS key LIMIT 3";
+    const errors: string[] = [];
+    try {
+      for (const reducedMotion of ["no-preference", "reduce"] as const) {
+        const context = await browser.newContext({ reducedMotion, viewport: { width: 1440, height: 900 } });
+        const page = await context.newPage();
+        page.on("pageerror", (e: Error) => errors.push(e.message));
+        try {
+          await page.goto(`${url}?pace=8`, { waitUntil: "domcontentloaded" });
+          await page.waitForFunction(() => document.documentElement.dataset.engine === "ready", null, { timeout: 120_000 });
+          // While the recording plays: playback, read only, no Ask, no engine line, no countdown.
+          // The page plays on while LadybugDB loads (on a slow runner, several loops at ?pace=8), so loops count from the one playing now.
+          const playing = await until(page, "playback", (t) => t.phase === "playing");
+          const at = (k: number) => String(Number(playing.loop) + k);
+          expect(playing, reducedMotion).toMatchObject({ mode: "playback", tag: "Playback", readOnly: true, ask: false, engine: false, stay: false, countdown: "" });
+          // Once the reply has printed: the visitor's, Ask lit, the line saying it runs here, and a countdown.
+          const yours = await until(page, "the visitor's turn", (t) => t.loop === at(0) && t.phase === "after");
+          expect(yours, reducedMotion).toMatchObject({ mode: "yours", tag: "Your turn", readOnly: false, ask: true, engine: true, stay: true, held: "" });
+          expect(yours.hint).toMatch(/runs in this page/);
+          expect(yours.askBg).not.toBe(playing.askBg);
+          const secs = Number(/^Next question in (\d+) s\.$/.exec(yours.countdown)?.[1]);
+          expect(secs).toBeGreaterThan(10);
+          expect(secs).toBeLessThanOrEqual(15);
+          await until(page, "the countdown to count", (t) => Number(/(\d+) s/.exec(t.countdown)?.[1]) < secs);
+          // Left alone, the page moves on when the countdown ends.
+          await until(page, "the next loop, on its own", (t) => t.loop === at(1), 10_000);
+          // Writing a query stops the countdown: the page waits, and never wipes it.
+          await until(page, `loop ${at(1)}'s turn`, (t) => t.loop === at(1) && t.phase === "after");
+          await page.fill("#g-cypher", mine);
+          const stayed = await until(page, "the stay", (t) => t.held === "1");
+          expect(stayed).toMatchObject({ stay: false, countdown: "Staying on this question. Press Next question when you're done." });
+          await new Promise((r) => setTimeout(r, 2_500));
+          expect(await page.evaluate(turnScript)).toMatchObject({ loop: at(1), phase: "after", cypher: mine });
+          // Next question moves on; the visitor's query is kept and offered back on their next turn.
+          await page.click("#ad-next");
+          const next = await until(page, `loop ${at(2)}'s playback`, (t) => t.loop === at(2) && t.phase === "playing");
+          expect(next.hint).toContain("Your own query is kept for then.");
+          await until(page, `loop ${at(2)}'s turn`, (t) => t.loop === at(2) && t.phase === "after" && t.restore);
+          await page.click("#ad-restore");
+          expect(await until(page, "the restored query", (t) => t.cypher === mine)).toMatchObject({ held: "1", loop: at(2) });
+          // The stay control holds the page too.
+          await page.click("#ad-next");
+          await until(page, `loop ${at(3)}'s turn`, (t) => t.loop === at(3) && t.phase === "after" && t.held === "");
+          await page.click("#ad-stay");
+          expect(await until(page, "the stay control", (t) => t.held === "1")).toMatchObject({ stay: false, loop: at(3) });
+          // A hidden tab pauses the loop: nothing moves until it shows again.
+          await page.click("#ad-next");
+          await until(page, `loop ${at(4)}'s playback`, (t) => t.loop === at(4) && t.phase === "playing");
+          const setHidden = (hidden: boolean) =>
+            page.evaluate((h: boolean) => {
+              Object.defineProperty(document, "hidden", { value: h, configurable: true });
+              document.dispatchEvent(new Event("visibilitychange"));
+            }, hidden);
+          await setHidden(true);
+          const frozen = (await page.evaluate(turnScript)) as Turn;
+          expect(frozen.paused).toBe("1");
+          await new Promise((r) => setTimeout(r, 2_000));
+          const still = (await page.evaluate(turnScript)) as Turn;
+          expect([still.loop, still.phase, still.terminal]).toEqual([frozen.loop, frozen.phase, frozen.terminal]);
+          await setHidden(false);
+          await until(page, `loop ${at(4)} to go on`, (t) => t.paused === "" && t.phase === "after" && t.loop === at(4));
+        } finally {
+          await context.close();
+        }
+      }
+      expect(errors).toEqual([]);
+    } finally {
+      await browser.close();
+    }
+  });
+});
+
 describe.runIf(peer.ok)("the page's header, in a headless browser (#1188)", () => {
   it("says what behold is and links its docs on a desktop, and keeps to a few lines on a phone", { timeout: 60_000 }, async () => {
     const launched = await browserOrNull();
