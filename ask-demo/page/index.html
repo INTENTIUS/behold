@@ -94,6 +94,7 @@
         #ad-estate[data-reveal] { outline: 2px solid transparent; outline-offset: -3px; animation: ad-reveal 1.4s ease-out 1 both; }
       }
       #ad-pane { min-height: 0; overflow-y: auto; border-left: 1px solid var(--line); background: var(--surface-pane-a); padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+      .ad-part { display: contents; }
       #ad-pane h2 { font-size: 13px; margin: 6px 0 0; color: var(--ink2); display: flex; justify-content: space-between; gap: 8px; }
       #ad-pane h2 a { font-weight: 400; font-size: 12px; }
       .ad-cypher-head { display: inline-flex; align-items: center; }
@@ -204,7 +205,19 @@
         #ad-zoom-hint { background: none; padding: 0; }
         #ad-ask { order: 2; }
         #k-ask { height: auto; min-height: 9em; font-size: 14px; padding: 10px 16px 12px; }
-        #ad-pane { order: 3; border-left: 0; border-top: 1px solid var(--line); overflow: visible; padding: 12px 16px 20px; }
+        /* behold#1205: the pane's parts are the page's own blocks, so the answer can sit under the estate graph.
+           Before the reply: the conversation, the query, the answer. Once it has printed: the answer first. */
+        #ad-pane { display: contents; }
+        .ad-part { display: flex; flex-direction: column; gap: 8px; min-width: 0; background: var(--surface-pane-a); border-top: 1px solid var(--line); padding: 12px 16px 16px; }
+        #ad-query { order: 3; }
+        #ad-answer { order: 4; }
+        #ad-more { order: 5; padding-bottom: 20px; }
+        html[data-phase="after"] #ad-answer { order: 1; }
+        html[data-phase="after"] #ad-estate { order: 0; }
+        html[data-phase="after"] #ad-head { order: -1; }
+        /* The drawing keeps its own size, so its words stay at 12 px and more, and scrolls sideways in its box. */
+        #g-draw { overflow-x: auto; overscroll-behavior-x: contain; }
+        #g-draw svg { max-width: none; }
         /* The phone's header: the title, one line of what behold is, the date, the links and the count. */
         .ad-intro { flex-basis: 100%; }
         #ad-head h1 { font-size: 15px; }
@@ -244,6 +257,8 @@
         <p id="ad-estate-cap" role="status"></p>
       </section>
       <section id="ad-pane" aria-label="Graph pane">
+        <!-- behold#1205: the pane's three parts. On a desktop they are one column; on a phone the answer moves under the estate graph once the reply has printed. -->
+        <div id="ad-query" class="ad-part">
         <h2><span class="ad-cypher-head"><span id="ad-pane-title">Cypher</span> <a id="g-engine-badge" class="engine-badge" href="https://ladybugdb.com/" target="_blank" rel="noopener noreferrer" title="LadybugDB answers these queries (opens in a new tab)"><img src="./vendors/ladybugdb.png" width="22" height="22" alt="LadybugDB" /></a></span> <a href="./graph.html">Open the full graph pane</a></h2>
         <p class="ad-turn"><span id="ad-turn-tag" class="ad-turn-tag">Playback</span><span id="g-hint"></span></p>
         <pre id="g-call"></pre>
@@ -254,13 +269,17 @@
           <p class="ad-row ad-yours ad-countdown" role="status"><span id="ad-countdown"></span><button id="ad-stay" type="button">Stay on this question</button></p>
         </form>
         <pre id="g-error"></pre>
+        </div>
         <!-- behold#1190: the rows first, so the whole answer shows above the fold; the drawing takes the room after them. -->
+        <div id="ad-answer" class="ad-part" aria-label="Answer">
         <h2>Answer</h2>
         <p id="ad-headline" role="status"></p>
         <div id="g-rows"></div>
         <div id="g-draw"></div>
         <p id="ad-answer-hint"></p>
         <section id="ad-detail" aria-label="The selected resource" aria-live="polite" hidden></section>
+        </div>
+        <div id="ad-more" class="ad-part">
         <h2>Sources, and when each was read</h2>
         <pre id="g-sources"></pre>
         <details>
@@ -269,6 +288,7 @@
           <p class="ad-muted">Versions: <span id="ad-versions"></span></p>
           <p class="ad-muted">To record it again, from a checkout of behold: <code id="ad-command">just ask-demo-record</code>. <a href="https://intentius.io/behold/using/ask-demo/#maintaining-it">Maintaining it</a> says what it needs.</p>
         </details>
+        </div>
       </section>
     </main>
     <div id="ad-ask">

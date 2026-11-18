@@ -370,19 +370,28 @@ export function drawSvg(draw, size = 520, lit = []) {
 }
 
 /**
- * behold#1206: a readable name for a graph key: the resource's name when
- * `known` (a Map of keys to `{ name }`) has one, otherwise the key's last
- * `/` segment, decoded. A key is never shortened to a cut-off prefix.
+ * behold#1206: a readable name for a graph key. A chant member's key
+ * (`<member>/<id>`) reads as its id, the name the code declares it by (and
+ * the row's name column, when it has one, is not said twice). Any other key
+ * (an index's or an engine's, which starts with its scope) reads as the
+ * resource's name when `known` (a Map of keys to `{ name }`) has one, else
+ * its last `/` segment, decoded. A key is never shortened to a cut-off prefix.
  */
 export function keyName(key, known = new Map()) {
+  const k = String(key);
+  const decode = (v) => {
+    try {
+      return decodeURIComponent(v);
+    } catch {
+      return v;
+    }
+  };
+  const at = k.indexOf("/");
+  const member = at > 0 ? k.slice(0, at) : "";
+  if (member && member !== "cloud" && member !== "engine" && at < k.length - 1) return decode(k.slice(at + 1));
   const name = known.get(key)?.name;
   if (typeof name === "string" && name) return name;
-  const last = String(key).split("/").filter(Boolean).pop() ?? String(key);
-  try {
-    return decodeURIComponent(last);
-  } catch {
-    return last;
-  }
+  return decode(k.split("/").filter(Boolean).pop() ?? k);
 }
 
 /**
