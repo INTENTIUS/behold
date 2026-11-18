@@ -165,77 +165,208 @@ export function answerDrawing(body, known = new Map()) {
 /** The room a two-column drawing gives each side's labels, in its own units, and a label's width per character. */
 const SIDE = 0.4;
 const CHAR = 7.8;
+/** An edge label's width per character (12px italic against the nodes' 13px), and a label's height. */
+const LABEL_CHAR = 7.2;
+const LABEL_HEIGHT = 14;
 /** A two-column drawing is at least this wide, in its own units, so a side holds about 24 characters. */
 const COLUMNS_WIDTH = 520;
+/** How far an edge between two nodes of one column bows out of it. */
+const BOW = 16;
+
+/** The column names of the row edges that reach `key`, in answer order. */
+const reachedBy = (draw, key) => [...new Set(draw.edges.filter((e) => e.column !== undefined && e.to === key).map((e) => e.column))];
 
 /**
  * behold#1190: a drawing with row edges in two columns: the first key
  * column's nodes on the left, the rest on the right, each in answer order,
  * the taller one `gap` apart, the shorter spread over the same height.
+ *
+ * behold#1204: the right column is grouped by the column names whose rows
+ * reach each node, and each group is headed once with those names
+ * (`headings`), so a name every edge shares is written once, not on every
+ * edge.
  */
 export function columnLayout(draw, width = 520, gap = 34) {
   const from = new Set(draw.edges.filter((e) => e.column !== undefined).map((e) => e.from));
   const left = draw.nodes.filter((n) => from.has(n.key));
-  const right = draw.nodes.filter((n) => !from.has(n.key));
+  const groups = new Map();
+  for (const n of draw.nodes.filter((n) => !from.has(n.key))) {
+    const name = reachedBy(draw, n.key).join(", ");
+    if (!groups.has(name)) groups.set(name, []);
+    groups.get(name).push(n);
+  }
+  // The right column's slots: each group's heading (when it has a name), then its nodes.
+  const right = [...groups].flatMap(([name, list]) => [...(name ? [{ heading: name }] : []), ...list]);
   const height = Math.max(left.length, right.length, 2) * gap + gap;
   const at = {};
+  const headings = [];
   // Each column spread over the drawing's height, so a short one does not bunch up in the middle.
   const place = (list, x) => {
     const step = (height - gap) / Math.max(list.length, 1);
-    list.forEach((n, i) => (at[n.key] = { x: Math.round(x), y: Math.round(gap / 2 + step * (i + 0.5)), side: x < width / 2 ? "left" : "right" }));
+    list.forEach((n, i) => {
+      const y = Math.round(gap / 2 + step * (i + 0.5));
+      if (n.heading !== undefined) headings.push({ text: n.heading, x: Math.round(x), y });
+      else at[n.key] = { x: Math.round(x), y, side: x < width / 2 ? "left" : "right" };
+    });
   };
   place(left, width * SIDE);
   place(right, width * (1 - SIDE));
-  return { at, width, height };
+  return { at, width, height, headings };
+}
+
+/**
+ * A label's box, `{ x0, y0, x1, y1 }`, from its baseline point, anchor and
+ * text, as a monospace font draws it (`char` units a character).
+ */
+export function labelBox({ x, y, anchor = "start", text, char = CHAR }) {
+  const w = String(text).length * char;
+  const x0 = anchor === "end" ? x - w : anchor === "middle" ? x - w / 2 : x;
+  return { x0, y0: y - LABEL_HEIGHT + 3, x1: x0 + w, y1: y + 3 };
+}
+
+const hits = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+
+/** The pairs of labels (indexes into `labels`) whose boxes overlap. behold#1204: a drawing has none. */
+export function labelOverlaps(labels) {
+  const boxes = labels.map(labelBox);
+  const out = [];
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) if (hits(boxes[i], boxes[j])) out.push([i, j]);
+  return out;
 }
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
 const clip = (s, n) => (s.length > n ? `${s.slice(0, Math.max(1, n - 3))}...` : s);
 
+/** The words an edge's hover title gives: its ends, the row column or attribute that made it, and a derived edge's rule. */
+const edgeTitle = (e) => `${e.from} -> ${e.to}${e.column ? ` (the answer's ${e.column} column)` : ""}${e.viaAttr ? ` via ${e.viaAttr}` : ""}${e.origin === "derived" ? ` (derived: ${e.rule})` : ""}`;
+
+/** What the legend under a drawing says of its dashed edges: the attributes they were derived from. */
+export function derivedLegend(attrs) {
+  const named = attrs.length ? ` from ${attrs.join(", ")}` : "";
+  return `dashed: derived${named}, a value holding the other's cloud id`;
+}
+
 /**
- * The answer's drawing as SVG text. Each node carries its key; the keys in
- * `lit` (behold#1163, the ask demo) are drawn lit. A drawing with labelled
- * edges (behold#1190, {@link answerDrawing}) is laid out in two columns, each
- * edge's column name written once beside the node it reaches; otherwise the
- * nodes sit on a circle.
+ * The answer's drawing as `{ width, height, nodes, edges, labels, legend }`:
+ * where each node sits, each edge's path, and every label with where it is
+ * drawn. Pure, so the tests can check no two labels overlap.
+ *
+ * A drawing with labelled edges (behold#1190, {@link answerDrawing}) is laid
+ * out in two columns ({@link columnLayout}), the row column's name heading
+ * the nodes it reaches; otherwise the nodes sit on a circle, each name on
+ * the circle's outer side. behold#1204: an edge between two nodes of one
+ * column bows into the space between the columns rather than running over
+ * the nodes between. A derived edge whose attribute no other derived edge
+ * shares carries it as a label, where one fits without overlapping another;
+ * the legend under the drawing names every such attribute and says what a
+ * dashed edge is. A node's name that would overlap one already placed moves
+ * above or below its dot. The view fits what is drawn.
  */
-export function drawSvg(draw, size = 520, lit = []) {
-  const on = new Set(lit);
+export function drawLayout(draw, size = 520) {
   const nodes = draw?.nodes ?? [];
-  if (!nodes.length) return "";
+  if (!nodes.length) return null;
   const labelled = (draw.edges ?? []).some((e) => e.column !== undefined);
-  const lay = labelled ? columnLayout(draw, Math.max(size, COLUMNS_WIDTH)) : { at: circleLayout(nodes, size), width: size, height: size };
+  const lay = labelled ? columnLayout({ nodes, edges: draw.edges }, Math.max(size, COLUMNS_WIDTH)) : { at: circleLayout(nodes, size), width: size, height: size, headings: [] };
   const at = lay.at;
-  const shown = (draw.edges ?? []).filter((e) => at[e.from] && at[e.to]);
-  const edges = shown
+  const c = { x: lay.width / 2, y: lay.height / 2 };
+  const placed = [];
+  const free = (l) => placed.every((p) => !hits(labelBox(p), labelBox(l)));
+  const put = (l) => (placed.push(l), l);
+  const labels = [];
+  for (const h of lay.headings) labels.push(put({ kind: "heading", x: h.x - 4, y: h.y + 4, anchor: "start", text: h.text, char: LABEL_CHAR }));
+  const room = Math.floor((lay.width * SIDE - 18) / CHAR);
+  for (const n of nodes) {
+    const p = at[n.key];
+    const name = n.name || n.key;
+    const text = labelled ? clip(name, room) : clip(name, 32);
+    const out = labelled ? p.side === "left" : p.x < c.x - 1;
+    const tries = labelled
+      ? [{ x: out ? p.x - 12 : p.x + 12, y: p.y + 4, anchor: out ? "end" : "start" }]
+      : [
+          { x: out ? p.x - 12 : p.x + 12, y: p.y + 4, anchor: out ? "end" : "start" },
+          { x: p.x, y: p.y - 12, anchor: "middle" },
+          { x: p.x, y: p.y + 22, anchor: "middle" },
+        ];
+    const tried = tries.map((t) => ({ kind: "node", key: n.key, text, char: CHAR, ...t }));
+    labels.push(put(tried.find(free) ?? tried[0]));
+  }
+  const edges = (draw.edges ?? [])
+    .filter((e) => at[e.from] && at[e.to])
     .map((e) => {
       const a = at[e.from];
       const b = at[e.to];
-      const derived = e.origin === "derived";
-      const row = e.origin === "row";
-      const title = `${e.from} -> ${e.to}${e.column ? ` (the answer's ${e.column} column)` : ""}${e.viaAttr ? ` via ${e.viaAttr}` : ""}${derived ? ` (derived: ${e.rule})` : ""}`;
+      const same = labelled && a.side === b.side;
+      // An edge within one column bows into the space between the columns, deeper the further it runs,
+      // so it crosses no name; any other is a straight line.
+      const dir = a.side === "left" ? 1 : -1;
+      const depth = Math.min(12 + Math.abs(b.y - a.y) * 0.2, lay.width * (1 - 2 * SIDE) * 0.4);
+      const apex = same ? { x: a.x + dir * depth, y: (a.y + b.y) / 2 } : { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const path = same ? `M${a.x},${a.y} Q${a.x + dir * depth * 2},${apex.y} ${b.x},${b.y}` : `M${a.x},${a.y} L${b.x},${b.y}`;
+      return { ...e, path, apex, line: same ? null : { x1: a.x, y1: a.y, x2: b.x, y2: b.y } };
+    });
+  // A derived edge's attribute is written on it when no other derived edge shares it; the legend names them all.
+  const derived = edges.filter((e) => e.origin === "derived");
+  const attrs = [...new Set(derived.map((e) => e.viaAttr).filter(Boolean))];
+  for (const e of derived) {
+    if (!e.viaAttr || derived.filter((d) => d.viaAttr === e.viaAttr).length > 1) continue;
+    const tries = [
+      { x: e.apex.x + 6, y: e.apex.y + 4, anchor: "start" },
+      { x: e.apex.x, y: e.apex.y - 6, anchor: "middle" },
+      { x: e.apex.x, y: e.apex.y + 16, anchor: "middle" },
+    ];
+    const l = tries.map((t) => ({ kind: "edge", text: e.viaAttr, char: LABEL_CHAR, ...t })).find(free);
+    if (l) labels.push(put(l));
+  }
+  const legend = derived.length ? derivedLegend(attrs) : "";
+  // The view fits what is drawn, every name whole, with a margin.
+  const boxes = [...labels.map(labelBox), ...Object.values(at).map((p) => ({ x0: p.x - 10, y0: p.y - 10, x1: p.x + 10, y1: p.y + 10 }))];
+  const m = 8;
+  const box = { x: Math.floor(Math.min(...boxes.map((b) => b.x0)) - m), y: Math.floor(Math.min(...boxes.map((b) => b.y0)) - m) };
+  box.width = Math.ceil(Math.max(...boxes.map((b) => b.x1)) + m - box.x);
+  box.height = Math.ceil(Math.max(...boxes.map((b) => b.y1)) + m - box.y);
+  return { box, at, edges, labels, legend };
+}
+
+/**
+ * The answer's drawing as SVG text ({@link drawLayout}). Each node carries
+ * its key; the keys in `lit` (behold#1163, the ask demo) are drawn lit.
+ */
+export function drawSvg(draw, size = 520, lit = []) {
+  const on = new Set(lit);
+  const lay = drawLayout(draw, size);
+  if (!lay) return "";
+  const edges = lay.edges
+    .map((e) => {
       const label = e.column ? ` data-label="${esc(e.column)}"` : "";
-      return `<line class="g-edge${derived ? " derived" : ""}${row ? " row" : ""}"${label} x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" marker-end="url(#g-arrow)"><title>${esc(title)}</title></line>`;
+      const attrs = `class="g-edge${e.origin === "derived" ? " derived" : ""}${e.origin === "row" ? " row" : ""}"${label}`;
+      const tip = `<title>${esc(edgeTitle(e))}</title>`;
+      return e.line
+        ? `<line ${attrs} x1="${e.line.x1}" y1="${e.line.y1}" x2="${e.line.x2}" y2="${e.line.y2}" marker-end="url(#g-arrow)">${tip}</line>`
+        : `<path ${attrs} d="${e.path}" fill="none" marker-end="url(#g-arrow)">${tip}</path>`;
     })
     .join("");
-  // Each column's name once beside each node it reaches, between the columns.
-  const names = new Map();
-  for (const e of shown) if (e.column && at[e.to].side === "right") names.set(e.to, [...new Set([...(names.get(e.to) ?? []), e.column])]);
-  const words = [...names]
-    .map(([k, cols]) => `<text class="g-edge-label" x="${at[k].x - 12}" y="${at[k].y - 6}" text-anchor="end">${esc(cols.join(", "))}</text>`)
+  const text = (l, cls) => `<text${cls ? ` class="${cls}"` : ""} x="${Math.round(l.x)}" y="${Math.round(l.y)}"${l.anchor === "start" ? "" : ` text-anchor="${l.anchor}"`}>`;
+  const words = lay.labels
+    .filter((l) => l.kind !== "node")
+    .map((l) => `${text(l, "g-edge-label")}${esc(l.text)}</text>`)
     .join("");
-  const room = Math.floor((lay.width * SIDE - 18) / CHAR);
-  const dots = nodes
+  const name = new Map(lay.labels.filter((l) => l.kind === "node").map((l) => [l.key, l]));
+  const dots = (draw.nodes ?? [])
     .map((n) => {
-      const p = at[n.key];
-      const label = n.name || n.key;
-      const left = p.side === "left";
-      const text = labelled ? clip(label, room) : clip(label, 32);
-      const tx = left ? p.x - 12 : p.x + 10;
-      return `<g class="g-node ${esc(n.source)}${on.has(n.key) ? " lit" : ""}" data-key="${esc(n.key)}"><circle cx="${p.x}" cy="${p.y}" r="7"><title>${esc(`${n.key} (${n.kind}, ${n.scopeKey})`)}</title></circle><text x="${tx}" y="${p.y + 4}"${left ? ' text-anchor="end"' : ""}><title>${esc(n.key)}</title>${esc(text)}</text></g>`;
+      const p = lay.at[n.key];
+      return `<g class="g-node ${esc(n.source)}${on.has(n.key) ? " lit" : ""}" data-key="${esc(n.key)}"><circle cx="${p.x}" cy="${p.y}" r="7"><title>${esc(`${n.key} (${n.kind}, ${n.scopeKey})`)}</title></circle>${text(name.get(n.key))}<title>${esc(n.key)}</title>${esc(name.get(n.key).text)}</text></g>`;
     })
     .join("");
-  return `<svg viewBox="0 0 ${lay.width} ${lay.height}" role="img" aria-label="answer graph"><defs><marker id="g-arrow" viewBox="0 0 10 10" refX="16" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="g-arrowhead"/></marker></defs>${edges}${words}${dots}</svg>`;
+  // The legend sits under the drawing, with a dashed sample of what it explains.
+  const { x, y, width } = lay.box;
+  const bottom = y + lay.box.height;
+  const legendWidth = lay.legend ? 44 + lay.legend.length * LABEL_CHAR + 8 : 0;
+  const legend = lay.legend
+    ? `<g class="g-legend"><line x1="${x + 8}" y1="${bottom + 6}" x2="${x + 36}" y2="${bottom + 6}"/><text class="g-edge-label" x="${x + 44}" y="${bottom + 10}">${esc(lay.legend)}</text></g>`
+    : "";
+  const w = Math.ceil(Math.max(width, legendWidth));
+  const h = lay.box.height + (lay.legend ? 24 : 0);
+  return `<svg viewBox="${x} ${y} ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="answer graph"><defs><marker id="g-arrow" viewBox="0 0 10 10" refX="16" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="g-arrowhead"/></marker></defs>${edges}${words}${dots}${legend}</svg>`;
 }
 
 /** A table of the answer's rows as HTML text. */

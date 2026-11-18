@@ -1,7 +1,7 @@
 // behold#1027: the graph pane page's pure helpers.
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { STATIC_SEARCH_LINE, answerDrawing, candidateItems, circleLayout, columnLayout, drawSvg, keyColumns, noteLines, queryUrl, refusalText, resolveUrl, rowsTable, sourceLines, templateControl, templateUrl } from "./graph-query.js";
+import { STATIC_SEARCH_LINE, answerDrawing, candidateItems, circleLayout, columnLayout, derivedLegend, drawLayout, drawSvg, keyColumns, labelBox, labelOverlaps, noteLines, queryUrl, refusalText, resolveUrl, rowsTable, sourceLines, templateControl, templateUrl } from "./graph-query.js";
 
 describe("the routes the page asks", () => {
   it("are GETs with the query in the URL", () => {
@@ -81,8 +81,8 @@ describe("what an answer shows", () => {
     expect(lay.at["gcp/webProxy"].side).toBe("right");
     const svg = drawSvg(d, 420, d.lit);
     expect(svg.match(/class="g-edge row" data-label="reaches"/g)).toHaveLength(3);
-    // The column's name once beside each node it reaches.
-    expect(svg.match(/<text class="g-edge-label"[^>]*>reaches<\/text>/g)).toHaveLength(2);
+    // behold#1204: the column's name once, heading the nodes it reaches.
+    expect(svg.match(/<text class="g-edge-label"[^>]*>reaches<\/text>/g)).toHaveLength(1);
     expect(svg).toContain("www.three-cloud.example.");
     // A REF edge between two nodes a row pairs keeps its line and takes the label.
     const ref = answerDrawing({ ...body, rows: [{ key: "dns/gcpRecord", reaches: "dns/gcpOrigin" }], columns: ["key", "reaches"] }, known);
@@ -90,6 +90,87 @@ describe("what an answer shows", () => {
     // Without the page's rows, only what the answer's drawing names: no row edge to a node it lacks.
     expect(answerDrawing(body).edges).toEqual(body.draw.edges);
     expect(answerDrawing({}).nodes).toEqual([]);
+  });
+
+  describe("its labels (#1204)", () => {
+    const root = new URL("../ask-demo/", import.meta.url);
+    const narration = JSON.parse(readFileSync(new URL("narration.json", root), "utf8"));
+    const graphdb = JSON.parse(readFileSync(new URL("estate/graphdb.json", root), "utf8"));
+    const known = new Map((graphdb.rows?.resources ?? []).map((r) => [r.key, { key: r.key, kind: r.kind, name: r.name, source: r.source, scopeKey: r.scopeKey }]));
+    const turns = narration.turns.filter((t) => t.draw);
+    const inside = (b, box) => b.x0 >= box.x && b.y0 >= box.y && b.x1 <= box.x + box.width && b.y1 <= box.y + box.height;
+
+    it("never overlap one another, and every one is inside the view, in each recorded answer and on the /graph page's size", () => {
+      expect(turns.length).toBeGreaterThan(3);
+      for (const t of turns)
+        for (const size of [420, 520]) {
+          const lay = drawLayout(answerDrawing(t, known), size);
+          expect(labelOverlaps(lay.labels), `${t.id} at ${size}`).toEqual([]);
+          for (const l of lay.labels) expect(inside(labelBox(l), lay.box), `${t.id}: ${l.text}`).toBe(true);
+        }
+    });
+
+    it("write a column name every edge to a group of nodes shares once, heading the group", () => {
+      const dns = turns.find((t) => t.id === "dns-cross-cloud");
+      const d = answerDrawing(dns, known);
+      const lay = drawLayout(d, 420);
+      expect(lay.labels.filter((l) => l.text === "reaches")).toHaveLength(1);
+      const heading = lay.labels.find((l) => l.kind === "heading");
+      // Above every node it heads.
+      for (const k of ["gcp/webAddress", "gcp/webProxy", "gcp/webRule", "gcp/webUrlMap"]) expect(heading.y).toBeLessThan(lay.at[k].y);
+      // Two names, two groups, each headed once.
+      const two = { nodes: [{ key: "a" }, { key: "b" }, { key: "c" }].map((n) => ({ ...n, name: n.key })), edges: [{ from: "a", to: "b", origin: "row", column: "role" }, { from: "a", to: "c", origin: "row", column: "bucket" }] };
+      const lay2 = columnLayout(two, 520);
+      expect(lay2.headings.map((h) => h.text)).toEqual(["role", "bucket"]);
+      expect(lay2.headings[0].y).toBeLessThan(lay2.at.b.y);
+      expect(lay2.at.b.y).toBeLessThan(lay2.headings[1].y);
+      expect(lay2.headings[1].y).toBeLessThan(lay2.at.c.y);
+    });
+
+    it("draw the dotted edge only from the answer's own edges, with the attribute it was derived from and a legend", () => {
+      const dns = turns.find((t) => t.id === "dns-cross-cloud");
+      // The DNS answer's dotted edge is the REF edge its drawing carries: www's ResourceRecords holds gcp's record.
+      expect(dns.draw.edges).toEqual([expect.objectContaining({ from: "dns/gcpRecord", to: "dns/gcpOrigin", origin: "derived", viaAttr: "ResourceRecords" })]);
+      const d = answerDrawing(dns, known);
+      const svg = drawSvg(d, 420, d.lit);
+      // Between two records in one column, it bows into the space between the columns rather than over them.
+      expect(svg.match(/<path class="g-edge derived" d="M[^"]+ Q[^"]+"/g)).toHaveLength(1);
+      expect(svg).toMatch(/<text class="g-edge-label"[^>]*>ResourceRecords<\/text>/);
+      expect(svg).toContain(derivedLegend(["ResourceRecords"]).replace("'", "&#39;"));
+      expect(derivedLegend(["ResourceRecords"])).toBe("dashed: derived from ResourceRecords, a value holding the other's cloud id");
+      // With no derived edge in the answer, none is drawn and there is no legend.
+      const bare = answerDrawing({ ...dns, draw: { ...dns.draw, edges: [] } }, known);
+      const plain = drawSvg(bare, 420, bare.lit);
+      expect(plain).not.toContain("derived");
+      expect(plain).not.toContain("g-legend");
+      // An attribute several derived edges share is named once, in the legend, not on each edge.
+      const owned = turns.find((t) => t.id === "aws-account-unmanaged");
+      const lo = drawLayout(answerDrawing(owned, known), 420);
+      const attr = lo.edges.find((e) => e.origin === "derived").viaAttr;
+      expect(lo.edges.filter((e) => e.viaAttr === attr).length).toBeGreaterThan(1);
+      expect(lo.labels.filter((l) => l.text === attr)).toEqual([]);
+      expect(lo.legend).toBe(derivedLegend([attr]));
+    });
+
+    it("on a circle, sit on each node's outer side, moving above or below a name already there", () => {
+      const nodes = ["a", "b", "c", "d"].map((k) => ({ key: k, name: `${k}-a-long-resource-name`, source: "chant" }));
+      const lay = drawLayout({ nodes, edges: [] }, 520);
+      const at = (k) => lay.labels.find((l) => l.key === k);
+      // b sits on the right, d on the left; a and c on the axis.
+      expect(at("b").anchor).toBe("start");
+      expect(at("d").anchor).toBe("end");
+      expect(labelOverlaps(lay.labels)).toEqual([]);
+      // Two names that would collide: the second moves.
+      const crowd = drawLayout({ nodes: Array.from({ length: 12 }, (_, i) => ({ key: `k${i}`, name: `subnet-default-us-east-1-${i}`, source: "index" })), edges: [] }, 520);
+      expect(labelOverlaps(crowd.labels)).toEqual([]);
+    });
+
+    it("fit the view to what is drawn, so one node is not a large empty square", () => {
+      const lay = drawLayout({ nodes: [{ key: "k", name: "orders-api", source: "chant" }], edges: [] }, 520);
+      expect(lay.box.width).toBeLessThan(200);
+      expect(lay.box.height).toBeLessThan(60);
+      expect(drawSvg({ nodes: [{ key: "k", name: "orders-api", source: "chant" }], edges: [] })).toMatch(/<svg viewBox="[-\d]+ [-\d]+ \d+ \d+" width="\d+" height="\d+"/);
+    });
   });
 
   it("escapes what it draws", () => {
