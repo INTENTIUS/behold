@@ -107,17 +107,20 @@ export function paneOpen({ phase, sinceDoneMs = 0, chosen = null }) {
 export const REVEAL_STEPS = ["query", "answer", "rows"];
 /** How long the step that has just changed stays marked, in ms. */
 export const REVEAL_MARK_MS = 1_400;
+/** behold#1208: how long after the answer draws its rows show, in ms, while the reply is still typing. */
+export const ROWS_AFTER_MS = 1_500;
 
 /**
  * Which of a question turn's steps show once the prompt pane has reached
  * `at`: "busy" (its busy line, behold running the query), "light" (its reply
- * starts) or "done" (its reply has printed). Each step includes the ones
- * before it, so a step shows even when the event before it never came. Under
- * reduced motion the reply prints at once, so the steps show together as it
- * starts.
+ * starts), "rows" ({@link ROWS_AFTER_MS} after the reply starts, while it
+ * types, behold#1208) or "done" (its reply has printed). Each step includes
+ * the ones before it, so a step shows even when the event before it never
+ * came. Under reduced motion the reply prints at once, so the steps show
+ * together as it starts.
  */
 export function revealAt(at, { reduced = false } = {}) {
-  const upTo = { busy: 1, light: 2, done: 3 }[at] || 0;
+  const upTo = { busy: 1, light: 2, rows: 3, done: 3 }[at] || 0;
   return REVEAL_STEPS.slice(0, reduced && upTo ? REVEAL_STEPS.length : upTo);
 }
 

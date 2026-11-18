@@ -43,11 +43,13 @@ import { createAskPane } from "../../web/kiosk-ask.js";
 import { answerDrawing, drawSvg, refusalText, rowsTable } from "../../web/graph-query.js";
 import { bindEngineBadge } from "../../web/engine-badge.js";
 import { applyKeyLight, cardIndex, lightKeys, zoomFrame } from "../../web/key-light.js";
-import { PROMPT_TYPE_MS, REVEAL_MARK_MS, answerHeadline, callLine, callTitle, countWords, countdownWords, cypherFill, knownResources, pairedKeys, resourceDetails, resourceFacts, rowKeys, loadRows, loopOf, loopTiming, narrationProblems, newSteps, pageClock, paneOpen, revealAt, panView, parseParams, recordedAnswer, recordedWords, sourceTitle, sourceWords, turnState, visitorDraft, zoomView } from "./play.js";
+import { PROMPT_TYPE_MS, REVEAL_MARK_MS, ROWS_AFTER_MS, answerHeadline, callLine, callTitle, countWords, countdownWords, cypherFill, knownResources, pairedKeys, resourceDetails, resourceFacts, rowKeys, loadRows, loopOf, loopTiming, narrationProblems, newSteps, pageClock, paneOpen, revealAt, panView, parseParams, recordedAnswer, recordedWords, sourceTitle, sourceWords, turnState, visitorDraft, zoomView } from "./play.js";
 
 const $ = (id) => document.getElementById(id);
 const html = document.documentElement;
 const query = new URLSearchParams(location.search);
+/** behold#1208: the timer that shows a question's rows while its reply types. */
+let rowsTimer = 0;
 const PACE = Math.min(50, Math.max(0.1, Number(query.get("pace")) || 1));
 const motion = typeof matchMedia === "function" ? matchMedia("(prefers-reduced-motion: reduce)") : null;
 const reduced = () => !!(motion && motion.matches);
@@ -506,6 +508,9 @@ function onTurn(turn) {
     return;
   }
   reveal(turn, "light");
+  // behold#1208: the rows are the answer the reply describes, so they show while it types.
+  clearTimeout(rowsTimer);
+  rowsTimer = setTimeout(() => reveal(turn, "rows"), ROWS_AFTER_MS / PACE);
 }
 
 /** The parts of the page each reveal step changes, marked briefly as it shows. */
@@ -537,7 +542,8 @@ function unmark() {
  * behold#1192: a question turn shows in order, as the prompt pane reaches
  * `at` (play.js `revealAt`): its query while the busy line shows, then the
  * answer drawn and framed on the estate graph as the reply starts, then the
- * rows as it finishes. The step that changed is marked for a moment.
+ * rows a moment later while the reply types (behold#1208). The step that
+ * changed is marked for a moment.
  */
 function reveal(turn, at) {
   if (!state.loop || turn !== state.loop.question) return;
@@ -547,7 +553,7 @@ function reveal(turn, at) {
     showStep(turn, step);
     mark(step);
   }
-  html.dataset.revealed = state.revealed.join(" ");
+  if (steps.length) html.dataset.revealed = state.revealed.join(" ");
 }
 
 function showStep(turn, step) {
@@ -621,6 +627,7 @@ function startLoop(i) {
   state.badgeTurn = "idle";
   state.revealed = [];
   delete html.dataset.revealed;
+  clearTimeout(rowsTimer);
   unmark();
   badge.reset();
   html.dataset.loop = String(i);

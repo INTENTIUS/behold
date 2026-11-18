@@ -438,6 +438,7 @@ const badgeLogScript = `(() => {
   const loop = () => document.documentElement.dataset.loop || "";
   addEventListener("behold:ask-busy", (e) => log.push({ ev: "busy", busy: !!(e.detail && e.detail.busy), step: e.detail && e.detail.step, loop: loop(), t: now() }));
   addEventListener("behold:ask-light", (e) => log.push({ ev: "light", turn: e.detail && e.detail.ask && e.detail.ask.turn && e.detail.ask.turn.id, loop: loop(), t: now() }));
+  addEventListener("behold:ask-done", (e) => log.push({ ev: "done", turn: e.detail && e.detail.ask && e.detail.ask.turn && e.detail.ask.turn.id, loop: loop(), t: now() }));
   document.addEventListener("DOMContentLoaded", () => {
     // behold#1192: each step a question reveals, with what the page shows then and what is marked.
     new MutationObserver(() => {
@@ -461,7 +462,7 @@ const badgeLogScript = `(() => {
 })()`;
 
 interface BadgeEntry {
-  ev: "busy" | "light" | "badge" | "reveal";
+  ev: "busy" | "light" | "done" | "badge" | "reveal";
   revealed?: string;
   cypher?: string;
   drawn?: boolean;
@@ -522,14 +523,15 @@ function checkBadgeLog(log: BadgeEntry[], reduced: boolean) {
 
 /**
  * behold#1192: each loop's question reveals in order with motion (the query on its busy line,
- * then the answer drawn and lit on the estate as the reply starts, then the rows as it finishes),
+ * then the answer drawn and lit on the estate as the reply starts, then the rows about 1.5 s later
+ * while the reply still types, behold#1208),
  * each step marked as it shows; under reduced motion the three show together and nothing is marked.
  */
 function checkRevealLog(log: BadgeEntry[], reduced: boolean) {
   const qs = narration.turns.filter((t) => t.kind === "question");
   for (let i = 0; i < qs.length; i++) {
     const q = loopOf(narration, i).question;
-    const at = (ev: string) => log.findIndex((e) => e.loop === String(i) && e.ev === ev && (ev !== "light" || e.turn === q.id) && (ev !== "busy" || (e.busy && e.step === q.id)));
+    const at = (ev: string) => log.findIndex((e) => e.loop === String(i) && e.ev === ev && (ev === "busy" ? e.busy && e.step === q.id : ev === "light" || ev === "done" ? e.turn === q.id : true));
     const steps = log.filter((e) => e.ev === "reveal" && e.loop === String(i));
     if (reduced) {
       expect(steps.map((e) => e.revealed), `loop ${i}`).toEqual(["query answer rows"]);
@@ -548,10 +550,15 @@ function checkRevealLog(log: BadgeEntry[], reduced: boolean) {
     expect(answer!.marks).toEqual(expect.arrayContaining(["ad-estate", "g-draw"]));
     expect(answer!.marks).not.toContain("g-rows");
     expect(log.indexOf(answer!)).toBeGreaterThan(at("light") - 1);
-    // The rows show as the reply finishes, a while later.
+    // behold#1208: the rows show about 1.5 s of the page's clock after the answer (at ?pace=8, real ms / 8),
+    // before the reply has finished typing.
     expect(rows, `loop ${i}: the rows`).toMatchObject({ drawn: true, rowsShown: true });
     expect(rows!.marks).toContain("g-rows");
-    expect(rows!.t - answer!.t).toBeGreaterThan((q.reply.length * 35) / 8 - 100);
+    expect(rows!.t - answer!.t).toBeGreaterThan(1_500 / 8 - 60);
+    expect(rows!.t - answer!.t).toBeLessThan(1_500 / 8 + 400);
+    const done = at("done");
+    expect(done, `loop ${i}: the reply finished`).toBeGreaterThan(-1);
+    expect(log.indexOf(rows!), `loop ${i}: the rows before the reply finished`).toBeLessThan(done);
   }
 }
 
