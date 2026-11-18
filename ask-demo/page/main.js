@@ -455,7 +455,8 @@ async function boot() {
   state.cards = cardIndex(estate.nodes);
   state.known = knownResources(graphdb);
   const words = recordedWords(narration);
-  $("ad-recorded").textContent = words.line;
+  $("ad-recorded").textContent = words.date;
+  $("ad-replay").textContent = words.replay;
   $("ad-command").textContent = words.command;
   $("ad-versions").textContent = words.versions;
   $("ad-note").textContent = narration.note;

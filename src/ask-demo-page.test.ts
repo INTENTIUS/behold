@@ -175,9 +175,10 @@ describe("the bundle", () => {
     expect(js).toContain("./graph-db-wasm.js");
     expect(js).not.toContain("setWorkerPath");
     // Nothing loads from outside the bundle: no URL with a host in the page or its script, but for
-    // a link a visitor follows (behold#1182: LadybugDB's badge opens ladybugdb.com in a new tab).
+    // a link a visitor follows (behold#1182: LadybugDB's badge opens ladybugdb.com in a new tab;
+    // behold#1188: the header links behold's docs).
     for (const f of ["index.html", "graph.html", "ask-demo.js"]) {
-      const text = readFileSync(join(out, f), "utf8").replace(/<a\b[^>]*\bhref="https:\/\/ladybugdb\.com\/"[^>]*>/g, "<a>");
+      const text = readFileSync(join(out, f), "utf8").replace(/<a\b[^>]*\bhref="https:\/\/(?:ladybugdb\.com\/|intentius\.io\/behold\/[^"]*)"[^>]*>/g, "<a>");
       expect(text, f).not.toMatch(/(?:src|href)=["']?(?:https?:)?\/\//);
     }
   });
@@ -528,6 +529,47 @@ describe.runIf(peer.ok)("the page, in a headless browser", () => {
         .filter((p) => p !== "/" && p !== "/favicon.ico" && !files.some((f) => `/${f.path}` === p));
       expect(missing).toEqual([]);
       expect(requests.some((r) => r.endsWith("/lbug_wasm_worker.js"))).toBe(true);
+    } finally {
+      await browser.close();
+    }
+  });
+});
+
+describe.runIf(peer.ok)("the page's header, in a headless browser (#1188)", () => {
+  it("says what behold is and links its docs on a desktop, and keeps to a few lines on a phone", { timeout: 60_000 }, async () => {
+    const launched = await browserOrNull();
+    if (!launched) {
+      console.warn("ask-demo-page: no browser launches here, so the header was not checked");
+      return;
+    }
+    const url = await serveDir(out);
+    const browser = launched.browser as unknown as { newContext(o?: object): Promise<any>; close(): Promise<void> };
+    const headScript = `(() => {
+      const shown = (id) => { const e = document.querySelector(id); return !!e && e.getClientRects().length > 0 && getComputedStyle(e).display !== "none"; };
+      return {
+        height: document.getElementById("ad-head").getBoundingClientRect().height,
+        watch: shown(".ad-watch"), short: shown(".ad-watch-short"), replay: shown("#ad-replay"),
+        recorded: document.getElementById("ad-recorded").textContent,
+        links: [...document.querySelectorAll(".ad-links a")].filter((a) => a.getClientRects().length > 0).map((a) => a.getAttribute("href")),
+        scrollWidth: document.documentElement.scrollWidth,
+      };
+    })()`;
+    try {
+      const seen: Record<string, any> = {};
+      for (const [name, viewport] of [["desktop", { width: 1440, height: 900 }], ["phone", { width: 390, height: 844 }]] as const) {
+        const context = await browser.newContext({ viewport });
+        const page = await context.newPage();
+        await page.goto(url, { waitUntil: "domcontentloaded" });
+        await page.waitForFunction(() => /^Recorded /.test(document.getElementById("ad-recorded")!.textContent || ""), null, { timeout: 30_000 });
+        seen[name] = await page.evaluate(headScript);
+        await context.close();
+      }
+      const links = ["https://intentius.io/behold/", "https://intentius.io/behold/using/ask-demo/", "https://intentius.io/behold/using/ask-demo/#the-same-loop-on-your-estate"];
+      expect(seen.desktop).toMatchObject({ watch: true, short: false, replay: true, links });
+      // Fonts differ by platform (CI's Linux Chrome sets the header a few lines taller), so the bounds are shares of the screen.
+      expect(seen.desktop.height).toBeLessThan(900 * 0.15);
+      expect(seen.phone).toMatchObject({ watch: false, short: true, replay: false, links, scrollWidth: 390 });
+      expect(seen.phone.height).toBeLessThan(844 * 0.3);
     } finally {
       await browser.close();
     }

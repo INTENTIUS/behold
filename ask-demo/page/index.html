@@ -21,10 +21,16 @@
       a { color: var(--runtime); }
       code { font: 12.5px var(--font-mono); background: var(--well); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 
-      #ad-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
-      #ad-head h1 { font-size: 16px; margin: 0; white-space: nowrap; }
-      #ad-head h1 span { color: var(--muted); font-weight: 500; }
-      .ad-rec { flex: 1 1 360px; min-width: 0; margin: 0; color: var(--muted); font-size: 13px; }
+      /* behold#1188: what behold is, what the loop shows, that it is a recording, and where to go next. */
+      #ad-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 6px 24px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+      .ad-intro { flex: 1 1 520px; min-width: 0; display: grid; gap: 3px; }
+      #ad-head h1 { font-size: 16px; margin: 0; }
+      .ad-brand { color: var(--runtime); }
+      .ad-what { margin: 0; color: var(--ink2); font-size: 13px; max-width: 72em; }
+      .ad-rec { margin: 0; color: var(--muted); font-size: 12.5px; }
+      .ad-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+      .ad-watch-short { display: none; }
+      .ad-links { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; }
       .ad-badge { display: inline-block; font: 600 11px var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink2); border: 1px solid var(--rule); border-radius: 999px; padding: 0 8px; margin-right: 8px; }
       .ad-loop { display: flex; align-items: center; gap: 10px; white-space: nowrap; font: 12.5px var(--font-mono); color: var(--muted); }
       button { background: var(--surface-box); color: var(--fg); border: 1px solid var(--rule); border-radius: 6px; padding: 4px 10px; font: inherit; cursor: pointer; }
@@ -142,15 +148,30 @@
         #ad-ask { order: 2; }
         #k-ask { height: auto; min-height: 9em; font-size: 14px; padding: 10px 16px 12px; }
         #ad-pane { order: 3; border-left: 0; border-top: 1px solid var(--line); overflow: visible; padding: 12px 16px 20px; }
-        .ad-rec { flex-basis: 100%; }
+        /* The phone's header: the title, one line of what behold is, the date, the links and the count. */
+        .ad-intro { flex-basis: 100%; }
+        #ad-head h1 { font-size: 15px; }
+        .ad-watch, .ad-replay { display: none; }
+        .ad-watch-short { display: inline; }
+        .ad-side { flex-basis: 100%; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; }
       }
     </style>
   </head>
   <body>
     <header id="ad-head">
-      <h1>behold <span>asked about an estate</span></h1>
-      <p class="ad-rec"><span class="ad-badge">Recording</span><span id="ad-recorded">Loading the recording.</span> Record it again with <code id="ad-command">just ask-demo-record</code>.</p>
-      <div class="ad-loop"><span id="ad-count"></span><button id="ad-next" type="button">Next question</button></div>
+      <div class="ad-intro">
+        <h1>A coding agent asks <span class="ad-brand">behold</span> about an estate</h1>
+        <p class="ad-what">behold reads infrastructure code, cloud accounts and clusters into one graph. <span class="ad-watch">In the terminal a person asks their agent a question; the agent asks behold, which answers in Cypher. The query and its rows fill the Cypher pane, and what they name lights on the estate graph.</span><span class="ad-watch-short"> behold answers in Cypher.</span></p>
+        <p class="ad-rec"><span class="ad-badge">Recording</span><span id="ad-recorded">Loading the recording.</span> <span id="ad-replay" class="ad-replay"></span></p>
+      </div>
+      <div class="ad-side">
+        <nav class="ad-links" aria-label="behold's docs">
+          <a id="ad-link-docs" href="https://intentius.io/behold/">behold's docs</a>
+          <a id="ad-link-demo" href="https://intentius.io/behold/using/ask-demo/">About this demo</a>
+          <a id="ad-link-yours" href="https://intentius.io/behold/using/ask-demo/#the-same-loop-on-your-estate">Run it on your estate</a>
+        </nav>
+        <div class="ad-loop"><span id="ad-count"></span><button id="ad-next" type="button">Next question</button></div>
+      </div>
     </header>
     <main id="ad-main">
       <section id="ad-estate" aria-label="Estate graph">
@@ -185,6 +206,7 @@
           <summary>About this recording</summary>
           <p class="ad-muted" id="ad-note"></p>
           <p class="ad-muted">Versions: <span id="ad-versions"></span></p>
+          <p class="ad-muted">To record it again, from a checkout of behold: <code id="ad-command">just ask-demo-record</code>. <a href="https://intentius.io/behold/using/ask-demo/#re-recording-it">Re-recording it</a> says what it needs.</p>
         </details>
       </section>
     </main>
