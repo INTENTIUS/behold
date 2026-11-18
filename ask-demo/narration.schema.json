@@ -123,6 +123,11 @@
           "type": "string",
           "minLength": 1,
           "description": "The agent's reply: a template written for the demo, with every number and name filled from this turn's rows (fillReply in scripts/ask-demo/narration.ts)."
+        },
+        "headline": {
+          "type": "string",
+          "minLength": 1,
+          "description": "behold#1198: one plain line above the answer saying what was found, a template written for the demo with every number and name filled from this turn's rows (fillReply). A question turn may carry one; the page shows a count line without it."
         }
       }
     }

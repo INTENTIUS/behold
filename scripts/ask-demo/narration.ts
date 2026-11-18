@@ -33,6 +33,8 @@ export interface Question {
   ask: AskCall;
   /** The agent's reply, with placeholders filled from the answer's rows ({@link fillReply}). */
   reply: string;
+  /** behold#1198: one line above the answer saying what was found, filled from the rows as `reply` is. */
+  headline?: string;
 }
 
 /** A source line as the graph pane's routes stamp it. */
@@ -88,6 +90,7 @@ export interface Turn {
   draw?: { nodes: unknown[]; edges: unknown[] };
   sources: TurnSource[];
   reply: string;
+  headline?: string;
 }
 
 export interface Narration {
@@ -308,8 +311,10 @@ export function questionReply(template: string, answer: { columns: readonly stri
 export function questionTurn(q: Question, answer: GraphAnswer, cards: ReadonlyMap<string, string>): Turn {
   refuseEmpty(answer, q.id);
   let reply: string;
+  let headline: string | undefined;
   try {
     reply = questionReply(q.reply, answer);
+    if (q.headline) headline = fillReply(q.headline, answer);
   } catch (e) {
     if (e instanceof ReplyError) throw new Dropped(q.id, `the reply cannot be filled: ${e.message}`);
     throw e;
@@ -333,6 +338,7 @@ export function questionTurn(q: Question, answer: GraphAnswer, cards: ReadonlyMa
     ...(answer.draw ? { draw: answer.draw } : {}),
     sources: turnSources(answer.sources),
     reply,
+    ...(headline ? { headline } : {}),
   };
 }
 
@@ -416,13 +422,13 @@ export function validateNarration(doc: unknown, schema: object): string[] {
 
 /**
  * Fill every question turn again from the templates in `questions`, matching
- * turns by id: the prompt, the reading line (behold#1195) and the reply are
- * rewritten from the question and the turn's recorded rows, and everything
- * else is left as it is (behold#1174). A turn whose question is no longer in
- * `questions` is dropped, and its id is listed in `dropped`. With `load`
- * (behold#1191), the load turn's reply is filled again from its template too;
- * without it the load turn is kept. Throws naming the turn whose template no
- * longer fills.
+ * turns by id: the prompt, the reading line (behold#1195), the reply and the
+ * headline (behold#1198) are rewritten from the question and the turn's
+ * recorded rows, and everything else is left as it is (behold#1174). A turn
+ * whose question is no longer in `questions` is dropped, and its id is listed
+ * in `dropped`. With `load` (behold#1191), the load turn's reply is filled
+ * again from its template too; without it the load turn is kept. Throws
+ * naming the turn whose template no longer fills.
  */
 export function refillNarration<N extends { turns: Array<{ id: string; kind: string; prompt: string; reading?: string; columns: string[]; rows: Array<Record<string, unknown>>; reply: string }> }>(
   doc: N,
@@ -452,7 +458,7 @@ export function refillNarration<N extends { turns: Array<{ id: string; kind: str
       continue;
     }
     try {
-      turns.push({ ...t, prompt: q.prompt, reading: q.reading, reply: questionReply(q.reply, t) });
+      turns.push({ ...t, prompt: q.prompt, reading: q.reading, reply: questionReply(q.reply, t), ...(q.headline ? { headline: fillReply(q.headline, t) } : {}) });
     } catch (e) {
       if (e instanceof ReplyError) throw new Error(`turn ${t.id}: the reply cannot be filled: ${e.message}`);
       throw e;

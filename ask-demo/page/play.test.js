@@ -3,11 +3,17 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { BEAT_GAP_MS, playback } from "../../web/kiosk-ask.js";
+import { answerDrawing } from "../../web/graph-query.js";
 import {
   DEMO_DOCS,
   DOCS,
   LINKS,
   LOOP_MS,
+  answerHeadline,
+  pairedKeys,
+  resourceDetails,
+  resourceFacts,
+  rowKeys,
   MAX_ZOOM,
   MIN_DWELL_MS,
   PANE_BEAT_MS,
@@ -276,5 +282,57 @@ describe("the visitor's zoom (#1175)", () => {
     expect(panView(v, full, -400, 50)).toEqual({ x: 0, y: 150, width: 500, height: 500 });
     expect(panView(v, full, 5000, 5000)).toEqual({ x: 1500, y: 2500, width: 500, height: 500 });
     expect(keepInside({ x: 0, y: 0, width: 2400, height: 100 }, full)).toEqual({ x: -200, y: 0, width: 2400, height: 100 });
+  });
+});
+
+describe("what the answer found, and one of its resources (#1198)", () => {
+  const GRAPHDB = read("estate/graphdb.json");
+  const ESTATE = read("estate/graph.json");
+  const facts = resourceFacts(GRAPHDB, ESTATE.ir.nodes);
+  const q = RECORDING.turns.find((t) => t.id === "dns-cross-cloud");
+  const body = recordedAnswer(q).body;
+  const picture = answerDrawing(body, KNOWN);
+
+  it("heads a recorded turn with its headline, and a visitor's query with a count", () => {
+    expect(answerHeadline(q, body, picture)).toBe(q.headline);
+    expect(q.headline).toMatch(/^2 Route 53 records depend on 4 resources/);
+    expect(answerHeadline(null, body, picture)).toBe(`7 rows, ${picture.nodes.length} resources`);
+    expect(answerHeadline(null, { rows: [{ x: 1 }] }, { nodes: [] })).toBe("1 row");
+    expect(answerHeadline(null, { rows: [{ x: 1 }] }, { nodes: [{ key: "a" }] })).toBe("1 row, 1 resource");
+  });
+
+  it("selects a row's two ends, or a resource with every key it is paired with", () => {
+    expect(rowKeys(body, picture, 0)).toEqual([q.rows[0].key, q.rows[0].reaches]);
+    expect(rowKeys(body, picture, 99)).toEqual([]);
+    expect(rowKeys(recordedAnswer(RECORDING.turns[0]).body, { keyColumns: [] }, 0)).toEqual([]);
+    const ends = pairedKeys(body, picture, "dns/gcpRecord");
+    expect(ends[0]).toBe("dns/gcpRecord");
+    expect(ends.slice(1).sort()).toEqual(q.rows.filter((r) => r.key === "dns/gcpRecord").map((r) => r.reaches).sort());
+    expect(pairedKeys(body, picture, "nowhere")).toEqual(["nowhere"]);
+  });
+
+  it("details a resource from what the page holds: kind, name, source in words, where it is declared, its cloud id", () => {
+    expect(resourceDetails("gcp/webRule", facts)).toEqual({
+      key: "gcp/webRule",
+      name: "webRule",
+      rows: [["Kind", "GCP::Compute::ForwardingRule"], ["Name", "webRule"], ["Source", "the gcp member"], ["Declared", "in the gcp member, src/site.ts"]],
+      note: "",
+    });
+    const role = resourceDetails("cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/global/AWS::IAM::Role/orders-reader", facts);
+    expect(role.rows).toContainEqual(["Source", "the AWS account's index"]);
+    expect(role.rows).toContainEqual(["Cloud id", "arn:aws:iam::000000000000:role/orders-reader"]);
+    expect(role.note).toBe("The workspace declares nothing for it.");
+    // An indexed resource carrying the aws member's ownership marker says so, rather than that nothing declares it.
+    const subnet = resourceDetails("cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-33900fa9", facts);
+    expect(subnet.rows).toContainEqual(["Owner marker", "aws:ec2/subnet:Subnet::network-private-subnet-1 (three-cloud-aws/local)"]);
+    expect(subnet.note).toBe("");
+    // Declared through a shared cloud id.
+    const f = resourceFacts(
+      { rows: { resources: [{ key: "c/x", source: "chant", scopeKey: "chant/web", name: "logs", kind: "k" }, { key: "i/x", source: "index", scopeKey: "cloud/aws/1/h", name: "web-logs", kind: "k", nativeId: "web-logs" }], knownAs: [{ key: "c/x", value: "web-logs" }, { key: "i/x", value: "web-logs" }] } },
+      [{ id: "c/x", sourceLoc: { file: "main.tf" } }],
+    );
+    expect(resourceDetails("i/x", f).rows).toContainEqual(["Declared", "as logs in the web member, main.tf"]);
+    expect(resourceDetails("gone/key", f)).toEqual({ key: "gone/key", name: "key", rows: [], note: "This page holds nothing more about it." });
+    expect(resourceFacts(null, null).resources.size).toBe(0);
   });
 });

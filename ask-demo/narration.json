@@ -369,7 +369,8 @@
         }
       ],
       "reply": "behold's query ran and returned 7 rows. 2 Route 53 records reach into another member (gcp.three-cloud.example. and www.three-cloud.example.), and between them they depend on 4 resources there: gcp/webAddress, gcp/webProxy, gcp/webRule and gcp/webUrlMap. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
-      "reading": "I'll find the DNS records that depend on GCP resources."
+      "reading": "I'll find the DNS records that depend on GCP resources.",
+      "headline": "2 Route 53 records depend on 4 resources in another member"
     },
     {
       "id": "forwarding-rule-dependents",
@@ -553,7 +554,8 @@
         }
       ],
       "reply": "behold's query ran and returned 4 rows. 4 resources depend on webRule, all of them in the dns member: dns/gcpRecord, dns/gcpCheck, dns/gcpOrigin and dns/gcpEndpoint. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
-      "reading": "I'll find everything that depends on that forwarding rule."
+      "reading": "I'll find everything that depends on that forwarding rule.",
+      "headline": "4 resources in the dns member depend on the forwarding rule"
     },
     {
       "id": "aws-account-unmanaged",
@@ -769,7 +771,8 @@
         }
       ],
       "reply": "behold's query ran and returned 7 rows. 7 resources there have no owner in the workspace: sg-617f6fc6b9d267e6c (AWS::EC2::SecurityGroup), sg-default-us-east-1 (AWS::EC2::SecurityGroup), subnet-default-us-east-1-a (AWS::EC2::Subnet), subnet-default-us-east-1-b (AWS::EC2::Subnet), subnet-default-us-east-1-c (AWS::EC2::Subnet), vpc-default-us-east-1 (AWS::EC2::VPC) and orders-export-archive (AWS::S3::Bucket). The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
-      "reading": "I'll compare the account's network and storage resources with what the workspace declares, and list those it does not."
+      "reading": "I'll compare the account's network and storage resources with what the workspace declares, and list those it does not.",
+      "headline": "7 network and storage resources in the AWS account have no owner in the workspace"
     },
     {
       "id": "serviceaccount-roles",
@@ -900,7 +903,8 @@
         }
       ],
       "reply": "behold's query ran and returned 2 rows. 2 ServiceAccounts carry an IRSA annotation that names a role in the account: orders-api assumes orders-reader and web assumes web-task-role-460e979. behold joined them on metadata.annotations.eks.amazonaws.com/role-arn by the identity:arn rule. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
-      "reading": "Pods get AWS roles through their ServiceAccounts, so I'll find the roles the cluster's ServiceAccounts point at."
+      "reading": "Pods get AWS roles through their ServiceAccounts, so I'll find the roles the cluster's ServiceAccounts point at.",
+      "headline": "2 ServiceAccounts in the cluster can assume 2 AWS roles"
     },
     {
       "id": "orders-reader-readers",
@@ -1016,7 +1020,8 @@
         }
       ],
       "reply": "behold's query ran and returned 1 row. Readers from outside the account: 1, from the kind cluster's index, joined on metadata.annotations.eks.amazonaws.com/role-arn by the identity:arn rule. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
-      "reading": "I'll find what reaches the orders-reader role from outside the account."
+      "reading": "I'll find what reaches the orders-reader role from outside the account.",
+      "headline": "1 resource from the kind cluster's index reaches orders-reader"
     }
   ]
 }

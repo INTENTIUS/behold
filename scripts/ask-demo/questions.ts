@@ -8,7 +8,8 @@
  * `params`, or a `resource` and the name of a template from chant's catalog
  * (GET /api/graphdb/templates). scripts/ask-demo/record.ts asks each one of
  * the estate it boots and keeps only those with a non-empty answer; the
- * placeholders in `reply` are filled from the rows (fillReply in
+ * placeholders in `reply` and `headline` (behold#1198, the line above the
+ * answer) are filled from the rows (fillReply in
  * ./narration.ts lists them), and a source names itself in plain words
  * (`{col|source}`), never by its scope key.
  *
@@ -36,6 +37,7 @@ export const QUESTIONS: readonly Question[] = [
       params: { record: "AWS::Route53::RecordSet" },
     },
     reply: "{{count:record}} Route 53 records reach into another member ({{list:record}}), and between them they depend on {{count:reaches}} resources there: {{list:reaches}}.",
+    headline: "{{count:key}} Route 53 records depend on {{count:reaches}} resources in another member",
   },
   {
     id: "forwarding-rule-dependents",
@@ -43,6 +45,7 @@ export const QUESTIONS: readonly Question[] = [
     reading: "I'll find everything that depends on that forwarding rule.",
     ask: { resource: "webRule", template: "dependents-all" },
     reply: "{{count}} resources depend on webRule, all of them in {{list:scope|source}}: {{list:key}}.",
+    headline: "{{count}} resources in {{list:scope|source}} depend on the forwarding rule",
   },
   {
     id: "aws-account-unmanaged",
@@ -58,6 +61,7 @@ export const QUESTIONS: readonly Question[] = [
         "RETURN i.key AS key, i.kind AS kind, i.name AS name ORDER BY kind, name",
     },
     reply: "{{count}} resources there have no owner in the workspace: {{each:{name} ({kind})}}.",
+    headline: "{{count}} network and storage resources in the AWS account have no owner in the workspace",
   },
   {
     id: "serviceaccount-roles",
@@ -69,6 +73,7 @@ export const QUESTIONS: readonly Question[] = [
         "RETURN sa.key AS key, sa.name AS serviceAccount, role.key AS roleKey, role.name AS role, e.viaAttr AS via, e.rule AS rule ORDER BY serviceAccount",
     },
     reply: "{{count}} ServiceAccounts carry an IRSA annotation that names a role in the account: {{each:{serviceAccount} assumes {role}}}. behold joined them on {{list:via}} by the {{list:rule}} rule.",
+    headline: "{{count:key}} ServiceAccounts in the cluster can assume {{count:roleKey}} AWS roles",
   },
   {
     id: "orders-reader-readers",
@@ -76,5 +81,6 @@ export const QUESTIONS: readonly Question[] = [
     reading: "I'll find what reaches the orders-reader role from outside the account.",
     ask: { resource: "orders-reader", template: "readers" },
     reply: "Readers from outside the account: {{count}}, from {{list:scope|source}}, joined on {{list:via}} by the {{list:rule}} rule.",
+    headline: "{{count}} resource from {{list:scope|source}} reaches orders-reader",
   },
 ];

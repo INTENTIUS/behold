@@ -89,14 +89,17 @@ export interface EstateFile {
   nodes: IrNodeLike[];
 }
 
-/** The estate graph trimmed to what the page reads: the drawing, and the ids it can light. */
+/** The estate graph trimmed to what the page reads: the drawing, the ids it can light, and where each card is declared (behold#1198). */
 export function estateFile(graph: { ir?: { nodes?: IrNodeLike[] }; svg?: string }): EstateFile {
   if (!graph || typeof graph.svg !== "string" || !Array.isArray(graph.ir?.nodes)) throw new BundleRefusal("the estate graph is not a GET /api/graph answer (it needs ir.nodes and svg)");
   return {
     svg: graph.svg,
     nodes: graph.ir.nodes.map((n) => {
       const stack = (n.attrs?._stackOf ?? []).filter((s) => typeof s?.id === "string").map((s) => ({ id: s.id }));
-      return stack.length ? { id: n.id, attrs: { _stackOf: stack } } : { id: n.id };
+      // behold#1198: where the workspace declares a resource, for the answer's details card.
+      const file = (n as { sourceLoc?: { file?: unknown } }).sourceLoc?.file;
+      const loc = typeof file === "string" && file ? { sourceLoc: { file } } : {};
+      return stack.length ? { id: n.id, ...loc, attrs: { _stackOf: stack } } : { id: n.id, ...loc };
     }),
   };
 }
