@@ -33,6 +33,10 @@ describe("what an answer shows", () => {
     expect(svg).toContain("identity:arn");
     expect(svg.match(/<circle/g)).toHaveLength(2);
     expect(drawSvg({ nodes: [], edges: [] })).toBe("");
+    // behold#1163: each node carries its key, and the keys asked for are lit.
+    const lit = drawSvg({ nodes: [{ key: "a", kind: "k", name: "a", source: "chant", scopeKey: "s" }, { key: "b", kind: "k", name: "b", source: "index", scopeKey: "s" }], edges: [] }, 520, ["b"]);
+    expect(lit).toContain('<g class="g-node chant" data-key="a">');
+    expect(lit).toContain('<g class="g-node index lit" data-key="b">');
     expect(Object.keys(circleLayout([{ key: "a" }, { key: "b" }, { key: "c" }]))).toEqual(["a", "b", "c"]);
   });
 

@@ -66,8 +66,9 @@ export function circleLayout(nodes, size = 520) {
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
 
-/** The answer's drawing as SVG text. */
-export function drawSvg(draw, size = 520) {
+/** The answer's drawing as SVG text. Each node carries its key; the keys in `lit` (behold#1163, the ask demo) are drawn lit. */
+export function drawSvg(draw, size = 520, lit = []) {
+  const on = new Set(lit);
   const nodes = draw?.nodes ?? [];
   if (!nodes.length) return "";
   const at = circleLayout(nodes, size);
@@ -85,7 +86,7 @@ export function drawSvg(draw, size = 520) {
     .map((n) => {
       const p = at[n.key];
       const label = n.name || n.key;
-      return `<g class="g-node ${esc(n.source)}"><circle cx="${p.x}" cy="${p.y}" r="7"><title>${esc(`${n.key} (${n.kind}, ${n.scopeKey})`)}</title></circle><text x="${p.x + 10}" y="${p.y + 4}">${esc(label.length > 32 ? `${label.slice(0, 29)}...` : label)}</text></g>`;
+      return `<g class="g-node ${esc(n.source)}${on.has(n.key) ? " lit" : ""}" data-key="${esc(n.key)}"><circle cx="${p.x}" cy="${p.y}" r="7"><title>${esc(`${n.key} (${n.kind}, ${n.scopeKey})`)}</title></circle><text x="${p.x + 10}" y="${p.y + 4}">${esc(label.length > 32 ? `${label.slice(0, 29)}...` : label)}</text></g>`;
     })
     .join("");
   return `<svg viewBox="0 0 ${size} ${size}" role="img" aria-label="answer graph"><defs><marker id="g-arrow" viewBox="0 0 10 10" refX="16" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="g-arrowhead"/></marker></defs>${edges}${dots}</svg>`;

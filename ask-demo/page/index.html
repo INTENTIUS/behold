@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>behold ask demo</title>
+    <meta name="description" content="A recording of a coding agent loading an estate into behold and asking it a question in Cypher, from a real run on emulators." />
+    <style>
+      /* behold#1163. The estate graph is drawn in behold's dark palette, so the page is dark too. */
+      :root {
+        color-scheme: dark;
+        --bg: #0b0e14; --panel: #0f141d; --line: #252c38; --rule: #2b3442; --fg: #e6edf3; --muted: #8a93a3; --ink2: #c9d4e0;
+        --pending: #4c8dff; --managed: #43dc94; --foreign: #e0b341; --degraded: #ff5a5f; --runtime: #3dd2e0; --edge: #4a5463;
+        --well: #070a10; --surface-box: #161b24; --surface-pane-a: #0f141d; --surface-pane-b: #10161f;
+        --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body { background: var(--bg); color: var(--fg); font: 14px/1.45 var(--font-ui); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); overflow: hidden; }
+      a { color: var(--runtime); }
+      code { font: 12.5px var(--font-mono); background: var(--well); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+
+      #ad-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+      #ad-head h1 { font-size: 16px; margin: 0; white-space: nowrap; }
+      #ad-head h1 span { color: var(--muted); font-weight: 500; }
+      .ad-rec { flex: 1 1 360px; min-width: 0; margin: 0; color: var(--muted); font-size: 13px; }
+      .ad-badge { display: inline-block; font: 600 11px var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink2); border: 1px solid var(--rule); border-radius: 999px; padding: 0 8px; margin-right: 8px; }
+      .ad-loop { display: flex; align-items: center; gap: 10px; white-space: nowrap; font: 12.5px var(--font-mono); color: var(--muted); }
+      button { background: var(--surface-box); color: var(--fg); border: 1px solid var(--rule); border-radius: 6px; padding: 4px 10px; font: inherit; cursor: pointer; }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      #ad-next.ad-wanted { border-color: var(--pending); }
+
+      #ad-main { display: grid; grid-template-columns: minmax(0, 3fr) minmax(320px, 2fr); min-height: 0; }
+      #ad-estate { position: relative; min-height: 0; min-width: 0; background: #0b0e14; }
+      #ad-estate-graph { position: absolute; inset: 0; }
+      #ad-estate-graph > svg { display: block; width: 100%; height: 100%; }
+      #ad-estate-cap { position: absolute; left: 12px; right: 12px; bottom: 10px; margin: 0; color: var(--ink2); font-size: 13px; pointer-events: none; }
+      #ad-estate-cap:empty { display: none; }
+      #ad-estate-cap:not(:empty) { background: color-mix(in srgb, var(--bg) 85%, transparent); border: 1px solid var(--rule); border-radius: 6px; padding: 6px 10px; }
+      #ad-estate [data-kl="dim"] { opacity: 0.22; transition: opacity 0.15s; }
+      #ad-estate [data-node-id][data-kl="lit"] rect:first-of-type { stroke: var(--pending); stroke-width: 3; }
+      #ad-estate g[data-edge-from][data-kl="path"] path:first-of-type { stroke: var(--pending); stroke-width: 3; }
+      @keyframes kl-pulse { 0% { opacity: 1; } 35% { opacity: 0.35; } 70%, 100% { opacity: 1; } }
+      #ad-estate [data-node-id][data-kl-pulse] { animation: kl-pulse 0.9s ease-in-out 1; }
+
+      #ad-pane { min-height: 0; overflow-y: auto; border-left: 1px solid var(--line); background: var(--surface-pane-a); padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+      #ad-pane h2 { font-size: 13px; margin: 6px 0 0; color: var(--ink2); display: flex; justify-content: space-between; gap: 8px; }
+      #ad-pane h2 a { font-weight: 400; font-size: 12px; }
+      textarea, input { width: 100%; background: var(--well); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font: 12.5px/1.4 var(--font-mono); }
+      textarea { min-height: 7.5em; resize: vertical; }
+      textarea[readonly], input[readonly] { color: var(--ink2); border-style: dashed; }
+      form { display: grid; gap: 6px; }
+      .ad-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+      .ad-muted, #g-engine, #g-hint { color: var(--muted); font-size: 12.5px; margin: 0; }
+      pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.4 var(--font-mono); margin: 0; color: var(--muted); }
+      #g-call:empty, #g-error:empty { display: none; }
+      #g-error { color: var(--degraded); }
+      #g-draw svg { width: 100%; height: auto; max-height: 300px; display: block; overflow: visible; }
+      #g-draw:empty::before { content: "The answer draws here."; color: var(--muted); font-size: 12.5px; }
+      .g-edge { stroke: var(--edge); stroke-width: 1.4; }
+      .g-edge.derived { stroke-dasharray: 5 4; stroke: var(--foreign); }
+      .g-arrowhead { fill: var(--edge); }
+      .g-node circle { fill: var(--managed); }
+      .g-node.engine circle { fill: var(--runtime); }
+      .g-node.index circle, .g-node.cloud circle { fill: var(--muted); }
+      .g-node text { fill: var(--ink2); font: 13px var(--font-mono); }
+      .g-node.lit circle { fill: var(--pending); stroke: var(--fg); stroke-width: 2; r: 9; }
+      .g-node.lit text { fill: var(--fg); font-weight: 700; }
+      @keyframes g-lit { 0% { opacity: 0.2; } 100% { opacity: 1; } }
+      @media (prefers-reduced-motion: no-preference) { .g-node.lit { animation: g-lit 0.6s ease-out 1; } }
+      table { border-collapse: collapse; width: 100%; font: 11.5px/1.35 var(--font-mono); display: block; overflow-x: auto; max-height: 220px; }
+      th, td { border-bottom: 1px solid var(--line); padding: 3px 6px; text-align: left; vertical-align: top; white-space: nowrap; }
+      th { color: var(--ink2); position: sticky; top: 0; background: var(--surface-pane-a); }
+      details summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+
+      #k-ask { display: flex; flex-direction: column; justify-content: flex-end; gap: 0.35em; height: 30vh; min-height: 170px; padding: 12px 1.4em 14px; font: 600 clamp(14px, 1.25vw, 20px)/1.3 var(--font-mono); color: var(--fg); background: var(--surface-pane-b); border-top: 1px solid var(--rule); }
+      #k-ask[hidden] { display: none; }
+      #k-ask .ask-entry { display: flex; flex-direction: column; gap: 0.15em; min-width: 0; }
+      #k-ask .ask-line { display: flex; gap: 0.6em; }
+      #k-ask .ask-mark { color: var(--pending); flex: none; min-width: 1ch; }
+      #k-ask .ask-text, #k-ask .ask-reply { overflow-wrap: anywhere; }
+      #k-ask .ask-reply { padding-left: 1.6em; color: var(--ink2); font-weight: 500; }
+      #k-ask .ask-old { opacity: 0.55; }
+      #k-ask .ask-old-2 { opacity: 0.4; }
+      #k-ask .ask-old-3, #k-ask .ask-old-4 { opacity: 0.28; }
+
+      /* A phone: one column, the page scrolls; the agent's terminal sits between the estate and the Cypher pane. */
+      @media (max-width: 820px) {
+        html, body { height: auto; }
+        body { display: flex; flex-direction: column; overflow: visible; }
+        #ad-main { display: contents; }
+        #ad-head { order: 0; }
+        #ad-estate { order: 1; height: 44vh; min-height: 260px; }
+        #k-ask { order: 2; height: auto; min-height: 9em; font-size: 14px; padding: 10px 16px 12px; }
+        #ad-pane { order: 3; border-left: 0; border-top: 1px solid var(--line); overflow: visible; padding: 12px 16px 20px; }
+        .ad-rec { flex-basis: 100%; }
+      }
+    </style>
+  </head>
+  <body>
+    <header id="ad-head">
+      <h1>behold <span>asked about an estate</span></h1>
+      <p class="ad-rec"><span class="ad-badge">Recording</span><span id="ad-recorded">Loading the recording.</span> Record it again with <code id="ad-command">just ask-demo-record</code>.</p>
+      <div class="ad-loop"><span id="ad-count"></span><button id="ad-next" type="button">Next question</button></div>
+    </header>
+    <main id="ad-main">
+      <section id="ad-estate" aria-label="Estate graph">
+        <div id="ad-estate-graph"></div>
+        <p id="ad-estate-cap" role="status"></p>
+      </section>
+      <section id="ad-pane" aria-label="Graph pane">
+        <h2>Cypher <a href="./graph.html">Open the full graph pane</a></h2>
+        <pre id="g-call"></pre>
+        <form id="g-cypher-form">
+          <textarea id="g-cypher" spellcheck="false" aria-label="Cypher query" readonly></textarea>
+          <input id="g-params" placeholder="Parameters as JSON" aria-label="Parameters" readonly />
+          <div class="ad-row"><button id="g-ask" type="submit" disabled>Ask</button><span id="g-engine" role="status"></span></div>
+          <p id="g-hint"></p>
+        </form>
+        <pre id="g-error"></pre>
+        <h2>Answer</h2>
+        <div id="g-draw"></div>
+        <div id="g-rows"></div>
+        <h2>Sources, and when each was read</h2>
+        <pre id="g-sources"></pre>
+        <details>
+          <summary>About this recording</summary>
+          <p class="ad-muted" id="ad-note"></p>
+          <p class="ad-muted">Versions: <span id="ad-versions"></span></p>
+        </details>
+      </section>
+    </main>
+    <section id="k-ask" aria-label="The agent's terminal" aria-live="polite"></section>
+    <script type="module" src="./ask-demo.js"></script>
+  </body>
+</html>

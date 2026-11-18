@@ -1,0 +1,384 @@
+{
+  "$schema": "../../narration.schema.json",
+  "format": "behold-ask-demo-narration/1",
+  "recordedAt": "2026-11-18T12:00:00.000Z",
+  "note": "A fixture for the page's playback test (src/ask-demo-page.test.ts): its answers are behold's own over the graph pane's test fixture (a chant project, a choudoufu and a plunge document, and an index version), which the test builds and checks them against. ask-demo/narration.json is the recording.",
+  "recordCommand": "just ask-demo-record",
+  "agentCommand": "behold mcp --url http://localhost:4674",
+  "versions": {
+    "behold": "0.34.1",
+    "chant": "0.124.105"
+  },
+  "turns": [
+    {
+      "id": "load",
+      "kind": "load",
+      "prompt": "Load my estate into behold: the project, its two engines' documents and the AWS account's index.",
+      "call": {
+        "commands": [
+          "behold serve app --port 4674"
+        ]
+      },
+      "busy": "behold serve app --port 4674: loading every source into one graph",
+      "cypher": null,
+      "params": {},
+      "columns": [
+        "scopeKey",
+        "source",
+        "name",
+        "nodes",
+        "edges"
+      ],
+      "rows": [
+        {
+          "scopeKey": "chant/.",
+          "source": "chant",
+          "name": "chant",
+          "nodes": 2,
+          "edges": 1
+        },
+        {
+          "scopeKey": "engine/choudoufu/web",
+          "source": "engine",
+          "name": "choudoufu",
+          "nodes": 6,
+          "edges": 2
+        },
+        {
+          "scopeKey": "engine/plunge/app/dev",
+          "source": "engine",
+          "name": "plunge",
+          "nodes": 4,
+          "edges": 3
+        },
+        {
+          "scopeKey": "cloud/aws/000000000000/9bd41033bb42",
+          "source": "index",
+          "name": "behold-lister",
+          "nodes": 1,
+          "edges": 0
+        }
+      ],
+      "keys": [],
+      "light": [
+        "aws_s3_bucket.logs",
+        "aws_instance.web"
+      ],
+      "sources": [
+        {
+          "scopeKey": "chant/.",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T12:00:00.000Z",
+          "observedAt": null,
+          "nodes": 2,
+          "edges": 1
+        },
+        {
+          "scopeKey": "engine/choudoufu/web",
+          "source": "engine",
+          "name": "choudoufu",
+          "readAt": "2026-11-18T12:00:00.000Z",
+          "observedAt": "2026-10-26T12:00:00Z",
+          "nodes": 6,
+          "edges": 2
+        },
+        {
+          "scopeKey": "engine/plunge/app/dev",
+          "source": "engine",
+          "name": "plunge",
+          "readAt": "2026-11-18T12:00:00.000Z",
+          "observedAt": "2026-10-26T12:00:00Z",
+          "nodes": 4,
+          "edges": 3
+        },
+        {
+          "scopeKey": "cloud/aws/000000000000/9bd41033bb42",
+          "source": "index",
+          "name": "behold-lister",
+          "readAt": "2026-11-18T12:00:00.000Z",
+          "observedAt": "2026-10-26T12:00:00Z",
+          "nodes": 1,
+          "edges": 0
+        }
+      ],
+      "reply": "Loaded 13 resources from 4 sources: chant/. (2), engine/choudoufu/web (6), engine/plunge/app/dev (4) and cloud/aws/000000000000/9bd41033bb42 (1)."
+    },
+    {
+      "id": "logs-bucket-users",
+      "kind": "question",
+      "prompt": "What uses the logs bucket?",
+      "call": {
+        "tool": "ask",
+        "arguments": {
+          "cypher": "MATCH (u:Resource)-[:REF]->(b:Resource {key: $key}) RETURN u.key AS key, u.kind AS kind, b.key AS uses ORDER BY key",
+          "params": "{\"key\":\"aws_s3_bucket.logs\"}"
+        }
+      },
+      "busy": "behold mcp ask: running a Cypher query over the estate graph",
+      "cypher": "MATCH (u:Resource)-[:REF]->(b:Resource {key: $key}) RETURN u.key AS key, u.kind AS kind, b.key AS uses ORDER BY key",
+      "params": {
+        "key": "aws_s3_bucket.logs"
+      },
+      "columns": [
+        "key",
+        "kind",
+        "uses"
+      ],
+      "rows": [
+        {
+          "key": "aws_instance.web",
+          "kind": "aws_instance",
+          "uses": "aws_s3_bucket.logs"
+        },
+        {
+          "key": "cloud/aws/000000000000/9bd41033bb42/aws/000000000000/us-east-1/AWS::S3::Bucket/web-logs",
+          "kind": "AWS::S3::Bucket",
+          "uses": "aws_s3_bucket.logs"
+        }
+      ],
+      "keys": [
+        "aws_instance.web",
+        "cloud/aws/000000000000/9bd41033bb42/aws/000000000000/us-east-1/AWS::S3::Bucket/web-logs"
+      ],
+      "light": [
+        "aws_instance.web",
+        "aws_s3_bucket.logs"
+      ],
+      "draw": {
+        "nodes": [
+          {
+            "key": "aws_instance.web",
+            "kind": "aws_instance",
+            "name": "web",
+            "source": "chant",
+            "scopeKey": "chant/."
+          },
+          {
+            "key": "cloud/aws/000000000000/9bd41033bb42/aws/000000000000/us-east-1/AWS::S3::Bucket/web-logs",
+            "kind": "AWS::S3::Bucket",
+            "name": "web-logs",
+            "source": "index",
+            "scopeKey": "cloud/aws/000000000000/9bd41033bb42"
+          }
+        ],
+        "edges": []
+      },
+      "sources": [
+        {
+          "scopeKey": "chant/.",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T12:00:00.000Z",
+          "observedAt": null,
+          "nodes": 2,
+          "edges": 1
+        },
+        {
+          "scopeKey": "engine/choudoufu/web",
+          "source": "engine",
+          "name": "choudoufu",
+          "readAt": "2026-11-18T12:00:00.000Z",
+          "observedAt": "2026-10-26T12:00:00Z",
+          "nodes": 6,
+          "edges": 2
+        },
+        {
+          "scopeKey": "engine/plunge/app/dev",
+          "source": "engine",
+          "name": "plunge",
+          "readAt": "2026-11-18T12:00:00.000Z",
+          "observedAt": "2026-10-26T12:00:00Z",
+          "nodes": 4,
+          "edges": 3
+        },
+        {
+          "scopeKey": "cloud/aws/000000000000/9bd41033bb42",
+          "source": "index",
+          "name": "behold-lister",
+          "readAt": "2026-11-18T12:00:00.000Z",
+          "observedAt": "2026-10-26T12:00:00Z",
+          "nodes": 1,
+          "edges": 0
+        }
+      ],
+      "reply": "2 resources reference aws_s3_bucket.logs: aws_instance.web, and web-logs as the AWS account's index holds it."
+    },
+    {
+      "id": "account-index",
+      "kind": "question",
+      "prompt": "What does the AWS account hold?",
+      "call": {
+        "tool": "ask",
+        "arguments": {
+          "cypher": "MATCH (i:Resource {source: 'index'}) RETURN i.key AS key, i.kind AS kind, i.name AS name ORDER BY key"
+        }
+      },
+      "busy": "behold mcp ask: running a Cypher query over the estate graph",
+      "cypher": "MATCH (i:Resource {source: 'index'}) RETURN i.key AS key, i.kind AS kind, i.name AS name ORDER BY key",
+      "params": {},
+      "columns": [
+        "key",
+        "kind",
+        "name"
+      ],
+      "rows": [
+        {
+          "key": "cloud/aws/000000000000/9bd41033bb42/aws/000000000000/us-east-1/AWS::S3::Bucket/web-logs",
+          "kind": "AWS::S3::Bucket",
+          "name": "web-logs"
+        }
+      ],
+      "keys": [
+        "cloud/aws/000000000000/9bd41033bb42/aws/000000000000/us-east-1/AWS::S3::Bucket/web-logs"
+      ],
+      "light": [],
+      "sources": [
+        {
+          "scopeKey": "chant/.",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T12:00:00.000Z",
+          "observedAt": null,
+          "nodes": 2,
+          "edges": 1
+        },
+        {
+          "scopeKey": "engine/choudoufu/web",
+          "source": "engine",
+          "name": "choudoufu",
+          "readAt": "2026-11-18T12:00:00.000Z",
+          "observedAt": "2026-10-26T12:00:00Z",
+          "nodes": 6,
+          "edges": 2
+        },
+        {
+          "scopeKey": "engine/plunge/app/dev",
+          "source": "engine",
+          "name": "plunge",
+          "readAt": "2026-11-18T12:00:00.000Z",
+          "observedAt": "2026-10-26T12:00:00Z",
+          "nodes": 4,
+          "edges": 3
+        },
+        {
+          "scopeKey": "cloud/aws/000000000000/9bd41033bb42",
+          "source": "index",
+          "name": "behold-lister",
+          "readAt": "2026-11-18T12:00:00.000Z",
+          "observedAt": "2026-10-26T12:00:00Z",
+          "nodes": 1,
+          "edges": 0
+        }
+      ],
+      "reply": "1 resource is indexed in the account: web-logs (AWS::S3::Bucket)."
+    },
+    {
+      "id": "logs-cloud-id",
+      "kind": "question",
+      "prompt": "What else knows the logs bucket by its cloud id?",
+      "call": {
+        "tool": "ask",
+        "arguments": {
+          "cypher": "MATCH (a:Resource {source: 'chant'})-[:KNOWN_AS]->(c:CloudId)<-[:KNOWN_AS]-(b:Resource) WHERE b.source <> 'chant' RETURN b.key AS key, b.source AS source, a.key AS declared, c.value AS cloudId ORDER BY key"
+        }
+      },
+      "busy": "behold mcp ask: running a Cypher query over the estate graph",
+      "cypher": "MATCH (a:Resource {source: 'chant'})-[:KNOWN_AS]->(c:CloudId)<-[:KNOWN_AS]-(b:Resource) WHERE b.source <> 'chant' RETURN b.key AS key, b.source AS source, a.key AS declared, c.value AS cloudId ORDER BY key",
+      "params": {},
+      "columns": [
+        "key",
+        "source",
+        "declared",
+        "cloudId"
+      ],
+      "rows": [
+        {
+          "key": "cloud/aws/000000000000/9bd41033bb42/aws/000000000000/us-east-1/AWS::S3::Bucket/web-logs",
+          "source": "index",
+          "declared": "aws_s3_bucket.logs",
+          "cloudId": "web-logs"
+        },
+        {
+          "key": "engine/choudoufu/web/aws_s3_bucket.logs",
+          "source": "engine",
+          "declared": "aws_s3_bucket.logs",
+          "cloudId": "web-logs"
+        }
+      ],
+      "keys": [
+        "cloud/aws/000000000000/9bd41033bb42/aws/000000000000/us-east-1/AWS::S3::Bucket/web-logs",
+        "engine/choudoufu/web/aws_s3_bucket.logs"
+      ],
+      "light": [
+        "aws_s3_bucket.logs"
+      ],
+      "draw": {
+        "nodes": [
+          {
+            "key": "engine/choudoufu/web/aws_s3_bucket.logs",
+            "kind": "aws_s3_bucket",
+            "name": "aws_s3_bucket.logs",
+            "source": "engine",
+            "scopeKey": "engine/choudoufu/web"
+          },
+          {
+            "key": "cloud/aws/000000000000/9bd41033bb42/aws/000000000000/us-east-1/AWS::S3::Bucket/web-logs",
+            "kind": "AWS::S3::Bucket",
+            "name": "web-logs",
+            "source": "index",
+            "scopeKey": "cloud/aws/000000000000/9bd41033bb42"
+          }
+        ],
+        "edges": [
+          {
+            "from": "cloud/aws/000000000000/9bd41033bb42/aws/000000000000/us-east-1/AWS::S3::Bucket/web-logs",
+            "to": "engine/choudoufu/web/aws_s3_bucket.logs",
+            "viaAttr": "BucketName",
+            "origin": "derived",
+            "rule": "identity:provider-id"
+          }
+        ]
+      },
+      "sources": [
+        {
+          "scopeKey": "chant/.",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T12:00:00.000Z",
+          "observedAt": null,
+          "nodes": 2,
+          "edges": 1
+        },
+        {
+          "scopeKey": "engine/choudoufu/web",
+          "source": "engine",
+          "name": "choudoufu",
+          "readAt": "2026-11-18T12:00:00.000Z",
+          "observedAt": "2026-10-26T12:00:00Z",
+          "nodes": 6,
+          "edges": 2
+        },
+        {
+          "scopeKey": "engine/plunge/app/dev",
+          "source": "engine",
+          "name": "plunge",
+          "readAt": "2026-11-18T12:00:00.000Z",
+          "observedAt": "2026-10-26T12:00:00Z",
+          "nodes": 4,
+          "edges": 3
+        },
+        {
+          "scopeKey": "cloud/aws/000000000000/9bd41033bb42",
+          "source": "index",
+          "name": "behold-lister",
+          "readAt": "2026-11-18T12:00:00.000Z",
+          "observedAt": "2026-10-26T12:00:00Z",
+          "nodes": 1,
+          "edges": 0
+        }
+      ],
+      "reply": "2 other reads know aws_s3_bucket.logs as web-logs: the account's index and choudoufu's estate."
+    }
+  ]
+}

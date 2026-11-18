@@ -27,3 +27,6 @@ docs/.astro/
 
 # The static carve export (#712, `npm run export:carve`)
 dist-carve/
+
+# The ask demo page's bundle (behold#1163, `just ask-demo-bundle`)
+dist-ask-demo/
