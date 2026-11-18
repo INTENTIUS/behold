@@ -74,7 +74,10 @@ describe("the bundled estates' workspace declarations", () => {
     expect(deps[TERRAFORM_LEXICON]).toBe(`^${lex(TERRAFORM_LEXICON)}`);
     expect(deps[PULUMI_LEXICON]).toBe(`^${lex(PULUMI_LEXICON)}`);
     expect(deps["@intentius/chant"]).toBe(`^${CHANT_RELEASE.version}`);
-    const dns = readFileSync(join(REPO, "example-three-cloud", "dns", "src", "route53.ts"), "utf8");
+    // chant makes tsx an optional peer since 0.124.99, and the example's scripts
+    // (front-door.ts, the e2e change-set checks) run under tsx.
+    expect(deps.tsx).toBeDefined();
+    const dns =readFileSync(join(REPO, "example-three-cloud", "dns", "src", "route53.ts"), "utf8");
     const gcp = readFileSync(join(REPO, "example-three-cloud", "gcp", "src", "site.ts"), "utf8");
     expect(gcp).toContain(`"gcpEndpoint")`);
     expect(dns).toContain("export const gcpEndpoint = new Parameter(");
