@@ -1,6 +1,6 @@
 // behold#1163: lighting the estate graph by graph key.
 import { describe, expect, it } from "vitest";
-import { boxClusters, boxGap, cardIndex, cardMarks, edgeMark, frameBox, lightKeys, viewShare, zoomFrame } from "./key-light.js";
+import { cardIndex, cardMarks, edgeMark, frameBox, lightKeys, viewShare, zoomFrame } from "./key-light.js";
 
 const NODES = [
   { id: "dns/zone" },
@@ -70,8 +70,8 @@ describe("frameBox", () => {
   });
 });
 
-describe("zoomFrame (#1175)", () => {
-  // The ask demo's estate, and the cards its DNS question lights: one at the top, four together near the bottom.
+describe("zoomFrame (#1175, #1190)", () => {
+  // The ask demo's estate, and the cards its DNS question lights: the records at the top, four GCP cards near the bottom.
   const full = { x: 0, y: 0, width: 2576, height: 3234 };
   const record = { x: 457, y: 116, width: 202, height: 68 };
   const gcp = [
@@ -80,55 +80,22 @@ describe("zoomFrame (#1175)", () => {
     { x: 1185, y: 1954, width: 249, height: 84 },
     { x: 1356, y: 2286, width: 184, height: 68 },
   ];
+  const inside = (b, v) => b.x >= v.x && b.y >= v.y && b.x + b.width <= v.x + v.width && b.y + b.height <= v.y + v.height;
 
-  it("measures gaps and shares", () => {
-    expect(boxGap({ x: 0, y: 0, width: 10, height: 10 }, { x: 30, y: 5, width: 10, height: 10 })).toBe(20);
-    expect(boxGap({ x: 0, y: 0, width: 10, height: 10 }, { x: 5, y: 5, width: 10, height: 10 })).toBe(0);
+  it("measures shares", () => {
     expect(viewShare({ x: 0, y: 0, width: 1288, height: 323.4 }, full)).toBe(0.5);
   });
 
-  it("groups cards that sit close together, in reading order", () => {
-    const groups = boxClusters([...gcp, record, { x: Number.NaN, y: 0, width: 1, height: 1 }], 320);
-    expect(groups.map((g) => g.length)).toEqual([1, 4]);
-    expect(groups[0]).toEqual([record]);
-    expect(groups[1][0]).toEqual(gcp[2]);
-  });
-
-  it("frames every lit card when that zooms in enough", () => {
+  it("frames every lit card", () => {
     const near = [gcp[0], gcp[1]];
     expect(zoomFrame(near, full)).toEqual(frameBox(near, full));
   });
 
-  it("frames the largest group when every lit card would hardly zoom, and the cards outside it stay out of the frame", () => {
-    expect(viewShare(frameBox([record, ...gcp], full), full)).toBeGreaterThan(0.6);
+  it("keeps both ends of an answer in view when they sit far apart, though that zooms in little", () => {
     const box = zoomFrame([record, ...gcp], full);
-    expect(box).toEqual(frameBox(gcp, full));
-    expect(viewShare(box, full)).toBeLessThan(0.3);
-  });
-
-  it("takes the group read first when two are as large", () => {
-    const top = { x: 100, y: 100, width: 200, height: 60 };
-    const bottom = { x: 2200, y: 3000, width: 200, height: 60 };
-    expect(zoomFrame([bottom, top], full)).toEqual(frameBox([top], full));
-  });
-
-  it("still zooms in when the largest group is spread wide, keeping its first card in view", () => {
-    // A chain of cards across the whole graph: one group, as wide as the graph.
-    const chain = Array.from({ length: 12 }, (_, i) => ({ x: i * 210, y: 1500, width: 200, height: 60 }));
-    const box = zoomFrame(chain, full);
-    expect(viewShare(box, full)).toBeCloseTo(0.6);
-    expect(box.x).toBeLessThanOrEqual(chain[0].x);
-    expect(box.x + box.width).toBeGreaterThanOrEqual(chain[0].x + chain[0].width);
-    expect(box.x).toBeGreaterThanOrEqual(0);
-    expect(box.y).toBeLessThanOrEqual(1500);
-    expect(box.y + box.height).toBeGreaterThanOrEqual(1560);
-  });
-
-  it("zooms in on a small graph too, where `min` would cover it", () => {
-    const small = { x: 0, y: 0, width: 500, height: 400 };
-    const box = zoomFrame([{ x: 40, y: 40, width: 100, height: 50 }], small);
-    expect(viewShare(box, small)).toBeCloseTo(0.6);
-    expect(box).toMatchObject({ x: 0, y: 0 });
+    expect(box).toEqual(frameBox([record, ...gcp], full));
+    for (const b of [record, ...gcp]) expect(inside(b, box)).toBe(true);
+    expect(viewShare(box, full)).toBeLessThan(1);
   });
 
   it("is the whole graph with nothing to frame", () => {

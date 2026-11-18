@@ -99,73 +99,16 @@ export function viewShare(box, full) {
   return Math.max(box.width / full.width, box.height / full.height);
 }
 
-/** The gap between two boxes: the larger of their horizontal and vertical gaps, 0 when they overlap. */
-export function boxGap(a, b) {
-  const gx = Math.max(0, a.x - (b.x + b.width), b.x - (a.x + a.width));
-  const gy = Math.max(0, a.y - (b.y + b.height), b.y - (a.y + a.height));
-  return Math.max(gx, gy);
-}
-
-/** Reading order: top to bottom, then left to right. */
-const readingOrder = (a, b) => a.y - b.y || a.x - b.x;
-
 /**
- * Groups of boxes that sit close together: two boxes no more than `near`
- * apart are in one group, and so is anything near either (single linkage).
- * Each group lists its boxes in reading order, and the groups come in the
- * reading order of their first box.
+ * behold#1175, behold#1190: the box to frame for the lit cards' `boxes`, in
+ * `full`: every lit card, with `pad` around and no smaller than `min` on a
+ * side (frameBox). An answer is about all of its cards, both ends of each
+ * row, so the frame keeps them all in view even when that zooms in little or
+ * not at all; the dimmed cards around them show which ones are lit. With no
+ * box, `full`.
  */
-export function boxClusters(boxes, near) {
-  const real = (boxes || []).filter((b) => b && [b.x, b.y, b.width, b.height].every(Number.isFinite)).sort(readingOrder);
-  const group = real.map((_, i) => i);
-  const root = (i) => (group[i] === i ? i : (group[i] = root(group[i])));
-  for (let i = 0; i < real.length; i++)
-    for (let j = i + 1; j < real.length; j++) if (boxGap(real[i], real[j]) <= near) group[root(j)] = root(i);
-  const out = new Map();
-  real.forEach((b, i) => {
-    const r = root(i);
-    if (!out.has(r)) out.set(r, []);
-    out.get(r).push(b);
-  });
-  return [...out.values()];
-}
-
-/**
- * behold#1175: the box to frame for the lit cards' `boxes`, in `full`.
- *
- *   1. Every lit card, when that frame's larger side is at most `share` of
- *      the full graph's (so the view zooms in by at least 1/share).
- *   2. Otherwise the largest group of lit cards that sit within `near` of
- *      each other (boxClusters); a tie goes to the group read first.
- *   3. If that frame is still larger than `share`, it shrinks to `share` of
- *      the full graph around its centre, moved as little as it takes to keep
- *      the group's first card in view.
- *
- * So any lit card zooms the view in; the cards outside the frame stay lit.
- * With no box, `full`.
- */
-export function zoomFrame(boxes, full, { pad = 60, min = 420, share = 0.6, near = 320 } = {}) {
-  const groups = boxClusters(boxes, near);
-  if (!groups.length) return { ...full };
-  const all = frameBox(groups.flat(), full, { pad, min });
-  if (viewShare(all, full) <= share) return all;
-  const best = groups.reduce((a, g) => (g.length > a.length ? g : a), groups[0]);
-  const box = frameBox(best, full, { pad, min });
-  if (viewShare(box, full) <= share) return box;
-  const width = Math.min(box.width, full.width * share);
-  const height = Math.min(box.height, full.height * share);
-  const first = best[0];
-  // Centred on the group, then moved so the first card shows with what padding fits (its top left at least).
-  const place = (centre, size, at, side, start, span) => {
-    const room = Math.max(0, Math.min(pad, (size - side) / 2));
-    let s = centre - size / 2;
-    s = Math.min(s, at - room);
-    s = Math.max(s, Math.min(at + side + room, at + size) - size);
-    return Math.max(start, Math.min(s, start + span - size));
-  };
-  const x = place(box.x + box.width / 2, width, first.x, first.width, full.x, full.width);
-  const y = place(box.y + box.height / 2, height, first.y, first.height, full.y, full.height);
-  return { x, y, width, height };
+export function zoomFrame(boxes, full, { pad = 60, min = 420 } = {}) {
+  return frameBox(boxes, full, { pad, min });
 }
 
 /* c8 ignore start: the DOM half, driven by the page */

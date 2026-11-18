@@ -1,7 +1,7 @@
 // behold#1027: the graph pane page's pure helpers.
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { STATIC_SEARCH_LINE, candidateItems, circleLayout, drawSvg, noteLines, queryUrl, refusalText, resolveUrl, rowsTable, sourceLines, templateControl, templateUrl } from "./graph-query.js";
+import { STATIC_SEARCH_LINE, answerDrawing, candidateItems, circleLayout, columnLayout, drawSvg, keyColumns, noteLines, queryUrl, refusalText, resolveUrl, rowsTable, sourceLines, templateControl, templateUrl } from "./graph-query.js";
 
 describe("the routes the page asks", () => {
   it("are GETs with the query in the URL", () => {
@@ -39,6 +39,57 @@ describe("what an answer shows", () => {
     expect(lit).toContain('<g class="g-node chant" data-key="a">');
     expect(lit).toContain('<g class="g-node index lit" data-key="b">');
     expect(Object.keys(circleLayout([{ key: "a" }, { key: "b" }, { key: "c" }]))).toEqual(["a", "b", "c"]);
+  });
+
+  it("draws both ends of each row that pairs two keys, an edge labelled with the second key's column (#1190)", () => {
+    // The ask demo's DNS question, as recorded: the drawing names the records alone.
+    const node = (key, name, scopeKey) => ({ key, kind: "k", name, source: "chant", scopeKey });
+    const known = new Map([
+      ["dns/gcpOrigin", node("dns/gcpOrigin", "gcp.three-cloud.example.", "chant/dns")],
+      ["dns/gcpRecord", node("dns/gcpRecord", "www.three-cloud.example.", "chant/dns")],
+      ["gcp/webRule", node("gcp/webRule", "webRule", "chant/gcp")],
+      ["gcp/webProxy", node("gcp/webProxy", "webProxy", "chant/gcp")],
+    ]);
+    const body = {
+      columns: ["key", "record", "reaches", "kind"],
+      rows: [
+        { key: "dns/gcpOrigin", record: "gcp.three-cloud.example.", reaches: "gcp/webProxy", kind: "GCP::Compute::TargetHTTPProxy" },
+        { key: "dns/gcpOrigin", record: "gcp.three-cloud.example.", reaches: "gcp/webRule", kind: "GCP::Compute::ForwardingRule" },
+        { key: "dns/gcpRecord", record: "www.three-cloud.example.", reaches: "gcp/webRule", kind: "GCP::Compute::ForwardingRule" },
+      ],
+      keys: ["dns/gcpOrigin", "dns/gcpRecord"],
+      draw: { nodes: [known.get("dns/gcpOrigin"), known.get("dns/gcpRecord")], edges: [{ from: "dns/gcpRecord", to: "dns/gcpOrigin", viaAttr: "ResourceRecords", origin: "derived", rule: "r" }] },
+    };
+    // Only the columns whose every value is a known key: not names or kinds, however they look.
+    expect(keyColumns(body.columns, body.rows, known)).toEqual(["key", "reaches"]);
+    expect(keyColumns(["k"], [{ k: null }], known)).toEqual([]);
+    expect(keyColumns(["k"], [{ k: "dns/gcpOrigin" }, { k: "gcp/nowhere" }], known)).toEqual([]);
+    const d = answerDrawing(body, known);
+    expect(d.keyColumns).toEqual(["key", "reaches"]);
+    expect(d.nodes.map((n) => n.key)).toEqual(["dns/gcpOrigin", "dns/gcpRecord", "gcp/webProxy", "gcp/webRule"]);
+    expect(d.lit).toEqual(d.nodes.map((n) => n.key));
+    expect(d.edges).toEqual([
+      body.draw.edges[0],
+      { from: "dns/gcpOrigin", to: "gcp/webProxy", origin: "row", column: "reaches" },
+      { from: "dns/gcpOrigin", to: "gcp/webRule", origin: "row", column: "reaches" },
+      { from: "dns/gcpRecord", to: "gcp/webRule", origin: "row", column: "reaches" },
+    ]);
+    // The records on the left, what they reach on the right.
+    const lay = columnLayout(d, 520);
+    expect(lay.at["dns/gcpOrigin"].x).toBeLessThan(lay.at["gcp/webRule"].x);
+    expect(lay.at["dns/gcpRecord"].side).toBe("left");
+    expect(lay.at["gcp/webProxy"].side).toBe("right");
+    const svg = drawSvg(d, 420, d.lit);
+    expect(svg.match(/class="g-edge row" data-label="reaches"/g)).toHaveLength(3);
+    // The column's name once beside each node it reaches.
+    expect(svg.match(/<text class="g-edge-label"[^>]*>reaches<\/text>/g)).toHaveLength(2);
+    expect(svg).toContain("www.three-cloud.example.");
+    // A REF edge between two nodes a row pairs keeps its line and takes the label.
+    const ref = answerDrawing({ ...body, rows: [{ key: "dns/gcpRecord", reaches: "dns/gcpOrigin" }], columns: ["key", "reaches"] }, known);
+    expect(ref.edges).toEqual([{ ...body.draw.edges[0], column: "reaches" }]);
+    // Without the page's rows, only what the answer's drawing names: no row edge to a node it lacks.
+    expect(answerDrawing(body).edges).toEqual(body.draw.edges);
+    expect(answerDrawing({}).nodes).toEqual([]);
   });
 
   it("escapes what it draws", () => {
