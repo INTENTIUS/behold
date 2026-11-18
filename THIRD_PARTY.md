@@ -111,6 +111,23 @@ Each name and mark belongs to its owner and is used only to say which forge runs
 or which tool a job runs. Its appearance here implies no affiliation with, sponsorship by, or
 endorsement from its owner.
 
+## LadybugDB's logo (`web/vendors/ladybugdb.png`)
+
+The graph pane's Cypher heading, on behold's /graph page, an exported bundle's /graph page
+and the ask demo, shows LadybugDB's logo, since LadybugDB is the graph database that answers
+the query. It links to [ladybugdb.com](https://ladybugdb.com/).
+
+The file is `logo/lbug-logo.png` from
+[LadybugDB/ladybug](https://raw.githubusercontent.com/LadybugDB/ladybug/main/logo/lbug-logo.png),
+**MIT**, Copyright (c) 2022-2025 Kùzu Inc. It is reduced to 96 px; nothing else is changed.
+The page draws it inside a white circle, the ground it is drawn on. The licence is retained at
+[`licenses/ladybugdb-LICENSE`](./licenses/ladybugdb-LICENSE), the LICENSE of the
+`@ladybugdb/wasm-core` package from the same repository.
+
+LadybugDB's name and logo belong to its owners and are used only to say which engine answers
+the pane's queries. Their appearance here implies no affiliation with, sponsorship by, or
+endorsement from them.
+
 ## Cloud architecture icons (`web/icons/aws/`, `web/icons/azure/`, `web/icons/gcp/`)
 
 The AWS, Azure and Google Cloud icons on cards and cloud boxes (#872) are the

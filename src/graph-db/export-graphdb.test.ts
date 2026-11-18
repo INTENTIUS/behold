@@ -39,7 +39,7 @@ const HERE = import.meta.dirname;
 const ROOT = join(HERE, "..", "..");
 const FIXTURES = join(HERE, "__fixtures__");
 const ORIGIN = "http://bundle.test";
-const TYPES: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".json": "application/json", ".svg": "image/svg+xml", ".css": "text/css" };
+const TYPES: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".json": "application/json", ".svg": "image/svg+xml", ".css": "text/css", ".png": "image/png" };
 
 const chantIr: GraphIR = {
   version: 1,
@@ -435,6 +435,90 @@ describe.runIf(peer.ok)("the exported /graph page (behold#1180)", () => {
     } finally {
       await page.close();
       await launched.browser.close();
+    }
+  });
+});
+
+describe.runIf(peer.ok)("LadybugDB's badge on the exported /graph page (behold#1182)", () => {
+  it("shows the logo beside the Cypher heading, linked to ladybugdb.com in a new tab, moves while a query runs and for a few seconds after, and asks only the bundle", { timeout: 240_000 }, async () => {
+    const launched = await browserOrNull();
+    if (!launched) {
+      console.warn("export-graphdb: no browser launches here, so the badge test did not run");
+      return;
+    }
+    const seen: string[] = [];
+    const url = await serveDir(graphOut, seen, ASK_DEMO_CSP);
+    const origin = new URL(url).origin;
+    const browser = launched.browser as unknown as { newContext(o?: object): Promise<any>; close(): Promise<void> };
+    const errors: string[] = [];
+    try {
+      for (const reducedMotion of ["no-preference", "reduce"] as const) {
+        const context = await browser.newContext({ reducedMotion, colorScheme: "light" });
+        const page = await context.newPage();
+        const requests: string[] = [];
+        page.on("request", (r: { url(): string }) => requests.push(r.url()));
+        page.on("pageerror", (e: Error) => errors.push(e.message));
+        try {
+          await page.goto(`${url}graph.html`, { waitUntil: "domcontentloaded" });
+          await page.waitForFunction(() => (document.querySelector("#g-engine-badge img") as HTMLImageElement | null)?.complete, null, { timeout: 30_000 });
+          const badge = await page.evaluate(() => {
+            const a = document.getElementById("g-engine-badge") as HTMLAnchorElement;
+            const img = a.querySelector("img") as HTMLImageElement;
+            const box = a.getBoundingClientRect();
+            return {
+              heading: a.closest("h2")?.firstChild?.textContent?.trim(),
+              href: a.getAttribute("href"),
+              target: a.target,
+              rel: a.rel,
+              alt: img.alt,
+              loaded: img.naturalWidth,
+              size: [Math.round(box.width), Math.round(box.height)],
+              ground: getComputedStyle(a).backgroundColor,
+              round: getComputedStyle(a).borderRadius,
+              active: a.hasAttribute("data-active"),
+            };
+          });
+          expect(badge).toEqual({ heading: "Cypher", href: "https://ladybugdb.com/", target: "_blank", rel: "noopener noreferrer", alt: "LadybugDB", loaded: 96, size: [22, 22], ground: "rgb(255, 255, 255)", round: "50%", active: false });
+
+          await page.waitForFunction(() => document.querySelector("#g-cypher-form button")?.textContent === "Ask", null, { timeout: 120_000 });
+          await page.evaluate(() => {
+            const a = document.getElementById("g-engine-badge")!;
+            const log: Array<{ active: boolean; t: number; anim: string[]; running: number }> = ((globalThis as unknown as { __badge: unknown[] }).__badge = []) as never;
+            new MutationObserver(() => {
+              const active = a.hasAttribute("data-active");
+              if (log.length && log[log.length - 1]!.active === active) return;
+              log.push({ active, t: performance.now(), anim: [getComputedStyle(a).animationName, getComputedStyle(a.querySelector("img")!).animationName], running: a.getAnimations({ subtree: true }).length });
+            }).observe(a, { attributes: true, attributeFilter: ["data-active"] });
+          });
+          await page.fill("#g-cypher", "MATCH (r:Resource) RETURN r.key ORDER BY r.key LIMIT 3");
+          await page.click("#g-cypher-form button");
+          await page.waitForFunction(() => document.querySelectorAll("#g-rows tbody tr").length === 3, null, { timeout: 30_000 });
+          await page.waitForFunction(() => !document.getElementById("g-engine-badge")!.hasAttribute("data-active"), null, { timeout: 10_000 });
+          const log = (await page.evaluate("globalThis.__badge")) as Array<{ active: boolean; t: number; anim: string[]; running: number }>;
+          expect(log.map((e) => e.active)).toEqual([true, false]);
+          // LINGER_MS after the answer; the query itself is quick.
+          expect(log[1]!.t - log[0]!.t).toBeGreaterThan(2900);
+          expect(log[1]!.t - log[0]!.t).toBeLessThan(4500);
+          if (reducedMotion === "reduce") expect([log[0]!.anim, log[0]!.running]).toEqual([["none", "none"], 0]);
+          else expect([log[0]!.anim, log[0]!.running]).toEqual([["engine-pulse", "engine-spin"], 2]);
+
+          // A refused query stops it at once.
+          await page.fill("#g-cypher", "MATCH (r:Resource) SET r.kind = 'x' RETURN r.key");
+          await page.click("#g-cypher-form button");
+          await page.waitForFunction(() => (document.getElementById("g-error")?.textContent ?? "") !== "", null, { timeout: 30_000 });
+          await page.waitForFunction(() => !document.getElementById("g-engine-badge")!.hasAttribute("data-active"), null, { timeout: 1000 });
+
+          // A link is not a request: nothing the page asked for leaves the bundle.
+          expect(requests.filter((r) => !r.startsWith("data:") && !r.startsWith("blob:") && new URL(r).origin !== origin)).toEqual([]);
+          expect(requests.some((r) => r.endsWith("/vendors/ladybugdb.png"))).toBe(true);
+        } finally {
+          await context.close();
+        }
+      }
+      expect(seen.filter((r) => r !== "/favicon.ico" && !existsIn(graphOut, r))).toEqual([]);
+      expect(errors).toEqual([]);
+    } finally {
+      await browser.close();
     }
   });
 });

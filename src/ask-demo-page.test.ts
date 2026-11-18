@@ -47,7 +47,7 @@ import { drawLight, loopOf, questionsOf, recordedAnswer } from "../ask-demo/page
 const ROOT = join(import.meta.dirname, "..");
 const FIXTURES = join(ROOT, "src", "graph-db", "__fixtures__");
 const NARRATION = join(ROOT, "ask-demo", "fixtures", "page", "narration.json");
-const TYPES: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".json": "application/json", ".svg": "image/svg+xml", ".css": "text/css" };
+const TYPES: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".json": "application/json", ".svg": "image/svg+xml", ".css": "text/css", ".png": "image/png" };
 
 const chantIr: GraphIR = {
   version: 1,
@@ -162,7 +162,7 @@ describe("the fixture narration", () => {
 describe("the bundle", () => {
   it("carries the page, the recording, the estate, the rows and the engine, every file under 25 MiB", () => {
     const paths = files.map((f) => f.path);
-    for (const f of ["index.html", "ask-demo.js", "narration.json", "estate.json", "graphdb.json", "graph-db-wasm.js", "lbug-wasm.js", "lbug_wasm_worker.js", "graph.html", "graph-static.js", "graph-query.js", "index-diff.js", "LICENSE", "wrangler.jsonc", ".assetsignore", "_headers"]) {
+    for (const f of ["index.html", "ask-demo.js", "narration.json", "estate.json", "graphdb.json", "graph-db-wasm.js", "lbug-wasm.js", "lbug_wasm_worker.js", "graph.html", "graph-static.js", "graph-query.js", "engine-badge.js", "index-diff.js", "vendors/ladybugdb.png", "LICENSE", "wrangler.jsonc", ".assetsignore", "_headers"]) {
       expect(paths, f).toContain(f);
     }
     for (const f of files) expect(f.bytes, f.path).toBeLessThanOrEqual(25 * 1024 * 1024);
@@ -171,8 +171,12 @@ describe("the bundle", () => {
     const js = readFileSync(join(out, "ask-demo.js"), "utf8");
     expect(js).toContain("./graph-db-wasm.js");
     expect(js).not.toContain("setWorkerPath");
-    // Nothing reaches outside the bundle: no URL with a host in the page or its script.
-    for (const f of ["index.html", "ask-demo.js"]) expect(readFileSync(join(out, f), "utf8"), f).not.toMatch(/(?:src|href)=["']?(?:https?:)?\/\//);
+    // Nothing loads from outside the bundle: no URL with a host in the page or its script, but for
+    // a link a visitor follows (behold#1182: LadybugDB's badge opens ladybugdb.com in a new tab).
+    for (const f of ["index.html", "graph.html", "ask-demo.js"]) {
+      const text = readFileSync(join(out, f), "utf8").replace(/<a\b[^>]*\bhref="https:\/\/ladybugdb\.com\/"[^>]*>/g, "<a>");
+      expect(text, f).not.toMatch(/(?:src|href)=["']?(?:https?:)?\/\//);
+    }
   });
 
   it("gives every path the content security policy in _headers, and the static server serves it so (#1164)", async () => {
@@ -321,6 +325,85 @@ async function playAll(page: Page, reduced: boolean) {
   }
 }
 
+/**
+ * behold#1182: a log of LadybugDB's badge, kept in the page from before it boots: each time it
+ * starts or stops moving, with the animations it runs then, and the pane's busy lines and the
+ * replies that draw an answer, all on the page's performance clock.
+ */
+const badgeLogScript = `(() => {
+  const log = (globalThis.__badge = []);
+  const now = () => performance.now();
+  const loop = () => document.documentElement.dataset.loop || "";
+  addEventListener("behold:ask-busy", (e) => log.push({ ev: "busy", busy: !!(e.detail && e.detail.busy), step: e.detail && e.detail.step, loop: loop(), t: now() }));
+  addEventListener("behold:ask-light", (e) => log.push({ ev: "light", turn: e.detail && e.detail.ask && e.detail.ask.turn && e.detail.ask.turn.id, loop: loop(), t: now() }));
+  document.addEventListener("DOMContentLoaded", () => {
+    const el = document.getElementById("g-engine-badge");
+    if (!el) return;
+    let was = false;
+    new MutationObserver(() => {
+      const active = el.hasAttribute("data-active");
+      if (active === was) return;
+      was = active;
+      const img = el.querySelector("img");
+      log.push({ ev: "badge", active, loop: loop(), t: now(), anim: [getComputedStyle(el).animationName, getComputedStyle(img).animationName], running: el.getAnimations({ subtree: true }).length, ring: getComputedStyle(el).boxShadow });
+    }).observe(el, { attributes: true, attributeFilter: ["data-active"] });
+  });
+})()`;
+
+interface BadgeEntry {
+  ev: "busy" | "light" | "badge";
+  busy?: boolean;
+  step?: string;
+  turn?: string;
+  active?: boolean;
+  loop: string;
+  t: number;
+  anim?: string[];
+  running?: number;
+  ring?: string;
+}
+
+/** The linger at `?pace=8`: LINGER_MS of the page's clock, in real ms. */
+const PACED_LINGER = 3000 / 8;
+
+/**
+ * Each loop's question moves the badge from its busy line (or, where none shows, its answer)
+ * until about LINGER_MS after the answer draws, without a stop in between; with motion it
+ * spins and pulses, under reduced motion it runs no animation and shows a ring.
+ */
+function checkBadgeLog(log: BadgeEntry[], reduced: boolean) {
+  const qs = narration.turns.filter((t) => t.kind === "question");
+  for (let i = 0; i < qs.length; i++) {
+    const q = loopOf(narration, i).question;
+    const light = log.findIndex((e) => e.ev === "light" && e.turn === q.id && e.loop === String(i));
+    expect(light, `loop ${i}: ${q.id}'s answer drew`).toBeGreaterThanOrEqual(0);
+    const busy = log.findIndex((e) => e.ev === "busy" && e.busy && e.step === q.id && e.loop === String(i));
+    if (!reduced) expect(busy, `loop ${i}: ${q.id}'s busy line showed`).toBeGreaterThanOrEqual(0);
+    const from = busy >= 0 && busy < light ? busy : light;
+    // It starts as the busy line shows (or the answer draws) ...
+    const on = log.findIndex((e, k) => k > from && e.ev === "badge");
+    expect(log[on], `loop ${i}: the badge starts`).toMatchObject({ active: true });
+    if (busy >= 0 && busy < light) expect(on, `loop ${i}: the badge moves before the answer draws`).toBeLessThan(light);
+    expect(log[on]!.t - log[from]!.t, `loop ${i}: at once`).toBeLessThan(100);
+    // ... and stops once, about LINGER_MS after the answer, unless the next loop started first.
+    const off = log.findIndex((e, k) => k > on && e.ev === "badge");
+    expect(log[off], `loop ${i}: the badge stops`).toMatchObject({ active: false });
+    expect(off, `loop ${i}: no stop before the answer`).toBeGreaterThan(light);
+    const after = log[off]!.t - log[light]!.t;
+    expect(after, `loop ${i}: stops soon after the answer`).toBeLessThan(PACED_LINGER + 600);
+    if (log[off]!.loop === String(i)) expect(after, `loop ${i}: lingers after the answer`).toBeGreaterThan(PACED_LINGER - 60);
+    const moving = log[on]!;
+    if (reduced) {
+      expect(moving.anim, `loop ${i}: no animation under reduced motion`).toEqual(["none", "none"]);
+      expect(moving.running).toBe(0);
+      expect(moving.ring).not.toBe("none");
+    } else {
+      expect(moving.anim).toEqual(["engine-pulse", "engine-spin"]);
+      expect(moving.running).toBe(2);
+    }
+  }
+}
+
 describe.runIf(peer.ok)("the page, in a headless browser", () => {
   it("plays every loop with motion and under reduced motion, lights by key, fills the Cypher box, answers a visitor's query in WebAssembly, and asks only the bundle", { timeout: 240_000 }, async () => {
     const launched = await browserOrNull();
@@ -333,23 +416,35 @@ describe.runIf(peer.ok)("the page, in a headless browser", () => {
     const browser = launched.browser as unknown as { newContext(o?: object): Promise<any>; close(): Promise<void> };
     const requests: string[] = [];
     const errors: string[] = [];
+    const badgeChecked: string[] = [];
     try {
       for (const reducedMotion of ["no-preference", "reduce"] as const) {
         const context = await browser.newContext({ reducedMotion, viewport: { width: 1440, height: 900 } });
         const page = await context.newPage();
         page.on("request", (r: { url(): string }) => requests.push(r.url()));
         page.on("pageerror", (e: Error) => errors.push(e.message));
+        await page.addInitScript(badgeLogScript);
         try {
           await page.goto(`${url}?pace=8`, { waitUntil: "domcontentloaded" });
           await playAll(page, reducedMotion === "reduce");
+          // Long enough for the last loop's linger to run out.
+          await new Promise((r) => setTimeout(r, PACED_LINGER + 600));
+          checkBadgeLog(await page.evaluate("globalThis.__badge"), reducedMotion === "reduce");
+          badgeChecked.push(reducedMotion);
           if (reducedMotion === "reduce") continue;
           // After a loop the box is the visitor's: their query runs on the recorded rows in LadybugDB's WebAssembly build.
           const q = narration.turns[1]!;
           await page.fill("#g-cypher", q.cypher!);
           await page.fill("#g-params", JSON.stringify(q.params));
           await page.waitForFunction(() => document.documentElement.dataset.engine === "ready", null, { timeout: 120_000 });
+          const clickedAt = (await page.evaluate("performance.now()")) as number;
           await page.click("#g-ask");
           await page.waitForFunction(() => document.documentElement.dataset.visitor === "1", null, { timeout: 60_000 });
+          // behold#1182: the visitor's query moves the badge, and it stops after the linger.
+          await page.waitForFunction(() => !document.getElementById("g-engine-badge")!.hasAttribute("data-active"), null, { timeout: 10_000 });
+          const visitorBadge = ((await page.evaluate("globalThis.__badge")) as BadgeEntry[]).filter((e) => e.ev === "badge" && e.t >= clickedAt);
+          expect(visitorBadge.map((e) => e.active)).toEqual([true, false]);
+          expect(visitorBadge[1]!.t - visitorBadge[0]!.t).toBeGreaterThan(PACED_LINGER - 60);
           const s = await waitFor(page, "the visitor's answer", (x) => x.answerLit.length > 0);
           expect(s.lit.sort()).toEqual([...q.light].sort());
           expect(s.answerLit.sort()).toEqual([...q.keys].sort());
@@ -362,6 +457,7 @@ describe.runIf(peer.ok)("the page, in a headless browser", () => {
         }
       }
       expect(errors).toEqual([]);
+      expect(badgeChecked).toEqual(["no-preference", "reduce"]);
       const outside = requests.filter((r) => !r.startsWith(origin) && !r.startsWith("data:") && !r.startsWith("blob:"));
       expect(outside).toEqual([]);
       const missing = requests

@@ -46,6 +46,8 @@ export const NEEDED: ReadonlyArray<{ path: string; type: RegExp }> = [
   { path: "graph.html", type: /^text\/html/ },
   { path: "graph-static.js", type: /javascript/ },
   { path: "graph-query.js", type: /javascript/ },
+  { path: "engine-badge.js", type: /javascript/ },
+  { path: "vendors/ladybugdb.png", type: /^image\/png/ },
 ];
 /** In the bundle folder for the deploy, never served. */
 export const NOT_SERVED = ["wrangler.jsonc", ".assetsignore", "_headers"] as const;

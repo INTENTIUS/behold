@@ -20,8 +20,9 @@
  *   graphdb.json          the rows a visitor's Cypher runs on
  *   graph-db-wasm.js, lbug-wasm.js, lbug_wasm_worker.js
  *                         the browser's graph database, as `behold export --graphdb` carries it
- *   graph.html, graph-static.js, graph-query.js, index-diff.js
+ *   graph.html, graph-static.js, graph-query.js, engine-badge.js, index-diff.js
  *                         the full /graph pane over the same rows
+ *   vendors/ladybugdb.png   LadybugDB's logo beside both pages' Cypher heading (behold#1182)
  *   LICENSE, THIRD_PARTY.md, licenses/, wrangler.jsonc, .assetsignore
  *   _headers              the content security policy the Worker serves every
  *                         file with (behold#1164): the bundle's own origin only,
@@ -49,7 +50,7 @@ export const WORKER_NAME = "behold-ask-demo";
 export const WRANGLER_VERSION = "4.156.2";
 export const ESTATE_FILE = "estate.json";
 /** The /graph pane's own files, from web/, beside the page. */
-export const GRAPH_PANE_FILES = ["graph-static.js", "graph-query.js", "index-diff.js"] as const;
+export const GRAPH_PANE_FILES = ["graph-static.js", "graph-query.js", "engine-badge.js", "index-diff.js", "vendors/ladybugdb.png"] as const;
 
 /**
  * behold#1164: the policy every file is served with. Nothing loads from
@@ -195,7 +196,10 @@ export async function buildAskDemoBundle(o: BundleOptions): Promise<BundleResult
   copyFileSync(wasm.module, join(out, LBUG_MODULE_FILE));
   copyFileSync(wasm.worker, join(out, LBUG_WORKER_FILE));
   writeFileSync(join(out, "graph.html"), staticGraphHtml(readFileSync(join(ROOT, "web", "graph.html"), "utf8"), askDemoGraphBundle(narration)));
-  for (const f of GRAPH_PANE_FILES) cpSync(join(ROOT, "web", f), join(out, f));
+  for (const f of GRAPH_PANE_FILES) {
+    mkdirSync(dirname(join(out, f)), { recursive: true });
+    cpSync(join(ROOT, "web", f), join(out, f));
+  }
   copyNotices(out, ROOT);
   if (wasm.license) {
     mkdirSync(join(out, dirname(WASM_LICENSE_FILE)), { recursive: true });

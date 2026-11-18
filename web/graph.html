@@ -53,6 +53,18 @@
       select { background: var(--well); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 4px; font: 12px var(--font-mono); max-width: 100%; }
       ul { margin: 6px 0 0; padding-left: 18px; font: 12px/1.4 var(--font-mono); }
       a { color: var(--runtime); }
+      /* behold#1182: LadybugDB's logo beside the Cypher heading, on the white ground it is drawn for. It moves while a query runs (web/engine-badge.js sets data-active). */
+      .engine-badge { display: inline-flex; flex: none; width: 22px; height: 22px; margin-left: 6px; vertical-align: middle; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1px var(--line); overflow: hidden; }
+      .engine-badge img { display: block; width: 100%; height: 100%; }
+      .engine-badge:focus-visible { outline: 2px solid var(--runtime); outline-offset: 2px; }
+      @keyframes engine-spin { to { transform: rotate(360deg); } }
+      @keyframes engine-pulse { 0%, 100% { transform: scale(1); box-shadow: 0 0 0 1px var(--line); } 50% { transform: scale(1.12); box-shadow: 0 0 0 2px var(--runtime), 0 0 9px 1px var(--runtime); } }
+      .engine-badge[data-active] { animation: engine-pulse 1.2s ease-in-out infinite; }
+      .engine-badge[data-active] img { animation: engine-spin 1.2s linear infinite; }
+      @media (prefers-reduced-motion: reduce) {
+        .engine-badge[data-active], .engine-badge[data-active] img { animation: none; }
+        .engine-badge[data-active] { box-shadow: 0 0 0 2px var(--runtime); }
+      }
     </style>
   </head>
   <body>
@@ -64,7 +76,7 @@
         <a id="g-back" href="/">Back to the estate</a>
       </header>
       <section>
-        <h2>Cypher</h2>
+        <h2>Cypher <a id="g-engine-badge" class="engine-badge" href="https://ladybugdb.com/" target="_blank" rel="noopener noreferrer" title="LadybugDB answers these queries (opens in a new tab)"><img src="./vendors/ladybugdb.png" width="22" height="22" alt="LadybugDB" /></a></h2>
         <form id="g-cypher-form">
           <textarea id="g-cypher" spellcheck="false" aria-label="Cypher query">MATCH (a:Resource)-[:KNOWN_AS]->(c:CloudId)&lt;-[:KNOWN_AS]-(b:Resource) WHERE a.scopeKey &lt;&gt; b.scopeKey RETURN a.key, b.key, c.value LIMIT 50</textarea>
           <input id="g-params" placeholder='Parameters as JSON, such as {"k": "aws_s3_bucket"}' aria-label="Parameters" />
