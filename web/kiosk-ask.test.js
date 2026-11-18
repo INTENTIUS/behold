@@ -268,6 +268,28 @@ describe("createAskPane: a session of turns", () => {
     expect(flat(host)).toContain("All 3 states.");
     expect(events[1][1]).toEqual({ ask, step: "planned", scenario: "compose-edit" });
   });
+  it("shows an instant step's beats at once, and types prompts at the pane's own speed (behold#1189)", () => {
+    const clock = { t: T0 };
+    const events = [];
+    const host = fakeDoc();
+    let timer = null;
+    const pane = createAskPane({ host, win: { dispatchEvent: (e) => events.push([e.type, e.detail]) }, now: () => new Date(clock.t), typeMs: 10, setTimer: (f) => ((timer = f), 1), clearTimer: () => (timer = null) });
+    pane.setStep(demo("load", { instant: true, ask: { prompt: "load it", status: "Loading", reply: "Loaded." } }));
+    expect(flat(host)).toContain("load it");
+    expect(flat(host)).toContain("Loaded.");
+    expect(events.map((e) => e[0])).toEqual(expect.arrayContaining(["behold:ask-light", "behold:ask-done"]));
+    // The next step types again, at 10 ms a character rather than TYPE_MS.
+    pane.setStep(demo("ask", { ask: { prompt: "abcdefghij", status: "Asking", reply: "ok" } }));
+    expect(flat(host)).toContain("Loaded.");
+    clock.t += CURSOR_PAUSE_MS + 50;
+    timer();
+    expect(flat(host)).toContain("abcde");
+    expect(flat(host)).not.toContain("abcdefghij");
+    clock.t += 60;
+    timer();
+    expect(flat(host)).toContain("abcdefghij");
+    expect(10).toBeLessThan(TYPE_MS);
+  });
   it("tells the tip cards when a busy line shows and when it ends (ask-busy)", () => {
     const clock = { t: T0 };
     const { pane, events, tick } = make(clock);

@@ -416,14 +416,17 @@ export const settleTurns = (turns, nowMs) => turns.map((t) => ({ ...t, ready: fa
 /**
  * The pane. `host` is its element; `fill()` gives the reply tokens from the
  * report as it stands; `now()` the time. `win` is where events go and
- * `reduced()` says whether motion is reduced. Once a scenario's step has put
+ * `reduced()` says whether motion is reduced; `typeMs` is how long a prompt
+ * takes per character. A step with `instant: true` shows its beats at once,
+ * as under reduced motion (behold#1189: a turn the visitor has already
+ * watched). Once a scenario's step has put
  * something in the pane, the pane stays until a reset (no demo) or another
  * scenario. Steps that arrive while one is still playing wait their turn.
  * Returns:
  * - `setStep(demo)`: take a narration; returns whether the pane shows;
  * - `active()`: whether it shows now.
  */
-export function createAskPane({ host, win = typeof window !== "undefined" ? window : null, now = () => new Date(), fill = () => ({}), reduced = () => false, onActive = () => {}, setTimer = setInterval, clearTimer = clearInterval }) {
+export function createAskPane({ host, win = typeof window !== "undefined" ? window : null, now = () => new Date(), fill = () => ({}), reduced = () => false, typeMs = TYPE_MS, onActive = () => {}, setTimer = setInterval, clearTimer = clearInterval }) {
   const doc = host.ownerDocument;
   let key = null;
   let cycleKey = null;
@@ -535,9 +538,9 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
 
   /** What the current step shows now: its turns, whether the pane waits for a prompt, and when it lets the graph go. */
   function build(t) {
-    const reducedNow = reduced();
+    const reducedNow = reduced() || !!(demo && demo.instant);
     const elapsed = t - startedAt;
-    const pb = playback(beats, elapsed, { reduced: reducedNow, replies });
+    const pb = playback(beats, elapsed, { reduced: reducedNow, replies, msPerChar: typeMs });
     const label = (beat) => busyLabel((beat && beat.status) || wanted || firstSentence(demo && demo.label));
     const turns = [];
     for (const f of pb.frames) {

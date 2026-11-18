@@ -42,7 +42,7 @@ import { WHAT_ASK_DEMO } from "../web/kiosk.js";
 // @ts-expect-error the docs site's data module is plain ESM
 import { ASK_DEMO } from "../docs/src/data/live.mjs";
 // @ts-expect-error the page's module is plain browser ESM
-import { callLine, drawLight, knownResources, loopOf, questionsOf, recordedAnswer, sourceTitle, sourceWords } from "../ask-demo/page/play.js";
+import { PROMPT_TYPE_MS, QUICK_QUESTION_MS, callLine, drawLight, knownResources, loopOf, questionsOf, recordedAnswer, sourceTitle, sourceWords } from "../ask-demo/page/play.js";
 
 const ROOT = join(import.meta.dirname, "..");
 const FIXTURES = join(ROOT, "src", "graph-db", "__fixtures__");
@@ -272,6 +272,8 @@ interface Seen {
   control: { hidden: boolean; expanded: string | null; text: string; height: number; bottom: number };
   foldMotion: string;
   inert: boolean;
+  count: string;
+  now: number;
 }
 
 const seenScript = `(() => {
@@ -303,6 +305,8 @@ const seenScript = `(() => {
     })(),
     foldMotion: getComputedStyle(document.getElementById("ad-ask-fold")).transitionDuration,
     inert: document.getElementById("ad-ask-fold").inert,
+    count: document.getElementById("ad-count").textContent,
+    now: performance.now(),
   };
 })()`;
 
@@ -324,9 +328,17 @@ async function playAll(page: Page, reduced: boolean) {
     const loop = loopOf(narration, i);
     const load = loop.load;
     const q = loop.question;
-    // Each loop starts with the estate pane empty: the agent has loaded nothing yet.
     const before = await waitFor(page, `loop ${i}'s start`, (s) => s.loop === String(i));
-    if (!before.turn) expect(before.estate).toBe("empty");
+    if (i === 0) {
+      // behold#1189: the first loop starts with the estate pane empty, the agent having loaded nothing yet, and counts no question.
+      if (!before.turn) expect(before.estate).toBe("empty");
+      expect(before.count).toBe("");
+    } else {
+      // Later loops show the load turn already done: its prompt and reply at once, the estate loaded.
+      expect(before.turn === "load" || before.turn === q.id).toBe(true);
+      expect(before.estate).toBe("loaded");
+      for (const text of [load.prompt, load.reply]) expect(before.terminal.replace(/\s+/g, " ")).toContain(text.replace(/\s+/g, " "));
+    }
     const atLoad = await waitFor(page, `loop ${i}'s load turn`, (s) => s.loop === String(i) && (s.turn === "load" || s.turn === q.id));
     if (atLoad.turn === "load") {
       expect(atLoad.estate).toBe("loaded");
@@ -336,9 +348,14 @@ async function playAll(page: Page, reduced: boolean) {
       // behold#1191: the load turn's pane says what was loaded, in words, with no query box.
       expect([atLoad.paneTitle, atLoad.call, atLoad.formShown]).toEqual(["What behold loaded", callLine(load), false]);
       for (const line of sourceWords(load.sources)) expect(atLoad.sources).toContain(line);
+      // The first loop types the load turn's reply; it is not all there as it starts.
+      if (i === 0 && !reduced) expect(atLoad.terminal.replace(/\s+/g, " ")).not.toContain(load.reply.replace(/\s+/g, " "));
     }
     const atQ = await waitFor(page, `loop ${i}'s question ${q.id}`, (s) => s.loop === String(i) && s.turn === q.id);
     expect(atQ.estate).toBe("loaded");
+    expect(atQ.count).toBe(`Question ${loop.index + 1} of ${loop.of}`);
+    // A later loop's question replies within a few seconds of the page's clock (at ?pace=8, real ms / 8).
+    if (i > 0) expect(atQ.now - before.now, `loop ${i}: the question soon after the loop starts`).toBeLessThan((QUICK_QUESTION_MS + 600 + q.prompt.length * PROMPT_TYPE_MS + 1200 + 2000) / 8 + 400);
     // behold#1183: the agent's pane is open while the turns print, and nothing offers to close it.
     // Under reduced motion the question's reply prints at once, so its beat may already be running.
     for (const s of reduced ? [before, atLoad] : [before, atLoad, atQ]) expect([s.pane, s.inert, s.control.hidden], s.turn).toEqual(["open", false, true]);
