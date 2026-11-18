@@ -51,6 +51,39 @@ export function sourceLines(sources) {
   });
 }
 
+const CANNOT_LIST = /^(.*?): Cloud Control cannot list (\S+): (.*)$/;
+
+/**
+ * behold#1177: the status notes, one line each, with a Cloud Control index's
+ * "cannot list <type>" notes grouped: one line per source and per answer,
+ * naming how many types gave it and which. The answer keeps its words, with
+ * the type shown as <type>. A note that stands alone prints unchanged.
+ */
+export function noteLines(notes) {
+  const out = [];
+  const groups = new Map();
+  for (const n of notes ?? []) {
+    const m = typeof n === "string" ? CANNOT_LIST.exec(n) : null;
+    if (!m) {
+      out.push({ line: n });
+      continue;
+    }
+    const [, scope, type, answer] = m;
+    const key = `${scope}\u0000${answer.split(type).join("<type>")}`;
+    let g = groups.get(key);
+    if (!g) {
+      g = { scope, answer: answer.split(type).join("<type>"), types: [], notes: [] };
+      groups.set(key, g);
+      out.push(g);
+    }
+    g.types.push(type);
+    g.notes.push(n);
+  }
+  return out.map((x) =>
+    x.line !== undefined ? x.line : x.types.length === 1 ? x.notes[0] : `${x.scope}: Cloud Control cannot list ${x.types.length} types (${x.types.join(", ")}). Each answered ${x.answer}`,
+  );
+}
+
 /** Node positions on a circle, in answer order; small answers get a readable radius. */
 export function circleLayout(nodes, size = 520) {
   const n = nodes.length;
@@ -158,7 +191,7 @@ export function initGraphPane(doc = document, fetchJson = (u) => fetch(u, { head
     $("g-peer").textContent = peer?.available ? `LadybugDB ${peer.version ?? ""}`.trim() : refusalText(peer?.refusal);
     $("g-counts").textContent = `${s.body.counts.resources} resources, ${s.body.counts.refs} edges (${s.body.counts.derived} derived), ${s.body.counts.cloudIds} cloud ids`;
     $("g-sources").textContent = sourceLines(s.body.sources).join("\n");
-    $("g-notes").textContent = (s.body.notes ?? []).join("\n");
+    $("g-notes").textContent = noteLines(s.body.notes).join("\n");
   };
   $("g-cypher-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
