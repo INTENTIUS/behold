@@ -18,9 +18,14 @@
  */
 import type { Question } from "./narration.ts";
 
-/** The load turn's prompt and reply. Its rows are the sources GET /api/graphdb lists. */
+/**
+ * The load turn's prompt, busy line and reply. Its rows are the sources GET
+ * /api/graphdb lists. The busy line says what happens in words (behold#1206);
+ * the commands that did it are the turn's `call`, shown on hover.
+ */
 export const LOAD = {
   prompt: "Load my estate into behold: the three-cloud workspace, the AWS account, and the cluster.",
+  busy: "behold is reading the workspace, the AWS account and the cluster into one graph",
   reply: "Loaded {{sum:nodes}} resources from {{count}} sources: {{each:{scopeKey|source} ({nodes})}}.",
 };
 
@@ -100,7 +105,7 @@ export const QUESTIONS: readonly Question[] = [
         "MATCH (sa:Resource {kind: 'K8s::Core::ServiceAccount'})-[e:REF]->(role:Resource {kind: 'AWS::IAM::Role'}) " +
         "RETURN sa.key AS key, sa.name AS serviceAccount, role.key AS roleKey, role.name AS role, e.viaAttr AS via, e.rule AS rule ORDER BY serviceAccount",
     },
-    reply: "{{count}} ServiceAccounts carry an IRSA annotation that names a role in the account: {{each:{serviceAccount} assumes {role}}}. behold joined them on {{list:via}} by the {{list:rule}} rule.",
+    reply: "{{count}} ServiceAccounts carry an IRSA annotation that names a role in the account: {{each:{serviceAccount} assumes {role}}}. Each ServiceAccount's role annotation joined it to its role.",
     headline: "{{count:key}} ServiceAccounts in the cluster can assume {{count:roleKey}} AWS roles",
   },
   {
@@ -108,7 +113,7 @@ export const QUESTIONS: readonly Question[] = [
     prompt: "Who outside AWS can use the orders-reader role?",
     reading: "I'll find what reaches the orders-reader role from outside the account.",
     ask: { resource: "orders-reader", template: "readers" },
-    reply: "Readers from outside the account: {{count}}, from {{list:scope|source}}, joined on {{list:via}} by the {{list:rule}} rule.",
+    reply: "Readers from outside the account: {{count}}, from {{list:scope|source}}. A ServiceAccount's role annotation joined it to the role.",
     headline: "{{count}} resource from {{list:scope|source}} reaches orders-reader",
   },
 ];

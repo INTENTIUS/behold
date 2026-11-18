@@ -343,7 +343,7 @@ export function questionTurn(q: Question, answer: GraphAnswer, cards: ReadonlyMa
 }
 
 /** The load turn: the commands that filled behold, and what each source loaded, as GET /api/graphdb listed it. */
-export function loadTurn(o: { prompt: string; commands: string[]; reply: string; sources: readonly SourceStamp[]; cards: ReadonlyMap<string, string> }): Turn {
+export function loadTurn(o: { prompt: string; busy: string; commands: string[]; reply: string; sources: readonly SourceStamp[]; cards: ReadonlyMap<string, string> }): Turn {
   const columns = ["scopeKey", "source", "name", "nodes", "edges"];
   const rows = o.sources.map((s) => ({ scopeKey: s.scopeKey, source: s.source, name: s.name, nodes: s.nodes ?? 0, edges: s.edges ?? 0 }));
   if (!rows.length) throw new Dropped("load", "behold loaded no source");
@@ -359,7 +359,7 @@ export function loadTurn(o: { prompt: string; commands: string[]; reply: string;
     kind: "load",
     prompt: o.prompt,
     call: { commands: o.commands },
-    busy: `${o.commands[o.commands.length - 1]}: loading every source into one graph`,
+    busy: o.busy,
     cypher: null,
     params: {},
     columns,
@@ -427,13 +427,14 @@ export function validateNarration(doc: unknown, schema: object): string[] {
  * recorded rows, and everything else is left as it is (behold#1174). A turn
  * whose question is no longer in `questions` is dropped, and its id is listed
  * in `dropped`. With `load` (behold#1191), the load turn's reply is filled
- * again from its template too; without it the load turn is kept. Throws
+ * again from its template too, and its busy line set from `load.busy`
+ * (behold#1206); without it the load turn is kept. Throws
  * naming the turn whose template no longer fills.
  */
 export function refillNarration<N extends { turns: Array<{ id: string; kind: string; prompt: string; reading?: string; columns: string[]; rows: Array<Record<string, unknown>>; reply: string }> }>(
   doc: N,
   questions: readonly Question[],
-  load?: { reply: string },
+  load?: { reply: string; busy?: string },
 ): { doc: N; dropped: string[] } {
   const byId = new Map(questions.map((q) => [q.id, q]));
   const dropped: string[] = [];
@@ -441,7 +442,7 @@ export function refillNarration<N extends { turns: Array<{ id: string; kind: str
   for (const t of doc.turns) {
     if (t.kind === "load" && load) {
       try {
-        turns.push({ ...t, reply: fillReply(load.reply, t) });
+        turns.push({ ...t, ...(load.busy ? { busy: load.busy } : {}), reply: fillReply(load.reply, t) });
       } catch (e) {
         if (e instanceof ReplyError) throw new Error(`turn ${t.id}: the reply cannot be filled: ${e.message}`);
         throw e;

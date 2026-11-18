@@ -308,7 +308,8 @@ function showAnswer(answer, { turn = null, draw = true, rows = true } = {}) {
     $("ad-headline").textContent = status === 200 && body.columns && body.draw && found.length ? answerHeadline(turn, body, picture) : "";
   }
   if (rows) {
-    $("g-rows").innerHTML = status === 200 && body.columns ? rowsTable(body.columns, body.rows) : "";
+    // behold#1206: a key column shows each resource's name; the whole key is on hover and in the details card.
+    $("g-rows").innerHTML = status === 200 && body.columns ? rowsTable(body.columns, body.rows, { keys: picture.keyColumns ?? [], known: state.known }) : "";
     showSources(status === 200 ? body.sources : []);
   }
   // behold#1198: the answer's resources are selectable as each part shows.

@@ -24,7 +24,7 @@
           "behold serve three-cloud --port 4674"
         ]
       },
-      "busy": "behold serve three-cloud --port 4674: loading every source into one graph",
+      "busy": "behold is reading the workspace, the AWS account and the cluster into one graph",
       "cypher": null,
       "params": {},
       "columns": [
@@ -1100,7 +1100,7 @@
           "edges": 0
         }
       ],
-      "reply": "behold's query ran and returned 2 rows. 2 ServiceAccounts carry an IRSA annotation that names a role in the account: orders-api assumes orders-reader and web assumes web-task-role-460e979. behold joined them on metadata.annotations.eks.amazonaws.com/role-arn by the identity:arn rule. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
+      "reply": "behold's query ran and returned 2 rows. 2 ServiceAccounts carry an IRSA annotation that names a role in the account: orders-api assumes orders-reader and web assumes web-task-role-460e979. Each ServiceAccount's role annotation joined it to its role. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
       "headline": "2 ServiceAccounts in the cluster can assume 2 AWS roles"
     },
     {
@@ -1226,7 +1226,7 @@
           "edges": 0
         }
       ],
-      "reply": "behold's query ran and returned 1 row. Readers from outside the account: 1, from the kind cluster's index, joined on metadata.annotations.eks.amazonaws.com/role-arn by the identity:arn rule. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
+      "reply": "behold's query ran and returned 1 row. Readers from outside the account: 1, from the kind cluster's index. A ServiceAccount's role annotation joined it to the role. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
       "headline": "1 resource from the kind cluster's index reaches orders-reader"
     }
   ]

@@ -172,15 +172,19 @@ describe("the cards to light", () => {
   });
 
   it("the load turn lists each source's counts and lights every card", () => {
-    const t = loadTurn({ prompt: LOAD.prompt, commands: ["behold serve three-cloud --port 4674"], reply: LOAD.reply, sources: [stamp, { ...stamp, scopeKey: "cloud/aws/1/d", source: "index", name: "chant-lister", observedAt: "2026-11-18T11:00:00.000Z", nodes: 4 }], cards: CARDS });
+    const t = loadTurn({ prompt: LOAD.prompt, busy: LOAD.busy, commands: ["behold serve three-cloud --port 4674"], reply: LOAD.reply, sources: [stamp, { ...stamp, scopeKey: "cloud/aws/1/d", source: "index", name: "chant-lister", observedAt: "2026-11-18T11:00:00.000Z", nodes: 4 }], cards: CARDS });
     expect(t.rows).toEqual([
       { scopeKey: "chant/dns", source: "chant", name: "chant", nodes: 3, edges: 2 },
       { scopeKey: "cloud/aws/1/d", source: "index", name: "chant-lister", nodes: 4, edges: 2 },
     ]);
-    expect(t.reply).toBe("Loaded 7 resources from 2 sources: the dns member (3) and the AWS account's index (4).");
+    expect(t.reply).toBe("Loaded 7 resources from 2 sources: the dns member (3) and the AWS account's index (4).")
+    // behold#1206: the busy line says what happens in words; the command stays in the call.
+    expect(t.busy).toBe(LOAD.busy);
+    expect(t.busy).not.toMatch(/--port|behold serve/);
+    expect(t.call).toEqual({ commands: ["behold serve three-cloud --port 4674"] });
     expect(t.light).toEqual(["dns/zone", "dns/RecordSet ×2", "gcp/webRule"]);
     expect(t.call).toEqual({ commands: ["behold serve three-cloud --port 4674"] });
-    expect(() => loadTurn({ prompt: "p", commands: ["c"], reply: LOAD.reply, sources: [], cards: CARDS })).toThrow(/no source/);
+    expect(() => loadTurn({ prompt: "p", busy: "b", commands: ["c"], reply: LOAD.reply, sources: [], cards: CARDS })).toThrow(/no source/);
   });
 });
 
@@ -248,6 +252,10 @@ describe("the reply frame and the refill (behold#1174)", () => {
     const { doc: next } = refillNarration(load, qs, { reply: "From {{each:{scopeKey|source} ({nodes})}}; {{first:scopeKey|source}}." });
     expect(next.turns[0]!.reply).toBe("From the kind cluster's index (4); the kind cluster's index.");
     expect(refillNarration(load, qs).doc.turns[0]!.reply).toBe("old");
+    // behold#1206: and its busy line, when the template gives one.
+    const busy = refillNarration({ ...load, turns: [{ ...load.turns[0]!, busy: "behold serve x --port 1: loading" }, load.turns[1]!] } as typeof load, qs, { reply: "r", busy: "behold is reading x" });
+    expect((busy.doc.turns[0] as { busy?: string }).busy).toBe("behold is reading x");
+    expect((refillNarration({ ...load, turns: [{ ...load.turns[0]!, busy: "kept" }, load.turns[1]!] } as typeof load, qs, { reply: "r" }).doc.turns[0] as { busy?: string }).busy).toBe("kept");
     expect(() => refillNarration(load, qs, { reply: "{{list:gone}}" })).toThrow(/turn load: the reply cannot be filled.*gone/);
     expect(fillReply("{{list:scopeKey|source}}", { columns: ["scopeKey"], rows: [{ scopeKey: "chant/aws" }, { scopeKey: "somewhere" }] })).toBe("the aws member and somewhere");
     expect(() => fillReply("{{list:scopeKey|loud}}", { columns: ["scopeKey"], rows: [{ scopeKey: "chant/aws" }] })).toThrow(ReplyError);

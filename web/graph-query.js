@@ -369,13 +369,35 @@ export function drawSvg(draw, size = 520, lit = []) {
   return `<svg viewBox="${x} ${y} ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="answer graph"><defs><marker id="g-arrow" viewBox="0 0 10 10" refX="16" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="g-arrowhead"/></marker></defs>${edges}${words}${dots}${legend}</svg>`;
 }
 
-/** A table of the answer's rows as HTML text. */
-export function rowsTable(columns, rows) {
+/**
+ * behold#1206: a readable name for a graph key: the resource's name when
+ * `known` (a Map of keys to `{ name }`) has one, otherwise the key's last
+ * `/` segment, decoded. A key is never shortened to a cut-off prefix.
+ */
+export function keyName(key, known = new Map()) {
+  const name = known.get(key)?.name;
+  if (typeof name === "string" && name) return name;
+  const last = String(key).split("/").filter(Boolean).pop() ?? String(key);
+  try {
+    return decodeURIComponent(last);
+  } catch {
+    return last;
+  }
+}
+
+/**
+ * A table of the answer's rows as HTML text. With `keys` (behold#1206, the
+ * columns that hold graph keys, {@link keyColumns}), each of those cells
+ * shows {@link keyName} over `known`, with the whole key on hover.
+ */
+export function rowsTable(columns, rows, { keys = [], known = new Map() } = {}) {
   if (!rows?.length) return "<p class=\"g-muted\">No rows.</p>";
   const cell = (v) => esc(typeof v === "string" ? v : JSON.stringify(v));
+  const isKey = new Set(keys);
   const head = columns.map((c) => `<th>${esc(c)}</th>`).join("");
   // Each cell's whole value on hover too, for a page that cuts long cells short (behold#1190, the ask demo).
-  const body = rows.map((r) => `<tr>${columns.map((c) => `<td title="${cell(r[c])}">${cell(r[c])}</td>`).join("")}</tr>`).join("");
+  const td = (c, v) => (isKey.has(c) && typeof v === "string" ? `<td class="g-key" title="${cell(v)}">${esc(keyName(v, known))}</td>` : `<td title="${cell(v)}">${cell(v)}</td>`);
+  const body = rows.map((r) => `<tr>${columns.map((c) => td(c, r[c])).join("")}</tr>`).join("");
   return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
 

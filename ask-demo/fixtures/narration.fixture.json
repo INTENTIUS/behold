@@ -12,7 +12,7 @@
       "kind": "load",
       "prompt": "Load my estate into behold.",
       "call": { "commands": ["behold index aws --endpoint http://localhost:4671 --account 000000000000 --regions us-east-1", "behold serve three-cloud --port 4674"] },
-      "busy": "behold serve three-cloud --port 4674: loading every source into one graph",
+      "busy": "behold is reading the workspace, the AWS account and the cluster into one graph",
       "cypher": null,
       "params": {},
       "columns": ["scopeKey", "source", "name", "nodes", "edges"],

@@ -17,7 +17,7 @@ A line above the rows says what the answer found, such as "2 Route 53 records de
 
 Click a row or a node in the drawing, or move to one with Tab and press Enter, to show it on the estate graph. A row lights both of its resources; a node lights itself and every resource a row pairs it with. The view frames them, and a card gives the resource's kind, name and source, where the workspace declares it (with its file when the estate graph knows one), and its cloud id. A resource that only an index read, with no declared resource sharing a cloud id, shows the ownership marker the index found on it, or says the workspace declares nothing for it. Escape clears the selection and goes back to the answer's view. The card uses only what the page already loaded.
 
-Above the query, a line says what the agent asked behold through its `ask` tool; the call as the agent made it shows when you hover over that line. The replies and the list of sources name each source in words, such as the aws member, the azure member's choudoufu graph or the AWS account's index. Its scope key (`chant/aws`, `cloud/aws/<account>/<hash>`) stays in the rows table and shows on hover. During the load turn the pane lists what behold loaded, one source per row, and shows no query.
+Above the query, a line says what the agent asked behold through its `ask` tool; the call as the agent made it shows when you hover over that line. The replies and the list of sources name each source in words, such as the aws member, the azure member's choudoufu graph or the AWS account's index. Its scope key (`chant/aws`, `cloud/aws/<account>/<hash>`) stays in the rows table and shows on hover. During the load turn the pane lists what behold loaded, one source per row, and shows no query; its busy line says in words what behold is reading, and the commands that did it show when you hover over the line above the table. In the rows, a column of resource keys shows each resource's name (or the key's last part when the recording has no name for it); the whole key shows on hover and in the card you get by selecting the row.
 
 ## What is recorded
 
@@ -106,7 +106,7 @@ Each question carries the agent's reading line, then the busy line. Each reply s
 just ask-demo-refill
 ```
 
-It rewrites each question turn's `prompt`, `reading` and `reply` and the load turn's `reply`, drops a turn whose question is gone from `questions.ts` (and says so), checks the result against `ask-demo/narration.schema.json`, and fails naming a turn whose template no longer fills.
+It rewrites each question turn's `prompt`, `reading` and `reply` and the load turn's `reply` and busy line, drops a turn whose question is gone from `questions.ts` (and says so), checks the result against `ask-demo/narration.schema.json`, and fails naming a turn whose template no longer fills.
 
 ## Redeploying it
 

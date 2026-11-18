@@ -85,7 +85,7 @@
         <h2>Cypher <a id="g-engine-badge" class="engine-badge" href="https://ladybugdb.com/" target="_blank" rel="noopener noreferrer" title="LadybugDB answers these queries (opens in a new tab)"><img src="./vendors/ladybugdb.png" width="22" height="22" alt="LadybugDB" /></a></h2>
         <form id="g-cypher-form">
           <textarea id="g-cypher" spellcheck="false" aria-label="Cypher query">MATCH (a:Resource)-[:KNOWN_AS]->(c:CloudId)&lt;-[:KNOWN_AS]-(b:Resource) WHERE a.scopeKey &lt;&gt; b.scopeKey RETURN a.key, b.key, c.value LIMIT 50</textarea>
-          <input id="g-params" placeholder='Parameters as JSON, such as {"k": "aws_s3_bucket"}' aria-label="Parameters" />
+          <input id="g-params" placeholder='Values for the query&#39;s $names, as JSON, such as {"k": "aws_s3_bucket"}' aria-label="Parameters" />
           <button type="submit">Ask</button>
         </form>
         <h2 style="margin-top: 14px">Start from a resource</h2>
