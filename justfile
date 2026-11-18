@@ -33,14 +33,18 @@ build:
 # tsc + tests + build — the fast local gate.
 check: tsc test build
 
-# Release the version main already carries: tag behold-v<version>, push the
-# tag (release.yml publishes over npm trusted publishing), wait until npm
-# shows it. Refuses off main, on a dirty or stale tree, when the tag already
-# exists anywhere (a behold-v* push re-fires publish — a tag is pushed exactly
-# once), or when npm already has the version. The version-bump PR comes first,
-# through the same gate as every other PR.
+# Release the version main already carries: start release.yml, chant release's
+# dispatched workflow, with that version as the label. It cuts main's head once
+# its checks are green, pushes the behold-v<version> tag, publishes to npm and
+# creates the GitHub release; mcp-registry.yml then lists it. The version-bump
+# PR comes first, through the same gate as every other PR, and the cut refuses
+# a label that is not the version main carries (scripts/release-check.sh).
 release:
-    bash scripts/release.sh
+    gh workflow run release.yml --ref main -f label="$(node -p 'require("./package.json").version')"
+
+# Render .github/workflows/release.yml from chant.config.ts. Never edit that file by hand.
+release-workflow:
+    npx chant release workflow
 
 # Install the example project's chant + aws lexicon (behold shells the project's
 # own chant, so this decides the chant version under test).
