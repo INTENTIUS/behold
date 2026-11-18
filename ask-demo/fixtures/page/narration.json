@@ -108,6 +108,7 @@
       "id": "logs-bucket-users",
       "kind": "question",
       "prompt": "What uses the logs bucket?",
+      "reading": "I'll find what uses the logs bucket.",
       "call": {
         "tool": "ask",
         "arguments": {
@@ -208,6 +209,7 @@
       "id": "account-index",
       "kind": "question",
       "prompt": "What does the AWS account hold?",
+      "reading": "I'll list what the AWS account's index holds.",
       "call": {
         "tool": "ask",
         "arguments": {
@@ -277,6 +279,7 @@
       "id": "logs-cloud-id",
       "kind": "question",
       "prompt": "What else knows the logs bucket by its cloud id?",
+      "reading": "I'll find what else knows the logs bucket by its cloud id.",
       "call": {
         "tool": "ask",
         "arguments": {

@@ -75,11 +75,14 @@ describe("loops", () => {
   it("give the prompt pane a beat per turn that types the prompt, shows the busy line and types the reply, carrying its turn", () => {
     const turn = FIXTURE.turns[1];
     const beat = beatOf(turn);
-    expect(beat).toEqual({ prompt: turn.prompt, status: turn.busy, reply: turn.reply, turn });
+    expect(beat).toEqual({ prompt: turn.prompt, reading: turn.reading, status: turn.busy, reply: turn.reply, turn });
+    expect(beatOf({ ...turn, reading: undefined })).not.toHaveProperty("reading");
     const pb = playback([beat], 1e9);
     expect(pb.done).toBe(true);
     expect(pb.frames[0]).toMatchObject({ text: turn.prompt, replied: true, replyChars: turn.reply.length });
-    const busy = playback([beat], 600 + turn.prompt.length * 90 + 10).frames[0];
+    const reading = playback([beat], 600 + turn.prompt.length * 90 + 80).frames[0];
+    expect(reading).toMatchObject({ busy: false, replied: false, readingTyping: true });
+    const busy = playback([beat], 600 + turn.prompt.length * 90 + turn.reading.length * 35 + 10).frames[0];
     expect(busy).toMatchObject({ busy: true, replied: false });
   });
 

@@ -194,12 +194,15 @@ export function beatTiming(beat, { reduced = false, msPerChar = TYPE_MS, replyMs
   const typed = line.typed && !reduced;
   const cursor = typed ? CURSOR_PAUSE_MS : 0;
   const typing = typed ? line.text.length * msPerChar : 0;
-  const busyAt = cursor + typing;
+  // behold#1195: a beat's `reading` is the agent's one line on how it reads the prompt; it types like a reply, before the busy line.
+  const readingMs = beat.reading && hasLine(beat) && !reduced ? beat.reading.length * replyMs : 0;
+  const readingAt = cursor + typing;
+  const busyAt = readingAt + readingMs;
   const busy = beat.reply && hasLine(beat) && !reduced ? BUSY_MIN_MS : 0;
   const replyAt = busyAt + busy;
   const replyType = beat.reply && !reduced ? replyOf(beat, reply).length * replyMs : 0;
   const diffMs = reduced ? 0 : diffLines(beat).length * DIFF_MS;
-  return { cursor, typing, busyAt, replyAt, replyType, diffMs, end: replyAt + replyType + diffMs };
+  return { cursor, typing, readingAt, readingMs, busyAt, replyAt, replyType, diffMs, end: replyAt + replyType + diffMs };
 }
 
 /** Whether a beat has a prompt or an action line of its own (a note and a lone reply do not). */
@@ -240,6 +243,8 @@ export function playback(beats, elapsedMs, opts = {}) {
     const line = lineOf(beat);
     const n = line.typed ? typedChars(line.text.length, local - t.cursor, opts) : line.text.length;
     const lined = hasLine(beat);
+    const readingFull = typeof beat.reading === "string" && lined ? beat.reading : "";
+    const readingChars = readingFull && local >= t.readingAt ? typedChars(readingFull.length, local - t.readingAt, { reduced: opts.reduced, msPerChar: opts.replyMs ?? REPLY_TYPE_MS }) : 0;
     const replied = !!beat.reply && local >= t.replyAt;
     const full = replyOf(beat, opts.replies ? opts.replies[i] : undefined);
     const replyChars = replied ? typedChars(full.length, local - t.replyAt, { reduced: opts.reduced, msPerChar: opts.replyMs ?? REPLY_TYPE_MS }) : 0;
@@ -261,6 +266,8 @@ export function playback(beats, elapsedMs, opts = {}) {
       ready: line.typed && n === 0,
       lined,
       busy,
+      reading: readingFull.slice(0, readingChars),
+      readingTyping: readingChars > 0 && readingChars < readingFull.length,
       busySince: starts[i] + t.busyAt,
       // When this busy line is due to end, from the step's start: its reply, or the next beat; null when the step's end decides.
       busyUntil: beat.reply && lined ? starts[i] + t.replyAt : i + 1 < beats.length ? starts[i + 1] : null,
@@ -521,6 +528,7 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
       else if (p.k === "sum") e.appendChild(el("ask-sum", `✓ ${p.label} (${clock(p.secs)})`));
       else if (p.k === "diff") e.appendChild(diffNode(p.lines));
       else e.appendChild(el(p.typing ? "ask-reply ask-reply-typing" : "ask-reply", p.text));
+      // (a reading line, p.k === "reading", is drawn as a reply line)
     }
     return e;
   };
@@ -535,6 +543,7 @@ export function createAskPane({ host, win = typeof window !== "undefined" ? wind
     for (const f of pb.frames) {
       const beat = beats[f.index];
       const tn = f.lined || beat.note ? { mark: f.mark, text: f.text, note: !!beat.note, typing: f.typing || f.ready, ready: f.ready, parts: [] } : { cont: true, mark: "", text: "", parts: [] };
+      if (f.reading) tn.parts.push({ k: "reading", text: f.reading, typing: f.readingTyping });
       if (f.busy) tn.parts.push({ k: "busy", label: label(beat), since: startedAt + f.busySince, until: f.busyUntil === null ? nextAt() : startedAt + f.busyUntil, tips: beat.tips, bid: `b${f.index}` });
       else if (f.sumSecs !== null) tn.parts.push({ k: "sum", label: label(beat), secs: f.sumSecs });
       if (f.replied) tn.parts.push({ k: "reply", text: (replies[f.index] || "").slice(0, f.replyChars), typing: f.replyTyping });

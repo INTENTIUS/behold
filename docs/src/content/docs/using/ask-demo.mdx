@@ -9,7 +9,7 @@ The ask demo is a page at <a href={ASK_DEMO}>behold-ask-demo.intentius.workers.d
 
 ## Reading an answer
 
-The estate graph frames every card the answer lit and dims the rest. For "Which of my DNS records depend on something in another cloud?" that is the Route 53 records at the top of the estate and the GCP resources they reach at the bottom, so both ends stay in view even though the view then zooms in only a little.
+The estate graph frames every card the answer lit and dims the rest. For "If GCP has an outage, which of our domains go with it?" that is the Route 53 records at the top of the estate and the GCP resources they reach at the bottom, so both ends stay in view even though the view then zooms in only a little.
 
 In the graph pane the rows come first, then a drawing of them. When a row pairs two resources, such as a record and what it `reaches`, the drawing puts the first column's resources on the left and the others on the right, joined by an edge labelled with the column's name. Those edges are the answer's rows as the query paired them; behold adds no join of its own. A column counts as resources only when every value in it is the key of a resource the recording loaded. A query you run yourself is drawn the same way.
 
@@ -23,7 +23,7 @@ The answers on the page are a recording. They come from one run of behold on emu
 - the emulated AWS account, indexed with `behold index aws`, holding a bucket and a role that nothing in the workspace declares;
 - a kind cluster indexed with `behold index kubernetes`, whose ServiceAccounts name roles in that account.
 
-Each question is one call to the `ask` tool of `behold mcp`, made against `behold serve` of that estate, and the page plays the rows behold answered. The prompts and the agent's sentences were written for the demo. Every number and every resource in a reply is from the recorded answer. While the page plays, nothing reads a cloud, a cluster or a behold server.
+Each question is one call to the `ask` tool of `behold mcp`, made against `behold serve` of that estate, and the page plays the rows behold answered. The prompts are worded as an engineer would ask them. Before it calls behold, the agent says in one line how it reads the question, for example "I'll find the DNS records that depend on GCP resources." That line sits between the prompt and the busy line. The prompts, those lines and the agent's replies were written for the demo. Every number and every resource in a reply is from the recorded answer. While the page plays, nothing reads a cloud, a cluster or a behold server.
 
 ## Your own query
 
@@ -61,7 +61,7 @@ Then give your agent `behold mcp` for the same directory. It finds the running s
 claude mcp add behold -- npx behold mcp ./estate
 ```
 
-Ask the agent your question. It answers through the `ask` tool with a `cypher` argument, and `params` for the query's parameters as a JSON string. One of the recorded calls, for "If the GCP forwarding rule went away, what would break?", was:
+Ask the agent your question. It answers through the `ask` tool with a `cypher` argument, and `params` for the query's parameters as a JSON string. One of the recorded calls, for "What breaks if I delete the GCP load balancer's forwarding rule?", was:
 
 ```json
 {
@@ -82,13 +82,13 @@ just ask-demo-record
 
 It boots the estate above on emulators, asks each question through `behold mcp`, and writes `ask-demo/narration.json` and the estate it answered from to `ask-demo/estate/`. It prints one verdict line per question. A question that errors or answers nothing is left out, and the run fails when fewer than three are left. It needs Docker, kind, kubectl, the aws CLI, choudoufu v0.22.0 or newer (`CHOUDOUFU_BIN` or on `PATH`) and plunge (`PLUNGE_BIN` or on `PATH`). It runs under `e2e/lib/safe-env.sh`, which clears every real cloud credential first, and it removes the containers and the cluster it made when it ends.
 
-Each reply says that behold's query ran and how many rows it returned, then answers the question from the recorded rows, then says the Cypher is in the Cypher pane. To change the wording in `scripts/ask-demo/questions.ts` without recording again, fill the replies from the rows already in the file:
+Each question carries the agent's reading line, then the busy line. Each reply says that behold's query ran and how many rows it returned, then answers the question from the recorded rows, then says the Cypher is in the Cypher pane. To change the wording in `scripts/ask-demo/questions.ts` without recording again, fill the replies from the rows already in the file:
 
 ```sh
 just ask-demo-refill
 ```
 
-It rewrites only each turn's `reply`, the load turn's included, checks the result against `ask-demo/narration.schema.json`, and fails naming a turn whose template no longer fills.
+It rewrites each question turn's `prompt`, `reading` and `reply` and the load turn's `reply`, drops a turn whose question is gone from `questions.ts` (and says so), checks the result against `ask-demo/narration.schema.json`, and fails naming a turn whose template no longer fills.
 
 ## Redeploying it
 

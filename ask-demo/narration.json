@@ -202,7 +202,7 @@
     {
       "id": "dns-cross-cloud",
       "kind": "question",
-      "prompt": "Which of my DNS records depend on something in another cloud?",
+      "prompt": "If GCP has an outage, which of our domains go with it?",
       "call": {
         "tool": "ask",
         "arguments": {
@@ -368,12 +368,13 @@
           "edges": 0
         }
       ],
-      "reply": "behold's query ran and returned 7 rows. 2 Route 53 records reach into another member (gcp.three-cloud.example. and www.three-cloud.example.), and between them they depend on 4 resources there: gcp/webAddress, gcp/webProxy, gcp/webRule and gcp/webUrlMap. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done."
+      "reply": "behold's query ran and returned 7 rows. 2 Route 53 records reach into another member (gcp.three-cloud.example. and www.three-cloud.example.), and between them they depend on 4 resources there: gcp/webAddress, gcp/webProxy, gcp/webRule and gcp/webUrlMap. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
+      "reading": "I'll find the DNS records that depend on GCP resources."
     },
     {
       "id": "forwarding-rule-dependents",
       "kind": "question",
-      "prompt": "If the GCP forwarding rule went away, what would break?",
+      "prompt": "What breaks if I delete the GCP load balancer's forwarding rule?",
       "call": {
         "tool": "ask",
         "arguments": {
@@ -551,262 +552,13 @@
           "edges": 0
         }
       ],
-      "reply": "behold's query ran and returned 4 rows. 4 resources depend on webRule, all of them in the dns member: dns/gcpRecord, dns/gcpCheck, dns/gcpOrigin and dns/gcpEndpoint. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done."
-    },
-    {
-      "id": "aws-account-owned",
-      "kind": "question",
-      "prompt": "Which resources in the AWS account does the aws member own?",
-      "call": {
-        "tool": "ask",
-        "arguments": {
-          "cypher": "MATCH (i:Resource {source: 'index', lexicon: 'aws'}) WITH i, regexp_extract(i.facts, '\"address\":\"([^\"]+)\"', 1) AS owner MATCH (d:Resource {source: 'chant'}) WHERE owner <> '' AND d.key ENDS WITH ('/' + owner) RETURN i.key AS key, i.kind AS kind, i.name AS name, d.key AS declaredAs, regexp_extract(d.key, '::([^:]+)$', 1) AS declared ORDER BY kind, name"
-        }
-      },
-      "busy": "behold mcp ask: running a Cypher query over the estate graph",
-      "cypher": "MATCH (i:Resource {source: 'index', lexicon: 'aws'}) WITH i, regexp_extract(i.facts, '\"address\":\"([^\"]+)\"', 1) AS owner MATCH (d:Resource {source: 'chant'}) WHERE owner <> '' AND d.key ENDS WITH ('/' + owner) RETURN i.key AS key, i.kind AS kind, i.name AS name, d.key AS declaredAs, regexp_extract(d.key, '::([^:]+)$', 1) AS declared ORDER BY kind, name",
-      "params": {},
-      "columns": [
-        "key",
-        "kind",
-        "name",
-        "declaredAs",
-        "declared"
-      ],
-      "rows": [
-        {
-          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-70acaaa48c47cdd56",
-          "kind": "AWS::EC2::SecurityGroup",
-          "name": "sg-70acaaa48c47cdd56",
-          "declaredAs": "aws/aws/aws:ec2/securityGroup:SecurityGroup::web-task-sg",
-          "declared": "web-task-sg"
-        },
-        {
-          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-72eb9f85f54b50f9d",
-          "kind": "AWS::EC2::SecurityGroup",
-          "name": "sg-72eb9f85f54b50f9d",
-          "declaredAs": "aws/aws/aws:ec2/securityGroup:SecurityGroup::web-alb-sg",
-          "declared": "web-alb-sg"
-        },
-        {
-          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-33900fa9",
-          "kind": "AWS::EC2::Subnet",
-          "name": "subnet-33900fa9",
-          "declaredAs": "aws/aws/aws:ec2/subnet:Subnet::network-private-subnet-1",
-          "declared": "network-private-subnet-1"
-        },
-        {
-          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-6b280b90",
-          "kind": "AWS::EC2::Subnet",
-          "name": "subnet-6b280b90",
-          "declaredAs": "aws/aws/aws:ec2/subnet:Subnet::network-public-subnet-2",
-          "declared": "network-public-subnet-2"
-        },
-        {
-          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-d9c2d3df",
-          "kind": "AWS::EC2::Subnet",
-          "name": "subnet-d9c2d3df",
-          "declaredAs": "aws/aws/aws:ec2/subnet:Subnet::network-public-subnet-1",
-          "declared": "network-public-subnet-1"
-        },
-        {
-          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-fe6ca532",
-          "kind": "AWS::EC2::Subnet",
-          "name": "subnet-fe6ca532",
-          "declaredAs": "aws/aws/aws:ec2/subnet:Subnet::network-private-subnet-2",
-          "declared": "network-private-subnet-2"
-        },
-        {
-          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-f5fcd107",
-          "kind": "AWS::EC2::VPC",
-          "name": "vpc-f5fcd107",
-          "declaredAs": "aws/aws/aws:ec2/vpc:Vpc::network-vpc",
-          "declared": "network-vpc"
-        }
-      ],
-      "keys": [
-        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-70acaaa48c47cdd56",
-        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-72eb9f85f54b50f9d",
-        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-33900fa9",
-        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-6b280b90",
-        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-d9c2d3df",
-        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-fe6ca532",
-        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-f5fcd107"
-      ],
-      "light": [
-        "aws/aws/aws:ec2/securityGroup:SecurityGroup::web-task-sg",
-        "aws/aws/aws:ec2/securityGroup:SecurityGroup::web-alb-sg",
-        "aws/subnet:Subnet ×4",
-        "aws/aws/aws:ec2/vpc:Vpc::network-vpc"
-      ],
-      "draw": {
-        "nodes": [
-          {
-            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-70acaaa48c47cdd56",
-            "kind": "AWS::EC2::SecurityGroup",
-            "name": "sg-70acaaa48c47cdd56",
-            "source": "index",
-            "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
-          },
-          {
-            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-72eb9f85f54b50f9d",
-            "kind": "AWS::EC2::SecurityGroup",
-            "name": "sg-72eb9f85f54b50f9d",
-            "source": "index",
-            "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
-          },
-          {
-            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-33900fa9",
-            "kind": "AWS::EC2::Subnet",
-            "name": "subnet-33900fa9",
-            "source": "index",
-            "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
-          },
-          {
-            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-6b280b90",
-            "kind": "AWS::EC2::Subnet",
-            "name": "subnet-6b280b90",
-            "source": "index",
-            "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
-          },
-          {
-            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-d9c2d3df",
-            "kind": "AWS::EC2::Subnet",
-            "name": "subnet-d9c2d3df",
-            "source": "index",
-            "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
-          },
-          {
-            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-fe6ca532",
-            "kind": "AWS::EC2::Subnet",
-            "name": "subnet-fe6ca532",
-            "source": "index",
-            "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
-          },
-          {
-            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-f5fcd107",
-            "kind": "AWS::EC2::VPC",
-            "name": "vpc-f5fcd107",
-            "source": "index",
-            "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
-          }
-        ],
-        "edges": [
-          {
-            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-70acaaa48c47cdd56",
-            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-f5fcd107",
-            "viaAttr": "VpcId",
-            "origin": "derived",
-            "rule": "aws:AWS::EC2::SecurityGroup:VpcId"
-          },
-          {
-            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-72eb9f85f54b50f9d",
-            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-f5fcd107",
-            "viaAttr": "VpcId",
-            "origin": "derived",
-            "rule": "aws:AWS::EC2::SecurityGroup:VpcId"
-          },
-          {
-            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-33900fa9",
-            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-f5fcd107",
-            "viaAttr": "VpcId",
-            "origin": "derived",
-            "rule": "aws:AWS::EC2::Subnet:VpcId"
-          },
-          {
-            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-6b280b90",
-            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-f5fcd107",
-            "viaAttr": "VpcId",
-            "origin": "derived",
-            "rule": "aws:AWS::EC2::Subnet:VpcId"
-          },
-          {
-            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-d9c2d3df",
-            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-f5fcd107",
-            "viaAttr": "VpcId",
-            "origin": "derived",
-            "rule": "aws:AWS::EC2::Subnet:VpcId"
-          },
-          {
-            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-fe6ca532",
-            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-f5fcd107",
-            "viaAttr": "VpcId",
-            "origin": "derived",
-            "rule": "aws:AWS::EC2::Subnet:VpcId"
-          }
-        ]
-      },
-      "sources": [
-        {
-          "scopeKey": "chant/aws",
-          "source": "chant",
-          "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
-          "observedAt": null,
-          "nodes": 28,
-          "edges": 42
-        },
-        {
-          "scopeKey": "chant/azure",
-          "source": "chant",
-          "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
-          "observedAt": null,
-          "nodes": 7,
-          "edges": 0
-        },
-        {
-          "scopeKey": "chant/dns",
-          "source": "chant",
-          "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
-          "observedAt": null,
-          "nodes": 12,
-          "edges": 15
-        },
-        {
-          "scopeKey": "chant/gcp",
-          "source": "chant",
-          "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
-          "observedAt": null,
-          "nodes": 11,
-          "edges": 11
-        },
-        {
-          "scopeKey": "engine/choudoufu/three-cloud-azure@azure",
-          "source": "engine",
-          "name": "choudoufu",
-          "readAt": "2026-11-18T17:20:15.866Z",
-          "observedAt": null,
-          "nodes": 7,
-          "edges": 15
-        },
-        {
-          "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c",
-          "source": "index",
-          "name": "chant-lister",
-          "readAt": "2026-11-18T17:20:15.866Z",
-          "observedAt": "2026-11-18T17:19:41.416Z",
-          "nodes": 17,
-          "edges": 11
-        },
-        {
-          "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
-          "source": "index",
-          "name": "chant-lister",
-          "readAt": "2026-11-18T17:20:15.866Z",
-          "observedAt": "2026-11-18T17:20:08.779Z",
-          "nodes": 4,
-          "edges": 0
-        }
-      ],
-      "reply": "behold's query ran and returned 7 rows. 7 of the account's indexed resources carry the aws member's ownership markers, and each matches a resource it declares: sg-70acaaa48c47cdd56 is web-task-sg, sg-72eb9f85f54b50f9d is web-alb-sg, subnet-33900fa9 is network-private-subnet-1, subnet-6b280b90 is network-public-subnet-2, subnet-d9c2d3df is network-public-subnet-1, subnet-fe6ca532 is network-private-subnet-2 and vpc-f5fcd107 is network-vpc. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done."
+      "reply": "behold's query ran and returned 4 rows. 4 resources depend on webRule, all of them in the dns member: dns/gcpRecord, dns/gcpCheck, dns/gcpOrigin and dns/gcpEndpoint. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
+      "reading": "I'll find everything that depends on that forwarding rule."
     },
     {
       "id": "aws-account-unmanaged",
       "kind": "question",
-      "prompt": "What's in the AWS account's network and storage that nothing in the workspace declares?",
+      "prompt": "Is anything in our AWS account that nobody owns?",
       "call": {
         "tool": "ask",
         "arguments": {
@@ -1016,12 +768,13 @@
           "edges": 0
         }
       ],
-      "reply": "behold's query ran and returned 7 rows. 7 resources there have no owner in the workspace: sg-617f6fc6b9d267e6c (AWS::EC2::SecurityGroup), sg-default-us-east-1 (AWS::EC2::SecurityGroup), subnet-default-us-east-1-a (AWS::EC2::Subnet), subnet-default-us-east-1-b (AWS::EC2::Subnet), subnet-default-us-east-1-c (AWS::EC2::Subnet), vpc-default-us-east-1 (AWS::EC2::VPC) and orders-export-archive (AWS::S3::Bucket). The Cypher it ran is in the Cypher pane; you can edit it there once I'm done."
+      "reply": "behold's query ran and returned 7 rows. 7 resources there have no owner in the workspace: sg-617f6fc6b9d267e6c (AWS::EC2::SecurityGroup), sg-default-us-east-1 (AWS::EC2::SecurityGroup), subnet-default-us-east-1-a (AWS::EC2::Subnet), subnet-default-us-east-1-b (AWS::EC2::Subnet), subnet-default-us-east-1-c (AWS::EC2::Subnet), vpc-default-us-east-1 (AWS::EC2::VPC) and orders-export-archive (AWS::S3::Bucket). The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
+      "reading": "I'll compare the account's network and storage resources with what the workspace declares, and list those it does not."
     },
     {
       "id": "serviceaccount-roles",
       "kind": "question",
-      "prompt": "Which AWS roles can the cluster's ServiceAccounts assume?",
+      "prompt": "Which AWS roles can our Kubernetes pods use?",
       "call": {
         "tool": "ask",
         "arguments": {
@@ -1146,12 +899,13 @@
           "edges": 0
         }
       ],
-      "reply": "behold's query ran and returned 2 rows. 2 ServiceAccounts carry an IRSA annotation that names a role in the account: orders-api assumes orders-reader and web assumes web-task-role-460e979. behold joined them on metadata.annotations.eks.amazonaws.com/role-arn by the identity:arn rule. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done."
+      "reply": "behold's query ran and returned 2 rows. 2 ServiceAccounts carry an IRSA annotation that names a role in the account: orders-api assumes orders-reader and web assumes web-task-role-460e979. behold joined them on metadata.annotations.eks.amazonaws.com/role-arn by the identity:arn rule. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
+      "reading": "Pods get AWS roles through their ServiceAccounts, so I'll find the roles the cluster's ServiceAccounts point at."
     },
     {
       "id": "orders-reader-readers",
       "kind": "question",
-      "prompt": "What reaches the orders-reader role from outside the AWS account?",
+      "prompt": "Who outside AWS can use the orders-reader role?",
       "call": {
         "tool": "ask",
         "arguments": {
@@ -1261,7 +1015,8 @@
           "edges": 0
         }
       ],
-      "reply": "behold's query ran and returned 1 row. Readers from outside the account: 1, from the kind cluster's index, joined on metadata.annotations.eks.amazonaws.com/role-arn by the identity:arn rule. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done."
+      "reply": "behold's query ran and returned 1 row. Readers from outside the account: 1, from the kind cluster's index, joined on metadata.annotations.eks.amazonaws.com/role-arn by the identity:arn rule. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
+      "reading": "I'll find what reaches the orders-reader role from outside the account."
     }
   ]
 }

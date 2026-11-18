@@ -1,7 +1,9 @@
 /**
  * behold#1161: the questions the ask demo asks, in the order it asks them.
  *
- * Each entry is the person's prompt, the agent's reply as a template, and
+ * Each entry is the person's prompt (an engineer's worry, not a description
+ * of the query), the agent's one-line reading of it (what it will look for),
+ * the agent's reply as a template, and
  * the one `behold mcp ask` call the agent makes: a `cypher` query with its
  * `params`, or a `resource` and the name of a template from chant's catalog
  * (GET /api/graphdb/templates). scripts/ask-demo/record.ts asks each one of
@@ -24,7 +26,8 @@ export const LOAD = {
 export const QUESTIONS: readonly Question[] = [
   {
     id: "dns-cross-cloud",
-    prompt: "Which of my DNS records depend on something in another cloud?",
+    prompt: "If GCP has an outage, which of our domains go with it?",
+    reading: "I'll find the DNS records that depend on GCP resources.",
     ask: {
       cypher:
         "MATCH (rec:Resource {kind: $record})-[:REF*1..4]->(dep:Resource {source: 'chant'}) " +
@@ -36,25 +39,15 @@ export const QUESTIONS: readonly Question[] = [
   },
   {
     id: "forwarding-rule-dependents",
-    prompt: "If the GCP forwarding rule went away, what would break?",
+    prompt: "What breaks if I delete the GCP load balancer's forwarding rule?",
+    reading: "I'll find everything that depends on that forwarding rule.",
     ask: { resource: "webRule", template: "dependents-all" },
     reply: "{{count}} resources depend on webRule, all of them in {{list:scope|source}}: {{list:key}}.",
   },
   {
-    id: "aws-account-owned",
-    prompt: "Which resources in the AWS account does the aws member own?",
-    ask: {
-      cypher:
-        "MATCH (i:Resource {source: 'index', lexicon: 'aws'}) " +
-        "WITH i, regexp_extract(i.facts, '\"address\":\"([^\"]+)\"', 1) AS owner " +
-        "MATCH (d:Resource {source: 'chant'}) WHERE owner <> '' AND d.key ENDS WITH ('/' + owner) " +
-        "RETURN i.key AS key, i.kind AS kind, i.name AS name, d.key AS declaredAs, regexp_extract(d.key, '::([^:]+)$', 1) AS declared ORDER BY kind, name",
-    },
-    reply: "{{count}} of the account's indexed resources carry the aws member's ownership markers, and each matches a resource it declares: {{each:{name} is {declared}}}.",
-  },
-  {
     id: "aws-account-unmanaged",
-    prompt: "What's in the AWS account's network and storage that nothing in the workspace declares?",
+    prompt: "Is anything in our AWS account that nobody owns?",
+    reading: "I'll compare the account's network and storage resources with what the workspace declares, and list those it does not.",
     ask: {
       cypher:
         "MATCH (i:Resource {source: 'index', lexicon: 'aws'}) " +
@@ -68,7 +61,8 @@ export const QUESTIONS: readonly Question[] = [
   },
   {
     id: "serviceaccount-roles",
-    prompt: "Which AWS roles can the cluster's ServiceAccounts assume?",
+    prompt: "Which AWS roles can our Kubernetes pods use?",
+    reading: "Pods get AWS roles through their ServiceAccounts, so I'll find the roles the cluster's ServiceAccounts point at.",
     ask: {
       cypher:
         "MATCH (sa:Resource {kind: 'K8s::Core::ServiceAccount'})-[e:REF]->(role:Resource {kind: 'AWS::IAM::Role'}) " +
@@ -78,7 +72,8 @@ export const QUESTIONS: readonly Question[] = [
   },
   {
     id: "orders-reader-readers",
-    prompt: "What reaches the orders-reader role from outside the AWS account?",
+    prompt: "Who outside AWS can use the orders-reader role?",
+    reading: "I'll find what reaches the orders-reader role from outside the account.",
     ask: { resource: "orders-reader", template: "readers" },
     reply: "Readers from outside the account: {{count}}, from {{list:scope|source}}, joined on {{list:via}} by the {{list:rule}} rule.",
   },

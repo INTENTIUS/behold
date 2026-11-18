@@ -59,6 +59,7 @@
         "id": { "type": "string", "pattern": "^[a-z0-9-]+$", "description": "A stable id: load, or the question's id in scripts/ask-demo/questions.ts." },
         "kind": { "enum": ["load", "question"], "description": "load: the person asks the agent to load the estate. question: one question about it." },
         "prompt": { "type": "string", "minLength": 1, "description": "The person's words to their agent, written for the demo." },
+        "reading": { "type": "string", "minLength": 1, "description": "A question turn: one line in which the agent says how it reads the prompt, before it calls behold. The page types it between the prompt and the busy line. Optional so that files recorded before it existed still validate; the load turn has none." },
         "call": {
           "description": "What the agent ran. A question turn: the behold mcp ask tool and its arguments, exactly as sent (params and inputs are JSON strings). The load turn: the behold commands that filled the estate's graph, in order, with paths relative to the recording's scratch directory.",
           "oneOf": [

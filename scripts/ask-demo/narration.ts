@@ -27,6 +27,8 @@ export interface Question {
   id: string;
   /** What the person types to their agent. */
   prompt: string;
+  /** One line in which the agent says how it reads the prompt, before it calls behold (behold#1195). */
+  reading: string;
   /** The one ask call the agent makes. */
   ask: AskCall;
   /** The agent's reply, with placeholders filled from the answer's rows ({@link fillReply}). */
@@ -73,6 +75,8 @@ export interface Turn {
   id: string;
   kind: "load" | "question";
   prompt: string;
+  /** The agent's reading of a question's prompt; the load turn has none. */
+  reading?: string;
   call: { tool: "ask"; arguments: Record<string, string> } | { commands: string[] };
   busy: string;
   cypher: string | null;
@@ -317,6 +321,7 @@ export function questionTurn(q: Question, answer: GraphAnswer, cards: ReadonlyMa
     id: q.id,
     kind: "question",
     prompt: q.prompt,
+    reading: q.reading,
     call: { tool: "ask", arguments: askArguments(q.ask) },
     busy: busyLine(q.ask),
     cypher,
@@ -410,34 +415,48 @@ export function validateNarration(doc: unknown, schema: object): string[] {
 }
 
 /**
- * Fill every question turn's reply again from the templates in `questions`,
- * matching turns by id and leaving everything else as it is (behold#1174).
- * With `load` (behold#1191), the load turn's reply is filled again from its
- * template too; without it the load turn is kept. Throws naming the turn
- * whose template no longer fills.
+ * Fill every question turn again from the templates in `questions`, matching
+ * turns by id: the prompt, the reading line (behold#1195) and the reply are
+ * rewritten from the question and the turn's recorded rows, and everything
+ * else is left as it is (behold#1174). A turn whose question is no longer in
+ * `questions` is dropped, and its id is listed in `dropped`. With `load`
+ * (behold#1191), the load turn's reply is filled again from its template too;
+ * without it the load turn is kept. Throws naming the turn whose template no
+ * longer fills.
  */
-export function refillNarration<N extends { turns: Array<{ id: string; kind: string; columns: string[]; rows: Array<Record<string, unknown>>; reply: string }> }>(doc: N, questions: readonly Question[], load?: { reply: string }): N {
+export function refillNarration<N extends { turns: Array<{ id: string; kind: string; prompt: string; reading?: string; columns: string[]; rows: Array<Record<string, unknown>>; reply: string }> }>(
+  doc: N,
+  questions: readonly Question[],
+  load?: { reply: string },
+): { doc: N; dropped: string[] } {
   const byId = new Map(questions.map((q) => [q.id, q]));
-  return {
-    ...doc,
-    turns: doc.turns.map((t) => {
-      if (t.kind === "load" && load) {
-        try {
-          return { ...t, reply: fillReply(load.reply, t) };
-        } catch (e) {
-          if (e instanceof ReplyError) throw new Error(`turn ${t.id}: the reply cannot be filled: ${e.message}`);
-          throw e;
-        }
-      }
-      if (t.kind !== "question") return t;
-      const q = byId.get(t.id);
-      if (!q) throw new Error(`turn ${t.id} has no question in scripts/ask-demo/questions.ts`);
+  const dropped: string[] = [];
+  const turns: N["turns"] = [];
+  for (const t of doc.turns) {
+    if (t.kind === "load" && load) {
       try {
-        return { ...t, reply: questionReply(q.reply, t) };
+        turns.push({ ...t, reply: fillReply(load.reply, t) });
       } catch (e) {
         if (e instanceof ReplyError) throw new Error(`turn ${t.id}: the reply cannot be filled: ${e.message}`);
         throw e;
       }
-    }),
-  };
+      continue;
+    }
+    if (t.kind !== "question") {
+      turns.push(t);
+      continue;
+    }
+    const q = byId.get(t.id);
+    if (!q) {
+      dropped.push(t.id);
+      continue;
+    }
+    try {
+      turns.push({ ...t, prompt: q.prompt, reading: q.reading, reply: questionReply(q.reply, t) });
+    } catch (e) {
+      if (e instanceof ReplyError) throw new Error(`turn ${t.id}: the reply cannot be filled: ${e.message}`);
+      throw e;
+    }
+  }
+  return { doc: { ...doc, turns }, dropped };
 }
