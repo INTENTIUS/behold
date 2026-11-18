@@ -20,6 +20,10 @@
  *     BEGIN, COMMIT, ROLLBACK), outside string literals and comments, is
  *     refused with that word. `COPY ... TO` and `EXPORT DATABASE` write files
  *     outside the database, and the read-only engine does not stop them.
+ *
+ * A project's own Cypher templates (behold#1142) go through the same guards
+ * when the database opens: {@link GraphDb.refusal} prepares each one without
+ * running it.
  */
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
@@ -218,6 +222,26 @@ export class GraphDb {
     const keys = new Set<string>();
     for (const r of rows) for (const [col, v] of Object.entries(r)) keysIn(v, keys, col);
     return { columns, rows, keys: [...keys], truncated };
+  }
+
+  /**
+   * Prepare one query without running it (behold#1142): undefined when it
+   * passes the write guard, binds against this database's schema and the
+   * engine reports it read-only; otherwise what refused it, the engine's own
+   * message when the engine did.
+   */
+  async refusal(cypher: string): Promise<string | undefined> {
+    let q: string;
+    try {
+      q = checkReadQuery(cypher);
+    } catch (e) {
+      if (e instanceof CypherRefused) return e.message;
+      throw e;
+    }
+    const p = await this.conn.prepare(q);
+    if (!p.isSuccess()) return p.getErrorMessage();
+    if (!p.isReadOnly()) return "LadybugDB does not report it read-only";
+    return undefined;
   }
 
   /** Close the database and remove its file (behold's own, and nothing else). */

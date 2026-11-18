@@ -3,7 +3,10 @@
 import { investigationTemplates } from "@intentius/chant/capabilities/templates";
 import { describe, expect, it } from "vitest";
 import { chantTemplates, fromChantEntry, templatesFromChant } from "./chant-templates.ts";
-import { TEMPLATES, TEMPLATE_CATALOG, selectTemplates } from "./templates.ts";
+import { chantCatalog, selectTemplates } from "./templates.ts";
+
+const TEMPLATE_CATALOG = chantCatalog();
+const TEMPLATES = TEMPLATE_CATALOG.templates;
 
 const chantDoc = { version: 1, templates: investigationTemplates() };
 const ids = (ts: readonly { name: string }[]) => ts.map((t) => t.name);

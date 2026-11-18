@@ -447,9 +447,13 @@ export const TOOLS: Tool[] = [
         resource: {
           type: "string",
           description:
-            "Start from a resource (behold#1022): a name, an IR id, a block address or a cloud id (an ARN, an instance id, a Kubernetes UID). The answer is one node or the candidates, with the investigation templates that apply to it. Works without the LadybugDB peer.",
+            "Start from a resource (behold#1022): a name, an IR id, a block address or a cloud id (an ARN, an instance id, a Kubernetes UID). The answer is one node or the candidates, with the investigation templates that apply to it (chant's and the project's, each with its origin) and the project templates refused, with the file and field. Works without the LadybugDB peer.",
         },
-        template: { type: "string", description: "With resource that resolves to one node: run that template (dependents, dependencies, paths-to-kind, capability, drift, dependents-all, dependencies-all, ownership, same-object, readers, history)." },
+        template: {
+          type: "string",
+          description:
+            "With resource that resolves to one node: run one of the templates resolve lists for that node, by name. They are chant's and the project's own (.chant/templates.json), each with its origin; ask with resource alone to see them and their inputs. A click in the graph pane runs the same template.",
+        },
         inputs: { type: "string", description: "With template: its inputs as a JSON object of strings ({\"kind\": \"aws_internet_gateway\"})." },
       },
       additionalProperties: false,

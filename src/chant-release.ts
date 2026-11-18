@@ -26,14 +26,14 @@
  * `npx tsx scripts/chant-release.ts --check` fails when a written file
  * disagrees with this line (src/chant-release.test.ts runs it).
  */
-// Each train publishes only the members that changed. 0.124.104 is core with chant#5245's catalog pass; the k8s and aws lexicons that
-// carry its rules are 0.124.103, and the others stay where their last train left them, each with a peer range on chant that takes 0.124.104.
+// Each train publishes only the members that changed. 0.124.105 is core with chant's `templateCatalog(dir)` (behold#1142); the k8s and aws
+// lexicons that need it are 0.124.104, and the others stay where their last train left them, each with a peer range on chant that takes 0.124.105.
 export const CHANT_RELEASE = {
-  version: "0.124.104",
+  version: "0.124.105",
   released: true,
   lexicons: {
-    "@intentius/chant-lexicon-k8s": "0.124.103",
-    "@intentius/chant-lexicon-aws": "0.124.103",
+    "@intentius/chant-lexicon-k8s": "0.124.104",
+    "@intentius/chant-lexicon-aws": "0.124.104",
     "@intentius/chant-lexicon-gcp": "0.124.102",
     "@intentius/chant-lexicon-otel": "0.124.102",
     "@intentius/chant-lexicon-prometheus": "0.124.101",

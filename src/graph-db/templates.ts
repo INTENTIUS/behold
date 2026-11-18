@@ -20,26 +20,40 @@
  * and behold reads it through src/graph-db/chant-templates.ts. Every chant
  * behold accepts carries it (behold#1005 flipped src/chant-release.ts), so
  * behold keeps no copy of it.
+ *
+ * behold#1142: a project adds its own templates in `.chant/templates.json`,
+ * so the catalog belongs to the served project. The pane keeps one per
+ * session ({@link catalogFor}, src/graph-db/pane.ts), and every reader takes
+ * it as an argument. A project entry chant refuses, or one behold or the
+ * engine cannot run, is listed under `refused` with the file and the field.
  */
 import type { ResourceRow, LoadedRows, SourceKind } from "./rows.ts";
 import { CHANT_RELEASE } from "../chant-release.ts";
-import { chantTemplates } from "./chant-templates.ts";
+import { PROJECT_TEMPLATES_FILE, chantTemplates, projectCatalog } from "./chant-templates.ts";
 
 export type TemplateLanguage = "search" | "cypher";
 
 /** What answering reads: the declared source, a live read, recorded snapshots, or only the session's database. */
 export type TemplateReads = "source" | "live" | "snapshots" | "session";
 
+/** Where a template came from: chant's own catalog, or the project's `.chant/templates.json`. */
+export type TemplateOrigin = "chant" | "project";
+
 export interface TemplateInput {
   name: string;
+  /** scope: the environment the query is read in, passed as the env. term: a value filled into the query. */
+  kind: "scope" | "term";
   description: string;
 }
 
 export interface Template {
   name: string;
   title: string;
+  origin: TemplateOrigin;
   /** The sources whose nodes it applies to; absent means every source. */
   sources?: readonly SourceKind[];
+  /** The node kinds it applies to, as the graph holds them; absent means every kind. */
+  kinds?: readonly string[];
   inputs: readonly TemplateInput[];
   language: TemplateLanguage;
   /** search: `{{node}}` and `{{<input>}}` are filled in. cypher: `$key` and `$<input>` are parameters. */
@@ -49,25 +63,104 @@ export interface Template {
   note?: string;
 }
 
+/**
+ * A project entry left out of the catalog. `by` is the check that refused it:
+ * chant's shape check (`templateCatalog`), behold's own, or the engine's
+ * prepare when the session's database opened. `message` names the file and
+ * the field.
+ */
+export interface RefusedTemplate {
+  id?: string;
+  file: string;
+  field?: string;
+  message: string;
+  by: "chant" | "behold" | "engine";
+}
+
 export type TemplateCatalogSource = "chant" | "missing";
 
 export interface TemplateCatalog {
   source: TemplateCatalogSource;
   templates: readonly Template[];
+  refused: readonly RefusedTemplate[];
   /** Said where the catalog is listed. */
   note: string;
+  /** A loaded project entry's field, such as `templates[2].query.text`, for a refusal made after chant's. */
+  fieldOf?: (id: string, rest: string) => string | undefined;
 }
 
-/** chant's templates, or nothing when the installed chant somehow has none. */
-export function selectTemplates(fromChant: readonly Template[] | undefined): TemplateCatalog {
-  if (fromChant?.length) return { source: "chant", templates: fromChant, note: "chant's investigation templates (@intentius/chant/capabilities/templates, chant#4531)" };
-  return { source: "missing", templates: [], note: `the installed chant has no investigation templates; chant ${CHANT_RELEASE.version} or later carries them` };
+/** The templates found, or nothing when the installed chant somehow has none. */
+export function selectTemplates(found: readonly Template[] | undefined, refused: readonly RefusedTemplate[] = []): TemplateCatalog {
+  if (found?.length) {
+    const own = found.filter((t) => t.origin === "project").length;
+    const note = `chant's investigation templates (@intentius/chant/capabilities/templates, chant#4531)${own || refused.length ? `, and the project's own from ${PROJECT_TEMPLATES_FILE}` : ""}`;
+    return { source: "chant", templates: found, refused, note };
+  }
+  return { source: "missing", templates: [], refused, note: `the installed chant has no investigation templates; chant ${CHANT_RELEASE.version} or later carries them` };
 }
 
-export const TEMPLATE_CATALOG: TemplateCatalog = selectTemplates(chantTemplates());
+let chantOnly: TemplateCatalog | undefined;
 
-/** The templates behold offers: {@link TEMPLATE_CATALOG}'s. */
-export const TEMPLATES: readonly Template[] = TEMPLATE_CATALOG.templates;
+/** chant's templates alone, as a project with no templates file has them. */
+export function chantCatalog(): TemplateCatalog {
+  chantOnly ??= selectTemplates(chantTemplates());
+  return chantOnly;
+}
+
+/**
+ * The catalog for the project at `dir`: chant's templates, then the
+ * project's (chant's `templateCatalog(dir)`). behold reads one scope input,
+ * as the env, so a project template with more than one is refused here.
+ * The engine's check comes later, when the session's database opens
+ * ({@link withEngineRefusals}).
+ */
+export function catalogFor(dir: string): TemplateCatalog {
+  const p = projectCatalog(dir);
+  const refused: RefusedTemplate[] = p.refused.map((r) => ({ ...r, by: "chant" }));
+  const kept: Template[] = [];
+  for (const t of p.templates) {
+    const scopes = t.inputs.filter((i) => i.kind === "scope");
+    if (t.origin === "project" && scopes.length > 1) {
+      const field = p.fieldOf(t.name, ".inputs");
+      refused.push({
+        id: t.name,
+        file: PROJECT_TEMPLATES_FILE,
+        ...(field ? { field } : {}),
+        message: `${PROJECT_TEMPLATES_FILE}${field ? ` ${field}` : ""}: template ${t.name}: behold reads one scope input, as the env, and this one has ${scopes.length} (${scopes.map((i) => i.name).join(", ")})`,
+        by: "behold",
+      });
+      continue;
+    }
+    kept.push(t);
+  }
+  return { ...selectTemplates(kept, refused), fieldOf: p.fieldOf };
+}
+
+/**
+ * The catalog with the project's Cypher templates the engine refused moved
+ * to `refused`. `check` prepares one query without running it and answers
+ * the engine's message, or undefined when it binds and is read-only.
+ */
+export async function withEngineRefusals(catalog: TemplateCatalog, check: (cypher: string) => Promise<string | undefined>): Promise<TemplateCatalog> {
+  const kept: Template[] = [];
+  const refused = [...catalog.refused];
+  for (const t of catalog.templates) {
+    const why = t.origin === "project" && t.language === "cypher" ? await check(t.query) : undefined;
+    if (!why) {
+      kept.push(t);
+      continue;
+    }
+    const field = catalog.fieldOf?.(t.name, ".query.text");
+    refused.push({
+      id: t.name,
+      file: PROJECT_TEMPLATES_FILE,
+      ...(field ? { field } : {}),
+      message: `${PROJECT_TEMPLATES_FILE}${field ? ` ${field}` : ""}: template ${t.name}: LadybugDB cannot run it on this project's graph: ${why}`,
+      by: "engine",
+    });
+  }
+  return { ...catalog, templates: kept, refused };
+}
 
 /** A search input is a term, never a second clause: letters, digits and `_ : . - / * ( ) ,` only. */
 const SEARCH_INPUT = /^[A-Za-z0-9_:.\-/*(),]+$/;
@@ -89,12 +182,15 @@ export interface Expanded {
   query: string;
   /** cypher: the parameters. */
   params?: Record<string, string>;
-  /** search: an env the query is read in. */
+  /** The scope input's value: the env a search query is read in. */
   env?: string;
 }
 
-export function applies(t: Template, r: Pick<ResourceRow, "source">): boolean {
-  return !t.sources || t.sources.includes(r.source);
+type TemplateNode = Pick<ResourceRow, "key" | "source"> & { kind?: string; scopeKey?: string };
+
+/** Whether a template is offered on a node: its sources, and its kinds when it names them. */
+export function applies(t: Template, r: Pick<TemplateNode, "source" | "kind">): boolean {
+  return (!t.sources || t.sources.includes(r.source)) && (!t.kinds || (r.kind !== undefined && t.kinds.includes(r.kind)));
 }
 
 /**
@@ -109,27 +205,38 @@ export function searchIdOf(node: Pick<ResourceRow, "key"> & { scopeKey?: string 
   return node.key;
 }
 
-/** Fill one template for one node. */
-export function expandTemplate(name: string, node: Pick<ResourceRow, "key" | "source"> & { scopeKey?: string }, inputs: Record<string, string> = {}): Expanded {
-  const t = TEMPLATES.find((x) => x.name === name);
-  if (!t) throw new TemplateError(`no template ${name} (there are ${TEMPLATES.map((x) => x.name).join(", ")})`, "template-unknown");
-  if (!applies(t, node)) throw new TemplateError(`${name} applies to ${t.sources!.join(", ")} nodes, and ${node.key} is a ${node.source} node`, "template-not-applicable");
+/** Fill one template of `templates` (a session's catalog) for one node. */
+export function expandTemplate(templates: readonly Template[], name: string, node: TemplateNode, inputs: Record<string, string> = {}): Expanded {
+  const t = templates.find((x) => x.name === name);
+  if (!t) throw new TemplateError(`no template ${name} (there are ${templates.map((x) => x.name).join(", ")})`, "template-unknown");
+  if (!applies(t, node)) {
+    const what = t.sources && !t.sources.includes(node.source) ? `${t.sources.join(", ")} nodes, and ${node.key} is a ${node.source} node` : `${t.kinds!.join(", ")}, and ${node.key} is ${node.kind ? `a ${node.kind}` : "of no kind"}`;
+    throw new TemplateError(`${name} applies to ${what}`, "template-not-applicable");
+  }
   for (const i of t.inputs) if (!inputs[i.name]) throw new TemplateError(`${name} needs ${i.name}: ${i.description}`, "template-input");
   for (const k of Object.keys(inputs)) if (!t.inputs.some((i) => i.name === k)) throw new TemplateError(`${name} takes no input ${k}`, "template-input");
-  if (t.language === "cypher") return { template: t.name, language: "cypher", reads: t.reads, query: t.query, params: { key: node.key, ...inputs } };
-  let q = t.query.replace("{{node}}", searchIdOf(node));
   let env: string | undefined;
   for (const i of t.inputs) {
+    if (i.kind !== "scope") continue;
     const v = inputs[i.name]!;
-    if (i.name === "env") {
-      if (!/^[A-Za-z0-9_.-]+$/.test(v)) throw new TemplateError(`env ${JSON.stringify(v)} is not an environment name`, "template-input");
-      env = v;
-      continue;
-    }
+    if (!/^[A-Za-z0-9_.-]+$/.test(v)) throw new TemplateError(`${i.name} ${JSON.stringify(v)} is not an environment name`, "template-input");
+    env = v;
+  }
+  const head = { template: t.name, reads: t.reads, ...(env ? { env } : {}) };
+  if (t.language === "cypher") {
+    // A scope says where the query is read, not part of its text (chant's expandTemplate leaves it out of the parameters too).
+    const params: Record<string, string> = { key: node.key };
+    for (const i of t.inputs) if (i.kind !== "scope") params[i.name] = inputs[i.name]!;
+    return { ...head, language: "cypher", query: t.query, params };
+  }
+  let q = t.query.replace("{{node}}", searchIdOf(node));
+  for (const i of t.inputs) {
+    if (i.kind === "scope") continue;
+    const v = inputs[i.name]!;
     if (!SEARCH_INPUT.test(v)) throw new TemplateError(`${i.name} ${JSON.stringify(v)} is not one search term`, "template-input");
     q = q.replace(`{{${i.name}}}`, v);
   }
-  return { template: t.name, language: "search", reads: t.reads, query: q, ...(env ? { env } : {}) };
+  return { ...head, language: "search", query: q };
 }
 
 export type MatchedBy = "key" | "id" | "cloud-id" | "native-id" | "address" | "name";
