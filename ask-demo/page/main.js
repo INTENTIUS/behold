@@ -467,7 +467,7 @@ function setEditable(on) {
   $("ad-turn-tag").textContent = on ? "Your turn" : "Playback";
   $("ad-restore").hidden = !on || !state.draft;
   $("g-hint").textContent = !on
-    ? `Playing the recording: the box shows the query behold ran for the agent. It is yours to edit once the question's reply has printed.${state.draft ? " Your own query is kept for then." : ""}`
+    ? `Playing the recording. The box shows each query behold ran for the agent, and is yours to edit once the question's reply has printed.${state.draft ? " Your own query is kept for then." : ""}`
     : ready
       ? "Edit the query and press Ask. It runs in this page, on the rows the recording loaded."
       : state.engine === "failed"
