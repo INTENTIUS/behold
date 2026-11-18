@@ -368,3 +368,45 @@ describe.runIf(peer.ok)("the page, in a headless browser", () => {
     }
   });
 });
+
+describe.runIf(peer.ok)("the bundle's /graph page, in a headless browser (behold#1180)", () => {
+  it("links back to the demo, hides the estate link, starts with the first question's query, and answers it", { timeout: 240_000 }, async () => {
+    const launched = await browserOrNull();
+    if (!launched) {
+      console.warn("ask-demo-page: no browser launches here, so the bundle's /graph page did not run");
+      return;
+    }
+    const url = await serveDir(out);
+    const browser = launched.browser as unknown as { newPage(): Promise<Page>; close(): Promise<void> };
+    const page = await browser.newPage();
+    const errors: string[] = [];
+    page.on("pageerror", (e: Error) => errors.push(e.message));
+    await page.addInitScript(() => {
+      (globalThis as unknown as { __csp: string[] }).__csp = [];
+      document.addEventListener("securitypolicyviolation", (e) => (globalThis as unknown as { __csp: string[] }).__csp.push(`${e.violatedDirective} ${e.blockedURI}`));
+    });
+    const first = narration.turns.find((t) => t.kind === "question")!;
+    expect(first.rows.length).toBeGreaterThan(0);
+    try {
+      await page.goto(`${url}graph.html`, { waitUntil: "domcontentloaded" });
+      const head = await page.evaluate(() => ({
+        back: document.getElementById("g-back")?.getAttribute("href"),
+        label: document.getElementById("g-back")?.textContent,
+        diff: Boolean(document.getElementById("d-section")),
+        cypher: (document.getElementById("g-cypher") as HTMLTextAreaElement).value,
+        params: (document.getElementById("g-params") as HTMLInputElement).value,
+      }));
+      expect(head).toEqual({ back: "./", label: "Back to the demo", diff: false, cypher: first.cypher, params: Object.keys(first.params).length ? JSON.stringify(first.params) : "" });
+      await page.waitForFunction(() => document.querySelector("#g-cypher-form button")?.textContent === "Ask", null, { timeout: 120_000 });
+      await page.click("#g-cypher-form button");
+      await page.waitForFunction((n: number) => document.querySelectorAll("#g-rows tbody tr").length === n, first.rows.length, { timeout: 30_000 });
+      const rows = await page.evaluate(() => document.getElementById("g-rows")!.innerText);
+      for (const r of first.rows) for (const v of Object.values(r)) expect(rows).toContain(String(v));
+      expect(await page.evaluate(() => (document.getElementById("g-link") as HTMLAnchorElement).hidden)).toBe(true);
+      expect(await page.evaluate(() => (globalThis as unknown as { __csp: string[] }).__csp)).toEqual([]);
+      expect(errors).toEqual([]);
+    } finally {
+      await browser.close();
+    }
+  });
+});

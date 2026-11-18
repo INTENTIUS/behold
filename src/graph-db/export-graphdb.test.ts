@@ -24,7 +24,10 @@ import { launchShotBrowser } from "../shot.ts";
 import { queryAnswer, templateAnswer, viewLinkFor, type Answer, type PaneReads } from "./answers.ts";
 import type { LoadedRows } from "./rows.ts";
 import { GraphDb, checkReadQuery, CypherRefused } from "./db.ts";
-import { ASSET_FILE_LIMIT, GraphDbExportRefusal, browserModule, checkAssetSize, findWasmCore, staticGraphHtml } from "./export-graphdb.ts";
+import { ASSET_FILE_LIMIT, GraphDbExportRefusal, browserModule, checkAssetSize, findWasmCore, staticGraphHtml, type GraphBundle } from "./export-graphdb.ts";
+import { ASK_DEMO_CSP } from "../../scripts/ask-demo/bundle.ts";
+// @ts-expect-error the graph pane is plain browser ESM
+import { STATIC_SEARCH_LINE } from "../../web/graph-query.js";
 import { realLadybug } from "./fake-lbug.ts";
 import { GRAPHDB_FILE, catalogFromFile, isGraphDbFile, rowsFromFile, type GraphDbFile } from "./graphdb-file.ts";
 import type { LbugModule } from "./peer.ts";
@@ -119,7 +122,7 @@ function filesUnder(dir: string): string[] {
   return out.sort();
 }
 
-function serveDir(dir: string, seen: string[] = []): Promise<string> {
+function serveDir(dir: string, seen: string[] = [], csp?: string): Promise<string> {
   return new Promise((resolve) => {
     const server = createServer((req, res) => {
       const path = decodeURIComponent((req.url ?? "/").split("?")[0]!);
@@ -133,7 +136,7 @@ function serveDir(dir: string, seen: string[] = []): Promise<string> {
         res.writeHead(404).end("not found");
         return;
       }
-      res.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream" });
+      res.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream", ...(csp ? { "content-security-policy": csp } : {}) });
       res.end(body);
     });
     servers.push(server);
@@ -183,12 +186,23 @@ describe("the pieces", () => {
     await expect(browserModule(pkg)).resolves.toBe("export const built = 1;\n");
   });
 
-  it("swaps graph.html's inline script for graph-static.js, and nothing else", () => {
+  it("swaps graph.html's inline script for graph-static.js after the bundle's JSON block, and leaves out the diff without index versions", () => {
     const html = readFileSync(join(ROOT, "web", "graph.html"), "utf8");
-    const swapped = staticGraphHtml(html);
+    const bundle: GraphBundle = { estate: null, back: { href: "./", label: "Back to the demo" }, searches: [], indexVersions: true, cypher: { query: "MATCH (r) WHERE r.key = '</script>' RETURN r", params: {} } };
+    const swapped = staticGraphHtml(html, bundle);
     expect(swapped).toContain('<script type="module" src="./graph-static.js"></script>');
     expect(swapped).not.toContain("initGraphPane()");
-    expect(swapped.replace('<script type="module" src="./graph-static.js"></script>', "")).toBe(html.replace(/<script type="module">[\s\S]*?<\/script>/, ""));
+    const block = swapped.match(/<script type="application\/json" id="g-bundle">([\s\S]*?)<\/script>/)!;
+    // Data, not run; and no value can close the block early.
+    expect(JSON.parse(block[1]!)).toEqual(bundle);
+    expect(block[1]).not.toContain("</");
+    const scripts = /<script type="module">[\s\S]*?<\/script>/;
+    expect(swapped.replace(/<script type="application\/json"[\s\S]*?<script type="module" src="\.\/graph-static\.js"><\/script>/, "")).toBe(html.replace(scripts, ""));
+    const cut = staticGraphHtml(html, { ...bundle, indexVersions: false });
+    expect(cut).not.toContain('id="d-section"');
+    expect(cut).not.toContain('id="d-form"');
+    expect(cut).toContain('id="g-sources"');
+    expect(() => staticGraphHtml("<p>no script</p>", bundle)).toThrow(/no inline module script/);
   });
 });
 
@@ -354,6 +368,69 @@ describe.runIf(peer.ok)("the exported page's WebAssembly build", () => {
         (document.getElementById("g-cypher-form") as HTMLFormElement).requestSubmit();
       });
       await page.waitForFunction(() => document.querySelectorAll("#g-rows tbody tr").length === 3, null, { timeout: 30_000 });
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+      await launched.browser.close();
+    }
+  });
+});
+
+describe.runIf(peer.ok)("the exported /graph page (behold#1180)", () => {
+  it("offers what runs in the bundle: search templates disabled with a line saying why, estate links relative, no diff section, under a strict policy", { timeout: 240_000 }, async () => {
+    const launched = await browserOrNull();
+    if (!launched) {
+      console.warn("export-graphdb: no browser launches here, so the bundle's /graph test did not run");
+      return;
+    }
+    const url = await serveDir(graphOut, [], ASK_DEMO_CSP);
+    const page = await (launched.browser as unknown as { newPage(): Promise<any> }).newPage();
+    const errors: string[] = [];
+    const consoleCsp: string[] = [];
+    page.on("pageerror", (e: Error) => errors.push(e.message));
+    page.on("console", (m: { text(): string }) => {
+      if (/Content Security Policy/i.test(m.text())) consoleCsp.push(m.text());
+    });
+    await page.addInitScript(() => {
+      (globalThis as unknown as { __csp: string[] }).__csp = [];
+      document.addEventListener("securitypolicyviolation", (e) => (globalThis as unknown as { __csp: string[] }).__csp.push(`${e.violatedDirective} ${e.blockedURI}`));
+    });
+    try {
+      await page.goto(`${url}graph.html`, { waitUntil: "domcontentloaded" });
+      const head = await page.evaluate(() => ({
+        back: document.getElementById("g-back")?.getAttribute("href"),
+        label: document.getElementById("g-back")?.textContent,
+        diff: Boolean(document.getElementById("d-section") || document.getElementById("d-form")),
+      }));
+      expect(head).toEqual({ back: "./", label: "Back to the estate", diff: false });
+      await page.waitForFunction(() => document.querySelector("#g-cypher-form button")?.textContent === "Ask", null, { timeout: 120_000 });
+
+      await page.fill("#g-ref", "aws_instance.web");
+      await page.click("#g-resolve-form button");
+      await page.waitForFunction(() => document.querySelectorAll("#g-templates button").length > 0, null, { timeout: 30_000 });
+      const menu = (await page.evaluate(() => ({
+        buttons: [...document.querySelectorAll("#g-templates button")].map((b) => ({ text: b.textContent, disabled: (b as HTMLButtonElement).disabled, title: (b as HTMLButtonElement).title })),
+        lines: [...document.querySelectorAll("#g-templates p")].map((p) => p.textContent),
+      }))) as { buttons: Array<{ text: string; disabled: boolean; title: string }>; lines: string[] };
+      const searches = menu.buttons.filter((b) => !b.text.includes("(Cypher)"));
+      expect(searches.length).toBeGreaterThan(0);
+      for (const b of searches) {
+        expect(b.disabled, b.text).toBe(true);
+        expect(b.title, b.text).toMatch(/^Runs on behold serve; the Cypher templates run in this page\./);
+      }
+      expect(menu.buttons.some((b) => b.text.includes("(Cypher)") && !b.disabled)).toBe(true);
+      expect(menu.lines).toEqual([STATIC_SEARCH_LINE]);
+
+      await page.fill("#g-cypher", "MATCH (r:Resource {source: 'chant'}) RETURN r.key AS key ORDER BY key");
+      await page.click("#g-cypher-form button");
+      await page.waitForFunction(() => document.querySelectorAll("#g-rows tbody tr").length > 0, null, { timeout: 30_000 });
+      const link = await page.evaluate(() => ({ hidden: (document.getElementById("g-link") as HTMLAnchorElement).hidden, href: document.getElementById("g-link")?.getAttribute("href") ?? "" }));
+      expect(link.hidden).toBe(false);
+      expect(link.href).toMatch(/^\.\/\?/);
+      expect(new URL(link.href, `${url}graph.html`).pathname).toBe("/");
+
+      expect(await page.evaluate(() => (globalThis as unknown as { __csp: string[] }).__csp)).toEqual([]);
+      expect(consoleCsp).toEqual([]);
       expect(errors).toEqual([]);
     } finally {
       await page.close();

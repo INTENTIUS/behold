@@ -1,6 +1,7 @@
 // behold#1027: the graph pane page's pure helpers.
 import { describe, expect, it } from "vitest";
-import { candidateItems, circleLayout, drawSvg, queryUrl, refusalText, resolveUrl, rowsTable, sourceLines, templateUrl } from "./graph-query.js";
+import { readFileSync } from "node:fs";
+import { STATIC_SEARCH_LINE, candidateItems, circleLayout, drawSvg, queryUrl, refusalText, resolveUrl, rowsTable, sourceLines, templateControl, templateUrl } from "./graph-query.js";
 
 describe("the routes the page asks", () => {
   it("are GETs with the query in the URL", () => {
@@ -62,5 +63,48 @@ describe("the resolve answer's candidates", () => {
     ]);
     expect(candidateItems({ resolved: true, candidates: [cand("aws/aws/subnet", "chant")] })[0].open).toBe(false);
     expect(candidateItems({ resolved: false, candidates: [] })).toEqual([]);
+  });
+});
+
+describe("a template's button (behold#1180)", () => {
+  const search = { name: "dependents", title: "What depends on it", language: "search", available: true, inputs: [], expanded: { query: "->*web/aws_instance.web" } };
+  const cypher = { name: "same-cloud-id", title: "Same cloud id", language: "cypher", available: true, inputs: [] };
+  const missing = { ...cypher, available: false, refusal: "LadybugDB is not installed.", install: "npm i @ladybugdb/core" };
+
+  it("on the server, runs every available template as before, search ones too", () => {
+    expect(templateControl(search, undefined)).toEqual({ label: "What depends on it", disabled: false, title: "", staticSearch: false });
+    expect(templateControl(cypher, undefined)).toEqual({ label: "Same cloud id (Cypher)", disabled: false, title: "", staticSearch: false });
+    expect(templateControl(missing, undefined)).toMatchObject({ disabled: true, title: "LadybugDB is not installed. npm i @ladybugdb/core" });
+    expect(templateControl({ ...cypher, origin: "project" }, undefined).label).toBe("Same cloud id (Cypher), this project's");
+  });
+
+  it("in a bundle, runs Cypher, and disables a search the estate view was not captured for", () => {
+    const plain = { estate: { href: "./" }, searches: [] };
+    expect(templateControl(cypher, plain)).toMatchObject({ disabled: false, staticSearch: false });
+    const off = templateControl(search, plain);
+    expect(off).toMatchObject({ disabled: true, staticSearch: true });
+    expect(off.title).toMatch(/^Runs on behold serve; the Cypher templates run in this page\./);
+    expect(off.title).toContain('behold export --q "->*web/aws_instance.web"');
+    // No estate view (the ask demo): no capture hint, as nothing would open it.
+    expect(templateControl(search, { estate: null, searches: ["->*web/aws_instance.web"] })).toMatchObject({ disabled: true, title: "Runs on behold serve; the Cypher templates run in this page." });
+    // A template with inputs expands only when asked, so a bundle cannot know it was captured.
+    expect(templateControl({ ...search, inputs: [{ name: "kind" }], expanded: undefined }, { estate: { href: "./" }, searches: ["x"] })).toMatchObject({ disabled: true, staticSearch: true });
+    expect(STATIC_SEARCH_LINE).toBe("Search templates run on behold serve; the Cypher templates run in this page.");
+  });
+
+  it("in a bundle with an estate view, opens a search --q captured", () => {
+    expect(templateControl(search, { estate: { href: "./" }, searches: ["->*web/aws_instance.web"] })).toMatchObject({ disabled: false, staticSearch: false, title: expect.stringMatching(/estate view/) });
+  });
+});
+
+describe("the server's /graph page (behold#1180)", () => {
+  it("starts the pane and the diff with no bundle options, keeps the diff section, and links back to /", () => {
+    const html = readFileSync(new URL("./graph.html", import.meta.url), "utf8");
+    const script = html.match(/<script type="module">([\s\S]*?)<\/script>/)[1];
+    expect(script).toMatch(/initGraphPane\(\);/);
+    expect(script).toMatch(/initIndexDiff\(\);/);
+    expect(html).toContain('<div id="d-section">');
+    expect(html).toContain('<a id="g-back" href="/">Back to the estate</a>');
+    expect(html).not.toContain("g-bundle");
   });
 });

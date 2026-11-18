@@ -110,8 +110,34 @@ export function refusalText(body) {
   return lines.join("\n");
 }
 
+/** behold#1180: the line under the template list in a bundle, when it lists a search template. */
+export const STATIC_SEARCH_LINE = "Search templates run on behold serve; the Cypher templates run in this page.";
+
+/**
+ * One template's button: its label, whether it is disabled, and its tooltip.
+ * `bundle` is undefined on the server, where every available template runs.
+ * In a bundle (`{ estate, searches }`, behold#1180) a search template runs
+ * only when the bundle has an estate view and `--q` captured the exact query
+ * it expands to; resolve gives that query for a template without inputs.
+ */
+export function templateControl(t, bundle) {
+  const label = `${t.title}${t.language === "cypher" ? " (Cypher)" : ""}${t.origin === "project" ? ", this project's" : ""}`;
+  if (!t.available) return { label, disabled: true, title: `${t.refusal} ${t.install}`, staticSearch: false };
+  if (!bundle || t.language !== "search") return { label, disabled: false, title: "", staticSearch: false };
+  const q = t.expanded?.query?.trim();
+  if (bundle.estate && q && (bundle.searches ?? []).includes(q)) return { label, disabled: false, title: "Opens the estate view, which this export captured the query for.", staticSearch: false };
+  const capture = bundle.estate && q ? ` This export did not capture it; behold export --q "${q}" captures it.` : "";
+  return { label, disabled: true, title: `Runs on behold serve; the Cypher templates run in this page.${capture}`, staticSearch: true };
+}
+
 /* c8 ignore start: the DOM half, driven by the page */
-export function initGraphPane(doc = document, fetchJson = (u) => fetch(u, { headers: { accept: "application/json" } }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }))) {
+/**
+ * `opts` (behold#1180) is for a bundle's page: `bundle` ({ estate, searches })
+ * limits the search templates as {@link templateControl} says, and
+ * `viewLinks: false` hides an answer's estate link. The server passes none.
+ */
+export function initGraphPane(doc = document, fetchJson = (u) => fetch(u, { headers: { accept: "application/json" } }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) })), opts = {}) {
+  const viewLinks = opts.viewLinks !== false;
   const $ = (id) => doc.getElementById(id);
   const show = (answer) => {
     const { status, body } = answer;
@@ -120,7 +146,7 @@ export function initGraphPane(doc = document, fetchJson = (u) => fetch(u, { head
     $("g-rows").innerHTML = status === 200 && body.columns ? rowsTable(body.columns, body.rows) : "";
     $("g-sources").textContent = sourceLines(body.sources).join("\n");
     const link = $("g-link");
-    if (status === 200 && body.link) {
+    if (viewLinks && status === 200 && body.link) {
       link.href = body.link;
       link.hidden = false;
     } else link.hidden = true;
@@ -174,12 +200,15 @@ export function initGraphPane(doc = document, fetchJson = (u) => fetch(u, { head
     const menu = $("g-templates");
     menu.innerHTML = "";
     const node = r.body.resolved ? r.body.candidates[0].key : null;
+    let staticSearch = false;
     for (const t of r.body.templates ?? []) {
       const b = doc.createElement("button");
       b.type = "button";
-      b.textContent = `${t.title}${t.language === "cypher" ? " (Cypher)" : ""}${t.origin === "project" ? ", this project's" : ""}`;
-      b.disabled = !t.available;
-      if (!t.available) b.title = `${t.refusal} ${t.install}`;
+      const c = templateControl(t, opts.bundle);
+      b.textContent = c.label;
+      b.disabled = c.disabled;
+      if (c.title) b.title = c.title;
+      staticSearch ||= c.staticSearch;
       b.addEventListener("click", async () => {
         const inputs = {};
         for (const i of t.inputs) {
@@ -196,6 +225,12 @@ export function initGraphPane(doc = document, fetchJson = (u) => fetch(u, { head
         show(a);
       });
       menu.append(b);
+    }
+    if (staticSearch) {
+      const line = doc.createElement("p");
+      line.className = "g-muted";
+      line.textContent = STATIC_SEARCH_LINE;
+      menu.append(line);
     }
   });
   status();

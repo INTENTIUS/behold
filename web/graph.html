@@ -61,7 +61,7 @@
         <h1>Graph</h1>
         <span id="g-peer" class="g-muted"></span>
         <span id="g-counts" class="g-muted"></span>
-        <a href="/">Back to the estate</a>
+        <a id="g-back" href="/">Back to the estate</a>
       </header>
       <section>
         <h2>Cypher</h2>
@@ -78,15 +78,17 @@
         <ul id="g-candidates"></ul>
         <div id="g-templates"></div>
         <pre id="g-error"></pre>
-        <h2 style="margin-top: 14px">What changed between two reads</h2>
-        <form id="d-form">
-          <label>Scope <select id="d-scope" aria-label="Index scope"></select></label>
-          <label>From <select id="d-from" aria-label="Earlier version"></select></label>
-          <label>To <select id="d-to" aria-label="Later version"></select></label>
-          <button type="submit">Diff</button>
-        </form>
-        <p id="d-hint" class="g-muted"></p>
-        <pre id="d-summary"></pre>
+        <div id="d-section">
+          <h2 style="margin-top: 14px">What changed between two reads</h2>
+          <form id="d-form">
+            <label>Scope <select id="d-scope" aria-label="Index scope"></select></label>
+            <label>From <select id="d-from" aria-label="Earlier version"></select></label>
+            <label>To <select id="d-to" aria-label="Later version"></select></label>
+            <button type="submit">Diff</button>
+          </form>
+          <p id="d-hint" class="g-muted"></p>
+          <pre id="d-summary"></pre>
+        </div>
         <h2 style="margin-top: 14px">Sources, and when each was read</h2>
         <pre id="g-sources"></pre>
         <pre id="g-notes"></pre>
