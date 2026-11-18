@@ -85,6 +85,15 @@ function viewTo(box) {
   tween = requestAnimationFrame(step);
 }
 
+/**
+ * The estate pane is empty until the agent loads the estate: each loop starts
+ * with nothing drawn, and the load turn's reply shows the graph.
+ */
+function showEstate(on) {
+  html.dataset.estate = on ? "loaded" : "empty";
+  $("ad-estate-graph").setAttribute("aria-hidden", on ? "false" : "true");
+}
+
 /** Light `ids` on the estate graph and frame them; with none, the whole graph and a caption saying why. */
 function lightEstate(ids, why) {
   const on = applyKeyLight(svg, ids, { pulse: !reduced() });
@@ -145,6 +154,7 @@ function onTurn(turn) {
     $("g-call").textContent = callLine(turn);
     $("g-cypher").placeholder = "The load turn runs no query.";
     showAnswer(recordedAnswer({ ...turn, keys: [], draw: { nodes: [], edges: [] } }), []);
+    showEstate(true);
     lightEstate(turn.light, "");
     return;
   }
@@ -178,7 +188,8 @@ function startLoop(i) {
   $("ad-next").classList.remove("ad-wanted");
   $("ad-count").textContent = `Question ${state.loop.index + 1} of ${state.loop.of}`;
   clearPane();
-  lightEstate([], "");
+  lightEstate([], "Nothing is loaded into behold yet.");
+  showEstate(false);
   setEditable(false);
   pane.setStep(state.loop.steps[0]);
 }
