@@ -8,19 +8,21 @@ import {
   DEMO_DOCS,
   DOCS,
   LINKS,
-  LOOP_MS,
+  AFTER_MS,
   answerHeadline,
   pairedKeys,
   resourceDetails,
   resourceFacts,
   rowKeys,
   MAX_ZOOM,
-  MIN_DWELL_MS,
   PANE_BEAT_MS,
+  PROMPT_TYPE_MS,
+  QUICK_QUESTION_MS,
   REDUCED_READ_MS,
   beatOf,
   callLine,
   callTitle,
+  countWords,
   cypherFill,
   keepInside,
   drawLight,
@@ -92,21 +94,44 @@ describe("loops", () => {
     expect(busy).toMatchObject({ busy: true, replied: false });
   });
 
-  it("take about a minute each with the recording, the question following the load turn's words", () => {
+  it("play the load turn in full the first time, its prompt typing in a few seconds, and the question after its words (#1189)", () => {
     for (let i = 0; i < RECORDING.turns.length - 1; i++) {
       const l = loopOf(RECORDING, i);
+      expect(l.quick).toBe(false);
+      expect(l.steps[0].instant).toBeUndefined();
       const t = loopTiming(l);
-      expect(t.questionAt).toBe(playback(l.steps[0].asks, 0).end + BEAT_GAP_MS);
-      expect(t.playMs).toBeGreaterThan(20_000);
-      expect(t.dwellMs).toBeGreaterThanOrEqual(MIN_DWELL_MS);
-      expect(t.totalMs).toBeGreaterThanOrEqual(LOOP_MS);
-      expect(t.totalMs).toBeLessThan(LOOP_MS + 15_000);
+      expect(t.questionAt).toBe(playback(l.steps[0].asks, 0, { msPerChar: PROMPT_TYPE_MS }).end + BEAT_GAP_MS);
+      // The load turn and the question each start typing within a few seconds of their step.
+      expect(RECORDING.turns[0].prompt.length * PROMPT_TYPE_MS).toBeLessThan(4_000);
+      expect(l.question.prompt.length * PROMPT_TYPE_MS).toBeLessThan(4_000);
+      // The loop's length follows its question: its words, then the pause.
+      expect(t.playMs).toBe(t.questionAt + playback(l.steps[1].asks, 0, { msPerChar: PROMPT_TYPE_MS }).end);
+      expect(t).toMatchObject({ dwellMs: AFTER_MS, totalMs: t.playMs + AFTER_MS });
     }
+  });
+
+  it("after the first, show the load turn at once and start the question within a few seconds (#1189)", () => {
+    const l = loopOf(RECORDING, 3, { quick: true });
+    expect(l.quick).toBe(true);
+    expect(l.steps[0]).toMatchObject({ step: "load", instant: true });
+    expect(l.steps[1].instant).toBeUndefined();
+    const t = loopTiming(l);
+    expect(t.questionAt).toBe(QUICK_QUESTION_MS);
+    expect(t.questionAt).toBeLessThanOrEqual(3_000);
+    expect(t.totalMs).toBeLessThan(loopTiming(loopOf(RECORDING, 3)).totalMs - 10_000);
+    expect(loopTiming(l, { reduced: true }).questionAt).toBe(QUICK_QUESTION_MS);
   });
 
   it("under reduced motion show each turn's words at once, the question a while after the load turn", () => {
     const t = loopTiming(loopOf(RECORDING, 0), { reduced: true });
-    expect(t).toEqual({ questionAt: REDUCED_READ_MS, playMs: REDUCED_READ_MS, dwellMs: LOOP_MS - REDUCED_READ_MS, totalMs: LOOP_MS });
+    expect(t).toEqual({ questionAt: REDUCED_READ_MS, playMs: REDUCED_READ_MS, dwellMs: AFTER_MS, totalMs: REDUCED_READ_MS + AFTER_MS });
+  });
+
+  it("count the question only once one is on screen (#1189)", () => {
+    const l = loopOf(RECORDING, 1);
+    expect(countWords(l, false)).toBe("");
+    expect(countWords(l, true)).toBe(`Question 2 of ${l.of}`);
+    expect(countWords(null, true)).toBe("");
   });
 });
 
@@ -119,17 +144,17 @@ describe("the agent's pane (#1183)", () => {
 
   it("closes a short beat after the question's reply has printed", () => {
     expect(PANE_BEAT_MS).toBeGreaterThanOrEqual(1_000);
-    expect(PANE_BEAT_MS).toBeLessThan(MIN_DWELL_MS / 2);
+    expect(PANE_BEAT_MS).toBeLessThan(AFTER_MS / 2);
     expect(paneOpen({ phase: "after", sinceDoneMs: 0 })).toBe(true);
     expect(paneOpen({ phase: "after", sinceDoneMs: PANE_BEAT_MS - 1 })).toBe(true);
     expect(paneOpen({ phase: "after", sinceDoneMs: PANE_BEAT_MS })).toBe(false);
-    expect(paneOpen({ phase: "after", sinceDoneMs: MIN_DWELL_MS })).toBe(false);
+    expect(paneOpen({ phase: "after", sinceDoneMs: AFTER_MS })).toBe(false);
   });
 
   it("follows the visitor once the reply has printed, open or closed", () => {
-    expect(paneOpen({ phase: "after", sinceDoneMs: MIN_DWELL_MS, chosen: true })).toBe(true);
+    expect(paneOpen({ phase: "after", sinceDoneMs: AFTER_MS, chosen: true })).toBe(true);
     expect(paneOpen({ phase: "after", sinceDoneMs: 0, chosen: false })).toBe(false);
-    expect(paneOpen({ phase: "after", sinceDoneMs: MIN_DWELL_MS, chosen: null })).toBe(false);
+    expect(paneOpen({ phase: "after", sinceDoneMs: AFTER_MS, chosen: null })).toBe(false);
   });
 });
 

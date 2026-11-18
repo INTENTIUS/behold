@@ -1,7 +1,8 @@
 /**
  * behold#1163: the ask demo page's pure half. The page (./main.js) plays
  * ask-demo/narration.json in loops: the load turn, then one question, and the
- * next loop takes the next question. Each loop is one step for the kiosk's
+ * next loop takes the next question. The first loop plays the load turn in
+ * full; later ones show it at once (behold#1189). Each loop is one step for the kiosk's
  * prompt pane (web/kiosk-ask.js), whose beats carry their turn so the page
  * can light the graph and fill the /graph pane when a beat's reply starts.
  *
@@ -12,12 +13,14 @@ import { answerDrawing } from "../../web/graph-query.js";
 import { sourceLabel } from "../../web/source-label.js";
 
 export const NARRATION_FORMAT = "behold-ask-demo-narration/1";
-/** About how long a loop takes, words and pause together. */
-export const LOOP_MS = 60_000;
-/** The shortest pause after a loop's last reply, however long its words took. */
-export const MIN_DWELL_MS = 12_000;
+/** behold#1189: how long the page's prompts take per character, so a sentence types in a few seconds. */
+export const PROMPT_TYPE_MS = 40;
+/** How long the question's words stay on screen after its reply, before the next loop. The loop's length follows its question. */
+export const AFTER_MS = 15_000;
 /** Under reduced motion the words show at once: how long the load turn stays alone before the question shows. */
 export const REDUCED_READ_MS = 8_000;
+/** A loop after the first shows the load turn at once: how long it stays alone before the question starts typing. */
+export const QUICK_QUESTION_MS = 2_000;
 /** The command that records the narration again, when the file does not name one. */
 export const RECORD_COMMAND = "just ask-demo-record";
 
@@ -47,31 +50,36 @@ export const beatOf = (turn) => ({ prompt: turn.prompt, ...(turn.reading ? { rea
  * Loop `i`: the load turn, then question `i` (counting round). `steps` are
  * the two steps the prompt pane takes, one per turn: their own cycle each
  * loop, so the pane starts clean, and one scenario, so the question follows
- * the load turn in one transcript.
+ * the load turn in one transcript. With `quick` (behold#1189: every loop
+ * after the first the page plays) the load turn's step is `instant`, so its
+ * prompt and reply show at once: the visitor has watched it already.
  */
-export function loopOf(n, i) {
+export function loopOf(n, i, { quick = false } = {}) {
   const qs = questionsOf(n);
   const index = ((i % qs.length) + qs.length) % qs.length;
   const load = n.turns[0];
   const question = qs[index];
-  const step = (turn) => ({ cycle: `loop-${i}`, scenario: "ask-demo", step: turn.id, asks: [beatOf(turn)] });
-  return { loop: i, index, of: qs.length, load, question, steps: [step(load), step(question)] };
+  const step = (turn, extra = {}) => ({ cycle: `loop-${i}`, scenario: "ask-demo", step: turn.id, asks: [beatOf(turn)], ...extra });
+  return { loop: i, index, of: qs.length, quick, load, question, steps: [step(load, quick ? { instant: true } : {}), step(question)] };
 }
 
 /**
  * A loop's clock, in ms from its start: when the question's step is given
  * to the pane (`questionAt`: after the load turn and the pane's gap between
- * beats, or, under reduced motion where words show at once, after
- * {@link REDUCED_READ_MS}), when its words are done (`playMs`), and the pause
- * after them, so a loop takes about {@link LOOP_MS}.
+ * beats; under reduced motion, where words show at once, after
+ * {@link REDUCED_READ_MS}; in a quick loop, after {@link QUICK_QUESTION_MS}),
+ * when its words are done (`playMs`), and the pause after them
+ * ({@link AFTER_MS}). Prompts type at {@link PROMPT_TYPE_MS} a character.
  */
 export function loopTiming(loop, { reduced = false } = {}) {
-  const loadMs = playback(loop.steps[0].asks, 0, { reduced }).end;
-  const questionAt = reduced ? REDUCED_READ_MS : loadMs + BEAT_GAP_MS;
-  const playMs = questionAt + playback(loop.steps[1].asks, 0, { reduced }).end;
-  const dwellMs = Math.max(MIN_DWELL_MS, LOOP_MS - playMs);
-  return { questionAt, playMs, dwellMs, totalMs: playMs + dwellMs };
+  const opts = { reduced, msPerChar: PROMPT_TYPE_MS };
+  const questionAt = loop.quick ? QUICK_QUESTION_MS : reduced ? REDUCED_READ_MS : playback(loop.steps[0].asks, 0, opts).end + BEAT_GAP_MS;
+  const playMs = questionAt + playback(loop.steps[1].asks, 0, opts).end;
+  return { questionAt, playMs, dwellMs: AFTER_MS, totalMs: playMs + AFTER_MS };
 }
+
+/** behold#1189: the question count, once a question is on screen; before that, nothing. */
+export const countWords = (loop, questionGiven) => (loop && questionGiven ? `Question ${loop.index + 1} of ${loop.of}` : "");
 
 /** How long the agent's pane stays open once the question's reply has printed, in ms of the page's clock. */
 export const PANE_BEAT_MS = 2_500;

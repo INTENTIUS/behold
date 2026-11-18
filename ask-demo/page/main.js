@@ -1,7 +1,9 @@
 /**
  * behold#1163: the ask demo page. It plays ask-demo/narration.json, a
  * recording of an agent loading an estate into behold and asking it
- * questions, in loops of about a minute: the load turn, then one question.
+ * questions, in loops: the load turn, then one question. The first loop
+ * plays the load turn in full; later loops (and Next question) show it at
+ * once and start the question within a few seconds (behold#1189);
  *
  *   - the prompt pane at the bottom is the kiosk's (web/kiosk-ask.js), given
  *     one step per turn; it types the prompt, shows the busy line and types
@@ -33,7 +35,7 @@ import { createAskPane } from "../../web/kiosk-ask.js";
 import { answerDrawing, drawSvg, refusalText, rowsTable } from "../../web/graph-query.js";
 import { bindEngineBadge } from "../../web/engine-badge.js";
 import { applyKeyLight, cardIndex, lightKeys, zoomFrame } from "../../web/key-light.js";
-import { answerHeadline, callLine, callTitle, cypherFill, knownResources, pairedKeys, resourceDetails, resourceFacts, rowKeys, loadRows, loopOf, loopTiming, narrationProblems, paneOpen, panView, parseParams, recordedAnswer, recordedWords, sourceTitle, sourceWords, zoomView } from "./play.js";
+import { PROMPT_TYPE_MS, answerHeadline, callLine, callTitle, countWords, cypherFill, knownResources, pairedKeys, resourceDetails, resourceFacts, rowKeys, loadRows, loopOf, loopTiming, narrationProblems, paneOpen, panView, parseParams, recordedAnswer, recordedWords, sourceTitle, sourceWords, zoomView } from "./play.js";
 
 const $ = (id) => document.getElementById(id);
 const html = document.documentElement;
@@ -48,7 +50,7 @@ const clock = () => T0 + (Date.now() - T0) * PACE;
 /** The answer drawing's side, in its own units: smaller than the /graph page's, so its words read in a narrow pane. */
 const DRAW_SIZE = 420;
 
-const state = { narration: null, cards: new Map(), known: new Map(), facts: null, answer: null, answerLight: { ids: [], why: "" }, selected: null, loop: null, timing: null, startedAt: 0, questionGiven: false, phase: "idle", doneAt: 0, held: false, db: null, engine: "waiting", touched: false, zoomedAt: -Infinity, gesture: false, paneChosen: null };
+const state = { loops: 0, narration: null, cards: new Map(), known: new Map(), facts: null, answer: null, answerLight: { ids: [], why: "" }, selected: null, loop: null, timing: null, startedAt: 0, questionGiven: false, phase: "idle", doneAt: 0, held: false, db: null, engine: "waiting", touched: false, zoomedAt: -Infinity, gesture: false, paneChosen: null };
 
 /** A recorded turn leaves the view alone this long after the visitor last zoomed or dragged it, in ms. */
 const VISITOR_VIEW_MS = 4000;
@@ -516,7 +518,10 @@ let badge = null;
 
 function startLoop(i) {
   const n = state.narration;
-  state.loop = loopOf(n, i);
+  // behold#1189: the load turn plays in full once; after that the visitor has seen it.
+  const quick = state.loops > 0;
+  state.loops += 1;
+  state.loop = loopOf(n, i, { quick });
   state.timing = loopTiming(state.loop, { reduced: reduced() });
   state.startedAt = clock();
   state.questionGiven = false;
@@ -530,10 +535,12 @@ function startLoop(i) {
   delete html.dataset.turn;
   delete html.dataset.held;
   $("ad-next").classList.remove("ad-wanted");
-  $("ad-count").textContent = `Question ${state.loop.index + 1} of ${state.loop.of}`;
+  $("ad-count").textContent = countWords(state.loop, false);
   clearPane();
-  lightEstate([], "Nothing is loaded into behold yet.");
-  showEstate(false);
+  if (!quick) {
+    lightEstate([], "Nothing is loaded into behold yet.");
+    showEstate(false);
+  }
   setEditable(false);
   showPane();
   pane.setStep(state.loop.steps[0]);
@@ -545,6 +552,7 @@ function tick() {
   showPane();
   if (state.phase === "playing" && !state.questionGiven && t - state.startedAt >= state.timing.questionAt) {
     state.questionGiven = true;
+    $("ad-count").textContent = countWords(state.loop, true);
     pane.setStep(state.loop.steps[1]);
   }
   if (state.phase === "after" && !state.held && t - state.doneAt >= state.timing.dwellMs) startLoop(state.loop.loop + 1);
@@ -603,7 +611,7 @@ async function boot() {
   wireZoom();
   wireSelect();
 
-  pane = createAskPane({ host: $("k-ask"), now: () => new Date(clock()), reduced });
+  pane = createAskPane({ host: $("k-ask"), now: () => new Date(clock()), reduced, typeMs: PROMPT_TYPE_MS });
   badge = bindEngineBadge($("g-engine-badge"), { now: clock });
   // The question's busy line is behold running its query: the badge moves from there until its answer has drawn.
   addEventListener("behold:ask-busy", (e) => {
