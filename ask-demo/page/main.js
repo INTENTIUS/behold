@@ -258,7 +258,8 @@ function lightEstate(ids, why, { auto = false, select = false, keepPlan = false 
   $("ad-estate-cap").textContent = why || (focused && !select && !(oneColumn && oneColumn.matches) ? FOCUS_CAPTION : "");
   if (auto && (state.gesture || performance.now() - state.zoomedAt < VISITOR_VIEW_MS)) return;
   const drawn = svg ? svg.querySelectorAll("[data-node-id]").length : 0;
-  if (focused && !select) return viewTo(extent());
+  // The focused view already shows every one of the answer's cards readably, so a selection lights within it and keeps the view.
+  if (focused) return viewTo(extent());
   viewTo(on.length && on.length < drawn ? zoomFrame(on.map(boxOf), extent()) : extent());
 }
 
