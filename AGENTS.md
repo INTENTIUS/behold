@@ -65,7 +65,7 @@ gets a row in src/scratch.test.ts.
 - Tests against a real chant run only when `BEHOLD_TEST_CHANT_BIN` is set; k3d tests only with `BEHOLD_K3D_TESTS=1`.
 - src/render.ts and its imports must bundle for the browser, so no `node:` imports (`npm run check:browser-bundle` names the chain). After `web/icons` changes, run `npm run generate:icons`.
 - src/graph-package.ts (built to dist/index.js, used by the action and the VS Code extension) stays free of hono, the MCP SDK and the Kubernetes client; src/read-graph-imports.test.ts holds it. The Kubernetes client is an optional peer, loaded by dynamic import.
-- e2e scripts run under e2e/lib/safe-env.sh, which keeps real cloud credentials out; e2e/README.md lists the variables.
+- The emulator e2e recipes run their script under e2e/lib/safe-env.sh, which keeps real cloud credentials out; e2e/README.md lists the variables. A new emulator recipe does the same. `just e2e` (real AWS when it finds credentials) and `just e2e-ci-github` (your gh login) run without it.
 
 ### Merging
 

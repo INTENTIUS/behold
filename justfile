@@ -73,7 +73,7 @@ e2e:
 # a checked-in stack export) renders as its resources, neutral, not as an
 # unreadable box. No cloud, no Pulumi; needs the pulumi lexicon the fixture pins beside behold.
 e2e-pulumi-workspace:
-    bash e2e/pulumi-workspace-e2e.sh
+    bash e2e/lib/safe-env.sh bash e2e/pulumi-workspace-e2e.sh
 
 # behold#999: adopt a stock Pulumi stack into plunge over a real chant and
 # serve, plunge replaced by e2e/fixtures/adopt-pulumi/plunge. Asserts the
@@ -81,21 +81,21 @@ e2e-pulumi-workspace:
 # a person runs the confirm line. Needs the pulumi lexicon
 # (BEHOLD_E2E_PULUMI_LEXICON to point at chant's lexicons/pulumi).
 e2e-adopt-pulumi:
-    bash e2e/adopt-pulumi-e2e.sh
+    bash e2e/lib/safe-env.sh bash e2e/adopt-pulumi-e2e.sh
 
 # behold#999: adopt a Terraform root into choudoufu over a real chant and serve,
 # choudoufu replaced by e2e/fixtures/adopt/choudoufu. Asserts the report lists
 # every resource with its fate and that nothing is written before approval.
 # Needs a chant at the adoption report's floor (BEHOLD_E2E_CHANT_PKG to point at one).
 e2e-adopt:
-    bash e2e/adopt-terraform-e2e.sh
+    bash e2e/lib/safe-env.sh bash e2e/adopt-terraform-e2e.sh
 
 # End-to-end (#59, epic #54's definition of done): the unified component view
 # (waves + live status + CI + resources) against a real project — loomster on
 # Floci. Needs loomster checked out and its Floci already up (`just local-up`
 # in loomster) — this never boots or installs loomster itself.
 e2e-floci:
-    bash e2e/component-view-floci-e2e.sh
+    bash e2e/lib/safe-env.sh bash e2e/component-view-floci-e2e.sh
 
 # behold#100 (B·aws, chant epic #1198): the AWS lane's acceptance run — component
 # status painted from the #98 resource rollup (not CFN stack status), the live
@@ -104,7 +104,7 @@ e2e-floci:
 #   just e2e-aws-logical
 #   BEHOLD_E2E_PROJECT=/path/to/example just e2e-aws-logical
 e2e-aws-logical:
-    bash e2e/aws-logical-floci-e2e.sh
+    bash e2e/lib/safe-env.sh bash e2e/aws-logical-floci-e2e.sh
 
 # behold#126 (B·azure, chant epic #1200 / E slot chant#1214): the Azure lane's
 # acceptance run. Same three assertions as e2e-aws-logical, against floci-az —
@@ -114,7 +114,7 @@ e2e-aws-logical:
 #   just e2e-azure-logical
 #   BEHOLD_E2E_PROJECT=/path/to/example just e2e-azure-logical
 e2e-azure-logical:
-    bash e2e/azure-logical-floci-e2e.sh
+    bash e2e/lib/safe-env.sh bash e2e/azure-logical-floci-e2e.sh
 
 # behold#126 (B·gcp, chant epic #1199 / E slot chant#1211): the GCP lane's
 # acceptance run, against floci-gcp. Asserts the project/location diagram and,
@@ -126,7 +126,7 @@ e2e-azure-logical:
 #   just e2e-gcp-logical
 #   BEHOLD_E2E_PROJECT=/path/to/example just e2e-gcp-logical
 e2e-gcp-logical:
-    bash e2e/gcp-logical-floci-e2e.sh
+    bash e2e/lib/safe-env.sh bash e2e/gcp-logical-floci-e2e.sh
 
 # behold#148 (the CC join, chant epic #1198's "one graph" bar): the
 # mixed-substrate acceptance run against chant's cc-aws-canonical on Floci.
@@ -138,7 +138,7 @@ e2e-gcp-logical:
 #   just e2e-cc-logical
 #   BEHOLD_E2E_PROJECT=/path/to/deployed/copy just e2e-cc-logical
 e2e-cc-logical:
-    bash e2e/cc-logical-floci-e2e.sh
+    bash e2e/lib/safe-env.sh bash e2e/cc-logical-floci-e2e.sh
 
 # behold#146 (the helm lane): artifact presence + the logical release box,
 # against a chart project on a k3d cluster. Installs (and uninstalls) the
@@ -146,7 +146,7 @@ e2e-cc-logical:
 # (observedArtifacts) and the project's declared kube context reachable.
 #   BEHOLD_E2E_PROJECT=/path BEHOLD_E2E_CHART=./chart BEHOLD_E2E_RELEASE=name just e2e-helm-logical
 e2e-helm-logical:
-    bash e2e/helm-logical-k3d-e2e.sh
+    bash e2e/lib/safe-env.sh bash e2e/helm-logical-k3d-e2e.sh
 
 # behold#256 (the GitOps lane): the flux-estate demo driven headless against a
 # REAL Flux — the estate lenses (#241) and the health verdicts (#238) asserted
@@ -159,7 +159,7 @@ e2e-helm-logical:
 # GitRepository is a real remote); SKIPs with exit 0 if any is missing.
 #   just e2e-flux-estate
 e2e-flux-estate:
-    bash e2e/flux-estate-k3d-e2e.sh
+    bash e2e/lib/safe-env.sh bash e2e/flux-estate-k3d-e2e.sh
 
 # behold#998: streamed drift in the choudoufu-estate demo. The demo's own setup
 # (a scratch floci, choudoufu init, the monolith applied), served with a fake
@@ -169,7 +169,7 @@ e2e-flux-estate:
 # SKIPs with exit 0 without Docker or choudoufu.
 #   just e2e-streamed-drift
 e2e-streamed-drift:
-    bash e2e/streamed-drift-e2e.sh
+    bash e2e/lib/safe-env.sh bash e2e/streamed-drift-e2e.sh
 
 # behold#1000: the multi-engine three-cloud demo. dns and gcp on chant, azure
 # on choudoufu, aws a Pulumi program on plunge (a fake plunge here,
@@ -182,15 +182,15 @@ e2e-streamed-drift:
 # 0.124.58 from npm. The live run (a real plunge, the emulators,
 # `front-door.ts oob-edit <member>`) is the maintainer's.
 e2e-multi-engine:
-    bash e2e/multi-engine-demo-e2e.sh
-    bash e2e/three-cloud-change-set-e2e.sh
+    bash e2e/lib/safe-env.sh bash e2e/multi-engine-demo-e2e.sh
+    bash e2e/lib/safe-env.sh bash e2e/three-cloud-change-set-e2e.sh
 
 # behold#490: terragucci's example painted from example-terragucci-reports,
 # through the real server and the real Terraform read. Needs TERRAGUCCI (a
 # terragucci checkout) and the terraform lexicon beside behold; skips without.
 #   TERRAGUCCI=../terragucci just e2e-terragucci
 e2e-terragucci:
-    bash e2e/terragucci-e2e.sh
+    bash e2e/lib/safe-env.sh bash e2e/terragucci-e2e.sh
 
 # behold#269 (the GitOps lane, Argo half): the argo-estate demo driven headless
 # against a REAL Argo CD — the Argo joins (#222/#235), the estate lenses (#241)
@@ -204,7 +204,7 @@ e2e-terragucci:
 # SKIPs with exit 0 if any is missing.
 #   just e2e-argo-estate
 e2e-argo-estate:
-    bash e2e/argo-estate-k3d-e2e.sh
+    bash e2e/lib/safe-env.sh bash e2e/argo-estate-k3d-e2e.sh
 
 # behold#165 (the executor contract): the REAL forge. Serves example-ci, whose
 # .behold.json designates prod to .github/workflows/behold-e2e-dispatch.yml,
@@ -232,7 +232,7 @@ e2e-ci-github:
 #   just e2e-workbench
 #   BEHOLD_E2E_ONLY="terralith-1 waterpark" just e2e-workbench
 e2e-workbench:
-    bash e2e/workbench-e2e.sh
+    bash e2e/lib/safe-env.sh bash e2e/workbench-e2e.sh
 
 # The demo host's chant project (deploy/demo-host/chant): typecheck, lint, and
 # check that template.json, compose.yaml and the two Dockerfiles are what
