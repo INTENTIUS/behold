@@ -61,6 +61,19 @@
       #ad-pane { min-height: 0; overflow-y: auto; border-left: 1px solid var(--line); background: var(--surface-pane-a); padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 8px; }
       #ad-pane h2 { font-size: 13px; margin: 6px 0 0; color: var(--ink2); display: flex; justify-content: space-between; gap: 8px; }
       #ad-pane h2 a { font-weight: 400; font-size: 12px; }
+      .ad-cypher-head { display: inline-flex; align-items: center; }
+      /* behold#1182: LadybugDB's logo beside the Cypher heading, on the white ground it is drawn for. It moves while a query runs (web/engine-badge.js sets data-active). */
+      .engine-badge { display: inline-flex; flex: none; width: 22px; height: 22px; margin-left: 6px; vertical-align: middle; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1px var(--rule); overflow: hidden; }
+      .engine-badge img { display: block; width: 100%; height: 100%; }
+      .engine-badge:focus-visible { outline: 2px solid var(--runtime); outline-offset: 2px; }
+      @keyframes engine-spin { to { transform: rotate(360deg); } }
+      @keyframes engine-pulse { 0%, 100% { transform: scale(1); box-shadow: 0 0 0 1px var(--rule); } 50% { transform: scale(1.12); box-shadow: 0 0 0 2px var(--runtime), 0 0 9px 1px var(--runtime); } }
+      .engine-badge[data-active] { animation: engine-pulse 1.2s ease-in-out infinite; }
+      .engine-badge[data-active] img { animation: engine-spin 1.2s linear infinite; }
+      @media (prefers-reduced-motion: reduce) {
+        .engine-badge[data-active], .engine-badge[data-active] img { animation: none; }
+        .engine-badge[data-active] { box-shadow: 0 0 0 2px var(--runtime); }
+      }
       textarea, input { width: 100%; background: var(--well); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font: 12.5px/1.4 var(--font-mono); }
       textarea { min-height: 7.5em; resize: vertical; }
       textarea[readonly], input[readonly] { color: var(--ink2); border-style: dashed; }
@@ -136,7 +149,7 @@
         <p id="ad-estate-cap" role="status"></p>
       </section>
       <section id="ad-pane" aria-label="Graph pane">
-        <h2>Cypher <a href="./graph.html">Open the full graph pane</a></h2>
+        <h2><span class="ad-cypher-head">Cypher <a id="g-engine-badge" class="engine-badge" href="https://ladybugdb.com/" target="_blank" rel="noopener noreferrer" title="LadybugDB answers these queries (opens in a new tab)"><img src="./vendors/ladybugdb.png" width="22" height="22" alt="LadybugDB" /></a></span> <a href="./graph.html">Open the full graph pane</a></h2>
         <pre id="g-call"></pre>
         <form id="g-cypher-form">
           <textarea id="g-cypher" spellcheck="false" aria-label="Cypher query" readonly></textarea>

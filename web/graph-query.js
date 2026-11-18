@@ -9,8 +9,11 @@
  * GET.
  *
  * The pure helpers are exported for web/graph-query.test.js; `initGraphPane`
- * wires them to the page.
+ * wires them to the page. behold#1182: LadybugDB's badge beside the Cypher
+ * heading (#g-engine-badge) moves while a query, a resolve or a template runs
+ * and a few seconds after a fresh result set (web/engine-badge.js).
  */
+import { bindEngineBadge } from "./engine-badge.js";
 
 /** The route URL for a Cypher query and its parameters. */
 export function queryUrl(cypher, params) {
@@ -139,6 +142,9 @@ export function templateControl(t, bundle) {
 export function initGraphPane(doc = document, fetchJson = (u) => fetch(u, { headers: { accept: "application/json" } }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) })), opts = {}) {
   const viewLinks = opts.viewLinks !== false;
   const $ = (id) => doc.getElementById(id);
+  const badge = bindEngineBadge($("g-engine-badge"));
+  /** A read the visitor asked for: the badge moves while it runs. The pane's own status read is not one. */
+  const ask = (url) => badge.run(fetchJson(url));
   const show = (answer) => {
     const { status, body } = answer;
     $("g-error").textContent = status === 200 ? "" : refusalText(body);
@@ -172,11 +178,11 @@ export function initGraphPane(doc = document, fetchJson = (u) => fetch(u, { head
         return;
       }
     }
-    show(await fetchJson(queryUrl($("g-cypher").value, params)));
+    show(await ask(queryUrl($("g-cypher").value, params)));
   });
   $("g-resolve-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
-    const r = await fetchJson(resolveUrl($("g-ref").value));
+    const r = await ask(resolveUrl($("g-ref").value));
     show(r);
     const list = $("g-candidates");
     list.innerHTML = "";
@@ -216,7 +222,7 @@ export function initGraphPane(doc = document, fetchJson = (u) => fetch(u, { head
           if (!v) return;
           inputs[i.name] = v;
         }
-        const a = await fetchJson(templateUrl(t.name, node, inputs));
+        const a = await ask(templateUrl(t.name, node, inputs));
         if (a.status === 200 && a.body.search) {
           // A search template draws in behold's own view, through the q key.
           globalThis.location.href = a.body.link;

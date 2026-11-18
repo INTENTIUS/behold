@@ -14,6 +14,9 @@
  *     `zoomFrame`), and a visitor can zoom it with its buttons, the wheel or a
  *     pinch, and drag it; doing so holds the loop as editing the query does,
  *     and the next recorded turn does not move the view out from under them;
+ *   - LadybugDB's badge beside the Cypher heading moves from the question's
+ *     busy line until a few seconds after its answer draws, and while a
+ *     visitor's query runs (web/engine-badge.js, on the page's clock);
  *   - after a loop the Cypher box can be edited, and once LadybugDB's
  *     WebAssembly build has loaded (after the first draw), a visitor's query
  *     runs in the page on the recorded rows (graph-db-wasm.js).
@@ -24,6 +27,7 @@
  */
 import { createAskPane } from "../../web/kiosk-ask.js";
 import { drawSvg, refusalText, rowsTable } from "../../web/graph-query.js";
+import { bindEngineBadge } from "../../web/engine-badge.js";
 import { applyKeyLight, cardIndex, lightKeys, zoomFrame } from "../../web/key-light.js";
 import { callLine, cypherFill, drawLight, loopOf, loopTiming, narrationProblems, panView, parseParams, recordedAnswer, recordedWords, sourceWords, zoomView } from "./play.js";
 
@@ -336,6 +340,7 @@ function onTurn(turn) {
 // --- Loops ------------------------------------------------------------------
 
 let pane = null;
+let badge = null;
 
 function startLoop(i) {
   const n = state.narration;
@@ -346,6 +351,8 @@ function startLoop(i) {
   state.held = false;
   state.touched = false;
   state.phase = "playing";
+  state.badgeTurn = "idle";
+  badge.reset();
   html.dataset.loop = String(i);
   delete html.dataset.turn;
   delete html.dataset.held;
@@ -385,7 +392,7 @@ async function ask(ev) {
     return;
   }
   $("g-call").textContent = "Your query, run in this page.";
-  const answer = await state.db.query($("g-cypher").value, p.params);
+  const answer = await badge.run(state.db.query($("g-cypher").value, p.params));
   showAnswer(answer, answer.status === 200 ? drawLight(answer.body) : []);
   const lit = answer.status === 200 ? lightKeys(answer.body, state.cards) : [];
   lightEstate(lit, answer.status === 200 && !lit.length ? "The estate graph draws no card for what this answer names. It lights in the answer's drawing." : "");
@@ -418,9 +425,23 @@ async function boot() {
   wireZoom();
 
   pane = createAskPane({ host: $("k-ask"), now: () => new Date(clock()), reduced });
+  badge = bindEngineBadge($("g-engine-badge"), { now: clock });
+  // The question's busy line is behold running its query: the badge moves from there until its answer has drawn.
+  addEventListener("behold:ask-busy", (e) => {
+    const d = e.detail;
+    if (!d || !d.busy || !state.loop || d.step !== state.loop.question.id || state.badgeTurn !== "idle") return;
+    state.badgeTurn = "running";
+    badge.start();
+  });
   addEventListener("behold:ask-light", (e) => {
     const turn = e.detail && e.detail.ask && e.detail.ask.turn;
     if (turn) onTurn(turn);
+    if (!turn || !state.loop || turn !== state.loop.question) return;
+    // Under reduced motion the words show at once and the busy line may not; the answer still draws.
+    if (state.badgeTurn === "done") return;
+    if (state.badgeTurn === "idle") badge.start();
+    state.badgeTurn = "done";
+    badge.result(true);
   });
   addEventListener("behold:ask-done", (e) => {
     const turn = e.detail && e.detail.ask && e.detail.ask.turn;
