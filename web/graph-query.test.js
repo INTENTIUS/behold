@@ -180,6 +180,9 @@ describe("what an answer shows", () => {
     expect(keyName(role, new Map([[role, { name: "orders-reader" }]]))).toBe("orders-reader");
     expect(keyName(sa)).toBe("orders-api");
     expect(keyName("a/b%2Fc")).toBe("b/c");
+    // A chant member's key reads as its id, which a row's name column does not repeat.
+    expect(keyName("dns/gcpOrigin", new Map([["dns/gcpOrigin", { name: "gcp.three-cloud.example." }]]))).toBe("gcpOrigin");
+    expect(keyName("engine/choudoufu/x@azure/vm", new Map([["engine/choudoufu/x@azure/vm", { name: "web-vm" }]]))).toBe("web-vm");
     expect(keyName("a/%E0")).toBe("%E0");
     expect(keyName("plain")).toBe("plain");
     const html = rowsTable(["key", "role", "via"], [{ key: sa, role: "orders-reader", via: "metadata.annotations.x" }], { keys: ["key"] });

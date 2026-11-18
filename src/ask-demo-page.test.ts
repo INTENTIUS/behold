@@ -1051,3 +1051,66 @@ describe.runIf(peer.ok)("the words a visitor reads, on the recording (#1206)", (
     expect(errors).toEqual([]);
   });
 });
+
+describe.runIf(peer.ok)("the answer on a phone (#1205)", () => {
+  it("moves the answer under the estate graph once the reply has printed, its headline in view without scrolling, and the drawing's words at 12 px or more", { timeout: 120_000 }, async () => {
+    const launched = await browserOrNull();
+    if (!launched) {
+      console.warn("ask-demo-page: no browser launches here, so the phone's answer was not checked");
+      return;
+    }
+    const rec = JSON.parse(readFileSync(RECORDING, "utf8")) as Narration;
+    const qs = questionsOf(rec) as Narration["turns"];
+    const at = qs.findIndex((t) => t.id === "dns-cross-cloud");
+    const q = qs[at]!;
+    const url = await serveDir(recordedOut);
+    const browser = launched.browser as unknown as { newContext(o?: object): Promise<any>; close(): Promise<void> };
+    const errors: string[] = [];
+    const layout = `(() => {
+      const top = (id) => document.getElementById(id).getBoundingClientRect().top + scrollY;
+      const svg = document.querySelector("#g-draw svg");
+      const scale = svg ? svg.getBoundingClientRect().width / svg.viewBox.baseVal.width : 0;
+      const px = svg ? Math.min(...[...svg.querySelectorAll("text")].map((t) => parseFloat(getComputedStyle(t).fontSize) * scale)) : 0;
+      const draw = document.getElementById("g-draw");
+      const head = document.getElementById("ad-headline").getBoundingClientRect();
+      return { estate: top("ad-estate"), answer: top("ad-answer"), ask: top("ad-ask"), query: top("ad-query"), px, headTop: head.top, headBottom: head.bottom, headText: document.getElementById("ad-headline").textContent, scrollY, height: innerHeight,
+        pageWidth: document.documentElement.scrollWidth, drawScrolls: draw.scrollWidth > draw.clientWidth, drawWidth: draw.getBoundingClientRect().width };
+    })()`;
+    try {
+      for (const reducedMotion of ["no-preference", "reduce"] as const) {
+        const context = await browser.newContext({ reducedMotion, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+        const page = await context.newPage();
+        page.on("pageerror", (e: Error) => errors.push(e.message));
+        await page.goto(`${url}?pace=4&loop=${at}`, { waitUntil: "domcontentloaded" });
+        // While the question plays: the conversation, then the query, then the answer.
+        // (Under reduced motion the reply prints at once, so the question may already be done.)
+        await waitFor(page, `the question ${q.id}`, (s) => s.turn === q.id);
+        const playing = await page.evaluate(`[document.documentElement.dataset.phase, ${layout}]`);
+        if (reducedMotion === "no-preference") expect(playing[0]).toBe("playing");
+        if (playing[0] === "playing") {
+          expect(playing[1].ask).toBeLessThan(playing[1].query);
+          expect(playing[1].query).toBeLessThan(playing[1].answer);
+        }
+        // Once the reply has printed: the answer directly under the estate graph, before the conversation.
+        await waitFor(page, "the reply", (s) => s.phase === "after");
+        const after = await page.evaluate(layout);
+        expect(after.estate).toBeLessThan(after.answer);
+        expect(after.answer).toBeLessThan(after.ask);
+        expect(after.ask).toBeLessThan(after.query);
+        // The headline shows without scrolling.
+        expect(after.scrollY).toBe(0);
+        expect(after.headText).toBe(q.headline);
+        expect(after.headBottom).toBeLessThanOrEqual(after.height);
+        expect(after.headTop).toBeGreaterThan(0);
+        // The drawing's words are 12 px or more; it scrolls in its own box and the page does not.
+        expect(after.px).toBeGreaterThanOrEqual(12);
+        expect(after.pageWidth).toBe(390);
+        expect(after.drawWidth).toBeLessThanOrEqual(390);
+        await context.close();
+      }
+    } finally {
+      await browser.close();
+    }
+    expect(errors).toEqual([]);
+  });
+});
