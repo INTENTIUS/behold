@@ -13,6 +13,8 @@ The estate graph frames every card the answer lit and dims the rest. For "Which 
 
 In the graph pane the rows come first, then a drawing of them. When a row pairs two resources, such as a record and what it `reaches`, the drawing puts the first column's resources on the left and the others on the right, joined by an edge labelled with the column's name. Those edges are the answer's rows as the query paired them; behold adds no join of its own. A column counts as resources only when every value in it is the key of a resource the recording loaded. A query you run yourself is drawn the same way.
 
+Above the query, a line says what the agent asked behold through its `ask` tool; the call as the agent made it shows when you hover over that line. The replies and the list of sources name each source in words, such as the aws member, the azure member's choudoufu graph or the AWS account's index. Its scope key (`chant/aws`, `cloud/aws/<account>/<hash>`) stays in the rows table and shows on hover. During the load turn the pane lists what behold loaded, one source per row, and shows no query.
+
 ## What is recorded
 
 The answers on the page are a recording. They come from one run of behold on emulators, and the page's header gives the date of that run and the versions of behold, chant, choudoufu and plunge it used. The estate was:
@@ -86,7 +88,7 @@ Each reply says that behold's query ran and how many rows it returned, then answ
 just ask-demo-refill
 ```
 
-It rewrites only each question turn's `reply`, checks the result against `ask-demo/narration.schema.json`, and fails naming a turn whose template no longer fills.
+It rewrites only each turn's `reply`, the load turn's included, checks the result against `ask-demo/narration.schema.json`, and fails naming a turn whose template no longer fills.
 
 ## Redeploying it
 

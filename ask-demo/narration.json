@@ -197,7 +197,7 @@
           "edges": 0
         }
       ],
-      "reply": "Loaded 86 resources from 7 sources: chant/aws (28), chant/azure (7), chant/dns (12), chant/gcp (11), engine/choudoufu/three-cloud-azure@azure (7), cloud/aws/000000000000/db1d7f66ad8c (17) and cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6 (4)."
+      "reply": "Loaded 86 resources from 7 sources: the aws member (28), the azure member (7), the dns member (12), the gcp member (11), the azure member's choudoufu graph (7), the AWS account's index (17) and the kind cluster's index (4)."
     },
     {
       "id": "dns-cross-cloud",
@@ -551,7 +551,7 @@
           "edges": 0
         }
       ],
-      "reply": "behold's query ran and returned 4 rows. 4 resources depend on webRule, all of them in chant/dns: dns/gcpRecord, dns/gcpCheck, dns/gcpOrigin and dns/gcpEndpoint. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done."
+      "reply": "behold's query ran and returned 4 rows. 4 resources depend on webRule, all of them in the dns member: dns/gcpRecord, dns/gcpCheck, dns/gcpOrigin and dns/gcpEndpoint. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done."
     },
     {
       "id": "aws-account-owned",
@@ -1261,7 +1261,7 @@
           "edges": 0
         }
       ],
-      "reply": "behold's query ran and returned 1 row. Readers from outside the account: 1, from cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6, joined on metadata.annotations.eks.amazonaws.com/role-arn by the identity:arn rule. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done."
+      "reply": "behold's query ran and returned 1 row. Readers from outside the account: 1, from the kind cluster's index, joined on metadata.annotations.eks.amazonaws.com/role-arn by the identity:arn rule. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done."
     }
   ]
 }

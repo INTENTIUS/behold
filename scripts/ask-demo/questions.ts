@@ -7,7 +7,8 @@
  * (GET /api/graphdb/templates). scripts/ask-demo/record.ts asks each one of
  * the estate it boots and keeps only those with a non-empty answer; the
  * placeholders in `reply` are filled from the rows (fillReply in
- * ./narration.ts lists them).
+ * ./narration.ts lists them), and a source names itself in plain words
+ * (`{col|source}`), never by its scope key.
  *
  * The queries name no scope key, account id or generated name: those change
  * from run to run, so the queries select by source, kind and edge instead.
@@ -17,7 +18,7 @@ import type { Question } from "./narration.ts";
 /** The load turn's prompt and reply. Its rows are the sources GET /api/graphdb lists. */
 export const LOAD = {
   prompt: "Load my estate into behold: the three-cloud workspace, the AWS account, and the cluster.",
-  reply: "Loaded {{sum:nodes}} resources from {{count}} sources: {{each:{scopeKey} ({nodes})}}.",
+  reply: "Loaded {{sum:nodes}} resources from {{count}} sources: {{each:{scopeKey|source} ({nodes})}}.",
 };
 
 export const QUESTIONS: readonly Question[] = [
@@ -37,7 +38,7 @@ export const QUESTIONS: readonly Question[] = [
     id: "forwarding-rule-dependents",
     prompt: "If the GCP forwarding rule went away, what would break?",
     ask: { resource: "webRule", template: "dependents-all" },
-    reply: "{{count}} resources depend on webRule, all of them in {{list:scope}}: {{list:key}}.",
+    reply: "{{count}} resources depend on webRule, all of them in {{list:scope|source}}: {{list:key}}.",
   },
   {
     id: "aws-account-owned",
@@ -79,6 +80,6 @@ export const QUESTIONS: readonly Question[] = [
     id: "orders-reader-readers",
     prompt: "What reaches the orders-reader role from outside the AWS account?",
     ask: { resource: "orders-reader", template: "readers" },
-    reply: "Readers from outside the account: {{count}}, from {{list:scope}}, joined on {{list:via}} by the {{list:rule}} rule.",
+    reply: "Readers from outside the account: {{count}}, from {{list:scope|source}}, joined on {{list:via}} by the {{list:rule}} rule.",
   },
 ];

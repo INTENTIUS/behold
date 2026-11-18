@@ -9,6 +9,7 @@
  */
 import { BEAT_GAP_MS, playback } from "../../web/kiosk-ask.js";
 import { answerDrawing } from "../../web/graph-query.js";
+import { sourceLabel } from "../../web/source-label.js";
 
 export const NARRATION_FORMAT = "behold-ask-demo-narration/1";
 /** About how long a loop takes, words and pause together. */
@@ -100,30 +101,73 @@ export function cypherFill(turn) {
 }
 
 /**
- * The call a turn made: the commands that loaded the estate, one per line, or
- * the ask tool's arguments. A Cypher call's query is the one in the box, so
- * the line says so rather than repeat it; a template call names the resource
- * and template, which behold expanded to that query.
+ * behold#1191: what the agent asked, in words, above the query. For the load
+ * turn, what it loaded (the commands it ran are for hover, `callTitle`). A
+ * Cypher call's query and parameters are the ones in the boxes below, so the
+ * words point at them rather than repeat the tool's argument format; a
+ * template call names the template and the resource, which behold expanded
+ * to that query.
  */
 export function callLine(turn) {
   const call = turn && turn.call;
   if (!call) return "";
-  if (Array.isArray(call.commands)) return call.commands.map((c) => `$ ${c}`).join("\n");
+  if (Array.isArray(call.commands)) {
+    const n = Array.isArray(turn.rows) ? turn.rows.length : 0;
+    return `The agent loaded the estate into behold: ${n} source${n === 1 ? "" : "s"}, each one a row below. No query has run yet.`;
+  }
   const args = call.arguments || {};
-  const rest = Object.entries(args)
-    .filter(([k]) => k !== "cypher")
-    .map(([k, v]) => `${k}=${v}`);
-  if (typeof args.cypher === "string") return [`${call.tool || "ask"} cypher=<the query below>`, ...rest].join(" ");
-  return `${[call.tool || "ask", ...rest].join(" ")} (behold ran it as the query below)`;
+  const params = typeof args.params === "string" && args.params && args.params !== "{}";
+  if (typeof args.cypher === "string") return `The agent asked behold this query through its ask tool${params ? ", with the parameters below it" : ""}.`;
+  const inputs = typeof args.inputs === "string" && args.inputs && args.inputs !== "{}" ? `, with the inputs ${args.inputs}` : "";
+  return `The agent asked behold, through its ask tool, to run the ${args.template} template on ${args.resource}${inputs}. behold ran it as this query.`;
 }
 
-/** When each source was read, one line each: a declared source reads no cloud, so it has no observed time. */
+/** The call as the agent made it, for hover: the commands that loaded the estate, or the ask tool's arguments. */
+export function callTitle(turn) {
+  const call = turn && turn.call;
+  if (!call) return "";
+  if (Array.isArray(call.commands)) return call.commands.map((c) => `$ ${c}`).join("\n");
+  return `${call.tool || "ask"} ${JSON.stringify(call.arguments || {})}`;
+}
+
+/** `2026-11-18T17:20:15.866Z` as `18 November 2026, 17:20 UTC`; anything else as it is. */
+export function recordedTime(iso) {
+  const d = new Date(iso);
+  if (!iso || !Number.isFinite(d.getTime())) return String(iso || "");
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${recordedDate(iso)}, ${hh}:${mm} UTC`;
+}
+
+const sized = (s) => (Number.isInteger(s.nodes) ? `${s.nodes} resource${s.nodes === 1 ? "" : "s"}${Number.isInteger(s.edges) ? ` and ${s.edges} edge${s.edges === 1 ? "" : "s"}` : ""}` : "its resources");
+
+/**
+ * behold#1191: one line per source, named as a person would (web/source-label.js):
+ * what it held, whether that was declared or read from where it runs, and when
+ * behold loaded it. The scope key and the raw times are for hover (`sourceTitle`).
+ */
 export function sourceWords(sources) {
   return (sources || []).map((s) => {
-    const size = Number.isInteger(s.nodes) ? `, ${s.nodes} nodes${Number.isInteger(s.edges) ? `, ${s.edges} edges` : ""}` : "";
-    const seen = s.observedAt ? `observed ${s.observedAt}` : "declared, not observed";
-    return `${s.scopeKey} (${s.name}): ${seen}; read ${s.readAt}${size}`;
+    const label = sourceLabel(s.scopeKey);
+    const name = label.charAt(0).toUpperCase() + label.slice(1);
+    const how = s.observedAt ? `as indexed ${recordedTime(s.observedAt)}` : "as declared";
+    return `${name}: ${sized(s)} ${how}; loaded into behold ${recordedTime(s.readAt)}`;
   });
+}
+
+/** A source line's hover: its scope key, what read it, and the raw times. */
+export function sourceTitle(s) {
+  return `${s.scopeKey} (${s.name}), loaded ${s.readAt}${s.observedAt ? `, observed ${s.observedAt}` : ", declared, not observed"}`;
+}
+
+/**
+ * behold#1191: the load turn's rows with the source each one is, in words,
+ * first; the scope key stays in its own column.
+ */
+export function loadRows(turn) {
+  const columns = Array.isArray(turn.columns) ? turn.columns : [];
+  const rows = Array.isArray(turn.rows) ? turn.rows : [];
+  return { columns: ["what", ...columns], rows: rows.map((r) => ({ what: sourceLabel(r.scopeKey), ...r })) };
 }
 
 /**

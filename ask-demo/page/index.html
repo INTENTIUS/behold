@@ -82,6 +82,9 @@
       .ad-muted, #g-engine, #g-hint { color: var(--muted); font-size: 12.5px; margin: 0; }
       pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.4 var(--font-mono); margin: 0; color: var(--muted); }
       #g-call:empty, #g-error:empty { display: none; }
+      /* behold#1191: the load turn runs no query, so its pane shows what was loaded and no query box. */
+      html[data-turn="load"] #g-cypher-form { display: none; }
+      #g-call { color: var(--ink2); font: 13px/1.4 var(--font-ui); }
       #g-error { color: var(--degraded); }
       #g-draw svg { width: 100%; height: auto; max-height: 300px; display: block; overflow: visible; }
       #g-draw:empty::before { content: "The answer draws here."; color: var(--muted); font-size: 12.5px; }
@@ -166,7 +169,7 @@
         <p id="ad-estate-cap" role="status"></p>
       </section>
       <section id="ad-pane" aria-label="Graph pane">
-        <h2><span class="ad-cypher-head">Cypher <a id="g-engine-badge" class="engine-badge" href="https://ladybugdb.com/" target="_blank" rel="noopener noreferrer" title="LadybugDB answers these queries (opens in a new tab)"><img src="./vendors/ladybugdb.png" width="22" height="22" alt="LadybugDB" /></a></span> <a href="./graph.html">Open the full graph pane</a></h2>
+        <h2><span class="ad-cypher-head"><span id="ad-pane-title">Cypher</span> <a id="g-engine-badge" class="engine-badge" href="https://ladybugdb.com/" target="_blank" rel="noopener noreferrer" title="LadybugDB answers these queries (opens in a new tab)"><img src="./vendors/ladybugdb.png" width="22" height="22" alt="LadybugDB" /></a></span> <a href="./graph.html">Open the full graph pane</a></h2>
         <pre id="g-call"></pre>
         <form id="g-cypher-form">
           <textarea id="g-cypher" spellcheck="false" aria-label="Cypher query" readonly></textarea>

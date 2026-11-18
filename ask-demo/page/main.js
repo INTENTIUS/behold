@@ -33,7 +33,7 @@ import { createAskPane } from "../../web/kiosk-ask.js";
 import { answerDrawing, drawSvg, refusalText, rowsTable } from "../../web/graph-query.js";
 import { bindEngineBadge } from "../../web/engine-badge.js";
 import { applyKeyLight, cardIndex, lightKeys, zoomFrame } from "../../web/key-light.js";
-import { callLine, cypherFill, knownResources, loopOf, loopTiming, narrationProblems, paneOpen, panView, parseParams, recordedAnswer, recordedWords, sourceWords, zoomView } from "./play.js";
+import { callLine, callTitle, cypherFill, knownResources, loadRows, loopOf, loopTiming, narrationProblems, paneOpen, panView, parseParams, recordedAnswer, recordedWords, sourceTitle, sourceWords, zoomView } from "./play.js";
 
 const $ = (id) => document.getElementById(id);
 const html = document.documentElement;
@@ -286,14 +286,34 @@ function showAnswer(answer) {
   $("g-error").textContent = status === 200 ? "" : refusalText(body);
   $("g-draw").innerHTML = picture.nodes.length ? drawSvg(picture, DRAW_SIZE, lit) : "";
   $("g-rows").innerHTML = status === 200 && body.columns ? rowsTable(body.columns, body.rows) : "";
-  $("g-sources").textContent = status === 200 ? sourceWords(body.sources).join("\n") : "";
+  showSources(status === 200 ? body.sources : []);
   html.dataset.answerLit = lit.join("\n");
+}
+
+/** behold#1191: one line per source in words, its scope key and raw times on hover. */
+function showSources(sources) {
+  const host = $("g-sources");
+  host.textContent = "";
+  const words = sourceWords(sources);
+  (sources || []).forEach((s, i) => {
+    const line = document.createElement("span");
+    line.textContent = words[i];
+    line.title = sourceTitle(s);
+    host.append(line, i < words.length - 1 ? "\n" : "");
+  });
+}
+
+/** What the agent asked, in words, with the call as it made it on hover (behold#1191). */
+function showCall(text, title = "") {
+  $("g-call").textContent = text;
+  $("g-call").title = title;
 }
 
 function clearPane() {
   $("g-cypher").value = "";
   $("g-params").value = "";
-  $("g-call").textContent = "";
+  $("ad-pane-title").textContent = "Cypher";
+  showCall("");
   showAnswer({ status: 200, body: {} });
 }
 
@@ -328,9 +348,10 @@ function onTurn(turn) {
   html.dataset.turn = turn.id;
   if (turn.kind === "load") {
     clearPane();
-    $("g-call").textContent = callLine(turn);
-    $("g-cypher").placeholder = "The load turn runs no query.";
-    showAnswer(recordedAnswer({ ...turn, keys: [], draw: { nodes: [], edges: [] } }));
+    // behold#1191: the load turn runs no query, so the pane says what was loaded, each source named in words.
+    $("ad-pane-title").textContent = "What behold loaded";
+    showCall(callLine(turn), callTitle(turn));
+    showAnswer(recordedAnswer({ ...turn, ...loadRows(turn), keys: [], draw: { nodes: [], edges: [] } }));
     showEstate(true);
     lightEstate(turn.light, "", { auto: true });
     return;
@@ -338,7 +359,8 @@ function onTurn(turn) {
   const fill = cypherFill(turn);
   $("g-cypher").value = fill.cypher;
   $("g-params").value = fill.params;
-  $("g-call").textContent = fill.call;
+  $("ad-pane-title").textContent = "Cypher";
+  showCall(fill.call, callTitle(turn));
   showAnswer(recordedAnswer(turn));
   lightEstate(
     turn.light,
@@ -428,7 +450,7 @@ async function ask(ev) {
     $("g-error").textContent = p.error;
     return;
   }
-  $("g-call").textContent = "Your query, run in this page.";
+  showCall("Your query, run in this page.");
   const answer = await badge.run(state.db.query($("g-cypher").value, p.params));
   showAnswer(answer);
   const lit = answer.status === 200 ? lightKeys(answer.body, state.cards) : [];

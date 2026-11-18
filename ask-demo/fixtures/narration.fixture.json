@@ -28,7 +28,7 @@
         { "scopeKey": "chant/gcp", "source": "chant", "name": "chant", "readAt": "2026-11-18T11:59:00.000Z", "observedAt": null, "nodes": 1, "edges": 0 },
         { "scopeKey": "cloud/aws/000000000000/aaaaaaaaaaaa", "source": "index", "name": "chant-lister", "readAt": "2026-11-18T11:59:00.000Z", "observedAt": "2026-11-18T11:58:00.000Z", "nodes": 2, "edges": 0 }
       ],
-      "reply": "Loaded 5 resources from 3 sources: chant/dns (2), chant/gcp (1) and cloud/aws/000000000000/aaaaaaaaaaaa (2)."
+      "reply": "Loaded 5 resources from 3 sources: the dns member (2), the gcp member (1) and the AWS account's index (2)."
     },
     {
       "id": "dns-cross-cloud",
@@ -63,7 +63,7 @@
       "sources": [
         { "scopeKey": "chant/dns", "source": "chant", "name": "chant", "readAt": "2026-11-18T11:59:00.000Z", "observedAt": null }
       ],
-      "reply": "behold's query ran and returned 1 row. 1 resources depend on webRule, all of them in chant/dns: dns/gcpRecord. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done."
+      "reply": "behold's query ran and returned 1 row. 1 resources depend on webRule, all of them in the dns member: dns/gcpRecord. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done."
     },
     {
       "id": "aws-account-unmanaged",
