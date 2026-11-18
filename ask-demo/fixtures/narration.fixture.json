@@ -1,0 +1,88 @@
+{
+  "$schema": "../narration.schema.json",
+  "format": "behold-ask-demo-narration/1",
+  "recordedAt": "2026-11-18T12:00:00.000Z",
+  "note": "A fixture in the narration's shape, for tests and for the page's playback test. Its rows are made up and small; ask-demo/narration.json is the recording.",
+  "recordCommand": "just ask-demo-record",
+  "agentCommand": "behold mcp --url http://localhost:4674",
+  "versions": { "behold": "0.34.1", "chant": "0.124.105", "choudoufu": "0.35.0", "plunge": "0.2.1" },
+  "turns": [
+    {
+      "id": "load",
+      "kind": "load",
+      "prompt": "Load my estate into behold.",
+      "call": { "commands": ["behold index aws --endpoint http://localhost:4671 --account 000000000000 --regions us-east-1", "behold serve three-cloud --port 4674"] },
+      "busy": "behold serve three-cloud --port 4674: loading every source into one graph",
+      "cypher": null,
+      "params": {},
+      "columns": ["scopeKey", "source", "name", "nodes", "edges"],
+      "rows": [
+        { "scopeKey": "chant/dns", "source": "chant", "name": "chant", "nodes": 2, "edges": 1 },
+        { "scopeKey": "chant/gcp", "source": "chant", "name": "chant", "nodes": 1, "edges": 0 },
+        { "scopeKey": "cloud/aws/000000000000/aaaaaaaaaaaa", "source": "index", "name": "chant-lister", "nodes": 2, "edges": 0 }
+      ],
+      "keys": [],
+      "light": ["dns/zone", "dns/RecordSet ×2", "gcp/webRule"],
+      "sources": [
+        { "scopeKey": "chant/dns", "source": "chant", "name": "chant", "readAt": "2026-11-18T11:59:00.000Z", "observedAt": null, "nodes": 2, "edges": 1 },
+        { "scopeKey": "chant/gcp", "source": "chant", "name": "chant", "readAt": "2026-11-18T11:59:00.000Z", "observedAt": null, "nodes": 1, "edges": 0 },
+        { "scopeKey": "cloud/aws/000000000000/aaaaaaaaaaaa", "source": "index", "name": "chant-lister", "readAt": "2026-11-18T11:59:00.000Z", "observedAt": "2026-11-18T11:58:00.000Z", "nodes": 2, "edges": 0 }
+      ],
+      "reply": "Loaded 5 resources from 3 sources: chant/dns (2), chant/gcp (1) and cloud/aws/000000000000/aaaaaaaaaaaa (2)."
+    },
+    {
+      "id": "dns-cross-cloud",
+      "kind": "question",
+      "prompt": "Which of my DNS records depend on something in another cloud?",
+      "call": { "tool": "ask", "arguments": { "cypher": "MATCH (rec:Resource {kind: $record})-[:REF*1..4]->(dep:Resource {source: 'chant'}) WHERE dep.scopeKey <> rec.scopeKey RETURN DISTINCT rec.key AS key, rec.name AS record, dep.key AS reaches ORDER BY record, reaches", "params": "{\"record\":\"AWS::Route53::RecordSet\"}" } },
+      "busy": "behold mcp ask: running a Cypher query over the estate graph",
+      "cypher": "MATCH (rec:Resource {kind: $record})-[:REF*1..4]->(dep:Resource {source: 'chant'}) WHERE dep.scopeKey <> rec.scopeKey RETURN DISTINCT rec.key AS key, rec.name AS record, dep.key AS reaches ORDER BY record, reaches",
+      "params": { "record": "AWS::Route53::RecordSet" },
+      "columns": ["key", "record", "reaches"],
+      "rows": [{ "key": "dns/gcpRecord", "record": "www.three-cloud.example.", "reaches": "gcp/webRule" }],
+      "keys": ["dns/gcpRecord"],
+      "light": ["dns/RecordSet ×2", "gcp/webRule"],
+      "draw": { "nodes": [{ "key": "dns/gcpRecord", "kind": "AWS::Route53::RecordSet", "name": "www.three-cloud.example.", "source": "chant", "scopeKey": "chant/dns" }], "edges": [] },
+      "sources": [
+        { "scopeKey": "chant/dns", "source": "chant", "name": "chant", "readAt": "2026-11-18T11:59:00.000Z", "observedAt": null, "nodes": 2, "edges": 1 }
+      ],
+      "reply": "1 Route 53 records reach into another member (www.three-cloud.example.), and between them they depend on 1 resources there: gcp/webRule."
+    },
+    {
+      "id": "forwarding-rule-dependents",
+      "kind": "question",
+      "prompt": "If the GCP forwarding rule went away, what would break?",
+      "call": { "tool": "ask", "arguments": { "resource": "webRule", "template": "dependents-all" } },
+      "busy": "behold mcp ask: resolving webRule, then running the dependents-all template on it",
+      "cypher": "MATCH (o:Resource)-[:REF*1..6]->(r:Resource {key: $key}) RETURN DISTINCT o.key AS key, o.kind AS kind, o.scopeKey AS scope",
+      "params": { "key": "gcp/webRule" },
+      "columns": ["key", "kind", "scope"],
+      "rows": [{ "key": "dns/gcpRecord", "kind": "AWS::Route53::RecordSet", "scope": "chant/dns" }],
+      "keys": ["dns/gcpRecord"],
+      "light": ["dns/RecordSet ×2"],
+      "sources": [
+        { "scopeKey": "chant/dns", "source": "chant", "name": "chant", "readAt": "2026-11-18T11:59:00.000Z", "observedAt": null }
+      ],
+      "reply": "1 resources depend on webRule, all of them in chant/dns: dns/gcpRecord."
+    },
+    {
+      "id": "aws-account-unmanaged",
+      "kind": "question",
+      "prompt": "What's in the AWS account's network and storage that nothing in the workspace declares?",
+      "call": { "tool": "ask", "arguments": { "cypher": "MATCH (i:Resource {source: 'index', lexicon: 'aws'}) RETURN i.key AS key, i.kind AS kind, i.name AS name" } },
+      "busy": "behold mcp ask: running a Cypher query over the estate graph",
+      "cypher": "MATCH (i:Resource {source: 'index', lexicon: 'aws'}) RETURN i.key AS key, i.kind AS kind, i.name AS name",
+      "params": {},
+      "columns": ["key", "kind", "name"],
+      "rows": [
+        { "key": "cloud/aws/000000000000/aaaaaaaaaaaa/aws/000000000000/us-east-1/AWS::S3::Bucket/orders-export-archive", "kind": "AWS::S3::Bucket", "name": "orders-export-archive" }
+      ],
+      "keys": ["cloud/aws/000000000000/aaaaaaaaaaaa/aws/000000000000/us-east-1/AWS::S3::Bucket/orders-export-archive"],
+      "light": [],
+      "sources": [
+        { "scopeKey": "cloud/aws/000000000000/aaaaaaaaaaaa", "source": "index", "name": "chant-lister", "readAt": "2026-11-18T11:59:00.000Z", "observedAt": "2026-11-18T11:58:00.000Z", "nodes": 2, "edges": 0 }
+      ],
+      "reply": "1 resources there have no owner in the workspace: orders-export-archive (AWS::S3::Bucket)."
+    }
+  ]
+}

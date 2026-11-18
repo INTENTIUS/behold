@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intentius.io/behold/ask-demo/narration.schema.json",
+  "title": "behold ask demo narration",
+  "description": "What the ask demo page plays (behold#1163): a load turn, then question turns, each recorded from one real behold mcp ask call against an estate on emulators. scripts/ask-demo/record.ts writes it (just ask-demo-record). Nothing in it is read again when the page plays.",
+  "type": "object",
+  "required": ["format", "recordedAt", "note", "recordCommand", "agentCommand", "versions", "turns"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string", "description": "This schema's path, relative to the narration." },
+    "format": { "const": "behold-ask-demo-narration/1", "description": "The format and its version. A change that breaks a reader changes the number." },
+    "recordedAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$",
+      "description": "When the recording finished, as an ISO 8601 UTC timestamp. The page shows its date."
+    },
+    "note": { "type": "string", "minLength": 1, "description": "One paragraph for the page: this is a recording of a run on emulators, and what the estate was. It never says the answers are live." },
+    "recordCommand": { "type": "string", "minLength": 1, "description": "The command that records this file again, run from a behold checkout." },
+    "agentCommand": { "type": "string", "minLength": 1, "description": "How the recorder started behold's MCP server, the way a coding agent would (behold mcp --url <serve>)." },
+    "versions": {
+      "type": "object",
+      "description": "The versions the recording ran with: behold's own, the chant the served project installed, and the engines.",
+      "required": ["behold", "chant"],
+      "additionalProperties": { "type": "string" },
+      "properties": {
+        "behold": { "type": "string" },
+        "chant": { "type": "string" }
+      }
+    },
+    "turns": {
+      "type": "array",
+      "minItems": 4,
+      "description": "The load turn first, then at least three questions, in the order the page plays them.",
+      "prefixItems": [{ "$ref": "#/$defs/turn", "properties": { "kind": { "const": "load" } } }],
+      "items": { "$ref": "#/$defs/turn", "properties": { "kind": { "const": "question" } } }
+    }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "description": "One source behold loaded into the graph, as the answer stamped it.",
+      "required": ["scopeKey", "source", "name", "readAt", "observedAt"],
+      "additionalProperties": false,
+      "properties": {
+        "scopeKey": { "type": "string", "description": "The source's scope: chant/<member>, engine/<engine>/<estate>, or cloud/<substrate>/<scope id>/<digest> for an index version." },
+        "source": { "enum": ["chant", "engine", "index", "cloud"], "description": "What kind of read it is: a chant member's declared graph, an engine's graph document, an index version, or a raw cloud listing." },
+        "name": { "type": "string", "description": "What produced it: chant, choudoufu, chant-lister." },
+        "readAt": { "type": "string", "description": "When behold read the source, ISO 8601." },
+        "observedAt": { "type": ["string", "null"], "description": "When the source read the world, ISO 8601; null for a declared source, which reads no cloud." },
+        "nodes": { "type": "integer", "minimum": 0, "description": "Resources it loaded." },
+        "edges": { "type": "integer", "minimum": 0, "description": "Edges it loaded." }
+      }
+    },
+    "turn": {
+      "type": "object",
+      "required": ["id", "kind", "prompt", "call", "busy", "cypher", "params", "columns", "rows", "keys", "light", "sources", "reply"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9-]+$", "description": "A stable id: load, or the question's id in scripts/ask-demo/questions.ts." },
+        "kind": { "enum": ["load", "question"], "description": "load: the person asks the agent to load the estate. question: one question about it." },
+        "prompt": { "type": "string", "minLength": 1, "description": "The person's words to their agent, written for the demo." },
+        "call": {
+          "description": "What the agent ran. A question turn: the behold mcp ask tool and its arguments, exactly as sent (params and inputs are JSON strings). The load turn: the behold commands that filled the estate's graph, in order, with paths relative to the recording's scratch directory.",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["tool", "arguments"],
+              "additionalProperties": false,
+              "properties": {
+                "tool": { "const": "ask" },
+                "arguments": {
+                  "type": "object",
+                  "description": "Either cypher (with params), or resource with template (and inputs).",
+                  "additionalProperties": { "type": "string" },
+                  "properties": {
+                    "cypher": { "type": "string" },
+                    "params": { "type": "string" },
+                    "resource": { "type": "string" },
+                    "template": { "type": "string" },
+                    "inputs": { "type": "string" }
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": ["commands"],
+              "additionalProperties": false,
+              "properties": { "commands": { "type": "array", "minItems": 1, "items": { "type": "string" } } }
+            }
+          ]
+        },
+        "busy": { "type": "string", "minLength": 1, "description": "The busy line the prompt pane shows while the call runs." },
+        "cypher": {
+          "type": ["string", "null"],
+          "description": "The Cypher behold ran: the query as sent, or a template's expansion (its query, with the node as $key). null on the load turn, which runs no query."
+        },
+        "params": { "type": "object", "description": "The query's parameters: those sent with cypher, or the template's ($key is the node it resolved to)." },
+        "columns": { "type": "array", "items": { "type": "string" }, "description": "The answer's columns, in order. The load turn's are scopeKey, source, name, nodes and edges." },
+        "rows": {
+          "type": "array",
+          "items": { "type": "object" },
+          "description": "The answer's rows, as behold returned them, one object per row keyed by column. Never empty on a question: a question whose answer is empty is dropped. The load turn's rows are the sources GET /api/graphdb listed."
+        },
+        "keys": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "The graph database keys the answer names (a column named key, or a Resource node): what the /graph pane draws. They include indexed cloud and cluster objects, which the estate graph has no card for."
+        },
+        "light": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Node ids in the estate graph (GET /api/graph, the export's opening view) to light as the reply prints. Each answer key, and each string cell of the rows, that is a card's id, or the id of a resource folded into a stacked card (attrs._stackOf), gives that card. May be empty when the answer is only indexed objects. The load turn lights every card."
+        },
+        "draw": {
+          "type": "object",
+          "description": "What the /graph pane drew for the answer: the answer's nodes and the edges among them, as GET /api/graphdb answered.",
+          "properties": { "nodes": { "type": "array" }, "edges": { "type": "array" } }
+        },
+        "sources": { "type": "array", "items": { "$ref": "#/$defs/source" }, "description": "Every source the graph held when the call answered, each with its readAt and observedAt." },
+        "reply": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The agent's reply: a template written for the demo, with every number and name filled from this turn's rows (fillReply in scripts/ask-demo/narration.ts)."
+        }
+      }
+    }
+  }
+}

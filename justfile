@@ -189,6 +189,17 @@ e2e-multi-engine:
     bash e2e/lib/safe-env.sh bash e2e/multi-engine-demo-e2e.sh
     bash e2e/lib/safe-env.sh bash e2e/three-cloud-change-set-e2e.sh
 
+# behold#1161: record the ask demo's loop into ask-demo/narration.json. Boots
+# example-three-cloud on floci, floci-az and floci-gcp, makes a bucket and a
+# role outside it, indexes the account with `behold index aws` and a kind
+# cluster with `behold index kubernetes`, serves the estate, and asks each
+# question in scripts/ask-demo/questions.ts through `behold mcp`. Prints a
+# verdict line per question; one that errors or answers nothing is dropped.
+# Needs Docker, kind, kubectl, the aws CLI, choudoufu v0.22.0+ (CHOUDOUFU_BIN)
+# and plunge (PLUNGE_BIN). Names and ports: scripts/ask-demo/scratch.ts.
+ask-demo-record *args:
+    bash e2e/lib/safe-env.sh npx tsx scripts/ask-demo/record.ts {{args}}
+
 # behold#490: terragucci's example painted from example-terragucci-reports,
 # through the real server and the real Terraform read. Needs TERRAGUCCI (a
 # terragucci checkout) and the terraform lexicon beside behold; skips without.

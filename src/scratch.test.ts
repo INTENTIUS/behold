@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { assertScratch, scratchNameProblem, scratchPortProblem, PROTECTED_INFRA } from "./scratch.js";
 import { LIVE_CONTAINER, LIVE_PORT } from "./carve-live.js";
+import { ASK_DEMO_CONTAINERS, ASK_DEMO_SCRATCH } from "../scripts/ask-demo/scratch.ts";
 
 describe("scratch discipline — the denylist", () => {
   it("accepts behold-* names", () => {
@@ -35,6 +36,23 @@ describe("scratch discipline — the denylist", () => {
 describe("scratch discipline — every boot site honours it", () => {
   it("the carve --live tier's container and port pass", () => {
     expect(() => assertScratch(LIVE_CONTAINER, LIVE_PORT)).not.toThrow();
+  });
+
+  // behold#1161: the ask demo recorder boots three floci containers and a
+  // kind cluster, named once in scripts/ask-demo/scratch.ts.
+  it("the ask demo recorder's containers, cluster and serve port pass, and record.ts boots nothing else", () => {
+    for (const c of ASK_DEMO_CONTAINERS) expect(() => assertScratch(c.name, c.port)).not.toThrow();
+    expect(() => assertScratch(ASK_DEMO_SCRATCH.cluster.name)).not.toThrow();
+    expect(() => assertScratch(`${ASK_DEMO_SCRATCH.cluster.name}-control-plane`)).not.toThrow();
+    expect(scratchPortProblem(ASK_DEMO_SCRATCH.serve.port)).toBeUndefined();
+    const text = readFileSync(join(import.meta.dirname, "..", "scripts", "ask-demo", "record.ts"), "utf8");
+    // It refuses names that exist, asserts each before booting, and deletes only through the constants.
+    expect(text).toMatch(/already exists/);
+    expect(text).toMatch(/assertScratch\(c\.name, c\.port\)/);
+    // The one removal not by name is the app containers the emulators started during the run: labelled floci=true, absent before it booted.
+    for (const m of text.matchAll(/"(?:rm|delete)", (?:"-f", |"cluster", "--name", )([^\]),]+)/g)) expect(m[1], m[0]).toMatch(/ASK_DEMO_|^\.\.\.startedByRun$/);
+    expect(text).toMatch(/const startedByRun = [^;]*label=floci=true[^;]*!made\.flociBefore\.has\(id\)/);
+    expect(text).not.toMatch(/"behold-ask-demo-(?:floci|control)/);
   });
 
   // The e2e scripts are bash, so the discipline is asserted on their text:
