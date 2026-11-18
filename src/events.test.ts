@@ -63,7 +63,9 @@ describe("watchSources", () => {
           writeFileSync(join(b, "src", "stack.ts"), `export const beat = ${Date.now()};\n`);
           expect(seen).toContain(b);
         },
-        { timeout: 5000, interval: 250 },
+        // fs.watch on macOS can lag several seconds when the machine is busy;
+        // 15s stays under the 20s test timeout (vitest.config.ts).
+        { timeout: 15_000, interval: 250 },
       );
       expect(seen).not.toContain(a); // attribution: b's edit is b's event, never a's
     } finally {
