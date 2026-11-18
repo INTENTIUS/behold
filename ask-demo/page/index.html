@@ -75,7 +75,13 @@
       html[data-estate="empty"] #ad-zoom { visibility: hidden; }
       .ad-zoom-btns { display: flex; gap: 4px; }
       .ad-zoom-btns button { min-width: 34px; height: 32px; padding: 0 9px; font-size: 15px; line-height: 1; background: color-mix(in srgb, var(--surface-box) 90%, transparent); }
-      #ad-zoom-fit { font-size: 13px; }
+      #ad-zoom-fit, #ad-view { font-size: 13px; }
+      #ad-view[aria-pressed="true"] { border-color: var(--pending); }
+      #ad-view[hidden] { display: none; }
+      /* behold#1203: the focused view shows the answer's cards and the edges between them; the rest of the estate hides. */
+      #ad-estate svg[data-focus] * { visibility: hidden; }
+      #ad-estate svg[data-focus] [data-focus-on], #ad-estate svg[data-focus] [data-focus-on] * { visibility: visible; }
+      @media (prefers-reduced-motion: no-preference) { #ad-estate [data-node-id], #ad-estate g[data-edge-from] { transition: transform 0.6s ease-in-out; } }
       .ad-zoom-btns button:focus-visible { outline: 2px solid var(--pending); outline-offset: 1px; }
       #ad-zoom-hint { margin: 0; color: var(--muted); font-size: 12px; background: color-mix(in srgb, var(--bg) 80%, transparent); border-radius: 4px; padding: 1px 6px; }
       #ad-estate-cap { position: absolute; left: 12px; right: 12px; bottom: 10px; margin: 0; color: var(--ink2); font-size: 13px; pointer-events: none; }
@@ -86,6 +92,15 @@
       #ad-estate g[data-edge-from][data-kl="path"] path:first-of-type { stroke: var(--pending); stroke-width: 3; }
       @keyframes kl-pulse { 0% { opacity: 1; } 35% { opacity: 0.35; } 70%, 100% { opacity: 1; } }
       #ad-estate [data-node-id][data-kl-pulse] { animation: kl-pulse 0.9s ease-in-out 1; }
+      /* behold#1216: a card can be picked: pointer, hover and focus outlines, and the picked one marked. */
+      #ad-estate [data-node-id][role] { cursor: pointer; }
+      #ad-estate-graph[data-dragging] [data-node-id][role] { cursor: grabbing; }
+      #ad-estate [data-node-id][role]:hover rect:first-of-type { stroke: var(--fg); stroke-width: 2.5; }
+      #ad-estate [data-node-id][role]:focus { outline: none; }
+      #ad-estate [data-node-id][role]:focus-visible rect:first-of-type { stroke: var(--foreign); stroke-width: 4; }
+      #ad-estate [data-node-id].sel rect:first-of-type { stroke: var(--foreign); stroke-width: 4; }
+      #ad-detail ul.ad-folded { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+      #ad-detail ul.ad-folded button { font: 12px var(--font-mono); padding: 2px 8px; }
 
       /* behold#1192: the part a question turn has just shown is marked for a moment (main.js sets data-reveal). Reduced motion marks nothing. */
       @keyframes ad-reveal { 0%, 35% { outline-color: var(--pending); } 100% { outline-color: transparent; } }
@@ -94,6 +109,7 @@
         #ad-estate[data-reveal] { outline: 2px solid transparent; outline-offset: -3px; animation: ad-reveal 1.4s ease-out 1 both; }
       }
       #ad-pane { min-height: 0; overflow-y: auto; border-left: 1px solid var(--line); background: var(--surface-pane-a); padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+      .ad-part { display: contents; }
       #ad-pane h2 { font-size: 13px; margin: 6px 0 0; color: var(--ink2); display: flex; justify-content: space-between; gap: 8px; }
       #ad-pane h2 a { font-weight: 400; font-size: 12px; }
       .ad-cypher-head { display: inline-flex; align-items: center; }
@@ -198,13 +214,27 @@
         #ad-main { display: contents; }
         #ad-head { order: 0; }
         #ad-estate { order: 1; height: 44vh; min-height: 260px; }
+        /* behold#1203: the focused view gets more height, so the answer's cards read at a phone's width. */
+        html[data-view="focus"] #ad-estate { height: 58vh; }
         /* The zoom controls get a strip of their own above the graph, so the hint covers no card. */
         #ad-estate-graph { top: 46px; }
         #ad-zoom { left: 16px; right: 16px; top: 7px; flex-direction: row-reverse; justify-content: space-between; align-items: center; gap: 8px; }
         #ad-zoom-hint { background: none; padding: 0; }
         #ad-ask { order: 2; }
         #k-ask { height: auto; min-height: 9em; font-size: 14px; padding: 10px 16px 12px; }
-        #ad-pane { order: 3; border-left: 0; border-top: 1px solid var(--line); overflow: visible; padding: 12px 16px 20px; }
+        /* behold#1205: the pane's parts are the page's own blocks, so the answer can sit under the estate graph.
+           Before the reply: the conversation, the query, the answer. Once it has printed: the answer first. */
+        #ad-pane { display: contents; }
+        .ad-part { display: flex; flex-direction: column; gap: 8px; min-width: 0; background: var(--surface-pane-a); border-top: 1px solid var(--line); padding: 12px 16px 16px; }
+        #ad-query { order: 3; }
+        #ad-answer { order: 4; }
+        #ad-more { order: 5; padding-bottom: 20px; }
+        html[data-phase="after"] #ad-answer { order: 1; }
+        html[data-phase="after"] #ad-estate { order: 0; }
+        html[data-phase="after"] #ad-head { order: -1; }
+        /* The drawing keeps its own size, so its words stay at 12 px and more, and scrolls sideways in its box. */
+        #g-draw { overflow-x: auto; overscroll-behavior-x: contain; }
+        #g-draw svg { max-width: none; }
         /* The phone's header: the title, one line of what behold is, the date, the links and the count. */
         .ad-intro { flex-basis: 100%; }
         #ad-head h1 { font-size: 15px; }
@@ -237,6 +267,7 @@
           <div class="ad-zoom-btns">
             <button id="ad-zoom-in" type="button" aria-label="Zoom in" title="Zoom in">+</button>
             <button id="ad-zoom-out" type="button" aria-label="Zoom out" title="Zoom out">&minus;</button>
+            <button id="ad-view" type="button" aria-pressed="false" hidden>Answer only</button>
             <button id="ad-zoom-fit" type="button" aria-label="Fit the whole estate" title="Fit the whole estate">Fit</button>
           </div>
           <p id="ad-zoom-hint"></p>
@@ -244,6 +275,8 @@
         <p id="ad-estate-cap" role="status"></p>
       </section>
       <section id="ad-pane" aria-label="Graph pane">
+        <!-- behold#1205: the pane's three parts. On a desktop they are one column; on a phone the answer moves under the estate graph once the reply has printed. -->
+        <div id="ad-query" class="ad-part">
         <h2><span class="ad-cypher-head"><span id="ad-pane-title">Cypher</span> <a id="g-engine-badge" class="engine-badge" href="https://ladybugdb.com/" target="_blank" rel="noopener noreferrer" title="LadybugDB answers these queries (opens in a new tab)"><img src="./vendors/ladybugdb.png" width="22" height="22" alt="LadybugDB" /></a></span> <a href="./graph.html">Open the full graph pane</a></h2>
         <p class="ad-turn"><span id="ad-turn-tag" class="ad-turn-tag">Playback</span><span id="g-hint"></span></p>
         <pre id="g-call"></pre>
@@ -254,13 +287,17 @@
           <p class="ad-row ad-yours ad-countdown" role="status"><span id="ad-countdown"></span><button id="ad-stay" type="button">Stay on this question</button></p>
         </form>
         <pre id="g-error"></pre>
+        </div>
         <!-- behold#1190: the rows first, so the whole answer shows above the fold; the drawing takes the room after them. -->
+        <div id="ad-answer" class="ad-part" aria-label="Answer">
         <h2>Answer</h2>
         <p id="ad-headline" role="status"></p>
         <div id="g-rows"></div>
         <div id="g-draw"></div>
         <p id="ad-answer-hint"></p>
         <section id="ad-detail" aria-label="The selected resource" aria-live="polite" hidden></section>
+        </div>
+        <div id="ad-more" class="ad-part">
         <h2>Sources, and when each was read</h2>
         <pre id="g-sources"></pre>
         <details>
@@ -269,6 +306,7 @@
           <p class="ad-muted">Versions: <span id="ad-versions"></span></p>
           <p class="ad-muted">To record it again, from a checkout of behold: <code id="ad-command">just ask-demo-record</code>. <a href="https://intentius.io/behold/using/ask-demo/#maintaining-it">Maintaining it</a> says what it needs.</p>
         </details>
+        </div>
       </section>
     </main>
     <div id="ad-ask">

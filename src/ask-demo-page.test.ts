@@ -901,6 +901,10 @@ describe.runIf(peer.ok)("the estate pane's zoom and the answer, on the recording
       page.on("pageerror", (e: Error) => errors.push(e.message));
       await page.goto(`${url}?pace=2&loop=${spread}`, { waitUntil: "domcontentloaded" });
       await waitFor(page, `the question ${q.id}`, (s) => s.turn === q.id);
+      // behold#1203: this answer opens in the focused view; the zoom below is the whole estate's, so switch to it.
+      await page.waitForFunction(() => document.documentElement.dataset.view === "focus", null, { timeout: 10_000 });
+      await page.click("#ad-view");
+      expect(await page.evaluate(() => document.documentElement.dataset.view)).toBe("estate");
       // Every lit card is in view, a record's card and the GCP cards alike, and the view is no larger than the graph.
       const at = await viewBoxOf(page);
       expect(at.width).toBeLessThan(full.width);
@@ -1052,6 +1056,268 @@ describe.runIf(peer.ok)("the words a visitor reads, on the recording (#1206)", (
         const card = await page.evaluate(() => document.getElementById("ad-detail")!.innerText);
         expect(card).toContain(q.rows[0]!.key as string);
         expect(await page.evaluate(() => (document.getElementById("g-params") as HTMLInputElement).placeholder)).toMatch(/^Values for the query's \$names, as JSON, such as \{"record": /);
+        await context.close();
+      }
+    } finally {
+      await browser.close();
+    }
+    expect(errors).toEqual([]);
+  });
+});
+
+describe.runIf(peer.ok)("the answer on a phone (#1205)", () => {
+  it("moves the answer under the estate graph once the reply has printed, its headline in view without scrolling, and the drawing's words at 12 px or more", { timeout: 120_000 }, async () => {
+    const launched = await browserOrNull();
+    if (!launched) {
+      console.warn("ask-demo-page: no browser launches here, so the phone's answer was not checked");
+      return;
+    }
+    const rec = JSON.parse(readFileSync(RECORDING, "utf8")) as Narration;
+    const qs = questionsOf(rec) as Narration["turns"];
+    const at = qs.findIndex((t) => t.id === "dns-cross-cloud");
+    const q = qs[at]!;
+    const url = await serveDir(recordedOut);
+    const browser = launched.browser as unknown as { newContext(o?: object): Promise<any>; close(): Promise<void> };
+    const errors: string[] = [];
+    const layout = `(() => {
+      const top = (id) => document.getElementById(id).getBoundingClientRect().top + scrollY;
+      const svg = document.querySelector("#g-draw svg");
+      const scale = svg ? svg.getBoundingClientRect().width / svg.viewBox.baseVal.width : 0;
+      const px = svg ? Math.min(...[...svg.querySelectorAll("text")].map((t) => parseFloat(getComputedStyle(t).fontSize) * scale)) : 0;
+      const draw = document.getElementById("g-draw");
+      const head = document.getElementById("ad-headline").getBoundingClientRect();
+      return { estate: top("ad-estate"), answer: top("ad-answer"), ask: top("ad-ask"), query: top("ad-query"), px, headTop: head.top, headBottom: head.bottom, headText: document.getElementById("ad-headline").textContent, scrollY, height: innerHeight,
+        pageWidth: document.documentElement.scrollWidth, drawScrolls: draw.scrollWidth > draw.clientWidth, drawWidth: draw.getBoundingClientRect().width };
+    })()`;
+    try {
+      for (const reducedMotion of ["no-preference", "reduce"] as const) {
+        const context = await browser.newContext({ reducedMotion, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+        const page = await context.newPage();
+        page.on("pageerror", (e: Error) => errors.push(e.message));
+        await page.goto(`${url}?pace=4&loop=${at}`, { waitUntil: "domcontentloaded" });
+        // While the question plays: the conversation, then the query, then the answer.
+        // (Under reduced motion the reply prints at once, so the question may already be done.)
+        await waitFor(page, `the question ${q.id}`, (s) => s.turn === q.id);
+        const playing = await page.evaluate(`[document.documentElement.dataset.phase, ${layout}]`);
+        if (reducedMotion === "no-preference") expect(playing[0]).toBe("playing");
+        if (playing[0] === "playing") {
+          expect(playing[1].ask).toBeLessThan(playing[1].query);
+          expect(playing[1].query).toBeLessThan(playing[1].answer);
+        }
+        // Once the reply has printed: the answer directly under the estate graph, before the conversation.
+        await waitFor(page, "the reply", (s) => s.phase === "after");
+        const after = await page.evaluate(layout);
+        expect(after.estate).toBeLessThan(after.answer);
+        expect(after.answer).toBeLessThan(after.ask);
+        expect(after.ask).toBeLessThan(after.query);
+        // The headline shows without scrolling.
+        expect(after.scrollY).toBe(0);
+        expect(after.headText).toBe(q.headline);
+        expect(after.headBottom).toBeLessThanOrEqual(after.height);
+        expect(after.headTop).toBeGreaterThan(0);
+        // The drawing's words are 12 px or more; it scrolls in its own box and the page does not.
+        expect(after.px).toBeGreaterThanOrEqual(12);
+        expect(after.pageWidth).toBe(390);
+        expect(after.drawWidth).toBeLessThanOrEqual(390);
+        await context.close();
+      }
+    } finally {
+      await browser.close();
+    }
+    expect(errors).toEqual([]);
+  });
+});
+
+describe.runIf(peer.ok)("the focused view of a spread answer (#1203)", () => {
+  it("shows the answer's cards on their own and readable, switches to the whole estate and back, and selects in both views", { timeout: 180_000 }, async () => {
+    const launched = await browserOrNull();
+    if (!launched) {
+      console.warn("ask-demo-page: no browser launches here, so the focused view was not checked");
+      return;
+    }
+    const rec = JSON.parse(readFileSync(RECORDING, "utf8")) as Narration;
+    const graph = JSON.parse(readFileSync(join(RECORDED_ESTATE, "graph.json"), "utf8")) as { svg: string };
+    const qs = questionsOf(rec) as Narration["turns"];
+    const spread = qs.findIndex((t) => t.id === "dns-cross-cloud");
+    const near = qs.findIndex((t) => t.id === "forwarding-rule-dependents");
+    expect(spread).toBeGreaterThanOrEqual(0);
+    expect(near).toBeGreaterThanOrEqual(0);
+    const q = qs[spread]!;
+    // The edges the estate graph draws between two of the answer's cards: the only ones the focused view may show.
+    const between = new Set([...graph.svg.matchAll(/data-edge-from="([^"]+)" data-edge-to="([^"]+)"/g)].filter((m) => q.light.includes(m[1]!) && q.light.includes(m[2]!)).map((m) => `${m[1]} -> ${m[2]}`));
+    expect(between.size).toBeGreaterThan(0);
+    const url = await serveDir(recordedOut);
+    const browser = launched.browser as unknown as { newContext(o?: object): Promise<any>; close(): Promise<void> };
+    const errors: string[] = [];
+    const look = `(() => {
+      const host = document.getElementById("ad-estate-graph").getBoundingClientRect();
+      const lit = (document.documentElement.dataset.lit || "").split("\\n").filter(Boolean);
+      const cards = [...document.querySelectorAll("#ad-estate [data-node-id]")].filter((g) => g.querySelector("rect")).map((g) => {
+        const r = g.querySelector("rect").getBoundingClientRect();
+        return { id: g.getAttribute("data-node-id"), shown: getComputedStyle(g.querySelector("rect")).visibility === "visible", top: r.top, bottom: r.bottom, left: r.left, right: r.right, height: r.height };
+      });
+      const edges = [...document.querySelectorAll("#ad-estate g[data-edge-from]")].filter((e) => e.querySelector("path") && getComputedStyle(e.querySelector("path")).visibility === "visible").map((e) => e.getAttribute("data-edge-from") + " -> " + e.getAttribute("data-edge-to"));
+      const btn = document.getElementById("ad-view");
+      return { view: document.documentElement.dataset.view || "", lit, cards, edges, host: { top: host.top, bottom: host.bottom, left: host.left, right: host.right }, button: { hidden: btn.hidden, text: btn.textContent, pressed: btn.getAttribute("aria-pressed") }, caption: document.getElementById("ad-estate-cap").textContent };
+    })()`;
+    type Look = { view: string; lit: string[]; cards: Array<{ id: string; shown: boolean; top: number; bottom: number; left: number; right: number; height: number }>; edges: string[]; host: { top: number; bottom: number; left: number; right: number }; button: { hidden: boolean; text: string; pressed: string }; caption: string };
+    const inPane = (c: Look["cards"][number], h: Look["host"]) => c.top >= h.top - 1 && c.bottom <= h.bottom + 1 && c.left >= h.left - 1 && c.right <= h.right + 1;
+    const settle = (page: Page) => page.waitForTimeout(900);
+    try {
+      for (const [name, viewport] of [["desktop", { width: 1440, height: 900 }], ["phone", { width: 390, height: 844 }]] as const)
+        for (const reducedMotion of ["no-preference", "reduce"] as const) {
+          const tag = `${name}, ${reducedMotion}`;
+          const context = await browser.newContext({ reducedMotion, viewport, ...(name === "phone" ? { isMobile: true, hasTouch: true } : {}) });
+          const page = await context.newPage();
+          page.on("pageerror", (e: Error) => errors.push(e.message));
+          await page.goto(`${url}?pace=4&loop=${spread}`, { waitUntil: "domcontentloaded" });
+          await waitFor(page, `the question ${q.id}`, (s) => s.turn === q.id && s.lit.length > 0);
+          await page.waitForFunction(() => document.documentElement.dataset.view === "focus", null, { timeout: 10_000 });
+          await settle(page);
+          // The answer's cards on their own: each lit card shows, in the pane, at a readable size; no other card shows.
+          const focused = (await page.evaluate(look)) as Look;
+          expect(focused.lit, tag).toEqual(q.light);
+          for (const c of focused.cards) {
+            const isLit = q.light.includes(c.id);
+            expect(c.shown, `${tag}: ${c.id}`).toBe(isLit);
+            if (!isLit) continue;
+            expect(inPane(c, focused.host), `${tag}: ${c.id} in the pane`).toBe(true);
+            expect(c.height, `${tag}: ${c.id} on screen`).toBeGreaterThanOrEqual(40);
+          }
+          // Only the estate graph's own edges between them, every one of them.
+          expect(new Set(focused.edges), tag).toEqual(between);
+          expect(focused.button, tag).toEqual({ hidden: false, text: "Whole estate", pressed: "true" });
+          // A desktop says what the view is; a phone has no room for the caption, and the switch says it.
+          if (name === "desktop") expect(focused.caption, tag).toMatch(/on their own/);
+          else expect(focused.caption, tag).toBe("");
+          // The whole estate, at a click: every card shows again where the estate graph drew it.
+          await page.click("#ad-view");
+          await settle(page);
+          const whole = (await page.evaluate(look)) as Look;
+          expect(whole.view, tag).toBe("estate");
+          expect(whole.cards.every((c) => c.shown), tag).toBe(true);
+          expect(whole.button, tag).toEqual({ hidden: false, text: "Answer only", pressed: "false" });
+          expect(whole.lit, tag).toEqual(q.light);
+          // Selecting a row works in the whole estate: both its cards light.
+          await page.click("#g-rows tbody tr[data-row='0']");
+          const row = q.rows[0]!;
+          const picked = (await page.evaluate(look)) as Look;
+          expect(picked.view, tag).toBe("estate");
+          expect(picked.lit, tag).toContain("dns/RecordSet ×4");
+          await page.keyboard.press("Escape");
+          // And back to the answer's cards, where a row selects too, both its cards in the pane.
+          await page.click("#ad-view");
+          await settle(page);
+          expect(((await page.evaluate(look)) as Look).view, tag).toBe("focus");
+          await page.click("#g-rows tbody tr[data-row='0']");
+          await settle(page);
+          const sel = (await page.evaluate(look)) as Look;
+          expect(sel.view, tag).toBe("focus");
+          expect(sel.lit.length, tag).toBe(2);
+          for (const id of sel.lit) expect(inPane(sel.cards.find((c) => c.id === id)!, sel.host), `${tag}: ${id} selected in the pane`).toBe(true);
+          expect(sel.lit, tag).toContain("dns/RecordSet ×4");
+          expect(row.key).toBe("dns/gcpOrigin");
+          // Escape goes back to the answer's light, still focused.
+          await page.keyboard.press("Escape");
+          const back = (await page.evaluate(look)) as Look;
+          expect([back.view, back.lit], tag).toEqual(["focus", q.light]);
+          // An answer whose cards sit together keeps the whole estate, with no switch.
+          await page.goto(`${url}?pace=4&loop=${near}`, { waitUntil: "domcontentloaded" });
+          await waitFor(page, `the question ${qs[near]!.id}`, (s) => s.turn === qs[near]!.id && s.lit.length > 0);
+          const together = (await page.evaluate(look)) as Look;
+          expect([together.view, together.button.hidden], tag).toEqual(["estate", true]);
+          await context.close();
+        }
+    } finally {
+      await browser.close();
+    }
+    expect(errors).toEqual([]);
+  });
+});
+
+describe.runIf(peer.ok)("picking a card on the estate graph (#1216)", () => {
+  it("selects a card by click, tap or Enter with the answer's details card and rows, lists a stack's resources, clears with Escape, and a drag picks nothing", { timeout: 180_000 }, async () => {
+    const launched = await browserOrNull();
+    if (!launched) {
+      console.warn("ask-demo-page: no browser launches here, so picking a card was not checked");
+      return;
+    }
+    const rec = JSON.parse(readFileSync(RECORDING, "utf8")) as Narration;
+    const qs = questionsOf(rec) as Narration["turns"];
+    const at = qs.findIndex((t) => t.id === "dns-cross-cloud");
+    const q = qs[at]!;
+    const url = await serveDir(recordedOut);
+    const browser = launched.browser as unknown as { newContext(o?: object): Promise<any>; close(): Promise<void> };
+    const errors: string[] = [];
+    const sel = `(() => {
+      const card = document.getElementById("ad-detail");
+      return {
+        selected: (document.documentElement.dataset.selected || "").split("\\\\n").filter(Boolean),
+        hidden: card.hidden, name: card.querySelector("h3") ? card.querySelector("h3").textContent : "", text: card.innerText,
+        folded: [...card.querySelectorAll("ul.ad-folded button")].map((b) => b.title),
+        rows: [...document.querySelectorAll("#g-rows tbody tr")].map((tr, i) => (tr.classList.contains("sel") ? i : -1)).filter((i) => i >= 0),
+        picked: [...document.querySelectorAll("#ad-estate-graph [data-node-id].sel")].map((g) => g.getAttribute("data-node-id")),
+        hint: document.getElementById("ad-zoom-hint").textContent,
+      };
+    })()`;
+    type Sel = { selected: string[]; hidden: boolean; name: string; text: string; folded: string[]; rows: number[]; picked: string[]; hint: string };
+    const cardAt = (id: string) => `#ad-estate-graph [data-node-id="${id}"] rect`;
+    const rowsOf = (pred: (r: Record<string, unknown>) => boolean) => q.rows.map((r, i) => (pred(r) ? i : -1)).filter((i) => i >= 0);
+    try {
+      for (const [name, viewport] of [["desktop", { width: 1440, height: 900 }], ["phone", { width: 390, height: 844 }]] as const) {
+        const phone = name === "phone";
+        const context = await browser.newContext({ reducedMotion: "reduce", viewport, ...(phone ? { isMobile: true, hasTouch: true } : {}) });
+        const page = await context.newPage();
+        page.on("pageerror", (e: Error) => errors.push(e.message));
+        await page.goto(`${url}?pace=4&loop=${at}`, { waitUntil: "domcontentloaded" });
+        await waitFor(page, "the reply", (s) => s.turn === q.id && s.phase === "after");
+        // The whole estate, so every card can be picked.
+        if (await page.evaluate(() => document.documentElement.dataset.view === "focus")) await page.click("#ad-view");
+        const before = (await page.evaluate(sel)) as Sel;
+        expect(before.hint, name).toMatch(phone ? /tap a card/ : /click a card/);
+        expect(await page.evaluate((s: string) => getComputedStyle(document.querySelector(s)!.parentElement!).cursor, cardAt("gcp/webRule"))).toBe("pointer");
+        // A card of the answer: its details, the rows naming it marked, the card itself marked.
+        if (phone) await page.tap(cardAt("gcp/webRule"));
+        else await page.click(cardAt("gcp/webRule"));
+        const one = (await page.evaluate(sel)) as Sel;
+        expect(one.selected, name).toEqual(["gcp/webRule"]);
+        expect([one.hidden, one.name], name).toEqual([false, "webRule"]);
+        expect(one.text, name).toContain("src/site.ts");
+        expect(one.rows, name).toEqual(rowsOf((r) => r.reaches === "gcp/webRule"));
+        expect(one.picked, name).toEqual(["gcp/webRule"]);
+        await page.keyboard.press("Escape");
+        const cleared = (await page.evaluate(sel)) as Sel;
+        expect([cleared.selected, cleared.hidden, cleared.rows, cleared.picked], name).toEqual([[], true, [], []]);
+        // A stacked card lists what it folds, each one selectable; every row naming one of them is marked.
+        if (phone) await page.tap(cardAt("dns/RecordSet ×4"));
+        else await page.click(cardAt("dns/RecordSet ×4"));
+        const stack = (await page.evaluate(sel)) as Sel;
+        expect(stack.folded.length, name).toBe(4);
+        expect(stack.folded, name).toEqual(expect.arrayContaining(["dns/gcpOrigin", "dns/gcpRecord"]));
+        expect(stack.rows, name).toEqual(q.rows.map((_, i) => i));
+        expect(stack.picked, name).toEqual(["dns/RecordSet ×4"]);
+        await page.click('#ad-detail ul.ad-folded button[title="dns/gcpOrigin"]');
+        const folded = (await page.evaluate(sel)) as Sel;
+        expect([folded.selected, folded.name], name).toEqual([["dns/gcpOrigin"], "gcp.three-cloud.example."]);
+        expect(folded.rows, name).toEqual(rowsOf((r) => r.key === "dns/gcpOrigin"));
+        await page.keyboard.press("Escape");
+        // The keyboard: Tab reaches a card, Enter picks it.
+        await page.focus('#ad-estate-graph [data-node-id="gcp/webProxy"]');
+        await page.keyboard.press("Enter");
+        expect(((await page.evaluate(sel)) as Sel).selected, name).toEqual(["gcp/webProxy"]);
+        await page.keyboard.press("Escape");
+        expect(((await page.evaluate(sel)) as Sel).selected, name).toEqual([]);
+        if (!phone) {
+          // A drag that starts on a card moves the view and picks nothing.
+          const box = await page.locator(cardAt("gcp/webUrlMap")).first().boundingBox();
+          const from = await viewBoxOf(page);
+          await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+          await page.mouse.down();
+          await page.mouse.move(box!.x + box!.width / 2 + 60, box!.y + box!.height / 2 + 30, { steps: 6 });
+          await page.mouse.up();
+          expect(await viewBoxOf(page)).not.toEqual(from);
+          expect(((await page.evaluate(sel)) as Sel).selected).toEqual([]);
+        }
         await context.close();
       }
     } finally {

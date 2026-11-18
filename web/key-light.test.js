@@ -1,6 +1,6 @@
 // behold#1163: lighting the estate graph by graph key.
 import { describe, expect, it } from "vitest";
-import { cardIndex, cardMarks, edgeMark, frameBox, lightKeys, viewShare, zoomFrame } from "./key-light.js";
+import { READABLE_CARD_PX, boxGap, cardIndex, cardMarks, edgeMark, focusLayout, frameBox, lightKeys, paneScale, reserveBox, viewShare, wantsFocus, zoomFrame } from "./key-light.js";
 
 const NODES = [
   { id: "dns/zone" },
@@ -101,5 +101,78 @@ describe("zoomFrame (#1175, #1190)", () => {
   it("is the whole graph with nothing to frame", () => {
     expect(zoomFrame([], full)).toEqual(full);
     expect(zoomFrame(null, full)).toEqual(full);
+  });
+});
+
+describe("the focused view of a spread answer (behold#1203)", () => {
+  const b = (x, y, width = 200, height = 68) => ({ x, y, width, height });
+  // The DNS answer as recorded: the records' stack at the top, the GCP cards near the bottom.
+  const cards = [
+    { id: "dns/RecordSet ×4", box: b(457, 116, 202, 68) },
+    { id: "gcp/webRule", box: b(1185, 1954, 249, 84) },
+    { id: "gcp/webAddress", box: b(1076, 2146, 190, 68) },
+    { id: "gcp/webProxy", box: b(1330, 2146, 237, 68) },
+    { id: "gcp/webUrlMap", box: b(1356, 2286, 184, 68) },
+  ];
+  const edges = [
+    { from: "gcp/webRule", to: "gcp/webAddress" },
+    { from: "gcp/webRule", to: "gcp/webProxy" },
+    { from: "gcp/webProxy", to: "gcp/webUrlMap" },
+    { from: "dns/zone", to: "gcp/webRule" },
+  ];
+  const full = { x: 0, y: 0, width: 2576, height: 3234 };
+
+  it("keeps each group's arrangement, sets the groups close in a row or a column, and keeps only the estate graph's edges between the cards", () => {
+    const wide = focusLayout(cards, edges, { pane: { width: 860, height: 525 } });
+    expect(wide.groups).toBe(2);
+    const at = (l, id) => {
+      const c = cards.find((x) => x.id === id).box;
+      const d = l.shift.get(id);
+      return { x: c.x + d.dx, y: c.y + d.dy };
+    };
+    // Inside a group, the cards keep where they sit to each other.
+    expect(at(wide, "gcp/webProxy").x - at(wide, "gcp/webRule").x).toBe(1330 - 1185);
+    expect(at(wide, "gcp/webUrlMap").y - at(wide, "gcp/webProxy").y).toBe(2286 - 2146);
+    // A wide pane: the groups side by side, 80 apart, in reading order.
+    expect(at(wide, "gcp/webAddress").x).toBe(202 + 80);
+    expect(wide.box).toEqual({ x: -40, y: -40, width: 202 + 80 + 491 + 80, height: 400 + 80 });
+    // A tall pane: one under the other.
+    const tall = focusLayout(cards, edges, { pane: { width: 390, height: 500 } });
+    expect(at(tall, "dns/RecordSet ×4").y).toBe(0);
+    expect(at(tall, "gcp/webRule").y).toBe(68 + 80);
+    // The three edges between two of the cards move with their group; the one to a card that is not lit is left out.
+    expect(wide.kept.map((e) => `${e.from} ${e.to}`)).toEqual(["gcp/webRule gcp/webAddress", "gcp/webRule gcp/webProxy", "gcp/webProxy gcp/webUrlMap"]);
+    expect(wide.kept[0]).toMatchObject(wide.shift.get("gcp/webRule"));
+    expect(wide.cross).toEqual([]);
+  });
+
+  it("draws an edge between two groups straight, from one card's side to the other's", () => {
+    const l = focusLayout([{ id: "a", box: b(0, 0, 100, 50) }, { id: "z", box: b(2000, 0, 100, 50) }], [{ from: "a", to: "z" }, { from: "a", to: "z" }], { pane: { width: 800, height: 400 } });
+    expect(l.groups).toBe(2);
+    expect(l.cross).toEqual([{ from: "a", to: "z", d: "M 100 25 L 180 25" }]);
+    expect(focusLayout([], [], {}).groups).toBe(0);
+  });
+
+  it("is wanted only for a few cards that framing whole would leave too small, where it shows them half as large again", () => {
+    const pane = { width: 860, height: 525 };
+    const layout = focusLayout(cards, edges, { pane });
+    expect(READABLE_CARD_PX).toBe(40);
+    expect(wantsFocus(cards, 50, full, pane, layout)).toBe(true);
+    // Most of the estate lit (the load turn): the whole estate.
+    expect(wantsFocus(cards, 8, full, pane, layout)).toBe(false);
+    // Cards that sit together: one group, framing reads.
+    const near = cards.slice(1);
+    expect(wantsFocus(near, 50, full, pane, focusLayout(near, edges, { pane }))).toBe(false);
+    // A pane big enough to read the whole frame.
+    expect(wantsFocus(cards, 50, full, { width: 4000, height: 5000 }, focusLayout(cards, edges, { pane: { width: 4000, height: 5000 } }))).toBe(false);
+    expect(wantsFocus([cards[0]], 50, full, pane, layout)).toBe(false);
+  });
+
+  it("leaves room for the pane's controls and caption, centred across", () => {
+    const { box, scale } = reserveBox({ x: 0, y: 0, width: 400, height: 200 }, { width: 800, height: 600 }, { top: 50, bottom: 50 });
+    expect(scale).toBe(2);
+    expect(box).toEqual({ x: 0, y: -50, width: 400, height: 300 });
+    expect(paneScale({ width: 100, height: 50 }, { width: 300, height: 300 })).toBe(3);
+    expect(boxGap(b(0, 0, 10, 10), b(30, 5, 10, 10))).toBe(20);
   });
 });

@@ -9,11 +9,11 @@ The ask demo at <a href={ASK_DEMO}>behold-ask-demo.intentius.workers.dev</a> pla
 
 ## Reading an answer
 
-The prompt and the agent's reply type in the pane at the bottom. Before it calls behold, the agent says in one line how it reads the question. The query and its parameters fill the Cypher pane on the right, and the estate graph frames the cards the answer names.
+The prompt and the agent's reply type in the pane at the bottom. Before it calls behold, the agent says in one line how it reads the question. The query and its parameters fill the Cypher pane on the right, and the estate graph frames the cards the answer names. When those cards sit too far apart to read, the graph shows them on their own, moved close together with the edges between them. **Whole estate** switches back. On a phone the answer moves up under the estate graph once the reply has printed.
 
 Under the query, a headline says what was found. The rows follow, with a drawing of them. The drawing joins two resources with an edge when a row pairs them, such as a DNS record and what it `reaches`. Those edges come from the answer's rows, and behold adds no join of its own. A dashed edge is one behold derived because one resource's attribute holds the other's cloud id.
 
-Click a row or a node, or reach it with Tab and Enter, to light it on the estate graph. A card opens with where it's declared and its cloud id. Escape clears it. Hover over a name for its full key.
+Click a row or a node, or reach it with Tab and Enter, to light it on the estate graph. A card opens with where it's declared and its cloud id. Escape clears it. Cards on the estate graph can be clicked too, and a stacked card lists the resources it holds. Hover over a name for its full key.
 
 ## Your turn
 

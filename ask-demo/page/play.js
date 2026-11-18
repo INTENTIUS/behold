@@ -344,6 +344,28 @@ export function rowKeys(body, picture, i) {
   return [...new Set((picture.keyColumns || []).map((c) => row[c]).filter((v) => typeof v === "string"))];
 }
 
+/**
+ * behold#1216: each card of the estate graph to the resources it draws: a
+ * stacked card's folded resources (`attrs._stackOf`), in order, or the card's
+ * own id.
+ */
+export function cardResources(nodes) {
+  const out = new Map();
+  for (const n of nodes || []) {
+    if (!n || typeof n.id !== "string") continue;
+    const stack = n.attrs && Array.isArray(n.attrs._stackOf) ? n.attrs._stackOf.map((x) => x && x.id).filter((k) => typeof k === "string") : [];
+    out.set(n.id, stack.length ? stack : [n.id]);
+  }
+  return out;
+}
+
+/** behold#1216: the indexes of the answer's rows that name any of `keys` in a key column. */
+export function rowsNaming(body, picture, keys) {
+  const want = new Set(keys || []);
+  const rows = body && Array.isArray(body.rows) ? body.rows : [];
+  return rows.map((_, i) => i).filter((i) => rowKeys(body, picture, i).some((k) => want.has(k)));
+}
+
 /** A drawn resource and the other end of each row that pairs it with another key, the resource first. */
 export function pairedKeys(body, picture, key) {
   const out = [key];
