@@ -34,13 +34,13 @@
       "id": "dns-cross-cloud",
       "kind": "question",
       "prompt": "If GCP has an outage, which of our domains go with it?",
-      "reading": "I'll find the DNS records that depend on GCP resources.",
-      "call": { "tool": "ask", "arguments": { "cypher": "MATCH (rec:Resource {kind: $record})-[:REF*1..4]->(dep:Resource {source: 'chant'}) WHERE dep.scopeKey <> rec.scopeKey RETURN DISTINCT rec.key AS key, rec.name AS record, dep.key AS reaches ORDER BY record, reaches", "params": "{\"record\":\"AWS::Route53::RecordSet\"}" } },
+      "reading": "Our DNS is in AWS Route 53, so I'll start from those records and follow what they point at into other clouds.",
+      "call": { "tool": "ask", "arguments": { "cypher": "MATCH (rec:Resource {kind: $record})-[:REF*1..4]->(dep:Resource {source: 'chant'}) WHERE dep.scopeKey <> rec.scopeKey RETURN DISTINCT rec.key AS key, rec.name AS record, dep.key AS reaches, dep.kind AS kind ORDER BY record, reaches", "params": "{\"record\":\"AWS::Route53::RecordSet\"}" } },
       "busy": "behold mcp ask: running a Cypher query over the estate graph",
-      "cypher": "MATCH (rec:Resource {kind: $record})-[:REF*1..4]->(dep:Resource {source: 'chant'}) WHERE dep.scopeKey <> rec.scopeKey RETURN DISTINCT rec.key AS key, rec.name AS record, dep.key AS reaches ORDER BY record, reaches",
+      "cypher": "MATCH (rec:Resource {kind: $record})-[:REF*1..4]->(dep:Resource {source: 'chant'}) WHERE dep.scopeKey <> rec.scopeKey RETURN DISTINCT rec.key AS key, rec.name AS record, dep.key AS reaches, dep.kind AS kind ORDER BY record, reaches",
       "params": { "record": "AWS::Route53::RecordSet" },
-      "columns": ["key", "record", "reaches"],
-      "rows": [{ "key": "dns/gcpRecord", "record": "www.three-cloud.example.", "reaches": "gcp/webRule" }],
+      "columns": ["key", "record", "reaches", "kind"],
+      "rows": [{ "key": "dns/gcpRecord", "record": "www.three-cloud.example.", "reaches": "gcp/webRule", "kind": "GCP::Compute::ForwardingRule" }],
       "keys": ["dns/gcpRecord"],
       "light": ["dns/RecordSet ×2", "gcp/webRule"],
       "draw": { "nodes": [{ "key": "dns/gcpRecord", "kind": "AWS::Route53::RecordSet", "name": "www.three-cloud.example.", "source": "chant", "scopeKey": "chant/dns" }], "edges": [] },
@@ -48,7 +48,7 @@
         { "scopeKey": "chant/dns", "source": "chant", "name": "chant", "readAt": "2026-11-18T11:59:00.000Z", "observedAt": null, "nodes": 2, "edges": 1 }
       ],
       "reply": "behold's query ran and returned 1 row. 1 of our domains depend on the gcp member (www.three-cloud.example.), and between them they go through webRule. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
-      "headline": "1 domains depend on 1 resources in the gcp member"
+      "headline": "1 domains with DNS in AWS depend on 1 GCP resources"
     },
     {
       "id": "forwarding-rule-dependents",

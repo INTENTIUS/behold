@@ -220,7 +220,7 @@
       "id": "dns-cross-cloud",
       "kind": "question",
       "prompt": "If GCP has an outage, which of our domains go with it?",
-      "reading": "I'll find the DNS records that depend on GCP resources.",
+      "reading": "Our DNS is in AWS Route 53, so I'll start from those records and follow what they point at into other clouds.",
       "call": {
         "tool": "ask",
         "arguments": {
@@ -396,7 +396,7 @@
         }
       ],
       "reply": "behold's query ran and returned 7 rows. 2 of our domains depend on the gcp member (gcp.three-cloud.example. and www.three-cloud.example.), and between them they go through webAddress, webProxy, webRule and webUrlMap. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
-      "headline": "2 domains depend on 4 resources in the gcp member"
+      "headline": "2 domains with DNS in AWS depend on 4 GCP resources"
     },
     {
       "id": "forwarding-rule-dependents",

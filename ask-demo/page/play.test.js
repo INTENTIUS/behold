@@ -370,7 +370,7 @@ describe("what the answer found, and one of its resources (#1198)", () => {
 
   it("heads a recorded turn with its headline, and a visitor's query with a count", () => {
     expect(answerHeadline(q, body, picture)).toBe(q.headline);
-    expect(q.headline).toBe("2 domains depend on 4 resources in the gcp member");
+    expect(q.headline).toBe("2 domains with DNS in AWS depend on 4 GCP resources");
     expect(answerHeadline(null, body, picture)).toBe(`7 rows, ${picture.nodes.length} resources`);
     expect(answerHeadline(null, { rows: [{ x: 1 }] }, { nodes: [] })).toBe("1 row");
     expect(answerHeadline(null, { rows: [{ x: 1 }] }, { nodes: [{ key: "a" }] })).toBe("1 row, 1 resource");
