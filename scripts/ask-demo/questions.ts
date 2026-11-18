@@ -18,9 +18,14 @@
  */
 import type { Question } from "./narration.ts";
 
-/** The load turn's prompt and reply. Its rows are the sources GET /api/graphdb lists. */
+/**
+ * The load turn's prompt, busy line and reply. Its rows are the sources GET
+ * /api/graphdb lists. The busy line says what happens in words (behold#1206);
+ * the commands that did it are the turn's `call`, shown on hover.
+ */
 export const LOAD = {
   prompt: "Load my estate into behold: the three-cloud workspace, the AWS account, and the cluster.",
+  busy: "behold is reading the workspace, the AWS account and the cluster into one graph",
   reply: "Loaded {{sum:nodes}} resources from {{count}} sources: {{each:{scopeKey|source} ({nodes})}}.",
 };
 
@@ -36,16 +41,16 @@ export const QUESTIONS: readonly Question[] = [
         "RETURN DISTINCT rec.key AS key, rec.name AS record, dep.key AS reaches, dep.kind AS kind ORDER BY record, reaches",
       params: { record: "AWS::Route53::RecordSet" },
     },
-    reply: "{{count:record}} Route 53 records reach into another member ({{list:record}}), and between them they depend on {{count:reaches}} resources there: {{list:reaches}}.",
-    headline: "{{count:key}} Route 53 records depend on {{count:reaches}} resources in another member",
+    reply: "{{count:record}} of our domains depend on {{list:reaches|member}} ({{list:record}}), and between them they go through {{list:reaches|id}}.",
+    headline: "{{count:record}} domains depend on {{count:reaches}} resources in {{list:reaches|member}}",
   },
   {
     id: "forwarding-rule-dependents",
     prompt: "What breaks if I delete the GCP load balancer's forwarding rule?",
     reading: "I'll find everything that depends on that forwarding rule.",
     ask: { resource: "webRule", template: "dependents-all" },
-    reply: "{{count}} resources depend on webRule, all of them in {{list:scope|source}}: {{list:key}}.",
-    headline: "{{count}} resources in {{list:scope|source}} depend on the forwarding rule",
+    reply: "{{count}} resources in {{list:key|member}} depend on the forwarding rule, so they would break with it: {{each:{key|id} ({kind})}}.",
+    headline: "{{count}} resources in {{list:key|member}} depend on the forwarding rule",
   },
   {
     id: "aws-account-unmanaged",
@@ -64,7 +69,7 @@ export const QUESTIONS: readonly Question[] = [
         "MATCH (o:Resource {source: 'index', lexicon: 'aws'}) WHERE o.scopeKey = i.scopeKey AND o.facts CONTAINS '\"address\":' " +
         "RETURN DISTINCT i.key AS key, i.kind AS kind, i.name AS name ORDER BY kind, name",
     },
-    reply: "{{count}} resources there have no owner in the workspace: {{each:{name} ({kind})}}.",
+    reply: "Yes, {{count}} resources in the account have no owner in the workspace: {{each:{name} ({kind})}}.",
     headline: "{{count}} network and storage resources in the AWS account have no owner in the workspace",
   },
   {
@@ -87,9 +92,9 @@ export const QUESTIONS: readonly Question[] = [
         "CASE WHEN ssh THEN r.nativeId ELSE '' END AS sshRule, CASE WHEN ssh THEN '' ELSE r.nativeId + ' (' + opens + ')' END AS other ORDER BY sshRule DESC, rule",
     },
     reply:
-      "{{count:sshRule}} ingress rule opens SSH, tcp port 22, to anywhere: {{list:sshRule}} in {{list:region}}. The other rules open to anywhere are {{list:other}}. " +
-      "This account is a real one, read once with its id redacted.",
-    headline: "{{count:sshRule}} rule opens SSH to the internet",
+      "Yes: {{count:sshRule}} ingress {{pick:sshRule|rule opens|rules open}} SSH (tcp port 22) to anywhere, {{list:sshRule}} in {{list:region}}. " +
+      "The other {{pick:other|rule open to anywhere is|rules open to anywhere are}} {{list:other}}.",
+    headline: "{{count:sshRule}} {{pick:sshRule|rule opens|rules open}} SSH to the internet",
   },
   {
     id: "serviceaccount-roles",
@@ -100,15 +105,15 @@ export const QUESTIONS: readonly Question[] = [
         "MATCH (sa:Resource {kind: 'K8s::Core::ServiceAccount'})-[e:REF]->(role:Resource {kind: 'AWS::IAM::Role'}) " +
         "RETURN sa.key AS key, sa.name AS serviceAccount, role.key AS roleKey, role.name AS role, e.viaAttr AS via, e.rule AS rule ORDER BY serviceAccount",
     },
-    reply: "{{count}} ServiceAccounts carry an IRSA annotation that names a role in the account: {{each:{serviceAccount} assumes {role}}}. behold joined them on {{list:via}} by the {{list:rule}} rule.",
-    headline: "{{count:key}} ServiceAccounts in the cluster can assume {{count:roleKey}} AWS roles",
+    reply: "Our pods can use {{count:roleKey}} AWS roles: {{each:{role} through the {serviceAccount} ServiceAccount}}. Each ServiceAccount's role annotation names its role.",
+    headline: "Pods in the cluster can use {{count:roleKey}} AWS roles through {{count:key}} ServiceAccounts",
   },
   {
     id: "orders-reader-readers",
     prompt: "Who outside AWS can use the orders-reader role?",
     reading: "I'll find what reaches the orders-reader role from outside the account.",
     ask: { resource: "orders-reader", template: "readers" },
-    reply: "Readers from outside the account: {{count}}, from {{list:scope|source}}, joined on {{list:via}} by the {{list:rule}} rule.",
-    headline: "{{count}} resource from {{list:scope|source}} reaches orders-reader",
+    reply: "{{count}} resource from outside AWS can use it: {{list:key|name}}, from {{list:scope|source}}. Its role annotation names the role.",
+    headline: "{{count}} resource from {{list:scope|source}} can use the role",
   },
 ];

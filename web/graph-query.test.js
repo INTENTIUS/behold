@@ -1,7 +1,7 @@
 // behold#1027: the graph pane page's pure helpers.
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { STATIC_SEARCH_LINE, answerDrawing, candidateItems, circleLayout, columnLayout, derivedLegend, drawLayout, drawSvg, keyColumns, labelBox, labelOverlaps, noteLines, queryUrl, refusalText, resolveUrl, rowsTable, sourceLines, templateControl, templateUrl } from "./graph-query.js";
+import { STATIC_SEARCH_LINE, answerDrawing, candidateItems, circleLayout, columnLayout, derivedLegend, drawLayout, drawSvg, keyColumns, keyName, labelBox, labelOverlaps, noteLines, queryUrl, refusalText, resolveUrl, rowsTable, sourceLines, templateControl, templateUrl } from "./graph-query.js";
 
 describe("the routes the page asks", () => {
   it("are GETs with the query in the URL", () => {
@@ -171,6 +171,22 @@ describe("what an answer shows", () => {
       expect(lay.box.height).toBeLessThan(60);
       expect(drawSvg({ nodes: [{ key: "k", name: "orders-api", source: "chant" }], edges: [] })).toMatch(/<svg viewBox="[-\d]+ [-\d]+ \d+ \d+" width="\d+" height="\d+"/);
     });
+  });
+
+  it("names a key column's cells readably, the whole key on hover (#1206)", () => {
+    const sa = "cloud/kubernetes/kind-x/eb3c/kubernetes/kind-x/orders/v1%2FServiceAccount/orders/orders-api";
+    const role = "cloud/aws/000000000000/db1d/aws/000000000000/global/AWS::IAM::Role/orders-reader";
+    // The resource's name when the page knows it, else the key's last segment, decoded.
+    expect(keyName(role, new Map([[role, { name: "orders-reader" }]]))).toBe("orders-reader");
+    expect(keyName(sa)).toBe("orders-api");
+    expect(keyName("a/b%2Fc")).toBe("b/c");
+    expect(keyName("a/%E0")).toBe("%E0");
+    expect(keyName("plain")).toBe("plain");
+    const html = rowsTable(["key", "role", "via"], [{ key: sa, role: "orders-reader", via: "metadata.annotations.x" }], { keys: ["key"] });
+    expect(html).toContain(`<td class="g-key" title="${sa}">orders-api</td>`);
+    expect(html).toContain('<td title="orders-reader">orders-reader</td>');
+    // Without key columns, every cell shows its value as before (the server's /graph page).
+    expect(rowsTable(["key"], [{ key: sa }])).toContain(`<td title="${sa}">${sa}</td>`);
   });
 
   it("escapes what it draws", () => {

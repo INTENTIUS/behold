@@ -368,7 +368,7 @@ describe("what the answer found, and one of its resources (#1198)", () => {
 
   it("heads a recorded turn with its headline, and a visitor's query with a count", () => {
     expect(answerHeadline(q, body, picture)).toBe(q.headline);
-    expect(q.headline).toMatch(/^2 Route 53 records depend on 4 resources/);
+    expect(q.headline).toBe("2 domains depend on 4 resources in the gcp member");
     expect(answerHeadline(null, body, picture)).toBe(`7 rows, ${picture.nodes.length} resources`);
     expect(answerHeadline(null, { rows: [{ x: 1 }] }, { nodes: [] })).toBe("1 row");
     expect(answerHeadline(null, { rows: [{ x: 1 }] }, { nodes: [{ key: "a" }] })).toBe("1 row, 1 resource");
@@ -388,7 +388,7 @@ describe("what the answer found, and one of its resources (#1198)", () => {
     expect(resourceDetails("gcp/webRule", facts)).toEqual({
       key: "gcp/webRule",
       name: "webRule",
-      rows: [["Kind", "GCP::Compute::ForwardingRule"], ["Name", "webRule"], ["Source", "the gcp member"], ["Declared", "in the gcp member, src/site.ts"]],
+      rows: [["Kind", "GCP::Compute::ForwardingRule"], ["Name", "webRule"], ["Source", "the gcp member"], ["Declared", "in the gcp member, src/site.ts"], ["Key", "gcp/webRule"]],
       note: "",
     });
     const role = resourceDetails("cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/global/AWS::IAM::Role/orders-reader", facts);
@@ -406,7 +406,7 @@ describe("what the answer found, and one of its resources (#1198)", () => {
       [{ id: "c/x", sourceLoc: { file: "main.tf" } }],
     );
     expect(resourceDetails("i/x", f).rows).toContainEqual(["Declared", "as logs in the web member, main.tf"]);
-    expect(resourceDetails("gone/key", f)).toEqual({ key: "gone/key", name: "key", rows: [], note: "This page holds nothing more about it." });
+    expect(resourceDetails("gone/key", f)).toEqual({ key: "gone/key", name: "key", rows: [["Key", "gone/key"]], note: "This page holds nothing more about it." });
     expect(resourceFacts(null, null).resources.size).toBe(0);
   });
 });

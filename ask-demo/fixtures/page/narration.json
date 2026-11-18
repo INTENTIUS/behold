@@ -19,7 +19,7 @@
           "behold serve app --port 4674"
         ]
       },
-      "busy": "behold serve app --port 4674: loading every source into one graph",
+      "busy": "behold is reading every source into one graph",
       "cypher": null,
       "params": {},
       "columns": [

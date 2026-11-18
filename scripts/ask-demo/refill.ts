@@ -6,7 +6,7 @@
  *
  * Each question turn's prompt, reading line and reply in
  * ask-demo/narration.json (or the files given), and the load turn's reply
- * (behold#1191), are rebuilt from ./questions.ts and the turn's recorded
+ * (behold#1191) and busy line (behold#1206), are rebuilt from ./questions.ts and the turn's recorded
  * columns and rows. Turns match by id; a turn whose question is gone from
  * questions.ts is dropped, and the command says so. Nothing else in the file changes. The
  * result is checked against ask-demo/narration.schema.json before it is

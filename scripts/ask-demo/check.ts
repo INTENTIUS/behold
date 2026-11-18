@@ -144,7 +144,8 @@ interface Narration {
   turns: Array<{ id: string; kind: string; cypher?: string; rows: Array<Record<string, unknown>> }>;
 }
 
-const SEEN = `(() => { const d = document.documentElement.dataset; return { loop: d.loop || "", phase: d.phase || "", engine: d.engine || "", visitor: d.visitor || "", failed: d.failed || "", error: (document.getElementById("g-error") || {}).textContent || "", rows: (document.getElementById("g-rows") || {}).innerText || "", cypher: (document.getElementById("g-cypher") || {}).value || "" }; })()`;
+// behold#1206: a key cell shows the resource's name, its whole key in its title, so the rows read as both.
+const SEEN = `(() => { const d = document.documentElement.dataset; return { loop: d.loop || "", phase: d.phase || "", engine: d.engine || "", visitor: d.visitor || "", failed: d.failed || "", error: (document.getElementById("g-error") || {}).textContent || "", rows: [(document.getElementById("g-rows") || {}).innerText || "", ...[...document.querySelectorAll("#g-rows td.g-key")].map((td) => td.title)].join("\\n"), cypher: (document.getElementById("g-cypher") || {}).value || "" }; })()`;
 
 async function until(page: Page, what: string, test: (s: Record<string, string>) => boolean, ms: number): Promise<Record<string, string>> {
   const end = Date.now() + ms;

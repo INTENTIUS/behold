@@ -288,7 +288,8 @@ const seenScript = `(() => {
     cypher: document.getElementById("g-cypher").value, params: document.getElementById("g-params").value,
     readOnly: document.getElementById("g-cypher").readOnly,
     terminal: document.getElementById("k-ask").innerText,
-    rows: document.getElementById("g-rows").innerText,
+    // behold#1206: a key cell shows a name, with the whole key in its title.
+    rows: [document.getElementById("g-rows").innerText, ...[...document.querySelectorAll("#g-rows td.g-key")].map((td) => td.title)].join("\\n"),
     sources: document.getElementById("g-sources").textContent,
     sourceTitles: [...document.querySelectorAll("#g-sources span")].map((x) => x.title),
     paneTitle: document.getElementById("ad-pane-title").textContent,
@@ -998,6 +999,61 @@ describe.runIf(peer.ok)("the estate pane's zoom and the answer, on the recording
       expect(cleared).toEqual({ hidden: true, lit: q.light, selected: undefined });
       expect(await viewBoxOf(page)).toEqual(at);
       await context.close();
+    } finally {
+      await browser.close();
+    }
+    expect(errors).toEqual([]);
+  });
+});
+
+describe.runIf(peer.ok)("the words a visitor reads, on the recording (#1206)", () => {
+  it("says what the load does in words, names each key column's resources, no rule id in a reply, and a parameters box that says what it is for", { timeout: 120_000 }, async () => {
+    const launched = await browserOrNull();
+    if (!launched) {
+      console.warn("ask-demo-page: no browser launches here, so the words were not checked");
+      return;
+    }
+    const rec = JSON.parse(readFileSync(RECORDING, "utf8")) as Narration;
+    const qs = questionsOf(rec) as Narration["turns"];
+    const at = qs.findIndex((t) => t.id === "serviceaccount-roles");
+    expect(at).toBeGreaterThanOrEqual(0);
+    const q = qs[at]!;
+    const load = rec.turns.find((t) => t.kind === "load")!;
+    const url = await serveDir(recordedOut);
+    const browser = launched.browser as unknown as { newContext(o?: object): Promise<any>; close(): Promise<void> };
+    const errors: string[] = [];
+    try {
+      for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+        const context = await browser.newContext({ reducedMotion: "reduce", viewport });
+        const page = await context.newPage();
+        page.on("pageerror", (e: Error) => errors.push(e.message));
+        await page.goto(`${url}?pace=4&loop=${at}`, { waitUntil: "domcontentloaded" });
+        const seen = await waitFor(page, `the reply to ${q.id}`, (s) => s.turn === q.id && s.terminal.includes(q.reply.slice(-40)));
+        // The load turn's busy line is in words; the command it ran is in its call, on hover.
+        expect(seen.terminal).toContain(load.busy);
+        expect(seen.terminal).not.toMatch(/--port|behold serve/);
+        // No reply names the rule's id or the annotation's path.
+        expect(seen.terminal).not.toMatch(/identity:arn|metadata\.annotations/);
+        const table = await page.evaluate(() =>
+          [...document.querySelectorAll("#g-rows tbody tr")].map((tr) => [...tr.querySelectorAll("td")].map((td) => ({ text: td.textContent, title: td.title, cut: td.scrollWidth > td.clientWidth + 1 }))),
+        );
+        const cols = q.columns;
+        q.rows.forEach((r, i) => {
+          for (const c of ["key", "roleKey"]) {
+            const cell = table[i]![cols.indexOf(c)]!;
+            // The resource's name, whole, with its key on hover.
+            expect(cell.title, `${c} ${i}`).toBe(r[c]);
+            expect(cell.text, `${c} ${i}`).toBe(c === "key" ? r.serviceAccount : r.role);
+            expect(cell.cut, `${c} ${i} is cut short`).toBe(false);
+          }
+        });
+        // The details card names the whole key.
+        await page.click("#g-rows tbody tr[data-row='0']");
+        const card = await page.evaluate(() => document.getElementById("ad-detail")!.innerText);
+        expect(card).toContain(q.rows[0]!.key as string);
+        expect(await page.evaluate(() => (document.getElementById("g-params") as HTMLInputElement).placeholder)).toMatch(/^Values for the query's \$names, as JSON, such as \{"record": /);
+        await context.close();
+      }
     } finally {
       await browser.close();
     }

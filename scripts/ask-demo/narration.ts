@@ -124,16 +124,51 @@ export function joinList(items: readonly string[]): string {
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
+/** The scope prefixes of a key that is not a chant member's (`cloud/...`, `engine/...`): its first segment names no member. */
+const NOT_A_MEMBER = new Set(["cloud", "engine"]);
+
 /**
- * A column as a placeholder names it: `col`, or `col|source` for a column of
- * scope keys, printed as a person names the source (web/source-label.js,
- * behold#1191).
+ * behold#1210: a chant member's key, `<member>/<id>` (docs/.../graph-database.mdx),
+ * as its member and id. Any other key throws: a reply names a member only
+ * where the key says it.
+ */
+function memberKey(v: string, spec: string): { member: string; id: string } {
+  const at = v.indexOf("/");
+  const member = at > 0 ? v.slice(0, at) : "";
+  if (!member || at === v.length - 1 || NOT_A_MEMBER.has(member)) throw new ReplyError(`${spec}: ${v} is not a member's key (<member>/<id>)`);
+  return { member, id: v.slice(at + 1) };
+}
+
+/**
+ * A column as a placeholder names it: `col`, or `col|filter`:
+ *
+ *   source   a scope key, as a person names the source: "the aws member",
+ *            "the AWS account's index" (web/source-label.js, behold#1191)
+ *   member   a member's key, as the member it is in: `gcp/webRule` is
+ *            "the gcp member" (behold#1210)
+ *   id       a member's key without its member: `gcp/webRule` is "webRule"
+ *   name     any key's last segment, decoded: a cluster object's key ends
+ *            in its name
  */
 function columnSpec(spec: string): { name: string; show: (v: string) => string } {
   const [name, filter] = spec.split("|");
   if (filter === undefined) return { name: name!, show: (v) => v };
   if (filter === "source") return { name: name!, show: (v) => (v ? sourceLabel(v) : v) };
-  throw new ReplyError(`${spec} names a filter this filler does not know (source)`);
+  if (filter === "member") return { name: name!, show: (v) => (v ? sourceLabel(`chant/${memberKey(v, spec).member}`) : v) };
+  if (filter === "id") return { name: name!, show: (v) => (v ? memberKey(v, spec).id : v) };
+  if (filter === "name")
+    return {
+      name: name!,
+      show: (v) => {
+        const last = v.split("/").filter(Boolean).pop() ?? "";
+        try {
+          return decodeURIComponent(last);
+        } catch {
+          return last;
+        }
+      },
+    };
+  throw new ReplyError(`${spec} names a filter this filler does not know (source, member, id, name)`);
 }
 
 function column(rows: ReadonlyArray<Record<string, unknown>>, columns: readonly string[], spec: string, placeholder: string): string[] {
@@ -156,9 +191,12 @@ function column(rows: ReadonlyArray<Record<string, unknown>>, columns: readonly 
  *   {{list:col}}         col's distinct non-empty values, joined "a, b and c"
  *   {{first:col}}        col in the first row
  *   {{each:… {col} …}}   the pattern once per row, joined "a, b and c"
+ *   {{pick:col|one|many}} `one` when col has one distinct value, else `many`
  *
  * Where a placeholder names a column, `col|source` prints a scope key as a
- * person names the source: "the aws member", "the AWS account's index".
+ * person names the source: "the aws member", "the AWS account's index";
+ * `col|member`, `col|id` and `col|name` print a key's member, its id within
+ * the member and its last segment (columnSpec lists them).
  *
  * A placeholder that names a column the answer lacks, or that would print
  * nothing, throws {@link ReplyError}: a reply never says less than it claims.
@@ -171,6 +209,12 @@ export function fillReply(template: string, answer: { columns: readonly string[]
     if (op === "count" && !arg) return String(rows.length);
     if (!arg) throw new ReplyError(`${whole} is not a placeholder this filler knows`);
     if (op === "count") return String(column(rows, columns, arg, whole).length);
+    if (op === "pick") {
+      // behold#1210: words that agree with a count, `{{pick:col|rule is|rules are}}`.
+      const [col, one, many, ...extra] = arg.split("|");
+      if (!col || one === undefined || many === undefined || extra.length) throw new ReplyError(`${whole} is pick:col|one|many`);
+      return column(rows, columns, col, whole).length === 1 ? one : many;
+    }
     if (op === "sum") {
       if (!columns.includes(arg)) throw new ReplyError(`${whole} names column ${arg}, and the answer's columns are ${columns.join(", ")}`);
       let total = 0;
@@ -343,7 +387,7 @@ export function questionTurn(q: Question, answer: GraphAnswer, cards: ReadonlyMa
 }
 
 /** The load turn: the commands that filled behold, and what each source loaded, as GET /api/graphdb listed it. */
-export function loadTurn(o: { prompt: string; commands: string[]; reply: string; sources: readonly SourceStamp[]; cards: ReadonlyMap<string, string> }): Turn {
+export function loadTurn(o: { prompt: string; busy: string; commands: string[]; reply: string; sources: readonly SourceStamp[]; cards: ReadonlyMap<string, string> }): Turn {
   const columns = ["scopeKey", "source", "name", "nodes", "edges"];
   const rows = o.sources.map((s) => ({ scopeKey: s.scopeKey, source: s.source, name: s.name, nodes: s.nodes ?? 0, edges: s.edges ?? 0 }));
   if (!rows.length) throw new Dropped("load", "behold loaded no source");
@@ -359,7 +403,7 @@ export function loadTurn(o: { prompt: string; commands: string[]; reply: string;
     kind: "load",
     prompt: o.prompt,
     call: { commands: o.commands },
-    busy: `${o.commands[o.commands.length - 1]}: loading every source into one graph`,
+    busy: o.busy,
     cypher: null,
     params: {},
     columns,
@@ -427,13 +471,14 @@ export function validateNarration(doc: unknown, schema: object): string[] {
  * recorded rows, and everything else is left as it is (behold#1174). A turn
  * whose question is no longer in `questions` is dropped, and its id is listed
  * in `dropped`. With `load` (behold#1191), the load turn's reply is filled
- * again from its template too; without it the load turn is kept. Throws
+ * again from its template too, and its busy line set from `load.busy`
+ * (behold#1206); without it the load turn is kept. Throws
  * naming the turn whose template no longer fills.
  */
 export function refillNarration<N extends { turns: Array<{ id: string; kind: string; prompt: string; reading?: string; columns: string[]; rows: Array<Record<string, unknown>>; reply: string }> }>(
   doc: N,
   questions: readonly Question[],
-  load?: { reply: string },
+  load?: { reply: string; busy?: string },
 ): { doc: N; dropped: string[] } {
   const byId = new Map(questions.map((q) => [q.id, q]));
   const dropped: string[] = [];
@@ -441,7 +486,7 @@ export function refillNarration<N extends { turns: Array<{ id: string; kind: str
   for (const t of doc.turns) {
     if (t.kind === "load" && load) {
       try {
-        turns.push({ ...t, reply: fillReply(load.reply, t) });
+        turns.push({ ...t, ...(load.busy ? { busy: load.busy } : {}), reply: fillReply(load.reply, t) });
       } catch (e) {
         if (e instanceof ReplyError) throw new Error(`turn ${t.id}: the reply cannot be filled: ${e.message}`);
         throw e;

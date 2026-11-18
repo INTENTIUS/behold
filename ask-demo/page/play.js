@@ -387,7 +387,7 @@ export function resourceFacts(graphdb, estateNodes) {
  */
 export function resourceDetails(key, facts) {
   const r = facts.resources.get(key);
-  if (!r) return { key, name: String(key).split("/").pop() || key, rows: [], note: "This page holds nothing more about it." };
+  if (!r) return { key, name: String(key).split("/").pop() || key, rows: [["Key", key]], note: "This page holds nothing more about it." };
   const rows = [
     ["Kind", r.kind],
     ["Name", r.name],
@@ -420,6 +420,8 @@ export function resourceDetails(key, facts) {
   else note = "The workspace declares nothing for it.";
   const cloudId = own.find((v) => v.startsWith("arn:")) || r.nativeId || own[0] || "";
   if (cloudId) rows.push(["Cloud id", cloudId]);
+  // behold#1206: the whole graph key, which the rows table shows as a name.
+  rows.push(["Key", key]);
   return { key, name: r.name || key, rows: rows.filter(([, v]) => v), note };
 }
 

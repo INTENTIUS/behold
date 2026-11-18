@@ -387,7 +387,7 @@ async function main(argv: string[]): Promise<number> {
     const cards = cardIndex(graph.ir.nodes);
     const status = await getJson<{ sources: SourceStamp[]; peer: { available: boolean } }>(`${serve}/api/graphdb`);
     if (!status.peer.available) throw new Refusal("the serve has no @ladybugdb/core, so ask cannot answer Cypher; npm install beside behold");
-    const load = loadTurn({ prompt: LOAD.prompt, commands: estate.commands, reply: LOAD.reply, sources: status.sources, cards });
+    const load = loadTurn({ prompt: LOAD.prompt, busy: LOAD.busy, commands: estate.commands, reply: LOAD.reply, sources: status.sources, cards });
     say(`load: ${load.reply}`);
 
     const agentArgs = ["mcp", "--url", serve];
