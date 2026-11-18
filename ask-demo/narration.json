@@ -368,7 +368,7 @@
           "edges": 0
         }
       ],
-      "reply": "2 Route 53 records reach into another member (gcp.three-cloud.example. and www.three-cloud.example.), and between them they depend on 4 resources there: gcp/webAddress, gcp/webProxy, gcp/webRule and gcp/webUrlMap."
+      "reply": "behold's query ran and returned 7 rows. 2 Route 53 records reach into another member (gcp.three-cloud.example. and www.three-cloud.example.), and between them they depend on 4 resources there: gcp/webAddress, gcp/webProxy, gcp/webRule and gcp/webUrlMap. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done."
     },
     {
       "id": "forwarding-rule-dependents",
@@ -551,7 +551,7 @@
           "edges": 0
         }
       ],
-      "reply": "4 resources depend on webRule, all of them in chant/dns: dns/gcpRecord, dns/gcpCheck, dns/gcpOrigin and dns/gcpEndpoint."
+      "reply": "behold's query ran and returned 4 rows. 4 resources depend on webRule, all of them in chant/dns: dns/gcpRecord, dns/gcpCheck, dns/gcpOrigin and dns/gcpEndpoint. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done."
     },
     {
       "id": "aws-account-owned",
@@ -801,7 +801,7 @@
           "edges": 0
         }
       ],
-      "reply": "7 of the account's indexed resources carry the aws member's ownership markers, and each matches a resource it declares: sg-70acaaa48c47cdd56 is web-task-sg, sg-72eb9f85f54b50f9d is web-alb-sg, subnet-33900fa9 is network-private-subnet-1, subnet-6b280b90 is network-public-subnet-2, subnet-d9c2d3df is network-public-subnet-1, subnet-fe6ca532 is network-private-subnet-2 and vpc-f5fcd107 is network-vpc."
+      "reply": "behold's query ran and returned 7 rows. 7 of the account's indexed resources carry the aws member's ownership markers, and each matches a resource it declares: sg-70acaaa48c47cdd56 is web-task-sg, sg-72eb9f85f54b50f9d is web-alb-sg, subnet-33900fa9 is network-private-subnet-1, subnet-6b280b90 is network-public-subnet-2, subnet-d9c2d3df is network-public-subnet-1, subnet-fe6ca532 is network-private-subnet-2 and vpc-f5fcd107 is network-vpc. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done."
     },
     {
       "id": "aws-account-unmanaged",
@@ -1016,7 +1016,7 @@
           "edges": 0
         }
       ],
-      "reply": "7 resources there have no owner in the workspace: sg-617f6fc6b9d267e6c (AWS::EC2::SecurityGroup), sg-default-us-east-1 (AWS::EC2::SecurityGroup), subnet-default-us-east-1-a (AWS::EC2::Subnet), subnet-default-us-east-1-b (AWS::EC2::Subnet), subnet-default-us-east-1-c (AWS::EC2::Subnet), vpc-default-us-east-1 (AWS::EC2::VPC) and orders-export-archive (AWS::S3::Bucket)."
+      "reply": "behold's query ran and returned 7 rows. 7 resources there have no owner in the workspace: sg-617f6fc6b9d267e6c (AWS::EC2::SecurityGroup), sg-default-us-east-1 (AWS::EC2::SecurityGroup), subnet-default-us-east-1-a (AWS::EC2::Subnet), subnet-default-us-east-1-b (AWS::EC2::Subnet), subnet-default-us-east-1-c (AWS::EC2::Subnet), vpc-default-us-east-1 (AWS::EC2::VPC) and orders-export-archive (AWS::S3::Bucket). The Cypher it ran is in the Cypher pane; you can edit it there once I'm done."
     },
     {
       "id": "serviceaccount-roles",
@@ -1146,7 +1146,7 @@
           "edges": 0
         }
       ],
-      "reply": "2 ServiceAccounts carry an IRSA annotation that names a role in the account: orders-api assumes orders-reader and web assumes web-task-role-460e979. behold joined them on metadata.annotations.eks.amazonaws.com/role-arn by the identity:arn rule."
+      "reply": "behold's query ran and returned 2 rows. 2 ServiceAccounts carry an IRSA annotation that names a role in the account: orders-api assumes orders-reader and web assumes web-task-role-460e979. behold joined them on metadata.annotations.eks.amazonaws.com/role-arn by the identity:arn rule. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done."
     },
     {
       "id": "orders-reader-readers",
@@ -1261,7 +1261,7 @@
           "edges": 0
         }
       ],
-      "reply": "Readers from outside the account: 1, from cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6, joined on metadata.annotations.eks.amazonaws.com/role-arn by the identity:arn rule."
+      "reply": "behold's query ran and returned 1 row. Readers from outside the account: 1, from cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6, joined on metadata.annotations.eks.amazonaws.com/role-arn by the identity:arn rule. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done."
     }
   ]
 }

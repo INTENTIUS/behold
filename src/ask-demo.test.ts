@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { TOOLS, callTool, type Context, type Fetch } from "./mcp.ts";
-import { Dropped, ReplyError, answerOf, askAll, askArguments, cardIndex, checkQuestions, fillReply, joinList, lightKeys, loadTurn, refuseEmpty, validateNarration, type GraphAnswer, type Narration, type Question } from "../scripts/ask-demo/narration.ts";
+import { Dropped, ReplyError, answerOf, askAll, askArguments, cardIndex, checkQuestions, fillReply, joinList, lightKeys, loadTurn, questionReply, refillNarration, refuseEmpty, validateNarration, type GraphAnswer, type Narration, type Question } from "../scripts/ask-demo/narration.ts";
 import { LOAD, QUESTIONS } from "../scripts/ask-demo/questions.ts";
 import { MIN_QUESTIONS, RECORD_COMMAND, narrationSchema } from "../scripts/ask-demo/record.ts";
 
@@ -114,9 +114,9 @@ describe("a question asked of a stubbed behold mcp", () => {
     });
     const { turns, verdicts } = await askAll([cypherQ], mcp.ask, CARDS, SERVE);
     expect(verdicts.map((v) => v.ok)).toEqual([true]);
-    expect(verdicts[0]!.line).toMatch(/^ok {4}cross: 2 rows, 2 cards lit\. 2 cross: www and zone\.$/);
+    expect(verdicts[0]!.line).toMatch(/^ok {4}cross: 2 rows, 2 cards lit\. behold's query ran and returned 2 rows\. 2 cross: www and zone\. /);
     const t = turns[0]!;
-    expect(t).toMatchObject({ id: "cross", kind: "question", cypher: "cypher" in cypherQ.ask ? cypherQ.ask.cypher : "", params: { k: "AWS::Route53::RecordSet" }, columns: ["key", "name"], keys: ["dns/gcpRecord", "dns/zone"], reply: "2 cross: www and zone." });
+    expect(t).toMatchObject({ id: "cross", kind: "question", cypher: "cypher" in cypherQ.ask ? cypherQ.ask.cypher : "", params: { k: "AWS::Route53::RecordSet" }, columns: ["key", "name"], keys: ["dns/gcpRecord", "dns/zone"], reply: "behold's query ran and returned 2 rows. 2 cross: www and zone. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done." });
     expect(t.call).toEqual({ tool: "ask", arguments: askArguments(cypherQ.ask) });
     expect(JSON.parse((t.call as unknown as { arguments: { params: string } }).arguments.params)).toEqual({ k: "AWS::Route53::RecordSet" });
     expect(t.light).toEqual(["dns/RecordSet ×2", "dns/zone"]);
@@ -132,7 +132,7 @@ describe("a question asked of a stubbed behold mcp", () => {
     });
     const { turns } = await askAll([templateQ], mcp.ask, CARDS, SERVE);
     expect(mcp.asked.map((a) => a.split("?")[0])).toEqual(["/api/graphdb/resolve", "/api/graphdb/template"]);
-    expect(turns[0]).toMatchObject({ cypher: query, params: { key: "gcp/webRule" }, call: { tool: "ask", arguments: { resource: "webRule", template: "dependents-all" } }, light: ["dns/RecordSet ×2"], reply: "1 depend on it: dns/gcpRecord." });
+    expect(turns[0]).toMatchObject({ cypher: query, params: { key: "gcp/webRule" }, call: { tool: "ask", arguments: { resource: "webRule", template: "dependents-all" } }, light: ["dns/RecordSet ×2"], reply: "behold's query ran and returned 1 row. 1 depend on it: dns/gcpRecord. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done." });
   });
 
   it("drops a question whose answer is empty, naming it, and keeps the rest", async () => {
@@ -214,5 +214,42 @@ describe("ask-demo/narration.json and its schema", () => {
       expect(QUESTIONS.map((q) => q.id)).toContain(t.id);
     }
     expect(doc.note).not.toMatch(/\blive\b/i);
+  });
+});
+
+describe("the reply frame and the refill (behold#1174)", () => {
+  it("says the query ran and how many rows, then the template, then where the Cypher is", () => {
+    const rows = [{ name: "a" }, { name: "b" }];
+    expect(questionReply("{{list:name}} match.", { columns: ["name"], rows })).toBe("behold's query ran and returned 2 rows. a and b match. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.");
+    expect(questionReply("{{count}} match.", { columns: ["name"], rows: [rows[0]!] })).toMatch(/^behold's query ran and returned 1 row\. /);
+  });
+
+  const qs: Question[] = [{ id: "q", prompt: "p", ask: { cypher: "RETURN 1" }, reply: "{{list:name}} match." }];
+  const doc = {
+    recordedAt: "t",
+    turns: [
+      { id: "load", kind: "load", columns: ["x"], rows: [{ x: 1 }], reply: "Loaded." },
+      { id: "q", kind: "question", columns: ["name"], rows: [{ name: "a" }], reply: "old" },
+    ],
+  };
+
+  it("fills the question turns again by id and changes nothing else", () => {
+    const next = refillNarration(doc, qs);
+    expect(next.turns[0]).toEqual(doc.turns[0]);
+    expect(next.turns[1]).toEqual({ ...doc.turns[1], reply: questionReply("{{list:name}} match.", doc.turns[1]!) });
+    expect(next.recordedAt).toBe("t");
+    expect(doc.turns[1]!.reply).toBe("old");
+  });
+
+  it("names the turn whose template no longer fills, or that has no question", () => {
+    expect(() => refillNarration(doc, [{ ...qs[0]!, reply: "{{list:gone}}" }])).toThrow(/turn q: the reply cannot be filled.*gone/);
+    expect(() => refillNarration(doc, [])).toThrow(/turn q has no question/);
+  });
+
+  it("leaves the committed recording and fixture as the templates fill them", () => {
+    for (const f of ["ask-demo/narration.json", "ask-demo/fixtures/narration.fixture.json"]) {
+      const n = read(f) as Narration;
+      expect(refillNarration(n, QUESTIONS).turns.map((t) => t.reply), f).toEqual(n.turns.map((t) => t.reply));
+    }
   });
 });

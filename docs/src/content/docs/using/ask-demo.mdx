@@ -72,6 +72,14 @@ just ask-demo-record
 
 It boots the estate above on emulators, asks each question through `behold mcp`, and writes `ask-demo/narration.json` and the estate it answered from to `ask-demo/estate/`. It prints one verdict line per question. A question that errors or answers nothing is left out, and the run fails when fewer than three are left. It needs Docker, kind, kubectl, the aws CLI, choudoufu v0.22.0 or newer (`CHOUDOUFU_BIN` or on `PATH`) and plunge (`PLUNGE_BIN` or on `PATH`). It runs under `e2e/lib/safe-env.sh`, which clears every real cloud credential first, and it removes the containers and the cluster it made when it ends.
 
+Each reply says that behold's query ran and how many rows it returned, then answers the question from the recorded rows, then says the Cypher is in the Cypher pane. To change the wording in `scripts/ask-demo/questions.ts` without recording again, fill the replies from the rows already in the file:
+
+```sh
+just ask-demo-refill
+```
+
+It rewrites only each question turn's `reply`, checks the result against `ask-demo/narration.schema.json`, and fails naming a turn whose template no longer fills.
+
 ## Redeploying it
 
 The page is a Cloudflare Worker that serves static files. One command builds the bundle into `dist-ask-demo/` and deploys it, after `npx wrangler login` once:
