@@ -360,6 +360,11 @@ async function playAll(page: Page, reduced: boolean) {
     for (const r of q.rows) for (const v of Object.values(r)) expect(atQ.rows).toContain(String(v));
     const after = await waitFor(page, `loop ${i} to finish`, (s) => s.loop === String(i) && s.phase === "after");
     for (const text of [load.prompt, load.reply, q.prompt, q.reply]) expect(after.terminal.replace(/\s+/g, " "), text).toContain(text.replace(/\s+/g, " "));
+    // behold#1195: the agent says how it reads the question, after the person's prompt and before the busy line.
+    const flat = after.terminal.replace(/\s+/g, " ");
+    const [atPrompt, atReading, atBusy] = [q.prompt, q.reading!, "behold mcp ask"].map((t) => flat.indexOf(t.replace(/\s+/g, " "), flat.indexOf(q.prompt)));
+    expect(atReading, `${q.id}'s reading line shows`).toBeGreaterThan(atPrompt);
+    expect(atBusy, `${q.id}'s busy line follows the reading line`).toBeGreaterThan(atReading);
     expect(after.terminal).toContain(load.busy.replace(/(\.{1,3}|…)\s*$/, "").trim());
     expect(after.readOnly).toBe(false);
     await checkPaneCloses(page, i, reduced, atQ);

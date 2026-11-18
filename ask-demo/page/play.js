@@ -40,8 +40,8 @@ export function narrationProblems(n) {
 
 export const questionsOf = (n) => n.turns.filter((t) => t.kind === "question");
 
-/** A turn as one beat of the prompt pane: the prompt typed, the busy line, the reply. The turn rides along for the page. */
-export const beatOf = (turn) => ({ prompt: turn.prompt, status: turn.busy, reply: turn.reply, turn });
+/** A turn as one beat of the prompt pane: the prompt typed, the agent's reading line when the turn has one, the busy line, the reply. The turn rides along for the page. */
+export const beatOf = (turn) => ({ prompt: turn.prompt, ...(turn.reading ? { reading: turn.reading } : {}), status: turn.busy, reply: turn.reply, turn });
 
 /**
  * Loop `i`: the load turn, then question `i` (counting round). `steps` are

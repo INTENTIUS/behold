@@ -33,7 +33,8 @@
     {
       "id": "dns-cross-cloud",
       "kind": "question",
-      "prompt": "Which of my DNS records depend on something in another cloud?",
+      "prompt": "If GCP has an outage, which of our domains go with it?",
+      "reading": "I'll find the DNS records that depend on GCP resources.",
       "call": { "tool": "ask", "arguments": { "cypher": "MATCH (rec:Resource {kind: $record})-[:REF*1..4]->(dep:Resource {source: 'chant'}) WHERE dep.scopeKey <> rec.scopeKey RETURN DISTINCT rec.key AS key, rec.name AS record, dep.key AS reaches ORDER BY record, reaches", "params": "{\"record\":\"AWS::Route53::RecordSet\"}" } },
       "busy": "behold mcp ask: running a Cypher query over the estate graph",
       "cypher": "MATCH (rec:Resource {kind: $record})-[:REF*1..4]->(dep:Resource {source: 'chant'}) WHERE dep.scopeKey <> rec.scopeKey RETURN DISTINCT rec.key AS key, rec.name AS record, dep.key AS reaches ORDER BY record, reaches",
@@ -51,7 +52,8 @@
     {
       "id": "forwarding-rule-dependents",
       "kind": "question",
-      "prompt": "If the GCP forwarding rule went away, what would break?",
+      "prompt": "What breaks if I delete the GCP load balancer's forwarding rule?",
+      "reading": "I'll find everything that depends on that forwarding rule.",
       "call": { "tool": "ask", "arguments": { "resource": "webRule", "template": "dependents-all" } },
       "busy": "behold mcp ask: resolving webRule, then running the dependents-all template on it",
       "cypher": "MATCH (o:Resource)-[:REF*1..6]->(r:Resource {key: $key}) RETURN DISTINCT o.key AS key, o.kind AS kind, o.scopeKey AS scope",
@@ -68,7 +70,8 @@
     {
       "id": "aws-account-unmanaged",
       "kind": "question",
-      "prompt": "What's in the AWS account's network and storage that nothing in the workspace declares?",
+      "prompt": "Is anything in our AWS account that nobody owns?",
+      "reading": "I'll compare the account's network and storage resources with what the workspace declares, and list those it does not.",
       "call": { "tool": "ask", "arguments": { "cypher": "MATCH (i:Resource {source: 'index', lexicon: 'aws'}) RETURN i.key AS key, i.kind AS kind, i.name AS name" } },
       "busy": "behold mcp ask: running a Cypher query over the estate graph",
       "cypher": "MATCH (i:Resource {source: 'index', lexicon: 'aws'}) RETURN i.key AS key, i.kind AS kind, i.name AS name",

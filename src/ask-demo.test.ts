@@ -105,8 +105,8 @@ describe("fillReply", () => {
 });
 
 describe("a question asked of a stubbed behold mcp", () => {
-  const cypherQ: Question = { id: "cross", prompt: "What crosses?", ask: { cypher: "MATCH (r:Resource {kind: $k}) RETURN r.key AS key, r.name AS name", params: { k: "AWS::Route53::RecordSet" } }, reply: "{{count}} cross: {{list:name}}." };
-  const templateQ: Question = { id: "deps", prompt: "What depends on webRule?", ask: { resource: "webRule", template: "dependents-all" }, reply: "{{count}} depend on it: {{list:key}}." };
+  const cypherQ: Question = { id: "cross", prompt: "What crosses?", reading: "I'll look for what crosses.", ask: { cypher: "MATCH (r:Resource {kind: $k}) RETURN r.key AS key, r.name AS name", params: { k: "AWS::Route53::RecordSet" } }, reply: "{{count}} cross: {{list:name}}." };
+  const templateQ: Question = { id: "deps", prompt: "What depends on webRule?", reading: "I'll look for what depends on webRule.", ask: { resource: "webRule", template: "dependents-all" }, reply: "{{count}} depend on it: {{list:key}}." };
 
   it("records the call, the Cypher, the rows, the cards to light, the sources and the filled reply", async () => {
     const mcp = stubbedMcp({
@@ -224,42 +224,52 @@ describe("the reply frame and the refill (behold#1174)", () => {
     expect(questionReply("{{count}} match.", { columns: ["name"], rows: [rows[0]!] })).toMatch(/^behold's query ran and returned 1 row\. /);
   });
 
-  const qs: Question[] = [{ id: "q", prompt: "p", ask: { cypher: "RETURN 1" }, reply: "{{list:name}} match." }];
+  const qs: Question[] = [{ id: "q", prompt: "p", reading: "r", ask: { cypher: "RETURN 1" }, reply: "{{list:name}} match." }];
   const doc = {
     recordedAt: "t",
     turns: [
-      { id: "load", kind: "load", columns: ["x"], rows: [{ x: 1 }], reply: "Loaded." },
-      { id: "q", kind: "question", columns: ["name"], rows: [{ name: "a" }], reply: "old" },
+      { id: "load", kind: "load", prompt: "l", columns: ["x"], rows: [{ x: 1 }], reply: "Loaded." },
+      { id: "q", kind: "question", prompt: "old prompt", columns: ["name"], rows: [{ name: "a" }], reply: "old" },
     ],
   };
 
-  it("fills the question turns again by id and changes nothing else", () => {
-    const next = refillNarration(doc, qs);
+  it("fills the question turns again by id: prompt, reading line and reply, nothing else", () => {
+    const { doc: next, dropped } = refillNarration(doc, [{ ...qs[0]!, prompt: "new prompt", reading: "I'll look." }]);
+    expect(dropped).toEqual([]);
     expect(next.turns[0]).toEqual(doc.turns[0]);
-    expect(next.turns[1]).toEqual({ ...doc.turns[1], reply: questionReply("{{list:name}} match.", doc.turns[1]!) });
+    expect(next.turns[1]).toEqual({ ...doc.turns[1], prompt: "new prompt", reading: "I'll look.", reply: questionReply("{{list:name}} match.", doc.turns[1]!) });
     expect(next.recordedAt).toBe("t");
     expect(doc.turns[1]!.reply).toBe("old");
+    expect(doc.turns[1]).not.toHaveProperty("reading");
   });
 
   it("fills the load turn again too when given its template, each source in words (behold#1191)", () => {
-    const load = { ...doc, turns: [{ id: "load", kind: "load", columns: ["scopeKey", "nodes"], rows: [{ scopeKey: "cloud/kubernetes/kind-x/ab12", nodes: 4 }], reply: "old" }, doc.turns[1]!] };
-    const next = refillNarration(load, qs, { reply: "From {{each:{scopeKey|source} ({nodes})}}; {{first:scopeKey|source}}." });
+    const load = { ...doc, turns: [{ id: "load", kind: "load", prompt: "l", columns: ["scopeKey", "nodes"], rows: [{ scopeKey: "cloud/kubernetes/kind-x/ab12", nodes: 4 }], reply: "old" }, doc.turns[1]!] };
+    const { doc: next } = refillNarration(load, qs, { reply: "From {{each:{scopeKey|source} ({nodes})}}; {{first:scopeKey|source}}." });
     expect(next.turns[0]!.reply).toBe("From the kind cluster's index (4); the kind cluster's index.");
-    expect(refillNarration(load, qs).turns[0]!.reply).toBe("old");
+    expect(refillNarration(load, qs).doc.turns[0]!.reply).toBe("old");
     expect(() => refillNarration(load, qs, { reply: "{{list:gone}}" })).toThrow(/turn load: the reply cannot be filled.*gone/);
     expect(fillReply("{{list:scopeKey|source}}", { columns: ["scopeKey"], rows: [{ scopeKey: "chant/aws" }, { scopeKey: "somewhere" }] })).toBe("the aws member and somewhere");
     expect(() => fillReply("{{list:scopeKey|loud}}", { columns: ["scopeKey"], rows: [{ scopeKey: "chant/aws" }] })).toThrow(ReplyError);
   });
 
-  it("names the turn whose template no longer fills, or that has no question", () => {
+  it("names the turn whose template no longer fills", () => {
     expect(() => refillNarration(doc, [{ ...qs[0]!, reply: "{{list:gone}}" }])).toThrow(/turn q: the reply cannot be filled.*gone/);
-    expect(() => refillNarration(doc, [])).toThrow(/turn q has no question/);
+  });
+
+  it("drops a turn whose question is gone from questions.ts and says which", () => {
+    const two = { ...doc, turns: [...doc.turns, { ...doc.turns[1]!, id: "gone" }] };
+    const { doc: next, dropped } = refillNarration(two, qs);
+    expect(dropped).toEqual(["gone"]);
+    expect(next.turns.map((t) => t.id)).toEqual([doc.turns[0]!.id, "q"]);
   });
 
   it("leaves the committed recording and fixture as the templates fill them", () => {
     for (const f of ["ask-demo/narration.json", "ask-demo/fixtures/narration.fixture.json"]) {
       const n = read(f) as Narration;
-      expect(refillNarration(n, QUESTIONS, LOAD).turns.map((t) => t.reply), f).toEqual(n.turns.map((t) => t.reply));
+      const { doc: next, dropped } = refillNarration(n, QUESTIONS, LOAD);
+      expect(dropped, f).toEqual([]);
+      expect(next.turns.map((t) => [t.prompt, t.reading, t.reply]), f).toEqual(n.turns.map((t) => [t.prompt, t.reading, t.reply]));
     }
   });
 });

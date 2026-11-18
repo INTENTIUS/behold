@@ -4,9 +4,11 @@
  *
  *   just ask-demo-refill [file ...]
  *
- * Each question turn's reply in ask-demo/narration.json (or the files given),
- * and the load turn's (behold#1191), is rebuilt from its template in
- * ./questions.ts and the turn's recorded columns and rows. Turns match by id. Nothing else in the file changes. The
+ * Each question turn's prompt, reading line and reply in
+ * ask-demo/narration.json (or the files given), and the load turn's reply
+ * (behold#1191), are rebuilt from ./questions.ts and the turn's recorded
+ * columns and rows. Turns match by id; a turn whose question is gone from
+ * questions.ts is dropped, and the command says so. Nothing else in the file changes. The
  * result is checked against ask-demo/narration.schema.json before it is
  * written, and the command fails naming a turn whose template no longer fills.
  */
@@ -24,10 +26,11 @@ function main(): void {
   const schema = JSON.parse(readFileSync(join(ROOT, "ask-demo", "narration.schema.json"), "utf8")) as object;
   for (const file of files) {
     const doc = JSON.parse(readFileSync(file, "utf8")) as Parameters<typeof refillNarration>[0];
-    const next = refillNarration(doc, QUESTIONS, LOAD);
+    const { doc: next, dropped } = refillNarration(doc, QUESTIONS, LOAD);
     const problems = validateNarration(next, schema);
     if (problems.length) throw new Error(`${file} does not meet ask-demo/narration.schema.json:\n  ${problems.join("\n  ")}`);
     writeFileSync(file, `${JSON.stringify(next, null, 2)}\n`);
+    for (const id of dropped) console.log(`dropped turn ${id}: it is no longer in scripts/ask-demo/questions.ts`);
     console.log(`refilled ${next.turns.filter((t) => t.kind === "question" || t.kind === "load").length} replies in ${file}`);
   }
 }

@@ -94,6 +94,28 @@ describe("playback: the turn states (ready, typing, busy, replied)", () => {
   });
 });
 
+describe("the agent's reading line (behold#1195)", () => {
+  const beat = { prompt: "Who can use it?", reading: "I'll find who can use it.", status: "Asking", reply: "Nobody." };
+  it("types like a reply after the prompt, then the busy line starts", () => {
+    const t = beatTiming(beat);
+    expect(t.readingMs).toBe(beat.reading.length * REPLY_TYPE_MS);
+    expect(t.busyAt).toBe(t.readingAt + t.readingMs);
+    const typed = CURSOR_PAUSE_MS + beat.prompt.length * TYPE_MS;
+    expect(t.readingAt).toBe(typed);
+    const mid = playback([beat], typed + 5 * REPLY_TYPE_MS).frames[0];
+    expect(mid).toMatchObject({ reading: beat.reading.slice(0, 5), readingTyping: true, busy: false, replied: false });
+    const busy = playback([beat], t.busyAt + 10).frames[0];
+    expect(busy).toMatchObject({ reading: beat.reading, readingTyping: false, busy: true });
+    expect(playback([beat], 1e9).frames[0]).toMatchObject({ reading: beat.reading, replied: true });
+  });
+  it("is absent from a beat without one, and shown at once under reduced motion", () => {
+    const plain = { ...beat, reading: undefined };
+    expect(beatTiming(plain).readingMs).toBe(0);
+    expect(playback([plain], 1e9).frames[0].reading).toBe("");
+    expect(playback([beat], 0, { reduced: true }).frames[0]).toMatchObject({ reading: beat.reading, readingTyping: false });
+  });
+});
+
 describe("the busy line's pieces", () => {
   it("cycles the spinner glyph and steps the ellipsis every 400 ms", () => {
     expect(SPINNER).toEqual(["✻", "✶", "✳", "✢", "·"]);
@@ -185,6 +207,26 @@ describe("createAskPane: a session of turns", () => {
     return { pane, host, events, tick: () => timer && timer() };
   }
   const entries = (host) => host.children.map((c) => c.className).filter((c) => !c.includes("ask-ready-line"));
+
+  it("types a beat's reading line between the prompt and the busy line (behold#1195)", () => {
+    const clock = { t: T0 };
+    const { pane, host, tick } = make(clock);
+    const ask = { prompt: "go", reading: "I'll look it up.", status: "Asking behold", reply: "Done." };
+    pane.setStep(demo("planned", { ask }));
+    clock.t += CURSOR_PAUSE_MS + 2 * TYPE_MS + 3 * REPLY_TYPE_MS;
+    tick();
+    const kids = () => host.children[0].children;
+    expect(flat(host)).toContain("I'l");
+    expect(flat(host)).not.toContain("I'll look it up.");
+    expect(kids().some((c) => c.className === "ask-busy")).toBe(false);
+    clock.t += 30 * REPLY_TYPE_MS;
+    tick();
+    expect(kids().map((c) => c.className)).toEqual(["ask-line", "ask-reply", "ask-busy"]);
+    expect(kids()[1].textContent).toBe("I'll look it up.");
+    clock.t += BUSY_MIN_MS + 40 * REPLY_TYPE_MS;
+    tick();
+    expect(kids().map((c) => c.className)).toEqual(["ask-line", "ask-reply", "ask-sum", "ask-reply"]);
+  });
 
   it("goes ready, typing, busy, replied; ask-done only after the reply has typed", () => {
     const clock = { t: T0 };
