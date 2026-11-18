@@ -253,6 +253,13 @@ describe("the reply frame and the refill (behold#1174)", () => {
     expect(() => fillReply("{{list:scopeKey|loud}}", { columns: ["scopeKey"], rows: [{ scopeKey: "chant/aws" }] })).toThrow(ReplyError);
   });
 
+  it("fills a question's headline from the rows too (behold#1198)", () => {
+    const { doc: next } = refillNarration(doc, [{ ...qs[0]!, headline: "{{count}} found" }]);
+    expect((next.turns[1] as { headline?: string }).headline).toBe("1 found");
+    expect("headline" in refillNarration(doc, qs).doc.turns[1]!).toBe(false);
+    expect(() => refillNarration(doc, [{ ...qs[0]!, headline: "{{list:gone}}" }])).toThrow(/turn q: the reply cannot be filled.*gone/);
+  });
+
   it("names the turn whose template no longer fills", () => {
     expect(() => refillNarration(doc, [{ ...qs[0]!, reply: "{{list:gone}}" }])).toThrow(/turn q: the reply cannot be filled.*gone/);
   });
@@ -269,7 +276,7 @@ describe("the reply frame and the refill (behold#1174)", () => {
       const n = read(f) as Narration;
       const { doc: next, dropped } = refillNarration(n, QUESTIONS, LOAD);
       expect(dropped, f).toEqual([]);
-      expect(next.turns.map((t) => [t.prompt, t.reading, t.reply]), f).toEqual(n.turns.map((t) => [t.prompt, t.reading, t.reply]));
+      expect(next.turns.map((t) => [t.prompt, t.reading, t.reply, t.headline]), f).toEqual(n.turns.map((t) => [t.prompt, t.reading, t.reply, t.headline]));
     }
   });
 });

@@ -13,6 +13,10 @@ The estate graph frames every card the answer lit and dims the rest. For "If GCP
 
 In the graph pane the rows come first, then a drawing of them. When a row pairs two resources, such as a record and what it `reaches`, the drawing puts the first column's resources on the left and the others on the right, joined by an edge labelled with the column's name. Those edges are the answer's rows as the query paired them; behold adds no join of its own. A column counts as resources only when every value in it is the key of a resource the recording loaded. A query you run yourself is drawn the same way.
 
+A line above the rows says what the answer found, such as "2 Route 53 records depend on 4 resources in another member". It is filled from the recorded rows, like the reply. For a query you run yourself it counts the rows and the resources instead.
+
+Click a row or a node in the drawing, or move to one with Tab and press Enter, to show it on the estate graph. A row lights both of its resources; a node lights itself and every resource a row pairs it with. The view frames them, and a card gives the resource's kind, name and source, where the workspace declares it (with its file when the estate graph knows one), and its cloud id. A resource that only an index read, with no declared resource sharing a cloud id, shows the ownership marker the index found on it, or says the workspace declares nothing for it. Escape clears the selection and goes back to the answer's view. The card uses only what the page already loaded.
+
 Above the query, a line says what the agent asked behold through its `ask` tool; the call as the agent made it shows when you hover over that line. The replies and the list of sources name each source in words, such as the aws member, the azure member's choudoufu graph or the AWS account's index. Its scope key (`chant/aws`, `cloud/aws/<account>/<hash>`) stays in the rows table and shows on hover. During the load turn the pane lists what behold loaded, one source per row, and shows no query.
 
 ## What is recorded

@@ -737,6 +737,42 @@ describe.runIf(peer.ok)("the estate pane's zoom and the answer, on the recording
       const after = await waitFor(page, "the loop to finish", (s) => s.phase === "after");
       expect(after.turn).toBe(q.id);
       expect(await page.evaluate(() => document.documentElement.dataset.held)).toBe("1");
+      // behold#1198: the headline says what was found; a row selects both its ends on the estate graph, with a details card.
+      expect(await page.evaluate(() => document.getElementById("ad-headline")!.textContent)).toBe(q.headline);
+      expect(await page.evaluate(() => document.getElementById("ad-answer-hint")!.textContent)).toMatch(/Click a node or a row/);
+      const picked = (await page.evaluate(() => {
+        const d = document.documentElement.dataset;
+        const card = document.getElementById("ad-detail")!;
+        return { selected: (d.selected || "").split("\n"), lit: (d.lit || "").split("\n"), name: card.querySelector("h3")?.textContent, hidden: card.hidden, text: card.innerText };
+      })) as { selected: string[]; lit: string[]; name: string; hidden: boolean; text: string };
+      expect(picked.hidden).toBe(true);
+      await page.click("#g-rows tbody tr:first-child td:nth-child(3)");
+      const row = q.rows[0]!;
+      const sel = (await page.evaluate(() => {
+        const d = document.documentElement.dataset;
+        const card = document.getElementById("ad-detail")!;
+        return { selected: (d.selected || "").split("\n"), lit: (d.lit || "").split("\n"), name: card.querySelector("h3")?.textContent, hidden: card.hidden, text: card.innerText };
+      })) as typeof picked;
+      expect(sel.selected).toEqual([row.key, row.reaches]);
+      expect(sel.hidden).toBe(false);
+      expect(sel.name).toBe(row.record);
+      expect(sel.text).toContain("the dns member");
+      const reachCard = cardIndex(JSON.parse(readFileSync(join(recordedOut, "estate.json"), "utf8")).nodes).get(row.reaches as string)!;
+      expect(sel.lit).toContain(reachCard);
+      expect(sel.lit).toContain("dns/RecordSet ×4");
+      const selView = await viewBoxOf(page);
+      for (const id of sel.lit) expect(inside(boxes.get(id)!, selView), `${id} in ${JSON.stringify(selView)}`).toBe(true);
+      // The keyboard: a node of the drawing takes focus, Enter selects it, Escape goes back to the answer's light and frame.
+      await page.focus('#g-draw .g-node[data-key="gcp/webRule"]');
+      await page.keyboard.press("Enter");
+      const byKey = (await page.evaluate(() => ({ name: document.querySelector("#ad-detail h3")?.textContent, text: document.getElementById("ad-detail")!.innerText, lit: (document.documentElement.dataset.lit || "").split("\n") }))) as { name: string; text: string; lit: string[] };
+      expect(byKey.name).toBe("webRule");
+      expect(byKey.text).toContain("src/site.ts");
+      expect(byKey.lit).toContain("gcp/webRule");
+      await page.keyboard.press("Escape");
+      const cleared = (await page.evaluate(() => ({ hidden: document.getElementById("ad-detail")!.hidden, lit: (document.documentElement.dataset.lit || "").split("\n"), selected: document.documentElement.dataset.selected }))) as { hidden: boolean; lit: string[]; selected?: string };
+      expect(cleared).toEqual({ hidden: true, lit: q.light, selected: undefined });
+      expect(await viewBoxOf(page)).toEqual(at);
       await context.close();
     } finally {
       await browser.close();

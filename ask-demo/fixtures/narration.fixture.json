@@ -47,7 +47,8 @@
       "sources": [
         { "scopeKey": "chant/dns", "source": "chant", "name": "chant", "readAt": "2026-11-18T11:59:00.000Z", "observedAt": null, "nodes": 2, "edges": 1 }
       ],
-      "reply": "behold's query ran and returned 1 row. 1 Route 53 records reach into another member (www.three-cloud.example.), and between them they depend on 1 resources there: gcp/webRule. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done."
+      "reply": "behold's query ran and returned 1 row. 1 Route 53 records reach into another member (www.three-cloud.example.), and between them they depend on 1 resources there: gcp/webRule. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
+      "headline": "1 Route 53 records depend on 1 resources in another member"
     },
     {
       "id": "forwarding-rule-dependents",
@@ -65,7 +66,8 @@
       "sources": [
         { "scopeKey": "chant/dns", "source": "chant", "name": "chant", "readAt": "2026-11-18T11:59:00.000Z", "observedAt": null }
       ],
-      "reply": "behold's query ran and returned 1 row. 1 resources depend on webRule, all of them in the dns member: dns/gcpRecord. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done."
+      "reply": "behold's query ran and returned 1 row. 1 resources depend on webRule, all of them in the dns member: dns/gcpRecord. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
+      "headline": "1 resources in the dns member depend on the forwarding rule"
     },
     {
       "id": "aws-account-unmanaged",
@@ -85,7 +87,8 @@
       "sources": [
         { "scopeKey": "cloud/aws/000000000000/aaaaaaaaaaaa", "source": "index", "name": "chant-lister", "readAt": "2026-11-18T11:59:00.000Z", "observedAt": "2026-11-18T11:58:00.000Z", "nodes": 2, "edges": 0 }
       ],
-      "reply": "behold's query ran and returned 1 row. 1 resources there have no owner in the workspace: orders-export-archive (AWS::S3::Bucket). The Cypher it ran is in the Cypher pane; you can edit it there once I'm done."
+      "reply": "behold's query ran and returned 1 row. 1 resources there have no owner in the workspace: orders-export-archive (AWS::S3::Bucket). The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
+      "headline": "1 network and storage resources in the AWS account have no owner in the workspace"
     }
   ]
 }

@@ -114,6 +114,25 @@
       /* behold#1190: a long key cuts short, whole on hover, so every column of the answer shows. */
       td { max-width: 26ch; overflow: hidden; text-overflow: ellipsis; }
       details summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+      /* behold#1198: what the answer found, and selecting one of its resources. */
+      #ad-headline { margin: 0; font-size: 14px; font-weight: 600; color: var(--fg); }
+      #ad-headline:empty, #ad-answer-hint:empty { display: none; }
+      #ad-answer-hint { margin: 0; color: var(--muted); font-size: 12.5px; }
+      #g-rows tbody tr[tabindex] { cursor: pointer; }
+      #g-rows tbody tr[tabindex]:hover td { background: var(--surface-box); }
+      #g-rows tbody tr.sel[tabindex] td, #g-rows tbody tr.sel[tabindex]:hover td { background: color-mix(in srgb, var(--pending) 22%, transparent); }
+      #g-rows tbody tr:focus-visible { outline: 2px solid var(--pending); outline-offset: -2px; }
+      #g-draw .g-node[tabindex] { cursor: pointer; }
+      #g-draw .g-node[tabindex]:hover circle, #g-draw .g-node:focus-visible circle { stroke: var(--fg); stroke-width: 2; }
+      #g-draw .g-node:focus { outline: none; }
+      #g-draw .g-node.sel circle { fill: var(--foreign); stroke: var(--fg); stroke-width: 2.5; }
+      #ad-detail { border: 1px solid var(--rule); border-left: 3px solid var(--foreign); border-radius: 6px; background: var(--surface-box); padding: 8px 12px; font-size: 13px; }
+      #ad-detail[hidden] { display: none; }
+      #ad-detail h3 { margin: 0 0 4px; font: 600 13px var(--font-mono); overflow-wrap: anywhere; }
+      #ad-detail dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; margin: 0; }
+      #ad-detail dt { color: var(--muted); }
+      #ad-detail dd { margin: 0; font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+      #ad-detail p { margin: 6px 0 0; }
 
       #k-ask { display: flex; flex-direction: column; justify-content: flex-end; gap: 0.35em; height: 30vh; min-height: 170px; padding: 12px 1.4em 14px; font: 600 clamp(14px, 1.25vw, 20px)/1.3 var(--font-mono); color: var(--fg); background: var(--surface-pane-b); border-top: 1px solid var(--rule); }
       #k-ask[hidden] { display: none; }
@@ -201,8 +220,11 @@
         <pre id="g-error"></pre>
         <!-- behold#1190: the rows first, so the whole answer shows above the fold; the drawing takes the room after them. -->
         <h2>Answer</h2>
+        <p id="ad-headline" role="status"></p>
         <div id="g-rows"></div>
         <div id="g-draw"></div>
+        <p id="ad-answer-hint"></p>
+        <section id="ad-detail" aria-label="The selected resource" aria-live="polite" hidden></section>
         <h2>Sources, and when each was read</h2>
         <pre id="g-sources"></pre>
         <details>

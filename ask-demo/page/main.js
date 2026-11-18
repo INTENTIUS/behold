@@ -33,7 +33,7 @@ import { createAskPane } from "../../web/kiosk-ask.js";
 import { answerDrawing, drawSvg, refusalText, rowsTable } from "../../web/graph-query.js";
 import { bindEngineBadge } from "../../web/engine-badge.js";
 import { applyKeyLight, cardIndex, lightKeys, zoomFrame } from "../../web/key-light.js";
-import { callLine, callTitle, cypherFill, knownResources, loadRows, loopOf, loopTiming, narrationProblems, paneOpen, panView, parseParams, recordedAnswer, recordedWords, sourceTitle, sourceWords, zoomView } from "./play.js";
+import { answerHeadline, callLine, callTitle, cypherFill, knownResources, pairedKeys, resourceDetails, resourceFacts, rowKeys, loadRows, loopOf, loopTiming, narrationProblems, paneOpen, panView, parseParams, recordedAnswer, recordedWords, sourceTitle, sourceWords, zoomView } from "./play.js";
 
 const $ = (id) => document.getElementById(id);
 const html = document.documentElement;
@@ -48,7 +48,7 @@ const clock = () => T0 + (Date.now() - T0) * PACE;
 /** The answer drawing's side, in its own units: smaller than the /graph page's, so its words read in a narrow pane. */
 const DRAW_SIZE = 420;
 
-const state = { narration: null, cards: new Map(), known: new Map(), loop: null, timing: null, startedAt: 0, questionGiven: false, phase: "idle", doneAt: 0, held: false, db: null, engine: "waiting", touched: false, zoomedAt: -Infinity, gesture: false, paneChosen: null };
+const state = { narration: null, cards: new Map(), known: new Map(), facts: null, answer: null, answerLight: { ids: [], why: "" }, selected: null, loop: null, timing: null, startedAt: 0, questionGiven: false, phase: "idle", doneAt: 0, held: false, db: null, engine: "waiting", touched: false, zoomedAt: -Infinity, gesture: false, paneChosen: null };
 
 /** A recorded turn leaves the view alone this long after the visitor last zoomed or dragged it, in ms. */
 const VISITOR_VIEW_MS = 4000;
@@ -121,7 +121,9 @@ function showEstate(on) {
  * or every card, the whole graph, and a caption saying why when there are
  * none. A recorded turn (`auto`) leaves the view where a visitor just put it.
  */
-function lightEstate(ids, why, { auto = false } = {}) {
+function lightEstate(ids, why, { auto = false, select = false } = {}) {
+  // The answer's own light, to go back to when a selection is cleared (behold#1198).
+  if (!select) state.answerLight = { ids, why };
   const on = applyKeyLight(svg, ids, { pulse: !reduced() });
   html.dataset.lit = ids.join("\n");
   $("ad-estate-cap").textContent = why || "";
@@ -279,8 +281,9 @@ function wireZoom() {
  * (behold#1190, `answerDrawing` over the resources the recording loaded), so
  * a recorded turn and a visitor's query draw alike.
  */
-function showAnswer(answer) {
+function showAnswer(answer, turn = null) {
   const { status, body } = answer;
+  clearSelection({ relight: false });
   const picture = status === 200 && body.draw ? answerDrawing(body, state.known) : { nodes: [], edges: [], lit: [] };
   const lit = picture.lit;
   $("g-error").textContent = status === 200 ? "" : refusalText(body);
@@ -288,6 +291,119 @@ function showAnswer(answer) {
   $("g-rows").innerHTML = status === 200 && body.columns ? rowsTable(body.columns, body.rows) : "";
   showSources(status === 200 ? body.sources : []);
   html.dataset.answerLit = lit.join("\n");
+  // behold#1198: what the answer found in one line, and its resources selectable.
+  const rows = status === 200 && Array.isArray(body.rows) ? body.rows : [];
+  $("ad-headline").textContent = status === 200 && body.columns && body.draw && rows.length ? answerHeadline(turn, body, picture) : "";
+  state.answer = status === 200 ? { body, picture } : null;
+  const selectable = markSelectable();
+  $("ad-answer-hint").textContent = selectable ? "Click a node or a row, or press Enter on it, to show it on the estate graph. Escape clears it." : "";
+}
+
+// --- Selecting a resource of the answer (behold#1198) -----------------------
+
+/** Make the drawing's nodes and the rows that name resources focusable; true when there is one. */
+function markSelectable() {
+  const a = state.answer;
+  if (!a) return false;
+  let any = false;
+  for (const g of $("g-draw").querySelectorAll(".g-node[data-key]")) {
+    g.setAttribute("tabindex", "0");
+    g.setAttribute("role", "button");
+    g.setAttribute("aria-label", `Show ${g.textContent.trim() || g.getAttribute("data-key")} on the estate graph`);
+    any = true;
+  }
+  [...$("g-rows").querySelectorAll("tbody tr")].forEach((tr, i) => {
+    if (!rowKeys(a.body, a.picture, i).length) return;
+    tr.setAttribute("tabindex", "0");
+    tr.dataset.row = String(i);
+    tr.setAttribute("aria-label", `Show row ${i + 1} on the estate graph`);
+    any = true;
+  });
+  return any;
+}
+
+/**
+ * Select `keys` (the first is the one the card is about): light their cards on
+ * the estate graph and frame them, mark them in the drawing and the table, and
+ * open the details card.
+ */
+function select(keys, from) {
+  const a = state.answer;
+  if (!a || !keys.length) return;
+  state.selected = { keys, from };
+  hold();
+  const ids = lightKeys({ keys }, state.cards);
+  lightEstate(ids, ids.length ? "" : "The estate graph draws no card for this resource (an indexed cloud or cluster object).", { select: true });
+  html.dataset.selected = keys.join("\n");
+  for (const g of $("g-draw").querySelectorAll(".g-node[data-key]")) g.classList.toggle("sel", keys.includes(g.getAttribute("data-key")));
+  for (const tr of $("g-rows").querySelectorAll("tbody tr")) tr.classList.toggle("sel", tr === from);
+  const d = resourceDetails(keys[0], state.facts);
+  const card = $("ad-detail");
+  card.textContent = "";
+  const head = document.createElement("h3");
+  head.textContent = d.name;
+  head.title = d.key;
+  const list = document.createElement("dl");
+  for (const [k, v] of d.rows) {
+    const dt = document.createElement("dt");
+    dt.textContent = k;
+    const dd = document.createElement("dd");
+    dd.textContent = v;
+    list.append(dt, dd);
+  }
+  card.append(head, list);
+  if (d.note) {
+    const p = document.createElement("p");
+    p.textContent = d.note;
+    card.append(p);
+  }
+  if (keys.length > 1) {
+    const p = document.createElement("p");
+    p.className = "ad-muted";
+    p.textContent = `Lit with it on the estate graph: ${keys.slice(1).map((k) => (state.facts.resources.get(k) || {}).name || k).join(", ")}.`;
+    card.append(p);
+  }
+  card.hidden = false;
+  // The card sits under the drawing: bring it into view without moving the rows more than it takes.
+  if (typeof card.scrollIntoView === "function") card.scrollIntoView({ block: "nearest", behavior: reduced() ? "auto" : "smooth" });
+}
+
+/** Clear the selection; with `relight`, the estate graph goes back to the answer's own light and frame. */
+function clearSelection({ relight = true } = {}) {
+  if (!state.selected) return;
+  state.selected = null;
+  delete html.dataset.selected;
+  $("ad-detail").hidden = true;
+  for (const el of document.querySelectorAll("#g-draw .sel, #g-rows .sel")) el.classList.remove("sel");
+  if (relight) lightEstate(state.answerLight.ids, state.answerLight.why);
+}
+
+function wireSelect() {
+  const fromEvent = (e) => {
+    const a = state.answer;
+    if (!a) return null;
+    const node = e.target.closest && e.target.closest("#g-draw .g-node[data-key]");
+    if (node) return { keys: pairedKeys(a.body, a.picture, node.getAttribute("data-key")), from: node };
+    const tr = e.target.closest && e.target.closest("#g-rows tbody tr[data-row]");
+    if (tr) return { keys: rowKeys(a.body, a.picture, Number(tr.dataset.row)), from: tr };
+    return null;
+  };
+  for (const id of ["g-draw", "g-rows"]) {
+    $(id).addEventListener("click", (e) => {
+      const s = fromEvent(e);
+      if (s) select(s.keys, s.from);
+    });
+    $(id).addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      const s = fromEvent(e);
+      if (!s) return;
+      e.preventDefault();
+      select(s.keys, s.from);
+    });
+  }
+  addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && state.selected) clearSelection();
+  });
 }
 
 /** behold#1191: one line per source in words, its scope key and raw times on hover. */
@@ -361,7 +477,7 @@ function onTurn(turn) {
   $("g-params").value = fill.params;
   $("ad-pane-title").textContent = "Cypher";
   showCall(fill.call, callTitle(turn));
-  showAnswer(recordedAnswer(turn));
+  showAnswer(recordedAnswer(turn), turn);
   lightEstate(
     turn.light,
     turn.light.length ? "" : "The estate graph draws no card for what this answer names (indexed cloud and cluster objects). They light in the answer's drawing.",
@@ -476,6 +592,7 @@ async function boot() {
   state.narration = narration;
   state.cards = cardIndex(estate.nodes);
   state.known = knownResources(graphdb);
+  state.facts = resourceFacts(graphdb, estate.nodes);
   const words = recordedWords(narration);
   $("ad-recorded").textContent = words.date;
   $("ad-replay").textContent = words.replay;
@@ -484,6 +601,7 @@ async function boot() {
   $("ad-note").textContent = narration.note;
   drawEstate(estate);
   wireZoom();
+  wireSelect();
 
   pane = createAskPane({ host: $("k-ask"), now: () => new Date(clock()), reduced });
   badge = bindEngineBadge($("g-engine-badge"), { now: clock });

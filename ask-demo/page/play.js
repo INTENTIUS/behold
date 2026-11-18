@@ -273,3 +273,104 @@ export function zoomView(view, full, factor, at = { x: view.x + view.width / 2, 
 export function panView(view, full, dx, dy) {
   return keepInside({ ...view, x: view.x + dx, y: view.y + dy }, full);
 }
+
+// --- What the answer found, and one resource of it (behold#1198) ------------
+
+/**
+ * The line above the answer: a recorded turn's headline (filled from its rows
+ * when it was recorded), or for a visitor's query, how many rows and how many
+ * resources it holds.
+ */
+export function answerHeadline(turn, body, picture) {
+  if (turn && typeof turn.headline === "string" && turn.headline) return turn.headline;
+  const rows = (body && Array.isArray(body.rows) ? body.rows : []).length;
+  const n = picture && Array.isArray(picture.nodes) ? picture.nodes.length : 0;
+  const plural = (k, w) => `${k} ${w}${k === 1 ? "" : "s"}`;
+  return n ? `${plural(rows, "row")}, ${plural(n, "resource")}` : plural(rows, "row");
+}
+
+/** The resource keys in row `i` of an answer, from its key columns (web/graph-query.js `answerDrawing`). */
+export function rowKeys(body, picture, i) {
+  const row = body && Array.isArray(body.rows) ? body.rows[i] : null;
+  if (!row || !picture) return [];
+  return [...new Set((picture.keyColumns || []).map((c) => row[c]).filter((v) => typeof v === "string"))];
+}
+
+/** A drawn resource and the other end of each row that pairs it with another key, the resource first. */
+export function pairedKeys(body, picture, key) {
+  const out = [key];
+  const rows = body && Array.isArray(body.rows) ? body.rows : [];
+  rows.forEach((_, i) => {
+    const ks = rowKeys(body, picture, i);
+    if (ks.includes(key)) for (const k of ks) if (!out.includes(k)) out.push(k);
+  });
+  return out;
+}
+
+/**
+ * What the page holds about the estate's resources, from files it already
+ * fetched: graphdb.json's resources and cloud ids, and where the estate graph
+ * (estate.json) says each chant resource is declared.
+ */
+export function resourceFacts(graphdb, estateNodes) {
+  const rows = (graphdb && graphdb.rows) || {};
+  const resources = new Map();
+  for (const r of rows.resources || []) if (r && typeof r.key === "string") resources.set(r.key, r);
+  const ids = new Map();
+  const holders = new Map();
+  for (const k of rows.knownAs || []) {
+    if (!k || typeof k.key !== "string" || typeof k.value !== "string") continue;
+    ids.set(k.key, [...(ids.get(k.key) || []), k.value]);
+    holders.set(k.value, [...(holders.get(k.value) || []), k.key]);
+  }
+  const loc = new Map();
+  for (const n of estateNodes || []) if (n && typeof n.id === "string" && n.sourceLoc && typeof n.sourceLoc.file === "string") loc.set(n.id, n.sourceLoc.file);
+  return { resources, ids, holders, loc };
+}
+
+/**
+ * The details card for one resource: its kind, name and source in words
+ * (web/source-label.js), where the workspace declares it, and its cloud id.
+ * A resource read from a cloud or an engine is declared where a chant
+ * resource shares one of its cloud ids; failing that, the ownership marker
+ * the index read on it is shown as recorded; with neither, the workspace
+ * declares nothing for it. Only what the facts hold: a field the page does not know is
+ * left out, never guessed.
+ */
+export function resourceDetails(key, facts) {
+  const r = facts.resources.get(key);
+  if (!r) return { key, name: String(key).split("/").pop() || key, rows: [], note: "This page holds nothing more about it." };
+  const rows = [
+    ["Kind", r.kind],
+    ["Name", r.name],
+    ["Source", sourceLabel(r.scopeKey)],
+  ];
+  const own = facts.ids.get(key) || [];
+  let declared = r.source === "chant" ? r : null;
+  if (!declared) {
+    for (const v of own) {
+      const h = (facts.holders.get(v) || []).map((k) => facts.resources.get(k)).find((x) => x && x.source === "chant");
+      if (h) {
+        declared = h;
+        break;
+      }
+    }
+  }
+  // The ownership marker an index read on the resource itself (its tags), as the index recorded it.
+  let marker = null;
+  try {
+    const m = r.facts ? JSON.parse(r.facts).markers : null;
+    if (m && typeof m.address === "string" && m.address) marker = `${m.address}${typeof m.owner === "string" && m.owner ? ` (${m.owner})` : ""}`;
+  } catch {
+    marker = null;
+  }
+  let note = "";
+  if (declared) {
+    const where = facts.loc.get(declared.key);
+    rows.push(["Declared", `${declared === r ? "" : `as ${declared.name || declared.key} `}in ${sourceLabel(declared.scopeKey)}${where ? `, ${where}` : ""}`]);
+  } else if (marker) rows.push(["Owner marker", marker]);
+  else note = "The workspace declares nothing for it.";
+  const cloudId = own.find((v) => v.startsWith("arn:")) || r.nativeId || own[0] || "";
+  if (cloudId) rows.push(["Cloud id", cloudId]);
+  return { key, name: r.name || key, rows: rows.filter(([, v]) => v), note };
+}
