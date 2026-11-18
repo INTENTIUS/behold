@@ -32,6 +32,12 @@
  * (./narration.ts). The cards to light come from GET /api/graph, the view
  * the export opens on.
  *
+ * behold#1163: the page draws that same estate, so the run also keeps it
+ * beside the narration, in ask-demo/estate/: graph.json, the GET /api/graph
+ * answer the cards came from, and graphdb.json, the graph pane's rows as
+ * `behold export --graphdb` of the same copy writes them, which a visitor's
+ * Cypher runs on in the page. Paths of this machine are taken out of both.
+ *
  * Needs Docker, kind, kubectl, the aws CLI, choudoufu v0.22.0 or newer
  * (CHOUDOUFU_BIN or PATH) and plunge (PLUNGE_BIN or PATH). Runs only under
  * e2e/lib/safe-env.sh, which clears every real cloud credential first.
@@ -50,6 +56,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { exportScrubber } from "../../src/export.ts";
+import { GRAPHDB_FILE, isGraphDbFile } from "../../src/graph-db/graphdb-file.ts";
 import { assertScratch } from "../../src/scratch.ts";
 import { NARRATION_FORMAT, askAll, validateNarration, cardIndex, checkQuestions, loadTurn, type IrNodeLike, type Narration, type SourceStamp } from "./narration.ts";
 import { LOAD, QUESTIONS } from "./questions.ts";
@@ -275,6 +283,41 @@ async function startServe(e: Estate): Promise<string> {
   throw new Refusal(`behold never answered on ${url}:\n${out.join("").slice(-3000)}`);
 }
 
+async function getText(url: string): Promise<string> {
+  const res = await fetch(url, { signal: AbortSignal.timeout(300_000) });
+  if (!res.ok) throw new Refusal(`GET ${url} answered ${res.status}: ${(await res.text()).slice(0, 500)}`);
+  return res.text();
+}
+
+/** Where the estate the page draws is kept, beside the narration. */
+export const ESTATE_DIR = "estate";
+export const ESTATE_GRAPH_FILE = "graph.json";
+
+/**
+ * behold#1163: keep the estate the answers came from, for the page: the
+ * GET /api/graph answer as served, and the graph pane's rows from `behold
+ * export --graphdb` of the same copy, with this run's paths taken out. The
+ * rows must hold every key a turn names, or the two reads were not of one
+ * estate and nothing is kept.
+ */
+function saveEstate(e: Estate, graphBody: string, turns: Narration["turns"], dir: string): void {
+  const exported = join(e.work, "export");
+  say(`behold export --graphdb of the copy, for the rows the page's Cypher runs on`);
+  run(TSX, [CLI, "export", e.target, "--graphdb", "--out", exported], { cwd: e.work, env: e.env, quiet: true });
+  const machine = exportScrubber({ projectDir: e.target });
+  const scrub = (text: string) => machine(text).split(e.work).join("scratch");
+  const rowsText = scrub(readFileSync(join(exported, GRAPHDB_FILE), "utf8"));
+  const rows: unknown = JSON.parse(rowsText);
+  if (!isGraphDbFile(rows)) throw new Refusal(`${join(exported, GRAPHDB_FILE)} is not a graphdb.json this build reads`);
+  const keys = new Set(rows.rows.resources.map((r) => r.key));
+  const missing = turns.flatMap((t) => t.keys.filter((k) => !keys.has(k)).map((k) => `${t.id}: ${k}`));
+  if (missing.length) throw new Refusal(`the export's rows lack keys the answers named, so they are not the estate that answered:\n  ${missing.slice(0, 10).join("\n  ")}`);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, ESTATE_GRAPH_FILE), `${JSON.stringify(JSON.parse(scrub(graphBody)))}\n`);
+  writeFileSync(join(dir, GRAPHDB_FILE), rowsText);
+  say(`kept the estate in ${relative(process.cwd(), dir) || dir}: ${ESTATE_GRAPH_FILE} and ${GRAPHDB_FILE} (${rows.rows.resources.length} resources)`);
+}
+
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { signal: AbortSignal.timeout(300_000) });
   if (!res.ok) throw new Refusal(`GET ${url} answered ${res.status}: ${(await res.text()).slice(0, 500)}`);
@@ -305,7 +348,8 @@ async function main(argv: string[]): Promise<number> {
   try {
     const estate = bootEstate(tools);
     const serve = await startServe(estate);
-    const graph = await getJson<{ ir: { nodes: IrNodeLike[] } }>(`${serve}/api/graph`);
+    const graphBody = await getText(`${serve}/api/graph`);
+    const graph = JSON.parse(graphBody) as { ir: { nodes: IrNodeLike[] } };
     const cards = cardIndex(graph.ir.nodes);
     const status = await getJson<{ sources: SourceStamp[]; peer: { available: boolean } }>(`${serve}/api/graphdb`);
     if (!status.peer.available) throw new Refusal("the serve has no @ladybugdb/core, so ask cannot answer Cypher; npm install beside behold");
@@ -343,6 +387,7 @@ async function main(argv: string[]): Promise<number> {
     };
     const problems = validateNarration(doc, narrationSchema());
     if (problems.length) throw new Refusal(`the narration does not meet ask-demo/narration.schema.json:\n  ${problems.join("\n  ")}`);
+    saveEstate(estate, graphBody, doc.turns, join(dirname(out), ESTATE_DIR));
     mkdirSync(dirname(out), { recursive: true });
     writeFileSync(out, `${JSON.stringify(doc, null, 2)}\n`);
     say(`wrote ${relative(process.cwd(), out) || out}: the load turn and ${kept} questions`);

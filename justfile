@@ -189,7 +189,8 @@ e2e-multi-engine:
     bash e2e/lib/safe-env.sh bash e2e/multi-engine-demo-e2e.sh
     bash e2e/lib/safe-env.sh bash e2e/three-cloud-change-set-e2e.sh
 
-# behold#1161: record the ask demo's loop into ask-demo/narration.json. Boots
+# behold#1161: record the ask demo's loop into ask-demo/narration.json, and
+# the estate it answered from into ask-demo/estate/ (behold#1163). Boots
 # example-three-cloud on floci, floci-az and floci-gcp, makes a bucket and a
 # role outside it, indexes the account with `behold index aws` and a kind
 # cluster with `behold index kubernetes`, serves the estate, and asks each
@@ -199,6 +200,14 @@ e2e-multi-engine:
 # and plunge (PLUNGE_BIN). Names and ports: scripts/ask-demo/scratch.ts.
 ask-demo-record *args:
     bash e2e/lib/safe-env.sh npx tsx scripts/ask-demo/record.ts {{args}}
+
+# behold#1163: the ask demo page as a static bundle in dist-ask-demo/ (or the
+# folder given): ask-demo/narration.json played over the estate the recorder
+# kept in ask-demo/estate/, LadybugDB's WebAssembly build for a visitor's
+# Cypher, and an assets-only Worker config. Deploy with
+# `cd dist-ask-demo && npx wrangler deploy`.
+ask-demo-bundle out="dist-ask-demo":
+    npx tsx scripts/ask-demo/bundle.ts --out {{out}}
 
 # behold#490: terragucci's example painted from example-terragucci-reports,
 # through the real server and the real Terraform read. Needs TERRAGUCCI (a

@@ -12,6 +12,7 @@
  */
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { Ajv2020 } from "ajv/dist/2020.js";
+import { lightKeys } from "../../web/key-light.js";
 
 /** The format string every narration carries. */
 export const NARRATION_FORMAT = "behold-ask-demo-narration/1";
@@ -237,39 +238,10 @@ export function refuseEmpty(answer: GraphAnswer, id: string): GraphAnswer {
 // ---------------------------------------------------------------------------
 
 /** The estate graph's nodes as GET /api/graph draws them: an id, and for a stacked card the ids it stands for. */
-export interface IrNodeLike {
-  id: string;
-  attrs?: { _stackOf?: Array<{ id?: unknown }> } & Record<string, unknown>;
-}
+export type { IrNodeLike } from "../../web/key-light.js";
 
-/** Each id the estate graph can light, to the card that draws it: itself, or the stacked card it is folded into. */
-export function cardIndex(nodes: readonly IrNodeLike[]): Map<string, string> {
-  const card = new Map<string, string>();
-  for (const n of nodes) {
-    card.set(n.id, n.id);
-    for (const s of n.attrs?._stackOf ?? []) if (typeof s.id === "string" && !card.has(s.id)) card.set(s.id, n.id);
-  }
-  return card;
-}
-
-/**
- * The estate graph's cards to light for an answer: each answer key, and each
- * string cell of its rows, that names a card or a resource folded into a
- * stacked card. A resource the estate graph does not draw (an indexed cloud
- * object, a cluster object) lights nothing; the /graph pane draws it from
- * `keys`.
- */
-export function lightKeys(answer: Pick<GraphAnswer, "keys" | "rows">, cards: ReadonlyMap<string, string>): string[] {
-  const out: string[] = [];
-  const add = (v: unknown) => {
-    if (typeof v !== "string") return;
-    const c = cards.get(v);
-    if (c && !out.includes(c)) out.push(c);
-  };
-  for (const k of answer.keys) add(k);
-  for (const r of answer.rows) for (const v of Object.values(r)) add(v);
-  return out;
-}
+// behold#1163: the page lights a visitor's answer with the same two functions, so they live with it (web/key-light.js).
+export { cardIndex, lightKeys } from "../../web/key-light.js";
 
 // ---------------------------------------------------------------------------
 // Turns.
