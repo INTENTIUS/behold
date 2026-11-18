@@ -1,13 +1,13 @@
 {
   "$schema": "./narration.schema.json",
   "format": "behold-ask-demo-narration/1",
-  "recordedAt": "2026-11-18T17:20:19.219Z",
-  "note": "A recording of one run on emulators: example-three-cloud applied to floci, floci-az and floci-gcp, the floci AWS account indexed with behold index aws, and a kind cluster indexed with behold index kubernetes. Each question turn is one behold mcp ask call against behold serve of that estate, with the rows it answered. Nothing here is read when the page plays.",
+  "recordedAt": "2026-11-18T22:29:32.299Z",
+  "note": "A recording of one run on emulators: example-three-cloud applied to floci, floci-az and floci-gcp, the floci AWS account indexed with behold index aws, and a kind cluster indexed with behold index kubernetes. The question about SSH reads one more source, not an emulator: an earlier read of a real AWS account's us-west-2 with just ask-demo-read-real-aws, kept with the account id replaced by 123456789012. Each question turn is one behold mcp ask call against behold serve of that estate, with the rows it answered. Nothing here is read when the page plays.",
   "recordCommand": "just ask-demo-record",
   "agentCommand": "behold mcp --url http://localhost:4674",
   "versions": {
     "behold": "0.34.1",
-    "chant": "0.124.105",
+    "chant": "0.124.107",
     "choudoufu": "0.35.0",
     "plunge": "0.2.1"
   },
@@ -19,6 +19,7 @@
       "call": {
         "commands": [
           "behold index aws --endpoint http://localhost:4671 --account 000000000000 --regions us-east-1",
+          "behold index aws --account 123456789012 --regions us-west-2 --types AWS::EC2::SecurityGroup,AWS::EC2::SecurityGroupIngress,AWS::EC2::VPC",
           "behold index kubernetes --kubeconfig kubeconfig --context kind-behold-ask-demo --regions orders",
           "behold serve three-cloud --port 4674"
         ]
@@ -75,6 +76,13 @@
           "name": "chant-lister",
           "nodes": 17,
           "edges": 11
+        },
+        {
+          "scopeKey": "cloud/aws/123456789012/17c896e234d7",
+          "source": "index",
+          "name": "chant-lister",
+          "nodes": 7,
+          "edges": 1
         },
         {
           "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
@@ -137,7 +145,7 @@
           "scopeKey": "chant/aws",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 28,
           "edges": 42
@@ -146,7 +154,7 @@
           "scopeKey": "chant/azure",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 0
@@ -155,7 +163,7 @@
           "scopeKey": "chant/dns",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 12,
           "edges": 15
@@ -164,7 +172,7 @@
           "scopeKey": "chant/gcp",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 11,
           "edges": 11
@@ -173,7 +181,7 @@
           "scopeKey": "engine/choudoufu/three-cloud-azure@azure",
           "source": "engine",
           "name": "choudoufu",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 15
@@ -182,27 +190,37 @@
           "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T17:20:15.866Z",
-          "observedAt": "2026-11-18T17:19:41.416Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": "2026-11-18T22:28:19.817Z",
           "nodes": 17,
           "edges": 11
+        },
+        {
+          "scopeKey": "cloud/aws/123456789012/17c896e234d7",
+          "source": "index",
+          "name": "chant-lister",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": "2026-11-18T22:10:48.766Z",
+          "nodes": 7,
+          "edges": 1
         },
         {
           "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T17:20:15.866Z",
-          "observedAt": "2026-11-18T17:20:08.779Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": "2026-11-18T22:28:54.205Z",
           "nodes": 4,
           "edges": 0
         }
       ],
-      "reply": "Loaded 86 resources from 7 sources: the aws member (28), the azure member (7), the dns member (12), the gcp member (11), the azure member's choudoufu graph (7), the AWS account's index (17) and the kind cluster's index (4)."
+      "reply": "Loaded 93 resources from 8 sources: the aws member (28), the azure member (7), the dns member (12), the gcp member (11), the azure member's choudoufu graph (7), the AWS account's index (17), the real AWS account's index (7) and the kind cluster's index (4)."
     },
     {
       "id": "dns-cross-cloud",
       "kind": "question",
       "prompt": "If GCP has an outage, which of our domains go with it?",
+      "reading": "I'll find the DNS records that depend on GCP resources.",
       "call": {
         "tool": "ask",
         "arguments": {
@@ -308,7 +326,7 @@
           "scopeKey": "chant/aws",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 28,
           "edges": 42
@@ -317,7 +335,7 @@
           "scopeKey": "chant/azure",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 0
@@ -326,7 +344,7 @@
           "scopeKey": "chant/dns",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 12,
           "edges": 15
@@ -335,7 +353,7 @@
           "scopeKey": "chant/gcp",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 11,
           "edges": 11
@@ -344,7 +362,7 @@
           "scopeKey": "engine/choudoufu/three-cloud-azure@azure",
           "source": "engine",
           "name": "choudoufu",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 15
@@ -353,29 +371,38 @@
           "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T17:20:15.866Z",
-          "observedAt": "2026-11-18T17:19:41.416Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": "2026-11-18T22:28:19.817Z",
           "nodes": 17,
           "edges": 11
+        },
+        {
+          "scopeKey": "cloud/aws/123456789012/17c896e234d7",
+          "source": "index",
+          "name": "chant-lister",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": "2026-11-18T22:10:48.766Z",
+          "nodes": 7,
+          "edges": 1
         },
         {
           "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T17:20:15.866Z",
-          "observedAt": "2026-11-18T17:20:08.779Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": "2026-11-18T22:28:54.205Z",
           "nodes": 4,
           "edges": 0
         }
       ],
       "reply": "behold's query ran and returned 7 rows. 2 Route 53 records reach into another member (gcp.three-cloud.example. and www.three-cloud.example.), and between them they depend on 4 resources there: gcp/webAddress, gcp/webProxy, gcp/webRule and gcp/webUrlMap. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
-      "reading": "I'll find the DNS records that depend on GCP resources.",
       "headline": "2 Route 53 records depend on 4 resources in another member"
     },
     {
       "id": "forwarding-rule-dependents",
       "kind": "question",
       "prompt": "What breaks if I delete the GCP load balancer's forwarding rule?",
+      "reading": "I'll find everything that depends on that forwarding rule.",
       "call": {
         "tool": "ask",
         "arguments": {
@@ -493,7 +520,7 @@
           "scopeKey": "chant/aws",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 28,
           "edges": 42
@@ -502,7 +529,7 @@
           "scopeKey": "chant/azure",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 0
@@ -511,7 +538,7 @@
           "scopeKey": "chant/dns",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 12,
           "edges": 15
@@ -520,7 +547,7 @@
           "scopeKey": "chant/gcp",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 11,
           "edges": 11
@@ -529,7 +556,7 @@
           "scopeKey": "engine/choudoufu/three-cloud-azure@azure",
           "source": "engine",
           "name": "choudoufu",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 15
@@ -538,37 +565,46 @@
           "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T17:20:15.866Z",
-          "observedAt": "2026-11-18T17:19:41.416Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": "2026-11-18T22:28:19.817Z",
           "nodes": 17,
           "edges": 11
+        },
+        {
+          "scopeKey": "cloud/aws/123456789012/17c896e234d7",
+          "source": "index",
+          "name": "chant-lister",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": "2026-11-18T22:10:48.766Z",
+          "nodes": 7,
+          "edges": 1
         },
         {
           "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T17:20:15.866Z",
-          "observedAt": "2026-11-18T17:20:08.779Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": "2026-11-18T22:28:54.205Z",
           "nodes": 4,
           "edges": 0
         }
       ],
       "reply": "behold's query ran and returned 4 rows. 4 resources depend on webRule, all of them in the dns member: dns/gcpRecord, dns/gcpCheck, dns/gcpOrigin and dns/gcpEndpoint. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
-      "reading": "I'll find everything that depends on that forwarding rule.",
       "headline": "4 resources in the dns member depend on the forwarding rule"
     },
     {
       "id": "aws-account-unmanaged",
       "kind": "question",
       "prompt": "Is anything in our AWS account that nobody owns?",
+      "reading": "I'll compare the network and storage resources in the account the workspace deploys to with what the workspace declares, and list those it does not.",
       "call": {
         "tool": "ask",
         "arguments": {
-          "cypher": "MATCH (i:Resource {source: 'index', lexicon: 'aws'}) WHERE i.kind IN ['AWS::EC2::VPC', 'AWS::EC2::Subnet', 'AWS::EC2::SecurityGroup', 'AWS::S3::Bucket'] WITH i, regexp_extract(i.facts, '\"address\":\"([^\"]+)\"', 1) AS owner OPTIONAL MATCH (d:Resource {source: 'chant'}) WHERE owner <> '' AND d.key ENDS WITH ('/' + owner) WITH i, d WHERE d IS NULL RETURN i.key AS key, i.kind AS kind, i.name AS name ORDER BY kind, name"
+          "cypher": "MATCH (i:Resource {source: 'index', lexicon: 'aws'}) WHERE i.kind IN ['AWS::EC2::VPC', 'AWS::EC2::Subnet', 'AWS::EC2::SecurityGroup', 'AWS::S3::Bucket'] WITH i, regexp_extract(i.facts, '\"address\":\"([^\"]+)\"', 1) AS owner OPTIONAL MATCH (d:Resource {source: 'chant'}) WHERE owner <> '' AND d.key ENDS WITH ('/' + owner) WITH i, d WHERE d IS NULL MATCH (o:Resource {source: 'index', lexicon: 'aws'}) WHERE o.scopeKey = i.scopeKey AND o.facts CONTAINS '\"address\":' RETURN DISTINCT i.key AS key, i.kind AS kind, i.name AS name ORDER BY kind, name"
         }
       },
       "busy": "behold mcp ask: running a Cypher query over the estate graph",
-      "cypher": "MATCH (i:Resource {source: 'index', lexicon: 'aws'}) WHERE i.kind IN ['AWS::EC2::VPC', 'AWS::EC2::Subnet', 'AWS::EC2::SecurityGroup', 'AWS::S3::Bucket'] WITH i, regexp_extract(i.facts, '\"address\":\"([^\"]+)\"', 1) AS owner OPTIONAL MATCH (d:Resource {source: 'chant'}) WHERE owner <> '' AND d.key ENDS WITH ('/' + owner) WITH i, d WHERE d IS NULL RETURN i.key AS key, i.kind AS kind, i.name AS name ORDER BY kind, name",
+      "cypher": "MATCH (i:Resource {source: 'index', lexicon: 'aws'}) WHERE i.kind IN ['AWS::EC2::VPC', 'AWS::EC2::Subnet', 'AWS::EC2::SecurityGroup', 'AWS::S3::Bucket'] WITH i, regexp_extract(i.facts, '\"address\":\"([^\"]+)\"', 1) AS owner OPTIONAL MATCH (d:Resource {source: 'chant'}) WHERE owner <> '' AND d.key ENDS WITH ('/' + owner) WITH i, d WHERE d IS NULL MATCH (o:Resource {source: 'index', lexicon: 'aws'}) WHERE o.scopeKey = i.scopeKey AND o.facts CONTAINS '\"address\":' RETURN DISTINCT i.key AS key, i.kind AS kind, i.name AS name ORDER BY kind, name",
       "params": {},
       "columns": [
         "key",
@@ -577,9 +613,9 @@
       ],
       "rows": [
         {
-          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-617f6fc6b9d267e6c",
+          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-43fe1731188163fd7",
           "kind": "AWS::EC2::SecurityGroup",
-          "name": "sg-617f6fc6b9d267e6c"
+          "name": "sg-43fe1731188163fd7"
         },
         {
           "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-default-us-east-1",
@@ -613,7 +649,7 @@
         }
       ],
       "keys": [
-        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-617f6fc6b9d267e6c",
+        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-43fe1731188163fd7",
         "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-default-us-east-1",
         "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-default-us-east-1-a",
         "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-default-us-east-1-b",
@@ -625,9 +661,9 @@
       "draw": {
         "nodes": [
           {
-            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-617f6fc6b9d267e6c",
+            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-43fe1731188163fd7",
             "kind": "AWS::EC2::SecurityGroup",
-            "name": "sg-617f6fc6b9d267e6c",
+            "name": "sg-43fe1731188163fd7",
             "source": "index",
             "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
           },
@@ -710,7 +746,7 @@
           "scopeKey": "chant/aws",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 28,
           "edges": 42
@@ -719,7 +755,7 @@
           "scopeKey": "chant/azure",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 0
@@ -728,7 +764,7 @@
           "scopeKey": "chant/dns",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 12,
           "edges": 15
@@ -737,7 +773,7 @@
           "scopeKey": "chant/gcp",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 11,
           "edges": 11
@@ -746,7 +782,7 @@
           "scopeKey": "engine/choudoufu/three-cloud-azure@azure",
           "source": "engine",
           "name": "choudoufu",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 15
@@ -755,29 +791,182 @@
           "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T17:20:15.866Z",
-          "observedAt": "2026-11-18T17:19:41.416Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": "2026-11-18T22:28:19.817Z",
           "nodes": 17,
           "edges": 11
+        },
+        {
+          "scopeKey": "cloud/aws/123456789012/17c896e234d7",
+          "source": "index",
+          "name": "chant-lister",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": "2026-11-18T22:10:48.766Z",
+          "nodes": 7,
+          "edges": 1
         },
         {
           "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T17:20:15.866Z",
-          "observedAt": "2026-11-18T17:20:08.779Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": "2026-11-18T22:28:54.205Z",
           "nodes": 4,
           "edges": 0
         }
       ],
-      "reply": "behold's query ran and returned 7 rows. 7 resources there have no owner in the workspace: sg-617f6fc6b9d267e6c (AWS::EC2::SecurityGroup), sg-default-us-east-1 (AWS::EC2::SecurityGroup), subnet-default-us-east-1-a (AWS::EC2::Subnet), subnet-default-us-east-1-b (AWS::EC2::Subnet), subnet-default-us-east-1-c (AWS::EC2::Subnet), vpc-default-us-east-1 (AWS::EC2::VPC) and orders-export-archive (AWS::S3::Bucket). The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
-      "reading": "I'll compare the account's network and storage resources with what the workspace declares, and list those it does not.",
+      "reply": "behold's query ran and returned 7 rows. 7 resources there have no owner in the workspace: sg-43fe1731188163fd7 (AWS::EC2::SecurityGroup), sg-default-us-east-1 (AWS::EC2::SecurityGroup), subnet-default-us-east-1-a (AWS::EC2::Subnet), subnet-default-us-east-1-b (AWS::EC2::Subnet), subnet-default-us-east-1-c (AWS::EC2::Subnet), vpc-default-us-east-1 (AWS::EC2::VPC) and orders-export-archive (AWS::S3::Bucket). The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
       "headline": "7 network and storage resources in the AWS account have no owner in the workspace"
+    },
+    {
+      "id": "aws-ssh-open",
+      "kind": "question",
+      "prompt": "Is SSH open to the internet anywhere in our AWS account?",
+      "reading": "I'll look for ingress rules that open port 22 to anywhere.",
+      "call": {
+        "tool": "ask",
+        "arguments": {
+          "cypher": "MATCH (r:Resource {source: 'index', kind: 'AWS::EC2::SecurityGroupIngress'}) WITH r, regexp_extract(r.attrs, '\"IpProtocol\":\"([^\"]+)\"', 1) AS protocol, regexp_extract(r.attrs, '\"FromPort\":(-?[0-9]+)', 1) AS fromPort, regexp_extract(r.attrs, '\"ToPort\":(-?[0-9]+)', 1) AS toPort, regexp_extract(r.attrs, '\"CidrIp\":\"([^\"]+)\"', 1) AS cidr, regexp_extract(r.attrs, '\"CidrIpv6\":\"([^\"]+)\"', 1) AS cidr6 WHERE cidr = '0.0.0.0/0' OR cidr6 = '::/0' WITH r, cidr + cidr6 AS source, CASE WHEN protocol = '-1' THEN 'all traffic' WHEN fromPort = toPort THEN protocol + ' ' + fromPort ELSE protocol + ' ' + fromPort + '-' + toPort END AS opens, (protocol = '-1' OR ((protocol = 'tcp' OR protocol = '6') AND CAST(CASE WHEN fromPort = '' THEN '-9' ELSE fromPort END AS INT64) <= 22 AND CAST(CASE WHEN toPort = '' THEN '-9' ELSE toPort END AS INT64) >= 22)) AS ssh RETURN r.key AS key, r.nativeId AS rule, opens, source, r.location AS region, CASE WHEN ssh THEN r.nativeId ELSE '' END AS sshRule, CASE WHEN ssh THEN '' ELSE r.nativeId + ' (' + opens + ')' END AS other ORDER BY sshRule DESC, rule"
+        }
+      },
+      "busy": "behold mcp ask: running a Cypher query over the estate graph",
+      "cypher": "MATCH (r:Resource {source: 'index', kind: 'AWS::EC2::SecurityGroupIngress'}) WITH r, regexp_extract(r.attrs, '\"IpProtocol\":\"([^\"]+)\"', 1) AS protocol, regexp_extract(r.attrs, '\"FromPort\":(-?[0-9]+)', 1) AS fromPort, regexp_extract(r.attrs, '\"ToPort\":(-?[0-9]+)', 1) AS toPort, regexp_extract(r.attrs, '\"CidrIp\":\"([^\"]+)\"', 1) AS cidr, regexp_extract(r.attrs, '\"CidrIpv6\":\"([^\"]+)\"', 1) AS cidr6 WHERE cidr = '0.0.0.0/0' OR cidr6 = '::/0' WITH r, cidr + cidr6 AS source, CASE WHEN protocol = '-1' THEN 'all traffic' WHEN fromPort = toPort THEN protocol + ' ' + fromPort ELSE protocol + ' ' + fromPort + '-' + toPort END AS opens, (protocol = '-1' OR ((protocol = 'tcp' OR protocol = '6') AND CAST(CASE WHEN fromPort = '' THEN '-9' ELSE fromPort END AS INT64) <= 22 AND CAST(CASE WHEN toPort = '' THEN '-9' ELSE toPort END AS INT64) >= 22)) AS ssh RETURN r.key AS key, r.nativeId AS rule, opens, source, r.location AS region, CASE WHEN ssh THEN r.nativeId ELSE '' END AS sshRule, CASE WHEN ssh THEN '' ELSE r.nativeId + ' (' + opens + ')' END AS other ORDER BY sshRule DESC, rule",
+      "params": {},
+      "columns": [
+        "key",
+        "rule",
+        "opens",
+        "source",
+        "region",
+        "sshRule",
+        "other"
+      ],
+      "rows": [
+        {
+          "key": "cloud/aws/123456789012/17c896e234d7/aws/123456789012/us-west-2/AWS::EC2::SecurityGroupIngress/sgr-0854e2c636682d87a",
+          "rule": "sgr-0854e2c636682d87a",
+          "opens": "tcp 22",
+          "source": "0.0.0.0/0",
+          "region": "us-west-2",
+          "sshRule": "sgr-0854e2c636682d87a",
+          "other": ""
+        },
+        {
+          "key": "cloud/aws/123456789012/17c896e234d7/aws/123456789012/us-west-2/AWS::EC2::SecurityGroupIngress/sgr-061261b6c5d4b6711",
+          "rule": "sgr-061261b6c5d4b6711",
+          "opens": "tcp 443",
+          "source": "0.0.0.0/0",
+          "region": "us-west-2",
+          "sshRule": "",
+          "other": "sgr-061261b6c5d4b6711 (tcp 443)"
+        }
+      ],
+      "keys": [
+        "cloud/aws/123456789012/17c896e234d7/aws/123456789012/us-west-2/AWS::EC2::SecurityGroupIngress/sgr-0854e2c636682d87a",
+        "cloud/aws/123456789012/17c896e234d7/aws/123456789012/us-west-2/AWS::EC2::SecurityGroupIngress/sgr-061261b6c5d4b6711"
+      ],
+      "light": [],
+      "draw": {
+        "nodes": [
+          {
+            "key": "cloud/aws/123456789012/17c896e234d7/aws/123456789012/us-west-2/AWS::EC2::SecurityGroupIngress/sgr-061261b6c5d4b6711",
+            "kind": "AWS::EC2::SecurityGroupIngress",
+            "name": "sgr-061261b6c5d4b6711",
+            "source": "index",
+            "scopeKey": "cloud/aws/123456789012/17c896e234d7"
+          },
+          {
+            "key": "cloud/aws/123456789012/17c896e234d7/aws/123456789012/us-west-2/AWS::EC2::SecurityGroupIngress/sgr-0854e2c636682d87a",
+            "kind": "AWS::EC2::SecurityGroupIngress",
+            "name": "sgr-0854e2c636682d87a",
+            "source": "index",
+            "scopeKey": "cloud/aws/123456789012/17c896e234d7"
+          }
+        ],
+        "edges": []
+      },
+      "sources": [
+        {
+          "scopeKey": "chant/aws",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": null,
+          "nodes": 28,
+          "edges": 42
+        },
+        {
+          "scopeKey": "chant/azure",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": null,
+          "nodes": 7,
+          "edges": 0
+        },
+        {
+          "scopeKey": "chant/dns",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": null,
+          "nodes": 12,
+          "edges": 15
+        },
+        {
+          "scopeKey": "chant/gcp",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": null,
+          "nodes": 11,
+          "edges": 11
+        },
+        {
+          "scopeKey": "engine/choudoufu/three-cloud-azure@azure",
+          "source": "engine",
+          "name": "choudoufu",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": null,
+          "nodes": 7,
+          "edges": 15
+        },
+        {
+          "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c",
+          "source": "index",
+          "name": "chant-lister",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": "2026-11-18T22:28:19.817Z",
+          "nodes": 17,
+          "edges": 11
+        },
+        {
+          "scopeKey": "cloud/aws/123456789012/17c896e234d7",
+          "source": "index",
+          "name": "chant-lister",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": "2026-11-18T22:10:48.766Z",
+          "nodes": 7,
+          "edges": 1
+        },
+        {
+          "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
+          "source": "index",
+          "name": "chant-lister",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": "2026-11-18T22:28:54.205Z",
+          "nodes": 4,
+          "edges": 0
+        }
+      ],
+      "reply": "behold's query ran and returned 2 rows. 1 ingress rule opens SSH, tcp port 22, to anywhere: sgr-0854e2c636682d87a in us-west-2. The other rules open to anywhere are sgr-061261b6c5d4b6711 (tcp 443). This account is a real one, read once with its id redacted. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
+      "headline": "1 rule opens SSH to the internet"
     },
     {
       "id": "serviceaccount-roles",
       "kind": "question",
       "prompt": "Which AWS roles can our Kubernetes pods use?",
+      "reading": "Pods get AWS roles through their ServiceAccounts, so I'll find the roles the cluster's ServiceAccounts point at.",
       "call": {
         "tool": "ask",
         "arguments": {
@@ -842,7 +1031,7 @@
           "scopeKey": "chant/aws",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 28,
           "edges": 42
@@ -851,7 +1040,7 @@
           "scopeKey": "chant/azure",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 0
@@ -860,7 +1049,7 @@
           "scopeKey": "chant/dns",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 12,
           "edges": 15
@@ -869,7 +1058,7 @@
           "scopeKey": "chant/gcp",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 11,
           "edges": 11
@@ -878,7 +1067,7 @@
           "scopeKey": "engine/choudoufu/three-cloud-azure@azure",
           "source": "engine",
           "name": "choudoufu",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 15
@@ -887,29 +1076,38 @@
           "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T17:20:15.866Z",
-          "observedAt": "2026-11-18T17:19:41.416Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": "2026-11-18T22:28:19.817Z",
           "nodes": 17,
           "edges": 11
+        },
+        {
+          "scopeKey": "cloud/aws/123456789012/17c896e234d7",
+          "source": "index",
+          "name": "chant-lister",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": "2026-11-18T22:10:48.766Z",
+          "nodes": 7,
+          "edges": 1
         },
         {
           "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T17:20:15.866Z",
-          "observedAt": "2026-11-18T17:20:08.779Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": "2026-11-18T22:28:54.205Z",
           "nodes": 4,
           "edges": 0
         }
       ],
       "reply": "behold's query ran and returned 2 rows. 2 ServiceAccounts carry an IRSA annotation that names a role in the account: orders-api assumes orders-reader and web assumes web-task-role-460e979. behold joined them on metadata.annotations.eks.amazonaws.com/role-arn by the identity:arn rule. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
-      "reading": "Pods get AWS roles through their ServiceAccounts, so I'll find the roles the cluster's ServiceAccounts point at.",
       "headline": "2 ServiceAccounts in the cluster can assume 2 AWS roles"
     },
     {
       "id": "orders-reader-readers",
       "kind": "question",
       "prompt": "Who outside AWS can use the orders-reader role?",
+      "reading": "I'll find what reaches the orders-reader role from outside the account.",
       "call": {
         "tool": "ask",
         "arguments": {
@@ -959,7 +1157,7 @@
           "scopeKey": "chant/aws",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 28,
           "edges": 42
@@ -968,7 +1166,7 @@
           "scopeKey": "chant/azure",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 0
@@ -977,7 +1175,7 @@
           "scopeKey": "chant/dns",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 12,
           "edges": 15
@@ -986,7 +1184,7 @@
           "scopeKey": "chant/gcp",
           "source": "chant",
           "name": "chant",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 11,
           "edges": 11
@@ -995,7 +1193,7 @@
           "scopeKey": "engine/choudoufu/three-cloud-azure@azure",
           "source": "engine",
           "name": "choudoufu",
-          "readAt": "2026-11-18T17:20:15.866Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
           "observedAt": null,
           "nodes": 7,
           "edges": 15
@@ -1004,23 +1202,31 @@
           "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T17:20:15.866Z",
-          "observedAt": "2026-11-18T17:19:41.416Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": "2026-11-18T22:28:19.817Z",
           "nodes": 17,
           "edges": 11
+        },
+        {
+          "scopeKey": "cloud/aws/123456789012/17c896e234d7",
+          "source": "index",
+          "name": "chant-lister",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": "2026-11-18T22:10:48.766Z",
+          "nodes": 7,
+          "edges": 1
         },
         {
           "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
           "source": "index",
           "name": "chant-lister",
-          "readAt": "2026-11-18T17:20:15.866Z",
-          "observedAt": "2026-11-18T17:20:08.779Z",
+          "readAt": "2026-11-18T22:29:21.069Z",
+          "observedAt": "2026-11-18T22:28:54.205Z",
           "nodes": 4,
           "edges": 0
         }
       ],
       "reply": "behold's query ran and returned 1 row. Readers from outside the account: 1, from the kind cluster's index, joined on metadata.annotations.eks.amazonaws.com/role-arn by the identity:arn rule. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
-      "reading": "I'll find what reaches the orders-reader role from outside the account.",
       "headline": "1 resource from the kind cluster's index reaches orders-reader"
     }
   ]

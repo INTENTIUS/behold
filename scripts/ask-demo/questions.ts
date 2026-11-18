@@ -50,18 +50,46 @@ export const QUESTIONS: readonly Question[] = [
   {
     id: "aws-account-unmanaged",
     prompt: "Is anything in our AWS account that nobody owns?",
-    reading: "I'll compare the account's network and storage resources with what the workspace declares, and list those it does not.",
+    reading: "I'll compare the network and storage resources in the account the workspace deploys to with what the workspace declares, and list those it does not.",
     ask: {
+      // behold#1202: only the account the workspace deploys to, the one whose
+      // index holds resources with the aws member's ownership markers; the
+      // real account's read for the SSH question holds none.
       cypher:
         "MATCH (i:Resource {source: 'index', lexicon: 'aws'}) " +
         "WHERE i.kind IN ['AWS::EC2::VPC', 'AWS::EC2::Subnet', 'AWS::EC2::SecurityGroup', 'AWS::S3::Bucket'] " +
         "WITH i, regexp_extract(i.facts, '\"address\":\"([^\"]+)\"', 1) AS owner " +
         "OPTIONAL MATCH (d:Resource {source: 'chant'}) WHERE owner <> '' AND d.key ENDS WITH ('/' + owner) " +
         "WITH i, d WHERE d IS NULL " +
-        "RETURN i.key AS key, i.kind AS kind, i.name AS name ORDER BY kind, name",
+        "MATCH (o:Resource {source: 'index', lexicon: 'aws'}) WHERE o.scopeKey = i.scopeKey AND o.facts CONTAINS '\"address\":' " +
+        "RETURN DISTINCT i.key AS key, i.kind AS kind, i.name AS name ORDER BY kind, name",
     },
     reply: "{{count}} resources there have no owner in the workspace: {{each:{name} ({kind})}}.",
     headline: "{{count}} network and storage resources in the AWS account have no owner in the workspace",
+  },
+  {
+    // behold#1202: floci lists no ingress rules, so this reads the one real
+    // AWS account read (just ask-demo-read-real-aws), kept with its id
+    // redacted. Only that source indexes AWS::EC2::SecurityGroupIngress.
+    id: "aws-ssh-open",
+    prompt: "Is SSH open to the internet anywhere in our AWS account?",
+    reading: "I'll look for ingress rules that open port 22 to anywhere.",
+    ask: {
+      cypher:
+        "MATCH (r:Resource {source: 'index', kind: 'AWS::EC2::SecurityGroupIngress'}) " +
+        "WITH r, regexp_extract(r.attrs, '\"IpProtocol\":\"([^\"]+)\"', 1) AS protocol, regexp_extract(r.attrs, '\"FromPort\":(-?[0-9]+)', 1) AS fromPort, " +
+        "regexp_extract(r.attrs, '\"ToPort\":(-?[0-9]+)', 1) AS toPort, regexp_extract(r.attrs, '\"CidrIp\":\"([^\"]+)\"', 1) AS cidr, regexp_extract(r.attrs, '\"CidrIpv6\":\"([^\"]+)\"', 1) AS cidr6 " +
+        "WHERE cidr = '0.0.0.0/0' OR cidr6 = '::/0' " +
+        "WITH r, cidr + cidr6 AS source, " +
+        "CASE WHEN protocol = '-1' THEN 'all traffic' WHEN fromPort = toPort THEN protocol + ' ' + fromPort ELSE protocol + ' ' + fromPort + '-' + toPort END AS opens, " +
+        "(protocol = '-1' OR ((protocol = 'tcp' OR protocol = '6') AND CAST(CASE WHEN fromPort = '' THEN '-9' ELSE fromPort END AS INT64) <= 22 AND CAST(CASE WHEN toPort = '' THEN '-9' ELSE toPort END AS INT64) >= 22)) AS ssh " +
+        "RETURN r.key AS key, r.nativeId AS rule, opens, source, r.location AS region, " +
+        "CASE WHEN ssh THEN r.nativeId ELSE '' END AS sshRule, CASE WHEN ssh THEN '' ELSE r.nativeId + ' (' + opens + ')' END AS other ORDER BY sshRule DESC, rule",
+    },
+    reply:
+      "{{count:sshRule}} ingress rule opens SSH, tcp port 22, to anywhere: {{list:sshRule}} in {{list:region}}. The other rules open to anywhere are {{list:other}}. " +
+      "This account is a real one, read once with its id redacted.",
+    headline: "{{count:sshRule}} rule opens SSH to the internet",
   },
   {
     id: "serviceaccount-roles",

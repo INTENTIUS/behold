@@ -73,7 +73,7 @@
       "id": "aws-account-unmanaged",
       "kind": "question",
       "prompt": "Is anything in our AWS account that nobody owns?",
-      "reading": "I'll compare the account's network and storage resources with what the workspace declares, and list those it does not.",
+      "reading": "I'll compare the network and storage resources in the account the workspace deploys to with what the workspace declares, and list those it does not.",
       "call": { "tool": "ask", "arguments": { "cypher": "MATCH (i:Resource {source: 'index', lexicon: 'aws'}) RETURN i.key AS key, i.kind AS kind, i.name AS name" } },
       "busy": "behold mcp ask: running a Cypher query over the estate graph",
       "cypher": "MATCH (i:Resource {source: 'index', lexicon: 'aws'}) RETURN i.key AS key, i.kind AS kind, i.name AS name",

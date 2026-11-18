@@ -58,9 +58,13 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { exportScrubber } from "../../src/export.ts";
 import { GRAPHDB_FILE, isGraphDbFile } from "../../src/graph-db/graphdb-file.ts";
+import { isIndexDocument } from "../../src/graph-db/types.ts";
 import { assertScratch } from "../../src/scratch.ts";
+import { indexVersionName } from "@intentius/chant/lifecycle/index-document";
 import { NARRATION_FORMAT, askAll, validateNarration, cardIndex, checkQuestions, loadTurn, type IrNodeLike, type Narration, type SourceStamp } from "./narration.ts";
 import { LOAD, QUESTIONS } from "./questions.ts";
+import { REAL_AWS_COMMAND, REAL_AWS_FILE } from "./real-aws.ts";
+import { foreignAccountIds, REDACTED_ACCOUNT } from "./redact.ts";
 import { ASK_DEMO_CONTAINERS, ASK_DEMO_CONTEXT, ASK_DEMO_SCRATCH } from "./scratch.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -175,6 +179,8 @@ interface Estate {
   env: NodeJS.ProcessEnv;
   indexDir: string;
   commands: string[];
+  /** The region of the real AWS account read that was loaded (behold#1202), if one was. */
+  realAws?: string;
 }
 
 const SKIP = new Set(["node_modules", ".front-door", "export", ".terraform", ".tofu-records", ".plunge", "stack-export.json", "Pulumi.local.yaml"]);
@@ -239,6 +245,8 @@ function bootEstate(tools: Tools): Estate {
   say("behold index aws, with no project");
   behold(["index", "aws", "--endpoint", aws, "--account", ACCOUNT, "--regions", REGION], { cwd: work, env: awsEnv });
 
+  const realAws = loadRealAws(indexDir, commands);
+
   say(`kind cluster ${ASK_DEMO_SCRATCH.cluster.name}, with two ServiceAccounts that name roles in the account`);
   made.kubeconfig = join(work, "kubeconfig");
   made.cluster = true;
@@ -258,7 +266,32 @@ function bootEstate(tools: Tools): Estate {
   behold(["index", "kubernetes", "--kubeconfig", made.kubeconfig, "--context", ASK_DEMO_CONTEXT, "--regions", NAMESPACE], { cwd: work, env });
 
   commands.push(`behold serve ${relative(work, target)} --port ${ASK_DEMO_SCRATCH.serve.port}`);
-  return { work, target, env, indexDir, commands };
+  return { work, target, env, indexDir, commands, ...(realAws ? { realAws } : {}) };
+}
+
+/**
+ * behold#1202: the one read of a real AWS account, made by `just
+ * ask-demo-read-real-aws` and kept with its account id redacted, goes into
+ * the index store beside the emulator's versions, under the scope key and
+ * version name chant would give it. The serve loads it as one more source.
+ */
+function loadRealAws(indexDir: string, commands: string[]): string | undefined {
+  const file = join(ROOT, REAL_AWS_FILE);
+  if (!existsSync(file)) {
+    say(`no ${REAL_AWS_FILE}, so the question about a real AWS account will answer nothing; ${REAL_AWS_COMMAND} --account <id> makes it`);
+    return;
+  }
+  const doc: unknown = JSON.parse(readFileSync(file, "utf8"));
+  if (!isIndexDocument(doc)) throw new Refusal(`${REAL_AWS_FILE} is not an index version`);
+  if (foreignAccountIds(JSON.stringify(doc)).length) throw new Refusal(`${REAL_AWS_FILE} carries an account id that is not ${REDACTED_ACCOUNT}`);
+  const version = indexVersionName(doc.stamp.observedAt, (doc.stamp as { digest: string }).digest);
+  const dir = join(indexDir, ...doc.stamp.scopeKey.split("/"));
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, version), JSON.stringify(doc));
+  const scope = doc.stamp.scope as unknown as { scopeId: string; locations: string[]; types: string[] };
+  commands.push(`behold index aws --account ${scope.scopeId} --regions ${scope.locations.join(",")} --types ${scope.types.join(",")}`);
+  say(`loaded ${REAL_AWS_FILE}: a real AWS account's ${scope.locations.join(", ")} read on ${doc.stamp.observedAt}, its id replaced by ${REDACTED_ACCOUNT}`);
+  return scope.locations.join(", ");
 }
 
 async function startServe(e: Estate): Promise<string> {
@@ -307,6 +340,7 @@ function saveEstate(e: Estate, graphBody: string, turns: Narration["turns"], dir
   const machine = exportScrubber({ projectDir: e.target });
   const scrub = (text: string) => machine(text).split(e.work).join("scratch");
   const rowsText = scrub(readFileSync(join(exported, GRAPHDB_FILE), "utf8"));
+  if (foreignAccountIds(rowsText).length) throw new Refusal(`the exported rows name an AWS account id other than floci's and ${REDACTED_ACCOUNT}; nothing is kept`);
   const rows: unknown = JSON.parse(rowsText);
   if (!isGraphDbFile(rows)) throw new Refusal(`${join(exported, GRAPHDB_FILE)} is not a graphdb.json this build reads`);
   const keys = new Set(rows.rows.resources.map((r) => r.key));
@@ -379,6 +413,9 @@ async function main(argv: string[]): Promise<number> {
       recordedAt: new Date().toISOString(),
       note:
         "A recording of one run on emulators: example-three-cloud applied to floci, floci-az and floci-gcp, the floci AWS account indexed with behold index aws, and a kind cluster indexed with behold index kubernetes. " +
+        (estate.realAws
+          ? `The question about SSH reads one more source, not an emulator: an earlier read of a real AWS account's ${estate.realAws} with ${REAL_AWS_COMMAND}, kept with the account id replaced by ${REDACTED_ACCOUNT}. `
+          : "") +
         "Each question turn is one behold mcp ask call against behold serve of that estate, with the rows it answered. Nothing here is read when the page plays.",
       recordCommand: RECORD_COMMAND,
       agentCommand: `behold ${agentArgs.join(" ")}`,
@@ -387,6 +424,9 @@ async function main(argv: string[]): Promise<number> {
     };
     const problems = validateNarration(doc, narrationSchema());
     if (problems.length) throw new Refusal(`the narration does not meet ask-demo/narration.schema.json:\n  ${problems.join("\n  ")}`);
+    // behold#1202: nothing is written that names an AWS account but floci's and the redacted placeholder.
+    const foreign = foreignAccountIds(`${JSON.stringify(doc)}\n${graphBody}`);
+    if (foreign.length) throw new Refusal(`the recording names ${foreign.length} AWS account id(s) other than floci's and ${REDACTED_ACCOUNT}; ${out} is left as it was`);
     saveEstate(estate, graphBody, doc.turns, join(dirname(out), ESTATE_DIR));
     mkdirSync(dirname(out), { recursive: true });
     writeFileSync(out, `${JSON.stringify(doc, null, 2)}\n`);

@@ -25,7 +25,8 @@ The answers on the page are a recording. They come from one run of behold on emu
 
 - `example-three-cloud`, a chant workspace with members on chant, choudoufu and plunge, applied to the floci, floci-az and floci-gcp emulators (see [the three-cloud demo](/behold/using/three-cloud/));
 - the emulated AWS account, indexed with `behold index aws`, holding a bucket and a role that nothing in the workspace declares;
-- a kind cluster indexed with `behold index kubernetes`, whose ServiceAccounts name roles in that account.
+- a kind cluster indexed with `behold index kubernetes`, whose ServiceAccounts name roles in that account;
+- for "Is SSH open to the internet anywhere in our AWS account?", one read of a real AWS account's `us-west-2` region, with its security groups and their ingress rules, kept as an index version with the account id replaced by `123456789012`. floci lists no security group ingress rules, so this read is the only part of the recording that did not run on an emulator.
 
 Each question is one call to the `ask` tool of `behold mcp`, made against `behold serve` of that estate, and the page plays the rows behold answered. The prompts are worded as an engineer would ask them. Before it calls behold, the agent says in one line how it reads the question, for example "I'll find the DNS records that depend on GCP resources." That line sits between the prompt and the busy line. The prompts, those lines and the agent's replies were written for the demo. Every number and every resource in a reply is from the recorded answer. While the page plays, nothing reads a cloud, a cluster or a behold server.
 
@@ -87,6 +88,17 @@ just ask-demo-record
 ```
 
 It boots the estate above on emulators, asks each question through `behold mcp`, and writes `ask-demo/narration.json` and the estate it answered from to `ask-demo/estate/`. It prints one verdict line per question. A question that errors or answers nothing is left out, and the run fails when fewer than three are left. It needs Docker, kind, kubectl, the aws CLI, choudoufu v0.22.0 or newer (`CHOUDOUFU_BIN` or on `PATH`) and plunge (`PLUNGE_BIN` or on `PATH`). It runs under `e2e/lib/safe-env.sh`, which clears every real cloud credential first, and it removes the containers and the cluster it made when it ends.
+
+The read of the real AWS account is a separate command, run by a person with the default AWS profile signed in to that account:
+
+```sh
+npm i --no-save @aws-sdk/credential-providers@3
+just ask-demo-read-real-aws --account <account-id>
+```
+
+chant's lister reads the default profile through `@aws-sdk/credential-providers`, which behold does not depend on, so the first line installs it beside behold without changing `package.json`.
+
+It reads and writes `us-west-2` only, and refuses before making anything unless every security group in that region is a default one. It makes two security groups in the region's default VPC, `behold-ask-demo-ssh` opening TCP port 22 to `0.0.0.0/0` and `behold-ask-demo-web` opening TCP port 443 to `0.0.0.0/0`, runs `behold index aws` naming the security group, ingress rule and VPC types, then deletes both groups, even when an earlier step failed, and checks that only the default groups are left. It writes the index version to `ask-demo/real-aws/index-version.json` with the account id replaced by `123456789012` everywhere, and the scope key, digest and version name computed again from the redacted content. `just ask-demo-record` loads that file as one more source. The recorder and `just ask-demo-check` both refuse a file that names any AWS account other than floci's `000000000000` and the placeholder.
 
 Each question carries the agent's reading line, then the busy line. Each reply says that behold's query ran and how many rows it returned, then answers the question from the recorded rows, then says the Cypher is in the Cypher pane. To change the wording in `scripts/ask-demo/questions.ts` without recording again, fill the replies from the rows already in the file:
 

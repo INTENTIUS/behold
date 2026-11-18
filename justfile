@@ -209,6 +209,18 @@ e2e-multi-engine:
 ask-demo-record *args:
     bash e2e/lib/safe-env.sh npx tsx scripts/ask-demo/record.ts {{args}}
 
+# behold#1202: the ask demo's SSH question reads a real AWS account's
+# us-west-2 once, with the default profile (so not under safe-env.sh). It
+# refuses unless the region holds only its default security groups, makes
+# behold-ask-demo-ssh (tcp 22) and behold-ask-demo-web (tcp 443) open to
+# 0.0.0.0/0 in the default VPC, indexes the region's groups and ingress rules,
+# deletes both groups, and writes ask-demo/real-aws/index-version.json with
+# the account id redacted. Needs `npm i --no-save @aws-sdk/credential-providers@3`
+# beside behold first, for chant's lister to read the default profile.
+# A person runs this: read a real AWS account's security group rules for the ask demo.
+ask-demo-read-real-aws *args:
+    npx tsx scripts/ask-demo/real-aws.ts {{args}}
+
 # behold#1174: fill the replies in ask-demo/narration.json again from the
 # templates in scripts/ask-demo/questions.ts and each turn's recorded rows.
 # No emulators; nothing but the replies changes. Fails naming a turn whose

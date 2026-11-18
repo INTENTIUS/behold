@@ -1,0 +1,230 @@
+{
+  "index": "v1",
+  "stamp": {
+    "source": {
+      "kind": "cloud",
+      "name": "chant-lister",
+      "version": "0.34.1"
+    },
+    "scope": {
+      "kind": "cloud",
+      "substrate": "aws",
+      "scopeId": "123456789012",
+      "locations": [
+        "us-west-2"
+      ],
+      "types": [
+        "AWS::EC2::SecurityGroup",
+        "AWS::EC2::SecurityGroupIngress",
+        "AWS::EC2::VPC"
+      ]
+    },
+    "scopeKey": "cloud/aws/123456789012/17c896e234d7",
+    "observedAt": "2026-11-18T22:10:48.766Z",
+    "completedAt": "2026-11-18T22:10:50.356Z",
+    "digest": "01221d2b2ec259e7c81cdd8adf2507617cb84ece192493a8519fe9f6f69ff89e"
+  },
+  "coverage": [
+    {
+      "listedType": "AWS::EC2::SecurityGroup",
+      "location": "us-west-2",
+      "verdict": "listed"
+    },
+    {
+      "listedType": "AWS::EC2::SecurityGroupIngress",
+      "location": "us-west-2",
+      "verdict": "listed"
+    },
+    {
+      "listedType": "AWS::EC2::VPC",
+      "location": "us-west-2",
+      "verdict": "listed"
+    }
+  ],
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "aws/123456789012/us-west-2/AWS::EC2::SecurityGroup/sg-0582434bebb26cb1c",
+        "kind": "AWS::EC2::SecurityGroup",
+        "lexicon": "aws",
+        "attrs": {},
+        "physicalId": "sg-0582434bebb26cb1c",
+        "facts": {
+          "cloudIds": [
+            {
+              "kind": "import-id",
+              "value": "sg-0582434bebb26cb1c"
+            }
+          ],
+          "observedAt": "2026-11-18T22:10:49.461Z"
+        },
+        "listedType": "AWS::EC2::SecurityGroup",
+        "location": "us-west-2",
+        "nativeId": "sg-0582434bebb26cb1c",
+        "tags": {}
+      },
+      {
+        "id": "aws/123456789012/us-west-2/AWS::EC2::SecurityGroup/sg-05a497bc129eb85df",
+        "kind": "AWS::EC2::SecurityGroup",
+        "lexicon": "aws",
+        "attrs": {},
+        "physicalId": "sg-05a497bc129eb85df",
+        "facts": {
+          "cloudIds": [
+            {
+              "kind": "import-id",
+              "value": "sg-05a497bc129eb85df"
+            }
+          ],
+          "observedAt": "2026-11-18T22:10:49.461Z"
+        },
+        "listedType": "AWS::EC2::SecurityGroup",
+        "location": "us-west-2",
+        "nativeId": "sg-05a497bc129eb85df",
+        "tags": {}
+      },
+      {
+        "id": "aws/123456789012/us-west-2/AWS::EC2::SecurityGroup/sg-bb5de3f2",
+        "kind": "AWS::EC2::SecurityGroup",
+        "lexicon": "aws",
+        "attrs": {},
+        "physicalId": "sg-bb5de3f2",
+        "facts": {
+          "cloudIds": [
+            {
+              "kind": "import-id",
+              "value": "sg-bb5de3f2"
+            }
+          ],
+          "observedAt": "2026-11-18T22:10:49.461Z"
+        },
+        "listedType": "AWS::EC2::SecurityGroup",
+        "location": "us-west-2",
+        "nativeId": "sg-bb5de3f2",
+        "tags": {}
+      },
+      {
+        "id": "aws/123456789012/us-west-2/AWS::EC2::SecurityGroupIngress/sgr-061261b6c5d4b6711",
+        "kind": "AWS::EC2::SecurityGroupIngress",
+        "lexicon": "aws",
+        "attrs": {
+          "CidrIp": "0.0.0.0/0",
+          "FromPort": 443,
+          "IpProtocol": "tcp",
+          "ToPort": 443
+        },
+        "physicalId": "sgr-061261b6c5d4b6711",
+        "facts": {
+          "cloudIds": [
+            {
+              "kind": "import-id",
+              "value": "sgr-061261b6c5d4b6711"
+            }
+          ],
+          "observedAt": "2026-11-18T22:10:49.622Z"
+        },
+        "listedType": "AWS::EC2::SecurityGroupIngress",
+        "location": "us-west-2",
+        "nativeId": "sgr-061261b6c5d4b6711",
+        "tags": {}
+      },
+      {
+        "id": "aws/123456789012/us-west-2/AWS::EC2::SecurityGroupIngress/sgr-0854e2c636682d87a",
+        "kind": "AWS::EC2::SecurityGroupIngress",
+        "lexicon": "aws",
+        "attrs": {
+          "CidrIp": "0.0.0.0/0",
+          "FromPort": 22,
+          "IpProtocol": "tcp",
+          "ToPort": 22
+        },
+        "physicalId": "sgr-0854e2c636682d87a",
+        "facts": {
+          "cloudIds": [
+            {
+              "kind": "import-id",
+              "value": "sgr-0854e2c636682d87a"
+            }
+          ],
+          "observedAt": "2026-11-18T22:10:49.622Z"
+        },
+        "listedType": "AWS::EC2::SecurityGroupIngress",
+        "location": "us-west-2",
+        "nativeId": "sgr-0854e2c636682d87a",
+        "tags": {}
+      },
+      {
+        "id": "aws/123456789012/us-west-2/AWS::EC2::SecurityGroupIngress/sgr-0a4b99d7ba631e7ba",
+        "kind": "AWS::EC2::SecurityGroupIngress",
+        "lexicon": "aws",
+        "attrs": {
+          "FromPort": -1,
+          "IpProtocol": "-1",
+          "SourceSecurityGroupId": "sg-bb5de3f2",
+          "SourceSecurityGroupOwnerId": "123456789012",
+          "ToPort": -1
+        },
+        "physicalId": "sgr-0a4b99d7ba631e7ba",
+        "facts": {
+          "cloudIds": [
+            {
+              "kind": "import-id",
+              "value": "sgr-0a4b99d7ba631e7ba"
+            }
+          ],
+          "observedAt": "2026-11-18T22:10:49.622Z"
+        },
+        "listedType": "AWS::EC2::SecurityGroupIngress",
+        "location": "us-west-2",
+        "nativeId": "sgr-0a4b99d7ba631e7ba",
+        "tags": {}
+      },
+      {
+        "id": "aws/123456789012/us-west-2/AWS::EC2::VPC/vpc-c6cc14be",
+        "kind": "AWS::EC2::VPC",
+        "lexicon": "aws",
+        "attrs": {},
+        "physicalId": "vpc-c6cc14be",
+        "facts": {
+          "cloudIds": [
+            {
+              "kind": "import-id",
+              "value": "vpc-c6cc14be"
+            }
+          ],
+          "observedAt": "2026-11-18T22:10:50.356Z"
+        },
+        "listedType": "AWS::EC2::VPC",
+        "location": "us-west-2",
+        "nativeId": "vpc-c6cc14be",
+        "tags": {}
+      }
+    ],
+    "edges": [
+      {
+        "from": "aws/123456789012/us-west-2/AWS::EC2::SecurityGroupIngress/sgr-0a4b99d7ba631e7ba",
+        "to": "aws/123456789012/us-west-2/AWS::EC2::SecurityGroup/sg-bb5de3f2",
+        "kind": "ref",
+        "viaAttr": "SourceSecurityGroupId",
+        "grain": "property",
+        "origin": "derived",
+        "rule": "identity-match:aws:AWS::EC2::SecurityGroup:native-id",
+        "relation": "reference"
+      }
+    ],
+    "groups": {
+      "byLexicon": {
+        "aws": [
+          "aws/123456789012/us-west-2/AWS::EC2::SecurityGroup/sg-0582434bebb26cb1c",
+          "aws/123456789012/us-west-2/AWS::EC2::SecurityGroup/sg-05a497bc129eb85df",
+          "aws/123456789012/us-west-2/AWS::EC2::SecurityGroup/sg-bb5de3f2",
+          "aws/123456789012/us-west-2/AWS::EC2::SecurityGroupIngress/sgr-061261b6c5d4b6711",
+          "aws/123456789012/us-west-2/AWS::EC2::SecurityGroupIngress/sgr-0854e2c636682d87a",
+          "aws/123456789012/us-west-2/AWS::EC2::SecurityGroupIngress/sgr-0a4b99d7ba631e7ba",
+          "aws/123456789012/us-west-2/AWS::EC2::VPC/vpc-c6cc14be"
+        ]
+      }
+    }
+  }
+}

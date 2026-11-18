@@ -18,3 +18,19 @@ export const ASK_DEMO_CONTAINERS = [ASK_DEMO_SCRATCH.floci, ASK_DEMO_SCRATCH.flo
 
 /** kind's context name for the cluster. */
 export const ASK_DEMO_CONTEXT = `kind-${ASK_DEMO_SCRATCH.cluster.name}`;
+
+/**
+ * behold#1202: what `just ask-demo-read-real-aws` makes in a real AWS
+ * account (scripts/ask-demo/real-aws.ts), and the one region it may touch.
+ * Two security groups in that region's default VPC, each opening one port to
+ * the internet, deleted again before the script ends. Nothing else is made.
+ */
+export const ASK_DEMO_REAL_AWS = {
+  region: "us-west-2",
+  groups: [
+    { name: "behold-ask-demo-ssh", port: 22 },
+    { name: "behold-ask-demo-web", port: 443 },
+  ],
+  /** Exactly what `behold index aws` lists there. */
+  types: ["AWS::EC2::SecurityGroup", "AWS::EC2::SecurityGroupIngress", "AWS::EC2::VPC"],
+} as const;
