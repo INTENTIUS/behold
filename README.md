@@ -166,7 +166,7 @@ npx @intentius/behold index kubernetes --context <name>
 
 `behold index <aws|azure|gcp|kubernetes>` lists one account, subscription, project or cluster through that cloud's inventory API, types the result through chant, adds derived edges, and writes one stamped index version to the index store (by default `$XDG_DATA_HOME/behold`, else `~/.local/share/behold`; `--store` names another). It needs no project, starts no server and refuses every action flag. `behold index --help` lists the scope and filter flags. An aws index is typed by the optional peer `@intentius/chant-lexicon-aws`; install it beside behold, or the resources are kept as nodes of unknown kind.
 
-The graph pane at `/graph` on a served page loads every member's IR, engine graph document, index version and cloud listing it finds into one read-only database, and answers Cypher queries and templates over it (`GET /api/graphdb/*`). The query side needs the optional peer `@ladybugdb/core`.
+The graph pane at `/graph` on a served page loads every member's IR, engine graph document, index version and cloud listing it finds into one read-only database, and answers Cypher queries and templates over it (`GET /api/graphdb/*`). The query side needs the optional peer `@ladybugdb/core`. [The graph database](https://intentius.io/behold/using/graph-database/) describes the tables, the routes and the limits.
 
 ### Add an investigation template
 
