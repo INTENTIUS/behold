@@ -7,6 +7,7 @@ import {
   LOOP_MS,
   MAX_ZOOM,
   MIN_DWELL_MS,
+  PANE_BEAT_MS,
   REDUCED_READ_MS,
   beatOf,
   callLine,
@@ -16,6 +17,7 @@ import {
   loopOf,
   loopTiming,
   narrationProblems,
+  paneOpen,
   panView,
   parseParams,
   recordedAnswer,
@@ -87,6 +89,29 @@ describe("loops", () => {
   it("under reduced motion show each turn's words at once, the question a while after the load turn", () => {
     const t = loopTiming(loopOf(RECORDING, 0), { reduced: true });
     expect(t).toEqual({ questionAt: REDUCED_READ_MS, playMs: REDUCED_READ_MS, dwellMs: LOOP_MS - REDUCED_READ_MS, totalMs: LOOP_MS });
+  });
+});
+
+describe("the agent's pane (#1183)", () => {
+  it("stays open while the turns print, however long they take", () => {
+    expect(paneOpen({ phase: "playing" })).toBe(true);
+    expect(paneOpen({ phase: "playing", sinceDoneMs: 60_000 })).toBe(true);
+    expect(paneOpen({ phase: "playing", chosen: false })).toBe(true);
+  });
+
+  it("closes a short beat after the question's reply has printed", () => {
+    expect(PANE_BEAT_MS).toBeGreaterThanOrEqual(1_000);
+    expect(PANE_BEAT_MS).toBeLessThan(MIN_DWELL_MS / 2);
+    expect(paneOpen({ phase: "after", sinceDoneMs: 0 })).toBe(true);
+    expect(paneOpen({ phase: "after", sinceDoneMs: PANE_BEAT_MS - 1 })).toBe(true);
+    expect(paneOpen({ phase: "after", sinceDoneMs: PANE_BEAT_MS })).toBe(false);
+    expect(paneOpen({ phase: "after", sinceDoneMs: MIN_DWELL_MS })).toBe(false);
+  });
+
+  it("follows the visitor once the reply has printed, open or closed", () => {
+    expect(paneOpen({ phase: "after", sinceDoneMs: MIN_DWELL_MS, chosen: true })).toBe(true);
+    expect(paneOpen({ phase: "after", sinceDoneMs: 0, chosen: false })).toBe(false);
+    expect(paneOpen({ phase: "after", sinceDoneMs: MIN_DWELL_MS, chosen: null })).toBe(false);
   });
 });
 

@@ -17,6 +17,10 @@
  *   - LadybugDB's badge beside the Cypher heading moves from the question's
  *     busy line until a few seconds after its answer draws, and while a
  *     visitor's query runs (web/engine-badge.js, on the page's clock);
+ *   - a short beat after the question's reply has printed, the agent's pane
+ *     closes (play.js `paneOpen`) so the estate graph and the Cypher pane
+ *     take its room; the control at its edge opens it again, which holds
+ *     the loop as editing the query does, and the next loop opens it;
  *   - after a loop the Cypher box can be edited, and once LadybugDB's
  *     WebAssembly build has loaded (after the first draw), a visitor's query
  *     runs in the page on the recorded rows (graph-db-wasm.js).
@@ -29,7 +33,7 @@ import { createAskPane } from "../../web/kiosk-ask.js";
 import { drawSvg, refusalText, rowsTable } from "../../web/graph-query.js";
 import { bindEngineBadge } from "../../web/engine-badge.js";
 import { applyKeyLight, cardIndex, lightKeys, zoomFrame } from "../../web/key-light.js";
-import { callLine, cypherFill, drawLight, loopOf, loopTiming, narrationProblems, panView, parseParams, recordedAnswer, recordedWords, sourceWords, zoomView } from "./play.js";
+import { callLine, cypherFill, drawLight, loopOf, loopTiming, narrationProblems, paneOpen, panView, parseParams, recordedAnswer, recordedWords, sourceWords, zoomView } from "./play.js";
 
 const $ = (id) => document.getElementById(id);
 const html = document.documentElement;
@@ -44,7 +48,7 @@ const clock = () => T0 + (Date.now() - T0) * PACE;
 /** The answer drawing's side, in its own units: smaller than the /graph page's, so its words read in a narrow pane. */
 const DRAW_SIZE = 420;
 
-const state = { narration: null, cards: new Map(), loop: null, timing: null, startedAt: 0, questionGiven: false, phase: "idle", doneAt: 0, held: false, db: null, engine: "waiting", touched: false, zoomedAt: -Infinity, gesture: false };
+const state = { narration: null, cards: new Map(), loop: null, timing: null, startedAt: 0, questionGiven: false, phase: "idle", doneAt: 0, held: false, db: null, engine: "waiting", touched: false, zoomedAt: -Infinity, gesture: false, paneChosen: null };
 
 /** A recorded turn leaves the view alone this long after the visitor last zoomed or dragged it, in ms. */
 const VISITOR_VIEW_MS = 4000;
@@ -337,6 +341,30 @@ function onTurn(turn) {
   );
 }
 
+// --- The agent's pane ---------------------------------------------------------
+
+/** Open or close the agent's pane as `paneOpen` says, and the control at its edge to match. */
+function showPane() {
+  const open = paneOpen({ phase: state.phase, sinceDoneMs: clock() - state.doneAt, chosen: state.paneChosen });
+  const was = html.dataset.pane;
+  const now = open ? "open" : "closed";
+  const control = $("ad-convo");
+  control.hidden = state.phase !== "after";
+  if (was === now) return;
+  html.dataset.pane = now;
+  $("ad-ask-fold").inert = !open;
+  control.setAttribute("aria-expanded", String(open));
+  control.textContent = open ? "Hide the conversation" : "Show the conversation";
+}
+
+function togglePane() {
+  const open = html.dataset.pane !== "closed";
+  state.paneChosen = !open;
+  // Opening it is reading the conversation again: the loop waits, as it does for an edited query.
+  if (!open) hold();
+  showPane();
+}
+
 // --- Loops ------------------------------------------------------------------
 
 let pane = null;
@@ -350,6 +378,7 @@ function startLoop(i) {
   state.questionGiven = false;
   state.held = false;
   state.touched = false;
+  state.paneChosen = null;
   state.phase = "playing";
   state.badgeTurn = "idle";
   badge.reset();
@@ -362,12 +391,14 @@ function startLoop(i) {
   lightEstate([], "Nothing is loaded into behold yet.");
   showEstate(false);
   setEditable(false);
+  showPane();
   pane.setStep(state.loop.steps[0]);
 }
 
 function tick() {
   if (!state.loop) return;
   const t = clock();
+  showPane();
   if (state.phase === "playing" && !state.questionGiven && t - state.startedAt >= state.timing.questionAt) {
     state.questionGiven = true;
     pane.setStep(state.loop.steps[1]);
@@ -449,6 +480,7 @@ async function boot() {
     state.phase = "after";
     state.doneAt = clock();
     setEditable(true);
+    showPane();
     // A visitor who zoomed or dragged the estate while it played is looking at it: hold the loop for them.
     if (state.touched) hold();
   });
@@ -457,6 +489,7 @@ async function boot() {
     $(id).addEventListener("focus", hold);
     $(id).addEventListener("input", hold);
   }
+  $("ad-convo").addEventListener("click", togglePane);
   $("ad-next").addEventListener("click", () => {
     startLoop(state.loop ? state.loop.loop + 1 : 0);
   });
