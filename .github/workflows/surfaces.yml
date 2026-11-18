@@ -1,12 +1,12 @@
 name: surfaces
 
 # Pull-request checks for the plugin surfaces in surfaces/. Each one is
-# released on behold's release train (publish.yml, from chant.config.ts), and
+# released on behold's release train (release.yml, from chant.config.ts), and
 # its release checks run again in the train's cut; these run the same builds
 # on a pull request, plus what a release does not: the Backstage plugin against
-# two Backstage releases, and the Headlamp tarball against the checksum
-# artifacthub-pkg.yml names. Nothing here publishes. The VS Code extension has
-# its own workflow, vscode-extension.yml.
+# two Backstage releases, the Headlamp tarball against the checksum
+# artifacthub-pkg.yml names, and the VS Code extension's tests in a real VS
+# Code. Nothing here publishes.
 on:
   pull_request:
     paths:
@@ -14,6 +14,10 @@ on:
       - "surfaces/headlamp-behold/**"
       - "surfaces/argocd-behold/**"
       - "surfaces/backstage-plugin-behold/**"
+      - "surfaces/vscode-behold/**"
+      - "src/viewer/**"
+      - "scripts/build-viewer.mts"
+      - "src/chant.ts"
       - "LICENSE"
       - ".github/workflows/surfaces.yml"
   # Rehearse every build without publishing.
@@ -124,3 +128,30 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Export the dynamic plugin and build the image
         run: npm run package-dynamic
+
+  # The viewer build needs a pinhole whose root entry bundles for a browser
+  # (pinhole 0.6.0, INTENTIUS/pinhole#133).
+  vscode-behold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: surfaces/vscode-behold
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+      - name: install the repository (the reader and the viewer are built from it)
+        run: npm ci
+        working-directory: .
+      - run: npm ci
+      - run: npm run tsc
+      - run: npm test
+      - run: npm run build
+      # Prints the VSIX size and fails above budget.json.
+      - name: package
+        run: npm run package
+      # A real VS Code (the Extension Development Host), no `node` on PATH.
+      - name: tests in VS Code
+        run: xvfb-run -a npm run test:vscode

@@ -4,8 +4,15 @@ Building and testing need nothing from this list. Publishing does, and every
 step here is for a maintainer: it needs an account or an organisation setting
 that an agent or a contributor cannot create.
 
-The workflow is `.github/workflows/vscode-extension.yml`. It runs on a tag
-`vscode-behold-v<version>` that equals `version` in this folder's package.json.
+The extension is released on behold's release train: `chant.config.ts` in
+this folder is its member, and `just release` at the repository root starts
+`.github/workflows/release.yml`. A train that finds a change to the extension
+since its last release cuts the next version, stamps it into package.json,
+builds and packages the .vsix, runs the typecheck and the unit tests, and
+attaches the .vsix and `checksums.txt` to the GitHub release
+`vscode-behold-v<version>`. That is the only target today. The two registries
+below become targets of the member once their setup is done and the release
+workflow can run the Marketplace sign-in (INTENTIUS/chant#5318).
 
 ## Visual Studio Marketplace
 
@@ -19,8 +26,7 @@ The workflow is `.github/workflows/vscode-extension.yml`. It runs on a tag
    that application as a member of the publisher with the Manager role.
 3. In the repository settings create an environment `vscode-marketplace` and
    set the repository variables `AZURE_CLIENT_ID` and `AZURE_TENANT_ID`. No
-   Marketplace token is stored anywhere. Until `AZURE_CLIENT_ID` exists the
-   `marketplace` job is skipped.
+   Marketplace token is stored anywhere.
 
 ## Open VSX (Cursor, VSCodium and other forks)
 
@@ -32,13 +38,11 @@ The workflow is `.github/workflows/vscode-extension.yml`. It runs on a tag
    `OVSX_PAT` in an environment `vscode-open-vsx`. Open VSX issues personal
    access tokens, and no OIDC route to it is known here (not checked against
    Open VSX's current docs), so this is the one long-lived credential in the path. Rotate it on a
-   schedule, and scope it to the environment so only a tag run can read it.
+   schedule, and scope it to the environment so only a release run can read it.
 
 ## First release
 
-1. Tag `vscode-behold-v0.1.0` after the pinhole 0.6.0 release is in
-   behold's package.json (the viewer build needs it).
-2. The `package` job prints the VSIX size and fails above `budget.json`.
-3. Check the listing on both registries, then install the VSIX from Open VSX
-   into VSCodium or Cursor and run "behold: Show infrastructure graph" on a
-   folder of .tf files.
+1. `just release`. The first train releases the extension, which has no
+   release yet. The cut packages the .vsix and fails above `budget.json`.
+2. Install the .vsix from the GitHub release into VS Code, VSCodium or Cursor
+   and run "behold: Show infrastructure graph" on a folder of .tf files.

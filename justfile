@@ -33,7 +33,7 @@ build:
 # tsc + tests + build — the fast local gate.
 check: tsc test build
 
-# Start behold's release train: dispatch publish.yml, chant release's train
+# Start behold's release train: dispatch release.yml, chant release's train
 # workflow, from main. It takes main's head once its checks are green and
 # releases every product that changed since its last release (the npm package
 # and the plugin surfaces, chant.workspace.json's members), each at its own
@@ -43,14 +43,14 @@ check: tsc test build
 #   just release
 #   just release "behold=minor"
 release levels="auto":
-    gh workflow run publish.yml --ref main -f levels="{{levels}}"
+    gh workflow run release.yml --ref main -f levels="{{levels}}"
 
 # The train's plan from this checkout: the products and labels the next
 # release would cut. Cuts, tags and pushes nothing.
 release-plan:
     npx chant workspace train cut release
 
-# Render .github/workflows/publish.yml from chant.config.ts. Never edit that file by hand.
+# Render .github/workflows/release.yml from chant.config.ts. Never edit that file by hand.
 release-workflow:
     npx chant release workflow
 

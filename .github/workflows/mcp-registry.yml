@@ -1,7 +1,7 @@
 name: mcp-registry
 
 # The official MCP Registry listing (behold#1050), once a release is out. The
-# release itself is publish.yml, behold's release train, which chant writes
+# release itself is release.yml, behold's release train, which chant writes
 # from chant.config.ts and which publishes to npm and creates the GitHub
 # release. This workflow runs when that one finishes, lists the behold version
 # it released (a train that released only plugin surfaces has none, and this

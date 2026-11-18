@@ -6,8 +6,9 @@
 //   headlamp-behold           surfaces/headlamp-behold           plugin tarball on a GitHub release, headlamp-behold-v<version>
 //   backstage-plugin-behold   surfaces/backstage-plugin-behold   dynamic-plugin image on ghcr.io, backstage-plugin-behold-v<version>
 //   argocd-behold             surfaces/argocd-behold             extension tarball on a GitHub release, argocd-behold-v<version>
+//   vscode-behold             surfaces/vscode-behold             .vsix on a GitHub release, vscode-behold-v<version>
 //
-// `just release` dispatches .github/workflows/publish.yml, which `just
+// `just release` dispatches .github/workflows/release.yml, which `just
 // release-workflow` renders from this file (never edit it by hand). The run
 // takes main's head once its checks are green, runs `chant workspace train cut
 // release`, which cuts every member that changed since its last release at a
@@ -20,6 +21,6 @@ export default {
   release: {
     green: "forge-checks",
     train: { env: "release" },
-    workflow: { trigger: "dispatch", file: ".github/workflows/publish.yml" },
+    workflow: { trigger: "dispatch", file: ".github/workflows/release.yml" },
   },
 };

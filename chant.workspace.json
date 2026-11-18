@@ -31,6 +31,12 @@
       "dir": "surfaces/argocd-behold",
       "kind": "chant",
       "because": "the Argo CD UI extension's tarball, released at its own version on the release train"
+    },
+    {
+      "name": "vscode-behold",
+      "dir": "surfaces/vscode-behold",
+      "kind": "chant",
+      "because": "the VS Code extension's .vsix, released at its own version on the release train"
     }
   ]
 }
