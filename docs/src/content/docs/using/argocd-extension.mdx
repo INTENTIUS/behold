@@ -184,8 +184,7 @@ cluster running.
 ## Listing and releases
 
 Argo CD keeps no catalog of extensions, so a user installs this one as above.
-Publishing is a maintainer step: push the tag `argocd-behold-v<version>`, which
-runs `.github/workflows/argocd-extension-release.yml` and attaches the tarball
-and `checksums.txt` to a release. Any public listing, such as a link from the
+Each release on GitHub, tagged `argocd-behold-v<version>`, holds the tarball
+and `checksums.txt`. Any public listing, such as a link from the
 Argo CD extensions page or an `argoproj-labs` repository, is a separate
 request to that project.

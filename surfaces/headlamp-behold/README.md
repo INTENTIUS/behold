@@ -29,8 +29,8 @@ This folder lives in the behold repository until a `behold-surfaces`
 repository exists. `src/behold/` holds copies of three modules from behold's
 `web/` (`cut-around.js`, `neighbourhood.js`, `outside-refs.js`); `node
 scripts/sync-behold.mjs` refreshes them and a test fails if they drift. To move
-the folder, take `surfaces/headlamp-behold/`, `.github/workflows/headlamp-plugin-release.yml`
-and the three modules as the source of `src/behold/`, then drop the drift test.
+the folder, take `surfaces/headlamp-behold/` (its `chant.config.ts` is a release train
+member), the `headlamp-behold` job of `.github/workflows/surfaces.yml` and the three modules as the source of `src/behold/`, then drop the drift test.
 The e2e imports Playwright from behold's dependencies and needs its own.
 
 ## Develop
@@ -49,16 +49,24 @@ behold-headlamp` and `docker rm -f behold-headlamp-ui`.
 
 `node scripts/package.mjs` writes `release/headlamp-behold-<version>.tar.gz`
 (the same bytes on every build of one commit) and puts its sha256 in
-`artifacthub-pkg.yml`. The tag `headlamp-behold-v<version>` runs
-`.github/workflows/headlamp-plugin-release.yml`, which rebuilds, fails if the
-checksum differs from the file, and attaches the tarball to a release.
+`artifacthub-pkg.yml`; `--check`, which `just headlamp-plugin` and pull-request
+CI run, fails when the file names another checksum.
+
+The plugin is released on behold's release train (`just release` at the
+repository root; `chant.config.ts` in this folder is its member). A train that
+finds a change here since the last release cuts the next version, stamps it
+into `package.json`, runs the typecheck and tests, builds the tarball and
+attaches it, with its `.sha256`, to the release `headlamp-behold-v<version>`.
+The tarball holds `package.json`, so `artifacthub-pkg.yml` can name its
+checksum only once the version is known.
 
 Maintainer steps, in order:
 
-1. Bump `version` in `package.json` and `artifacthub-pkg.yml` (and the version
-   in `archive-url`), run `npm run build && node scripts/package.mjs`, commit.
-2. Push the tag `headlamp-behold-v<version>` and confirm the release holds the
-   tarball.
+1. Release it with `just release` and confirm the release holds the tarball.
+2. In a pull request of its own, set `version` in `package.json` and
+   `artifacthub-pkg.yml` (and the version in `archive-url`) to the released
+   version, run `npm run build && node scripts/package.mjs`, and check that the
+   checksum it writes is the release's `.sha256`.
 3. On artifacthub.io, add the repository as kind "Headlamp plugins", pointing
    at this folder's repository path. Copy its repository ID into
    `artifacthub-repo.yml` with the owner's email.

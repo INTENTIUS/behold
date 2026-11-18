@@ -1,28 +1,26 @@
-// What `chant release` cuts and publishes for @intentius/behold. `just
-// release-workflow` renders .github/workflows/release.yml from it. See
-// https://intentius.io/chant/cli/release/
+// The root of behold's release train (behold#1211). Each product is a release
+// member of chant.workspace.json with its own chant.config.ts, version and tag:
 //
-// The version-bump PR still comes first: it moves package.json, server.json
-// and the plugin and action files that name the release, so the label a run is
-// dispatched with must be the version main already carries
-// (scripts/release-check.sh refuses any other). The MCP Registry listing runs
-// after this workflow, in mcp-registry.yml.
+//   behold                    release/behold                     npm and a GitHub release, behold-v<version>
+//   kubectl-behold            surfaces/kubectl-behold            krew archive on a GitHub release, kubectl-behold-v<version>
+//   headlamp-behold           surfaces/headlamp-behold           plugin tarball on a GitHub release, headlamp-behold-v<version>
+//   backstage-plugin-behold   surfaces/backstage-plugin-behold   dynamic-plugin image on ghcr.io, backstage-plugin-behold-v<version>
+//   argocd-behold             surfaces/argocd-behold             extension tarball on a GitHub release, argocd-behold-v<version>
+//   vscode-behold             surfaces/vscode-behold             .vsix on a GitHub release, vscode-behold-v<version>
+//
+// `just release` dispatches .github/workflows/release.yml, which `just
+// release-workflow` renders from this file (never edit it by hand). The run
+// takes main's head once its checks are green, runs `chant workspace train cut
+// release`, which cuts every member that changed since its last release at a
+// label past every version it already has, and publishes them. Each member's
+// release stamps its label into the files its release.version names, so no
+// commit bumps a version before a release. The MCP Registry listing runs after
+// this workflow, in mcp-registry.yml. See
+// https://intentius.io/chant/guide/release-a-monorepo/
 export default {
   release: {
-    tag: "behold-v{version}",
     green: "forge-checks",
-    check: ["bash scripts/release-check.sh"],
-    publish: [
-      { type: "npm", packages: ["."], access: "public", stage: false },
-      {
-        type: "forge",
-        forge: "github",
-        repo: "INTENTIUS/behold",
-        assets: [],
-        notes: { generate: "forge" },
-        sbom: false,
-      },
-    ],
+    train: { env: "release" },
     workflow: { trigger: "dispatch", file: ".github/workflows/release.yml" },
   },
 };

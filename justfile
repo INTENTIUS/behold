@@ -33,14 +33,22 @@ build:
 # tsc + tests + build — the fast local gate.
 check: tsc test build
 
-# Release the version main already carries: start release.yml, chant release's
-# dispatched workflow, with that version as the label. It cuts main's head once
-# its checks are green, pushes the behold-v<version> tag, publishes to npm and
-# creates the GitHub release; mcp-registry.yml then lists it. The version-bump
-# PR comes first, through the same gate as every other PR, and the cut refuses
-# a label that is not the version main carries (scripts/release-check.sh).
-release:
-    gh workflow run release.yml --ref main -f label="$(node -p 'require("./package.json").version')"
+# Start behold's release train: dispatch release.yml, chant release's train
+# workflow, from main. It takes main's head once its checks are green and
+# releases every product that changed since its last release (the npm package
+# and the plugin surfaces, chant.workspace.json's members), each at its own
+# label: `auto` takes each level from its conventional commits, `minor` gives
+# every product one, `kubectl-behold=minor` names one. No version-bump PR comes
+# first: the cut stamps each label into the files that carry it.
+#   just release
+#   just release "behold=minor"
+release levels="auto":
+    gh workflow run release.yml --ref main -f levels="{{levels}}"
+
+# The train's plan from this checkout: the products and labels the next
+# release would cut. Cuts, tags and pushes nothing.
+release-plan:
+    npx chant workspace train cut release
 
 # Render .github/workflows/release.yml from chant.config.ts. Never edit that file by hand.
 release-workflow:

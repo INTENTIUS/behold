@@ -56,8 +56,8 @@ GitHub Actions" pages, read on 2026-11-15:
 
 1. Cut a behold release as usual with `just release`. The first release with
    the root `action.yml` is `behold-v0.33.0`.
-2. `.github/workflows/release.yml` (chant release, started by `just release`)
-   tags `behold-v<version>`, publishes to npm and creates the GitHub release
+2. `.github/workflows/release.yml` (behold's chant release train, started by
+   `just release`) tags `behold-v<version>`, publishes to npm and creates the GitHub release
    for it; `.github/workflows/mcp-registry.yml` then lists it in the MCP
    Registry.
 3. On that release page choose Edit and tick "Publish this Action to the

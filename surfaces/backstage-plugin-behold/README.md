@@ -112,9 +112,13 @@ lives only inside that image and does not go to npm.
 Both run `@red-hat-developer-hub/cli`, pinned to 2.2.1, the release that
 rhdh-plugin-export-overlays names for RHDH next. `RHDH_CLI_VERSION` picks
 another. `package-dynamic` needs docker (`CONTAINER_TOOL=podman` for podman).
-`.github/workflows/backstage-plugin-release.yml` runs the same two steps and
-pushes `ghcr.io/intentius/backstage-plugin-behold:<version>` on a
-`backstage-plugin-behold-v<version>` tag.
+`.github/workflows/surfaces.yml` runs both on a pull request, after checking
+the plugin against two Backstage releases. The plugin's image is released on
+behold's release train (`just release` at the repository root;
+`chant.config.ts` in this folder is its member): the cut stamps the version
+into `package.json`, builds the image, and the publish pushes
+`ghcr.io/intentius/backstage-plugin-behold:<version>` and tags the commit
+`backstage-plugin-behold-v<version>`.
 
 RHDH 2.x runs the new frontend system, so the `./alpha` export does the
 wiring: the Infrastructure tab registers itself as an entity-content extension.
@@ -206,9 +210,9 @@ Maintainer steps, in order. Nothing here is done.
 1. Publish `@intentius/backstage-plugin-behold` to npm (`npm run build`, then
    `npm publish`; the package's `publishConfig` points at `dist/`). Both the
    directory and the overlays workspace need the package on npm.
-2. Push the tag `backstage-plugin-behold-v<version>`. The workflow builds the
-   dynamic plugin and pushes the OCI image to ghcr.io; make the package public
-   in the GitHub organisation's package settings.
+2. Release it with `just release`. The train builds the dynamic plugin and
+   pushes the OCI image to ghcr.io; make the package public in the GitHub
+   organisation's package settings.
 3. Open a pull request to backstage/backstage that adds `listing/behold.yaml`
    as `microsite/data/plugins/behold.yaml` and `listing/behold.svg` as
    `microsite/static/img/behold.svg`. Set `addedDate` to the day of the pull
