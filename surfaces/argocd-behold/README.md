@@ -54,6 +54,9 @@ which the installer writes from `EXTENSION_JS_VARS`.
 
 ## Release
 
-Tag `argocd-behold-v<version>` after bumping `version` in `package.json`. The
-workflow `.github/workflows/argocd-extension-release.yml` builds and attaches the
-tarball and `checksums.txt`. A public listing is the maintainers' step.
+The extension is released on behold's release train (`just release` at the
+repository root; `chant.config.ts` in this folder is its member). A train that
+finds a change here since the last release cuts the next version, stamps it
+into `package.json`, runs the typecheck and tests, builds, and attaches the
+tarball and `checksums.txt` to the release `argocd-behold-v<version>`. No
+commit bumps the version first. A public listing is the maintainers' step.

@@ -9,7 +9,7 @@
     "change-set": "tsx scripts/front-door.ts plan --out .front-door/change-set.json"
   },
   "dependencies": {
-    "@intentius/chant": "^0.124.105",
+    "@intentius/chant": "^0.124.107",
     "@intentius/chant-lexicon-aws": "^0.124.104",
     "@intentius/chant-lexicon-gcp": "^0.124.102",
     "@intentius/chant-lexicon-pulumi": "^0.124.102",

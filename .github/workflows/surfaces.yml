@@ -1,0 +1,126 @@
+name: surfaces
+
+# Pull-request checks for the plugin surfaces in surfaces/. Each one is
+# released on behold's release train (publish.yml, from chant.config.ts), and
+# its release checks run again in the train's cut; these run the same builds
+# on a pull request, plus what a release does not: the Backstage plugin against
+# two Backstage releases, and the Headlamp tarball against the checksum
+# artifacthub-pkg.yml names. Nothing here publishes. The VS Code extension has
+# its own workflow, vscode-extension.yml.
+on:
+  pull_request:
+    paths:
+      - "surfaces/kubectl-behold/**"
+      - "surfaces/headlamp-behold/**"
+      - "surfaces/argocd-behold/**"
+      - "surfaces/backstage-plugin-behold/**"
+      - "LICENSE"
+      - ".github/workflows/surfaces.yml"
+  # Rehearse every build without publishing.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kubectl-behold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: surfaces/kubectl-behold
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+      - name: Plugin script parses
+        run: bash -n kubectl-behold
+      - name: Archive matches the krew manifest
+        run: node scripts/package.mjs --check
+      - name: Package
+        run: |
+          # --check does not write; write the archive and keep the manifest as committed
+          cp krew/behold.yaml "$RUNNER_TEMP/behold.yaml"
+          node scripts/package.mjs
+          cmp krew/behold.yaml "$RUNNER_TEMP/behold.yaml"
+          (cd release && sha256sum -c *.sha256)
+
+  headlamp-behold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: surfaces/headlamp-behold
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run tsc
+      - run: npm test
+      - run: npm run build
+      - name: Tarball matches artifacthub-pkg.yml
+        run: node scripts/package.mjs --check
+
+  argocd-behold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: surfaces/argocd-behold
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run tsc
+      - run: npm test
+      - run: npm run build
+      - run: npm run package
+
+  # 1.54.9 is what Red Hat Developer Hub next is built on; 1.56.5 is the
+  # release the package.json devDependencies were resolved against.
+  backstage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: surfaces/backstage-plugin-behold
+    strategy:
+      fail-fast: false
+      matrix:
+        backstage: ["1.54.9", "1.56.5"]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+      - name: Pin every @backstage package to the release
+        run: node scripts/pin-backstage.mjs ${{ matrix.backstage }}
+      - run: npm install --ignore-scripts
+      - run: npm run tsc
+      - run: npm test
+      - run: npm run build
+
+  # The image the release pushes, built and not pushed.
+  backstage-dynamic-plugin:
+    needs: backstage
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: surfaces/backstage-plugin-behold
+    env:
+      CONTAINER_TOOL: docker
+      IMAGE: ghcr.io/intentius/backstage-plugin-behold:rehearsal
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - name: Export the dynamic plugin and build the image
+        run: npm run package-dynamic

@@ -82,13 +82,20 @@ missing sibling just marks the entry unsatisfiable. `fountain-ops` runs its
 setup in your working checkout and switches your kubectl context, so avoid it
 unless asked.
 
-The npm package is released with `chant release`. chant.config.ts declares
-it, and `just release-workflow` renders .github/workflows/release.yml from it;
-never edit that file by hand. A release is the version-bump PR (package.json,
-server.json and the files that pin the version), then `just release`, which
-dispatches release.yml with main's version as the label. That run cuts main's
-head once its checks are green, pushes `behold-v<version>`, publishes to npm
-and creates the GitHub release; mcp-registry.yml then lists the version in the
-MCP Registry. Never push a `behold-v*` tag by hand. The plugin surfaces
-(kubectl-behold, Argo CD, Headlamp, Backstage, VS Code) keep their own
-tag-driven workflows.
+behold's products are released with `chant release`, as one release train:
+the npm package (release/behold), kubectl-behold, the Headlamp plugin, the
+Backstage dynamic-plugin image and the Argo CD extension are the members of
+chant.workspace.json, each with its own chant.config.ts, version and tag
+(`behold-v`, `kubectl-behold-v`, `headlamp-behold-v`,
+`backstage-plugin-behold-v`, `argocd-behold-v`). The root chant.config.ts
+declares the train, and `just release-workflow` renders
+.github/workflows/publish.yml from it; never edit that file by hand. `just
+release` dispatches it from main: it cuts main's head once its checks are
+green, releases each product that changed at a label past every version it
+has, stamps that label into the product's manifests (no version-bump PR), and
+publishes; mcp-registry.yml then lists a new behold in the MCP Registry. `just
+release-plan` prints what the next train would cut. Files that pin a published
+release (the plugin and action pins, krew/behold.yaml, artifacthub-pkg.yml)
+move in a pull request of their own after it is out. Never push a release tag
+by hand. The VS Code extension keeps its tag-driven workflow,
+vscode-extension.yml.

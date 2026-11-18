@@ -1,0 +1,36 @@
+{
+  "name": "behold",
+  "schema": 1,
+  "members": [
+    {
+      "name": "behold",
+      "dir": "release/behold",
+      "kind": "chant",
+      "because": "@intentius/behold, the npm package at the repository root, released at its own version on the release train"
+    },
+    {
+      "name": "kubectl-behold",
+      "dir": "surfaces/kubectl-behold",
+      "kind": "chant",
+      "because": "the kubectl plugin's krew archive, released at its own version on the release train"
+    },
+    {
+      "name": "headlamp-behold",
+      "dir": "surfaces/headlamp-behold",
+      "kind": "chant",
+      "because": "the Headlamp plugin's tarball, released at its own version on the release train"
+    },
+    {
+      "name": "backstage-plugin-behold",
+      "dir": "surfaces/backstage-plugin-behold",
+      "kind": "chant",
+      "because": "the Backstage plugin's dynamic-plugin image, released at its own version on the release train"
+    },
+    {
+      "name": "argocd-behold",
+      "dir": "surfaces/argocd-behold",
+      "kind": "chant",
+      "because": "the Argo CD UI extension's tarball, released at its own version on the release train"
+    }
+  ]
+}

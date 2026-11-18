@@ -35,8 +35,8 @@ the credential it prints.
 | `e2e/kubectl-behold-e2e.sh` | scratch k3d cluster, the plugin, krew install and uninstall from the built archive, the k9s entry, the exec-plugin refusal |
 | `e2e/k9s-drive.exp` | drives a real k9s in a pty for the e2e when `K9S_BIN` is set |
 
-`just kubectl-behold` runs the parse and checksum checks (CI runs them in
-`.github/workflows/kubectl-behold-release.yml`). `just kubectl-behold-e2e`
+`just kubectl-behold` runs the parse and checksum checks (CI runs them on pull
+requests in `.github/workflows/surfaces.yml`). `just kubectl-behold-e2e`
 needs docker, k3d, kubectl and node, creates `behold-kubectl-e2e`, and leaves
 it in place. For the krew step set `KREW_BIN` to a krew binary, and for the k9s
 step `K9S_BIN` to k9s.
@@ -46,12 +46,17 @@ step `K9S_BIN` to k9s.
 1. Set `BEHOLD_PIN` in `kubectl-behold` to a published behold release that has
    `behold graph --context` (behold#1083), then run `node scripts/package.mjs`
    and commit the new checksum in `krew/behold.yaml`.
-2. Tag `kubectl-behold-v<version>` (the version in `krew/behold.yaml`). The
-   workflow attaches `kubectl-behold-v<version>.tar.gz` and its `.sha256` to
-   the release.
-3. Pull request to `kubernetes-sigs/krew-index`: add `plugins/behold.yaml`,
+2. Release it on behold's release train (`just release` at the repository
+   root; `chant.config.ts` in this folder is its member). A train that finds a
+   change here since the last release cuts the next version, stamps it into
+   `krew/behold.yaml` (`spec.version` and the URL), checks the archive against
+   the manifest, and attaches `kubectl-behold-v<version>.tar.gz` and its
+   `.sha256` to the release `kubectl-behold-v<version>`.
+3. In a pull request of its own, set `krew/behold.yaml` on main to the
+   released version (`spec.version` and the URL); the checksum does not change.
+4. Pull request to `kubernetes-sigs/krew-index`: add `plugins/behold.yaml`,
    byte for byte `krew/behold.yaml`. A reviewer may ask for another name.
-4. After krew accepts it, pull request to `derailed/k9s`: add
+5. After krew accepts it, pull request to `derailed/k9s`: add
    `plugins/behold.yaml`, byte for byte `k9s/behold.yaml`, and its row in
    `plugins/README.md` (scopes: workloads, services, pods, jobs, ingresses;
    shortcut Shift-B; dependency: the krew plugin `behold`).
@@ -59,8 +64,8 @@ step `K9S_BIN` to k9s.
 ## Moving to behold-surfaces
 
 When that repository exists, this whole folder moves with `surfaces/` beside
-`headlamp-behold`: the folder, `.github/workflows/kubectl-behold-release.yml`
-(its paths and the tag filter), and the `kubectl-behold` and
+`headlamp-behold`: the folder with its `chant.config.ts` (a member of that repository's release
+train), the `kubectl-behold` job of `.github/workflows/surfaces.yml`, and the `kubectl-behold` and
 `kubectl-behold-e2e` recipes in the justfile. The only thing it takes from this
 repository is the root `LICENSE` (copied into the archive by
 `scripts/package.mjs`) and a behold build for the e2e (`BEHOLD_BIN`).

@@ -1,11 +1,13 @@
 name: mcp-registry
 
 # The official MCP Registry listing (behold#1050), once a release is out. The
-# release itself is release.yml, which chant writes from chant.config.ts and
-# which publishes to npm and creates the GitHub release. This workflow runs
-# when that one finishes, lists the version it released, and keeps the listing
-# steps release.yml carried before: mcp-publisher pinned and its Sigstore
-# bundle checked with cosign before it runs.
+# release itself is publish.yml, behold's release train, which chant writes
+# from chant.config.ts and which publishes to npm and creates the GitHub
+# release. This workflow runs when that one finishes, lists the behold version
+# it released (a train that released only plugin surfaces has none, and this
+# run then lists nothing), and keeps the listing steps the release carried
+# before: mcp-publisher pinned and its Sigstore bundle checked with cosign
+# before it runs.
 #
 # workflow_run, not `release: published` or a tag push: the release workflow
 # pushes its tag and creates its GitHub release with the run's GITHUB_TOKEN,
@@ -13,7 +15,7 @@ name: mcp-registry
 # the default branch.
 on:
   workflow_run:
-    workflows: ["chant release"]
+    workflows: ["chant release train"]
     types: [completed]
   # List a release again, such as one whose listing failed, by its tag.
   workflow_dispatch:
@@ -40,10 +42,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      # The tag the release workflow's cut pushed is on the commit that run was
-      # dispatched at (release.green is forge-checks, so the gate hands that
-      # commit on). Check it out so server.json is the released one.
+      # The tag the train's cut pushed is on the commit that run was dispatched
+      # at (release.green is forge-checks, so the gate hands that commit on).
+      # Check it out so server.json is the released one.
       - name: the release to list
+        id: tag
         env:
           EVENT: ${{ github.event_name }}
           INPUT_TAG: ${{ inputs.tag }}
@@ -54,22 +57,45 @@ jobs:
             tag="$INPUT_TAG"
           else
             tag="$(git tag --points-at "$HEAD_SHA" --list 'behold-v*' | sort -V | tail -1)"
+            if [ -z "$tag" ]; then
+              echo "the train released no behold-v<version> on ${HEAD_SHA}: nothing to list"
+              echo "tag=" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
           fi
           case "$tag" in
             behold-v[0-9]*) ;;
             *) echo "no behold-v<version> tag to list (got '${tag}')" >&2; exit 1 ;;
           esac
           git checkout --quiet --detach "refs/tags/${tag}"
-          V="$(node -p 'require("./server.json").version')"
-          if [ "$V" != "${tag#behold-v}" ]; then
-            echo "server.json at ${tag} says ${V}" >&2
-            exit 1
-          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "listing ${tag}"
 
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - if: steps.tag.outputs.tag != ''
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
+
+      # The release stamps its label into server.json (release/behold's
+      # release.version), so the committed file names an older version. Stamp
+      # it the same way here. A tag cut before the train has no release/behold
+      # and carries its version committed.
+      - name: server.json names the release
+        if: steps.tag.outputs.tag != ''
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          want="${TAG#behold-v}"
+          if [ -f release/behold/chant.config.ts ]; then
+            npm ci --ignore-scripts
+            (cd release/behold && npx chant release stamp "$want")
+          fi
+          V="$(node -p 'require("./server.json").version')"
+          if [ "$V" != "$want" ]; then
+            echo "server.json at ${TAG} says ${V}" >&2
+            exit 1
+          fi
 
       # The registry reads mcpName from the published tarball, so this runs
       # after the npm publish. The registry refuses a version it already holds,
@@ -78,9 +104,11 @@ jobs:
       # registry's own workflow guide does; move MCP_PUBLISHER_VERSION on
       # purpose.
       - name: install cosign
+        if: steps.tag.outputs.tag != ''
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: list in the MCP Registry
+        if: steps.tag.outputs.tag != ''
         env:
           MCP_PUBLISHER_VERSION: v1.8.9
         run: |

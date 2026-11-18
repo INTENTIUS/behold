@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
-# The checks `chant release cut` runs before it records a release (release.check
-# in chant.config.ts). The cut has already built, so the tarball is what the
-# publish job will upload.
+# The checks `chant release cut` runs before it records a release of
+# @intentius/behold (release.check in release/behold/chant.config.ts, a member
+# of behold's release train). The cut has already built, so the tarball is what
+# the publish job will upload.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# The label is the version the version-bump PR put on main. Anything else
-# would publish a package whose plugin and action pins name another release.
+# The cut has stamped the label into package.json and server.json
+# (release.version). A file the stamp missed would publish a package, or an MCP
+# Registry entry, that names another version.
 label="${CHANT_RELEASE_LABEL:?CHANT_RELEASE_LABEL is not set}"
 pkg="$(node -p 'require("./package.json").version')"
 server="$(node -p 'require("./server.json").version')"
 if [ "$pkg" != "$label" ] || [ "$server" != "$label" ]; then
-  echo "label ${label} does not match package.json ${pkg} and server.json ${server}: merge the version-bump PR first" >&2
+  echo "label ${label} does not match package.json ${pkg} and server.json ${server}: check release.version in release/behold/chant.config.ts" >&2
   exit 1
 fi
 
