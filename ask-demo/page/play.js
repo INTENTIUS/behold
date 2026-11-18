@@ -243,9 +243,20 @@ export function recordedDate(iso) {
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }
 
+/** behold#1202: the id the one real AWS account read is published under. */
+export const REDACTED_ACCOUNT = "123456789012";
+
+/** Whether the recording loaded the real AWS account's read (its scope key carries the redacted id). */
+export function readRealAccount(n) {
+  return (n.turns || []).some((t) => (t.sources || []).some((s) => String(s.scopeKey || "").startsWith(`cloud/aws/${REDACTED_ACCOUNT}/`)));
+}
+
 /** The words the page says about where the answers come from: never that they are live. `line` is both sentences; the phone shows `date` alone. */
 export function recordedWords(n) {
-  const date = `Recorded ${recordedDate(n.recordedAt)} from a real run on emulators.`;
+  const from = readRealAccount(n)
+    ? `from a real run on emulators, plus one earlier read of a real AWS account with its id replaced by ${REDACTED_ACCOUNT}`
+    : "from a real run on emulators";
+  const date = `Recorded ${recordedDate(n.recordedAt)} ${from}.`;
   const replay = "Every answer is behold's, replayed as it came back.";
   return {
     date,

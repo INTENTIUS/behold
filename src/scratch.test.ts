@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { assertScratch, scratchNameProblem, scratchPortProblem, PROTECTED_INFRA } from "./scratch.js";
 import { LIVE_CONTAINER, LIVE_PORT } from "./carve-live.js";
-import { ASK_DEMO_CONTAINERS, ASK_DEMO_SCRATCH } from "../scripts/ask-demo/scratch.ts";
+import { ASK_DEMO_CONTAINERS, ASK_DEMO_REAL_AWS, ASK_DEMO_SCRATCH } from "../scripts/ask-demo/scratch.ts";
 
 describe("scratch discipline — the denylist", () => {
   it("accepts behold-* names", () => {
@@ -53,6 +53,24 @@ describe("scratch discipline — every boot site honours it", () => {
     for (const m of text.matchAll(/"(?:rm|delete)", (?:"-f", |"cluster", "--name", )([^\]),]+)/g)) expect(m[1], m[0]).toMatch(/ASK_DEMO_|^\.\.\.startedByRun$/);
     expect(text).toMatch(/const startedByRun = [^;]*label=floci=true[^;]*!made\.flociBefore\.has\(id\)/);
     expect(text).not.toMatch(/"behold-ask-demo-(?:floci|control)/);
+  });
+
+  // behold#1202: the ask demo's real AWS read makes two security groups in a real
+  // account's us-west-2, named once in scripts/ask-demo/scratch.ts, and
+  // deletes only the ids it made.
+  it("the ask demo's real AWS read makes behold-* groups in one region, refuses a busy region, and deletes only what it made", () => {
+    for (const g of ASK_DEMO_REAL_AWS.groups) expect(() => assertScratch(g.name)).not.toThrow();
+    expect(ASK_DEMO_REAL_AWS.region).toBe("us-west-2");
+    const text = readFileSync(join(import.meta.dirname, "..", "scripts", "ask-demo", "real-aws.ts"), "utf8");
+    expect(text).toMatch(/for \(const g of GROUPS\) assertScratch\(g\.name\)/);
+    expect(text).toMatch(/const problem = regionProblem\(before\);\s*if \(problem\) throw/);
+    // The one delete is of an id this run made, in a finally.
+    expect([...text.matchAll(/"delete-security-group"/g)]).toHaveLength(1);
+    expect(text).toMatch(/for \(const g of made\)[\s\S]*"delete-security-group", "--group-id", g\.id/);
+    expect(text).toMatch(/\} finally \{\s*const left = teardown\(\)/);
+    // It indexes from a temporary directory into a temporary store, never the repository's git.
+    expect(text).toMatch(/cwd: work,\s*env: \{ \.\.\.awsEnv\(\), BEHOLD_INDEX_DIR: indexDir \}/);
+    expect(text).not.toMatch(/run-instances|create-vpc|--endpoint/);
   });
 
   // The e2e scripts are bash, so the discipline is asserted on their text:

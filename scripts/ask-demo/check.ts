@@ -25,6 +25,7 @@
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { foreignAccountIds, REDACTED_ACCOUNT } from "./redact.ts";
 import { createServer } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -114,6 +115,11 @@ export async function checkFiles(base: string, dir: string | null): Promise<Verd
         out.push(fail(`GET ${name}: ${kib(body.length)} served, not the bundle's ${kib(local.length)}`));
         continue;
       }
+    }
+    // behold#1202: the one real account the recording read is published only as the placeholder.
+    if (/json/.test(type)) {
+      const foreign = foreignAccountIds(body.toString("utf8"));
+      out.push(foreign.length ? fail(`GET ${name} carries ${foreign.length} AWS account id(s) other than floci's and ${REDACTED_ACCOUNT}; redact before publishing`) : pass(`GET ${name} names no AWS account but floci's and ${REDACTED_ACCOUNT}`));
     }
     if (sameCsp(res.headers.get("content-security-policy"), ASK_DEMO_CSP)) cspSeen++;
     out.push(pass(`GET ${name} 200 ${type.split(";")[0]} ${kib(body.length)}${dir ? ", the bundle's bytes" : ""}`));

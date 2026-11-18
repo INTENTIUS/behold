@@ -10,6 +10,12 @@
  * A key of a shape this does not know is returned as it is, never guessed at.
  */
 
+/**
+ * behold#1202: 123456789012 is AWS's documentation account, never a real
+ * one; the ask demo publishes its one read of a real account under it.
+ */
+const REDACTED_AWS_ACCOUNT = "123456789012";
+
 const CLOUDS = { aws: "AWS account", azure: "Azure subscription", gcp: "GCP project" };
 
 /** A scope key in plain words, or the key itself when its shape is not one behold makes. */
@@ -25,6 +31,7 @@ export function sourceLabel(scopeKey) {
     return `${a}'s graph of ${rest}`;
   }
   if (kind === "cloud" && a && b && parts.length === 4) {
+    if (a === "aws" && b === REDACTED_AWS_ACCOUNT) return "the real AWS account's index";
     if (a === "kubernetes") return b.startsWith("kind-") ? "the kind cluster's index" : "the cluster's index";
     return CLOUDS[a] ? `the ${CLOUDS[a]}'s index` : `the ${a} index`;
   }

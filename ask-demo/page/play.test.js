@@ -43,6 +43,7 @@ import {
   paneOpen,
   panView,
   parseParams,
+  readRealAccount,
   recordedAnswer,
   recordedDate,
   recordedTime,
@@ -275,12 +276,22 @@ describe("the recorded answer", () => {
 describe("the page's words", () => {
   it("say the answers are a recording from a real run on emulators, with its date, and give the command that records it", () => {
     const w = recordedWords(RECORDING);
-    expect(w.line).toBe("Recorded 18 November 2026 from a real run on emulators. Every answer is behold's, replayed as it came back.");
+    expect(w.line).toBe(`Recorded ${recordedDate(RECORDING.recordedAt)} from a real run on emulators, plus one earlier read of a real AWS account with its id replaced by 123456789012. Every answer is behold's, replayed as it came back.`);
     expect(w.line).toBe(`${w.date} ${w.replay}`);
     expect(w.command).toBe("just ask-demo-record");
     expect(w.versions).toContain("behold ");
     expect(`${w.line} ${RECORDING.note}`).not.toMatch(/\blive\b/i);
     expect(recordedDate("2026-01-02T23:59:59Z")).toBe("2 January 2026");
+  });
+
+  it("say so when the recording loaded the real AWS account's read, by its redacted id (behold#1202)", () => {
+    const n = { recordedAt: "2026-11-18T12:00:00Z", turns: [{ sources: [{ scopeKey: "cloud/aws/000000000000/abc" }] }] };
+    expect(readRealAccount(n)).toBe(false);
+    n.turns[0].sources.push({ scopeKey: "cloud/aws/123456789012/def" });
+    expect(readRealAccount(n)).toBe(true);
+    const w = recordedWords(n);
+    expect(w.line).toBe(`Recorded 18 November 2026 from a real run on emulators, plus one earlier read of a real AWS account with its id replaced by 123456789012. Every answer is behold's, replayed as it came back.`);
+    expect(w.line).not.toMatch(/\blive\b/i);
     expect(recordedDate("nope")).toBe("");
   });
 });
@@ -385,7 +396,8 @@ describe("what the answer found, and one of its resources (#1198)", () => {
     expect(role.rows).toContainEqual(["Cloud id", "arn:aws:iam::000000000000:role/orders-reader"]);
     expect(role.note).toBe("The workspace declares nothing for it.");
     // An indexed resource carrying the aws member's ownership marker says so, rather than that nothing declares it.
-    const subnet = resourceDetails("cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-33900fa9", facts);
+    const marked = GRAPHDB.rows.resources.find((r) => r.kind === "AWS::EC2::Subnet" && r.facts.includes("network-private-subnet-1"));
+    const subnet = resourceDetails(marked.key, facts);
     expect(subnet.rows).toContainEqual(["Owner marker", "aws:ec2/subnet:Subnet::network-private-subnet-1 (three-cloud-aws/local)"]);
     expect(subnet.note).toBe("");
     // Declared through a shared cloud id.
