@@ -395,8 +395,8 @@
           "edges": 0
         }
       ],
-      "reply": "behold's query ran and returned 7 rows. 2 Route 53 records reach into another member (gcp.three-cloud.example. and www.three-cloud.example.), and between them they depend on 4 resources there: gcp/webAddress, gcp/webProxy, gcp/webRule and gcp/webUrlMap. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
-      "headline": "2 Route 53 records depend on 4 resources in another member"
+      "reply": "behold's query ran and returned 7 rows. 2 of our domains depend on the gcp member (gcp.three-cloud.example. and www.three-cloud.example.), and between them they go through webAddress, webProxy, webRule and webUrlMap. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
+      "headline": "2 domains depend on 4 resources in the gcp member"
     },
     {
       "id": "forwarding-rule-dependents",
@@ -589,7 +589,7 @@
           "edges": 0
         }
       ],
-      "reply": "behold's query ran and returned 4 rows. 4 resources depend on webRule, all of them in the dns member: dns/gcpRecord, dns/gcpCheck, dns/gcpOrigin and dns/gcpEndpoint. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
+      "reply": "behold's query ran and returned 4 rows. 4 resources in the dns member depend on the forwarding rule, so they would break with it: gcpRecord (AWS::Route53::RecordSet), gcpCheck (AWS::Route53::HealthCheck), gcpOrigin (AWS::Route53::RecordSet) and gcpEndpoint (AWS::CloudFormation::Parameter). The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
       "headline": "4 resources in the dns member depend on the forwarding rule"
     },
     {
@@ -815,7 +815,7 @@
           "edges": 0
         }
       ],
-      "reply": "behold's query ran and returned 7 rows. 7 resources there have no owner in the workspace: sg-43fe1731188163fd7 (AWS::EC2::SecurityGroup), sg-default-us-east-1 (AWS::EC2::SecurityGroup), subnet-default-us-east-1-a (AWS::EC2::Subnet), subnet-default-us-east-1-b (AWS::EC2::Subnet), subnet-default-us-east-1-c (AWS::EC2::Subnet), vpc-default-us-east-1 (AWS::EC2::VPC) and orders-export-archive (AWS::S3::Bucket). The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
+      "reply": "behold's query ran and returned 7 rows. Yes, 7 resources in the account have no owner in the workspace: sg-43fe1731188163fd7 (AWS::EC2::SecurityGroup), sg-default-us-east-1 (AWS::EC2::SecurityGroup), subnet-default-us-east-1-a (AWS::EC2::Subnet), subnet-default-us-east-1-b (AWS::EC2::Subnet), subnet-default-us-east-1-c (AWS::EC2::Subnet), vpc-default-us-east-1 (AWS::EC2::VPC) and orders-export-archive (AWS::S3::Bucket). The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
       "headline": "7 network and storage resources in the AWS account have no owner in the workspace"
     },
     {
@@ -959,7 +959,7 @@
           "edges": 0
         }
       ],
-      "reply": "behold's query ran and returned 2 rows. 1 ingress rule opens SSH, tcp port 22, to anywhere: sgr-0854e2c636682d87a in us-west-2. The other rules open to anywhere are sgr-061261b6c5d4b6711 (tcp 443). This account is a real one, read once with its id redacted. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
+      "reply": "behold's query ran and returned 2 rows. Yes: 1 ingress rule opens SSH (tcp port 22) to anywhere, sgr-0854e2c636682d87a in us-west-2. The other rule open to anywhere is sgr-061261b6c5d4b6711 (tcp 443). The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
       "headline": "1 rule opens SSH to the internet"
     },
     {
@@ -1100,8 +1100,8 @@
           "edges": 0
         }
       ],
-      "reply": "behold's query ran and returned 2 rows. 2 ServiceAccounts carry an IRSA annotation that names a role in the account: orders-api assumes orders-reader and web assumes web-task-role-460e979. Each ServiceAccount's role annotation joined it to its role. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
-      "headline": "2 ServiceAccounts in the cluster can assume 2 AWS roles"
+      "reply": "behold's query ran and returned 2 rows. Our pods can use 2 AWS roles: orders-reader through the orders-api ServiceAccount and web-task-role-460e979 through the web ServiceAccount. Each ServiceAccount's role annotation names its role. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
+      "headline": "Pods in the cluster can use 2 AWS roles through 2 ServiceAccounts"
     },
     {
       "id": "orders-reader-readers",
@@ -1226,8 +1226,8 @@
           "edges": 0
         }
       ],
-      "reply": "behold's query ran and returned 1 row. Readers from outside the account: 1, from the kind cluster's index. A ServiceAccount's role annotation joined it to the role. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
-      "headline": "1 resource from the kind cluster's index reaches orders-reader"
+      "reply": "behold's query ran and returned 1 row. 1 resource from outside AWS can use it: orders-api, from the kind cluster's index. Its role annotation names the role. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.",
+      "headline": "1 resource from the kind cluster's index can use the role"
     }
   ]
 }

@@ -261,6 +261,53 @@ describe("the reply frame and the refill (behold#1174)", () => {
     expect(() => fillReply("{{list:scopeKey|loud}}", { columns: ["scopeKey"], rows: [{ scopeKey: "chant/aws" }] })).toThrow(ReplyError);
   });
 
+  it("names a key's member from its first segment, its id and its last segment, and refuses a key that names no member (behold#1210)", () => {
+    const answer = { columns: ["key", "reaches"], rows: [{ key: "dns/gcpOrigin", reaches: "gcp/webRule" }, { key: "dns/gcpRecord", reaches: "gcp/web/proxy" }] };
+    expect(fillReply("{{list:reaches|member}}", answer)).toBe("the gcp member");
+    expect(fillReply("{{list:key|member}} and {{list:reaches|member}}", answer)).toBe("the dns member and the gcp member");
+    expect(fillReply("{{list:reaches|id}}", answer)).toBe("webRule and web/proxy");
+    expect(fillReply("{{each:{key|id} reaches {reaches|id} in {reaches|member}}}", answer)).toBe("gcpOrigin reaches webRule in the gcp member and gcpRecord reaches web/proxy in the gcp member");
+    expect(fillReply("{{first:key|member}}", answer)).toBe("the dns member");
+    // A cluster object's or an index's key names no member: its first segment is its scope.
+    const sa = { columns: ["key"], rows: [{ key: "cloud/kubernetes/kind-x/eb3c/kubernetes/kind-x/orders/v1%2FServiceAccount/orders/orders-api" }] };
+    expect(() => fillReply("{{list:key|member}}", sa)).toThrow(/is not a member's key/);
+    expect(() => fillReply("{{list:key|id}}", sa)).toThrow(ReplyError);
+    expect(() => fillReply("{{list:k|member}}", { columns: ["k"], rows: [{ k: "engine/choudoufu/x@azure/k" }] })).toThrow(ReplyError);
+    expect(() => fillReply("{{list:k|member}}", { columns: ["k"], rows: [{ k: "plain" }] })).toThrow(ReplyError);
+    expect(() => fillReply("{{list:k|member}}", { columns: ["k"], rows: [{ k: "gcp/" }] })).toThrow(ReplyError);
+    // Any key's last segment, decoded.
+    expect(fillReply("{{list:key|name}}", sa)).toBe("orders-api");
+    expect(fillReply("{{list:k|name}}", { columns: ["k"], rows: [{ k: "a/v1%2FThing" }] })).toBe("v1/Thing");
+    expect(fillReply("{{list:k|name}}", { columns: ["k"], rows: [{ k: "a/%E0" }] })).toBe("%E0");
+    expect(() => fillReply("{{list:k|nope}}", { columns: ["k"], rows: [{ k: "a/b" }] })).toThrow(/source, member, id, name/);
+    // Words that agree with a count.
+    const one = { columns: ["other"], rows: [{ other: "sgr-1 (tcp 443)" }, { other: "" }] };
+    const two = { columns: ["other"], rows: [{ other: "sgr-1 (tcp 443)" }, { other: "sgr-2 (all traffic)" }] };
+    expect(fillReply("The other {{pick:other|rule open to anywhere is|rules open to anywhere are}} {{list:other}}.", one)).toBe("The other rule open to anywhere is sgr-1 (tcp 443).");
+    expect(fillReply("The other {{pick:other|rule open to anywhere is|rules open to anywhere are}} {{list:other}}.", two)).toBe("The other rules open to anywhere are sgr-1 (tcp 443) and sgr-2 (all traffic).");
+    expect(() => fillReply("{{pick:other|one}}", one)).toThrow(/pick:col\|one\|many/);
+    expect(() => fillReply("{{pick:gone|a|b}}", one)).toThrow(ReplyError);
+  });
+
+  it("answers each recorded question as it was asked, every name and number from its rows (behold#1210)", () => {
+    const n = read("ask-demo/narration.json") as Narration;
+    const reply = (id: string) => n.turns.find((t) => t.id === id)!.reply;
+    expect(reply("dns-cross-cloud")).toContain("2 of our domains depend on the gcp member (gcp.three-cloud.example. and www.three-cloud.example.)");
+    expect(reply("forwarding-rule-dependents")).toContain("4 resources in the dns member depend on the forwarding rule");
+    expect(reply("aws-account-unmanaged")).toContain("Yes, 7 resources in the account have no owner");
+    expect(reply("serviceaccount-roles")).toContain("Our pods can use 2 AWS roles");
+    expect(reply("orders-reader-readers")).toContain("1 resource from outside AWS can use it: orders-api");
+    // One rule each way: the words agree with the count, and the reply says nothing the header already does.
+    expect(reply("aws-ssh-open")).toContain("Yes: 1 ingress rule opens SSH (tcp port 22) to anywhere");
+    expect(reply("aws-ssh-open")).toMatch(/The other rule open to anywhere is sgr-\w+ \(tcp 443\)\./);
+    expect(reply("aws-ssh-open")).not.toMatch(/rules open to anywhere are|redacted/);
+    for (const t of n.turns.filter((x) => x.kind === "question")) {
+      expect(t.reply, t.id).toMatch(/^behold's query ran and returned \d+ rows?\. /);
+      expect(t.reply, t.id).toMatch(/The Cypher it ran is in the Cypher pane; you can edit it there once I'm done\.$/);
+      expect(t.reply, t.id).not.toMatch(/reach into another member|identity:arn/);
+    }
+  });
+
   it("fills a question's headline from the rows too (behold#1198)", () => {
     const { doc: next } = refillNarration(doc, [{ ...qs[0]!, headline: "{{count}} found" }]);
     expect((next.turns[1] as { headline?: string }).headline).toBe("1 found");
