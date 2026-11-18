@@ -1,7 +1,7 @@
 // behold#1027: the graph pane page's pure helpers.
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { STATIC_SEARCH_LINE, candidateItems, circleLayout, drawSvg, queryUrl, refusalText, resolveUrl, rowsTable, sourceLines, templateControl, templateUrl } from "./graph-query.js";
+import { STATIC_SEARCH_LINE, candidateItems, circleLayout, drawSvg, noteLines, queryUrl, refusalText, resolveUrl, rowsTable, sourceLines, templateControl, templateUrl } from "./graph-query.js";
 
 describe("the routes the page asks", () => {
   it("are GETs with the query in the URL", () => {
@@ -106,5 +106,25 @@ describe("the server's /graph page (behold#1180)", () => {
     expect(html).toContain('<div id="d-section">');
     expect(html).toContain('<a id="g-back" href="/">Back to the estate</a>');
     expect(html).not.toContain("g-bundle");
+  });
+});
+
+describe("the status notes (#1177)", () => {
+  const scope = "cloud/aws/000000000000/db1d7f66ad8c";
+  const cannot = (t) => `${scope}: Cloud Control cannot list ${t}: HTTP 400: UnsupportedActionException: ListResources is not supported for resource type ${t}.`;
+  it("groups a source's cannot-list notes that share an answer, naming the types", () => {
+    const lead = `${scope}: Cloud Control lists one type per call.`;
+    expect(noteLines([lead, cannot("AWS::DynamoDB::Table"), cannot("AWS::EC2::InternetGateway"), "other: a note"])).toEqual([
+      lead,
+      `${scope}: Cloud Control cannot list 2 types (AWS::DynamoDB::Table, AWS::EC2::InternetGateway). Each answered HTTP 400: UnsupportedActionException: ListResources is not supported for resource type <type>.`,
+      "other: a note",
+    ]);
+  });
+  it("keeps a lone note, different answers and other sources apart", () => {
+    expect(noteLines([cannot("AWS::SQS::Queue")])).toEqual([cannot("AWS::SQS::Queue")]);
+    const other = `${scope}: Cloud Control cannot list AWS::Logs::LogGroup: HTTP 500: InternalFailure.`;
+    const elsewhere = cannot("AWS::SQS::Queue").replace(scope, "cloud/aws/111111111111/x");
+    expect(noteLines([cannot("AWS::SQS::Queue"), other, elsewhere])).toEqual([cannot("AWS::SQS::Queue"), other, elsewhere]);
+    expect(noteLines(undefined)).toEqual([]);
   });
 });
