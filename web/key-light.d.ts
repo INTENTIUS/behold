@@ -15,8 +15,6 @@ export function cardMarks(cardIds: Iterable<string>, lit: readonly string[]): Ma
 export function edgeMark(marks: ReadonlyMap<string, string>, from: string, to: string): "path" | "dim" | null;
 export function frameBox(boxes: readonly Box[], full: Box, opts?: { pad?: number; min?: number }): Box;
 export function viewShare(box: Box, full: Box): number;
-export function boxGap(a: Box, b: Box): number;
-export function boxClusters(boxes: readonly Box[] | null | undefined, near: number): Box[][];
-export function zoomFrame(boxes: readonly Box[] | null | undefined, full: Box, opts?: { pad?: number; min?: number; share?: number; near?: number }): Box;
+export function zoomFrame(boxes: readonly Box[] | null | undefined, full: Box, opts?: { pad?: number; min?: number }): Box;
 export function clearKeyLight(svg: unknown): void;
 export function applyKeyLight(svg: unknown, lit: readonly string[], opts?: { pulse?: boolean }): unknown[];

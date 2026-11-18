@@ -7,6 +7,12 @@ import { ASK_DEMO } from '../../../data/live.mjs';
 
 The ask demo is a page at <a href={ASK_DEMO}>behold-ask-demo.intentius.workers.dev</a>. A person asks their coding agent to load their estate into behold, then asks one question about it in plain words. The agent asks behold with a Cypher query over the estate's graph, and the page shows the whole exchange: the prompt and the agent's reply in the prompt pane at the bottom, the query and the rows it returned in the graph pane on the right, and the answer's resources lit on the estate graph. A moment after the agent's reply has printed, the prompt pane closes so the estate graph and the graph pane have the room; **Show the conversation** at the bottom edge opens it again and keeps the page on that question until you move on. One loop takes about a minute, and each loop asks the next question, with the prompt pane open again.
 
+## Reading an answer
+
+The estate graph frames every card the answer lit and dims the rest. For "Which of my DNS records depend on something in another cloud?" that is the Route 53 records at the top of the estate and the GCP resources they reach at the bottom, so both ends stay in view even though the view then zooms in only a little.
+
+In the graph pane the rows come first, then a drawing of them. When a row pairs two resources, such as a record and what it `reaches`, the drawing puts the first column's resources on the left and the others on the right, joined by an edge labelled with the column's name. Those edges are the answer's rows as the query paired them; behold adds no join of its own. A column counts as resources only when every value in it is the key of a resource the recording loaded. A query you run yourself is drawn the same way.
+
 ## What is recorded
 
 The answers on the page are a recording. They come from one run of behold on emulators, and the page's header gives the date of that run and the versions of behold, chant, choudoufu and plunge it used. The estate was:

@@ -100,32 +100,142 @@ export function circleLayout(nodes, size = 520) {
   return at;
 }
 
-const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
+/**
+ * behold#1190: the columns of an answer that hold graph keys: every value
+ * that is not null is a string `known` has (a Set or Map of Resource keys),
+ * and there is at least one. Nothing is guessed from a value's shape: a
+ * column of names, kinds or scope keys is not one, however it looks.
+ */
+export function keyColumns(columns, rows, known) {
+  const has = (v) => typeof v === "string" && known.has(v);
+  return (columns ?? []).filter((c) => {
+    const vals = (rows ?? []).map((r) => (r && typeof r === "object" ? r[c] : undefined)).filter((v) => v !== null && v !== undefined);
+    return vals.length > 0 && vals.every(has);
+  });
+}
 
-/** The answer's drawing as SVG text. Each node carries its key; the keys in `lit` (behold#1163, the ask demo) are drawn lit. */
+/**
+ * behold#1190: what an answer's drawing shows, as `{ nodes, edges, lit,
+ * keyColumns }`. `known` maps Resource keys to their nodes (`{ key, kind,
+ * name, source, scopeKey }`): the rows a page holds (graphdb.json's
+ * resources), or none, when only the answer's own drawing names nodes.
+ *
+ * The nodes are the answer's drawing (its keys, with the REF edges among
+ * them) and every value of a key column ({@link keyColumns}), so both ends
+ * of each row are drawn. A row that pairs two keys is drawn as an edge from
+ * its first key column's value to the other's, labelled with that column's
+ * name (`origin: "row"`). behold invents no edges: these are the answer's
+ * own rows drawn as the query paired them, not a join behold makes, and the
+ * label says which column did. A REF edge between the same two nodes keeps
+ * its own line and takes the label. `lit` is every drawn node the answer
+ * names. Pure: the ask demo's recorded turns, a visitor's query there and
+ * the /graph pane draw with it.
+ */
+export function answerDrawing(body, known = new Map()) {
+  const draw = body?.draw ?? {};
+  const byKey = new Map(known);
+  for (const n of draw.nodes ?? []) if (n && typeof n.key === "string") byKey.set(n.key, n);
+  const cols = keyColumns(body?.columns, body?.rows, byKey);
+  const nodes = [...(draw.nodes ?? [])];
+  const drawn = new Set(nodes.map((n) => n.key));
+  const add = (k) => {
+    if (drawn.has(k)) return;
+    drawn.add(k);
+    nodes.push(byKey.get(k));
+  };
+  for (const r of body?.rows ?? []) for (const c of cols) if (typeof r[c] === "string") add(r[c]);
+  const edges = (draw.edges ?? []).filter((e) => drawn.has(e.from) && drawn.has(e.to)).map((e) => ({ ...e }));
+  const [first, ...rest] = cols;
+  const seen = new Set();
+  for (const r of body?.rows ?? []) {
+    const from = r[first];
+    for (const c of rest) {
+      const to = r[c];
+      if (typeof from !== "string" || typeof to !== "string" || from === to || seen.has(`${from}\u0000${to}\u0000${c}`)) continue;
+      seen.add(`${from}\u0000${to}\u0000${c}`);
+      const ref = edges.find((e) => e.from === from && e.to === to && e.column === undefined);
+      if (ref) ref.column = c;
+      else edges.push({ from, to, origin: "row", column: c });
+    }
+  }
+  const named = new Set([...(body?.keys ?? []), ...(body?.rows ?? []).flatMap((r) => cols.map((c) => r[c]))]);
+  return { nodes, edges, lit: nodes.map((n) => n.key).filter((k) => named.has(k)), keyColumns: cols };
+}
+
+/** The room a two-column drawing gives each side's labels, in its own units, and a label's width per character. */
+const SIDE = 0.4;
+const CHAR = 7.8;
+/** A two-column drawing is at least this wide, in its own units, so a side holds about 24 characters. */
+const COLUMNS_WIDTH = 520;
+
+/**
+ * behold#1190: a drawing with row edges in two columns: the first key
+ * column's nodes on the left, the rest on the right, each in answer order,
+ * the taller one `gap` apart, the shorter spread over the same height.
+ */
+export function columnLayout(draw, width = 520, gap = 34) {
+  const from = new Set(draw.edges.filter((e) => e.column !== undefined).map((e) => e.from));
+  const left = draw.nodes.filter((n) => from.has(n.key));
+  const right = draw.nodes.filter((n) => !from.has(n.key));
+  const height = Math.max(left.length, right.length, 2) * gap + gap;
+  const at = {};
+  // Each column spread over the drawing's height, so a short one does not bunch up in the middle.
+  const place = (list, x) => {
+    const step = (height - gap) / Math.max(list.length, 1);
+    list.forEach((n, i) => (at[n.key] = { x: Math.round(x), y: Math.round(gap / 2 + step * (i + 0.5)), side: x < width / 2 ? "left" : "right" }));
+  };
+  place(left, width * SIDE);
+  place(right, width * (1 - SIDE));
+  return { at, width, height };
+}
+
+const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
+const clip = (s, n) => (s.length > n ? `${s.slice(0, Math.max(1, n - 3))}...` : s);
+
+/**
+ * The answer's drawing as SVG text. Each node carries its key; the keys in
+ * `lit` (behold#1163, the ask demo) are drawn lit. A drawing with labelled
+ * edges (behold#1190, {@link answerDrawing}) is laid out in two columns, each
+ * edge's column name written once beside the node it reaches; otherwise the
+ * nodes sit on a circle.
+ */
 export function drawSvg(draw, size = 520, lit = []) {
   const on = new Set(lit);
   const nodes = draw?.nodes ?? [];
   if (!nodes.length) return "";
-  const at = circleLayout(nodes, size);
-  const edges = (draw.edges ?? [])
-    .filter((e) => at[e.from] && at[e.to])
+  const labelled = (draw.edges ?? []).some((e) => e.column !== undefined);
+  const lay = labelled ? columnLayout(draw, Math.max(size, COLUMNS_WIDTH)) : { at: circleLayout(nodes, size), width: size, height: size };
+  const at = lay.at;
+  const shown = (draw.edges ?? []).filter((e) => at[e.from] && at[e.to]);
+  const edges = shown
     .map((e) => {
       const a = at[e.from];
       const b = at[e.to];
       const derived = e.origin === "derived";
-      const title = `${e.from} -> ${e.to}${e.viaAttr ? ` via ${e.viaAttr}` : ""}${derived ? ` (derived: ${e.rule})` : ""}`;
-      return `<line class="g-edge${derived ? " derived" : ""}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" marker-end="url(#g-arrow)"><title>${esc(title)}</title></line>`;
+      const row = e.origin === "row";
+      const title = `${e.from} -> ${e.to}${e.column ? ` (the answer's ${e.column} column)` : ""}${e.viaAttr ? ` via ${e.viaAttr}` : ""}${derived ? ` (derived: ${e.rule})` : ""}`;
+      const label = e.column ? ` data-label="${esc(e.column)}"` : "";
+      return `<line class="g-edge${derived ? " derived" : ""}${row ? " row" : ""}"${label} x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" marker-end="url(#g-arrow)"><title>${esc(title)}</title></line>`;
     })
     .join("");
+  // Each column's name once beside each node it reaches, between the columns.
+  const names = new Map();
+  for (const e of shown) if (e.column && at[e.to].side === "right") names.set(e.to, [...new Set([...(names.get(e.to) ?? []), e.column])]);
+  const words = [...names]
+    .map(([k, cols]) => `<text class="g-edge-label" x="${at[k].x - 12}" y="${at[k].y - 6}" text-anchor="end">${esc(cols.join(", "))}</text>`)
+    .join("");
+  const room = Math.floor((lay.width * SIDE - 18) / CHAR);
   const dots = nodes
     .map((n) => {
       const p = at[n.key];
       const label = n.name || n.key;
-      return `<g class="g-node ${esc(n.source)}${on.has(n.key) ? " lit" : ""}" data-key="${esc(n.key)}"><circle cx="${p.x}" cy="${p.y}" r="7"><title>${esc(`${n.key} (${n.kind}, ${n.scopeKey})`)}</title></circle><text x="${p.x + 10}" y="${p.y + 4}">${esc(label.length > 32 ? `${label.slice(0, 29)}...` : label)}</text></g>`;
+      const left = p.side === "left";
+      const text = labelled ? clip(label, room) : clip(label, 32);
+      const tx = left ? p.x - 12 : p.x + 10;
+      return `<g class="g-node ${esc(n.source)}${on.has(n.key) ? " lit" : ""}" data-key="${esc(n.key)}"><circle cx="${p.x}" cy="${p.y}" r="7"><title>${esc(`${n.key} (${n.kind}, ${n.scopeKey})`)}</title></circle><text x="${tx}" y="${p.y + 4}"${left ? ' text-anchor="end"' : ""}><title>${esc(n.key)}</title>${esc(text)}</text></g>`;
     })
     .join("");
-  return `<svg viewBox="0 0 ${size} ${size}" role="img" aria-label="answer graph"><defs><marker id="g-arrow" viewBox="0 0 10 10" refX="16" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="g-arrowhead"/></marker></defs>${edges}${dots}</svg>`;
+  return `<svg viewBox="0 0 ${lay.width} ${lay.height}" role="img" aria-label="answer graph"><defs><marker id="g-arrow" viewBox="0 0 10 10" refX="16" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="g-arrowhead"/></marker></defs>${edges}${words}${dots}</svg>`;
 }
 
 /** A table of the answer's rows as HTML text. */
@@ -133,7 +243,8 @@ export function rowsTable(columns, rows) {
   if (!rows?.length) return "<p class=\"g-muted\">No rows.</p>";
   const cell = (v) => esc(typeof v === "string" ? v : JSON.stringify(v));
   const head = columns.map((c) => `<th>${esc(c)}</th>`).join("");
-  const body = rows.map((r) => `<tr>${columns.map((c) => `<td>${cell(r[c])}</td>`).join("")}</tr>`).join("");
+  // Each cell's whole value on hover too, for a page that cuts long cells short (behold#1190, the ask demo).
+  const body = rows.map((r) => `<tr>${columns.map((c) => `<td title="${cell(r[c])}">${cell(r[c])}</td>`).join("")}</tr>`).join("");
   return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
 
@@ -181,7 +292,8 @@ export function initGraphPane(doc = document, fetchJson = (u) => fetch(u, { head
   const show = (answer) => {
     const { status, body } = answer;
     $("g-error").textContent = status === 200 ? "" : refusalText(body);
-    $("g-draw").innerHTML = status === 200 ? drawSvg(body.draw) : "";
+    // behold#1190: both ends of each row, where the answer's drawing names them.
+    $("g-draw").innerHTML = status === 200 ? drawSvg(answerDrawing(body)) : "";
     $("g-rows").innerHTML = status === 200 && body.columns ? rowsTable(body.columns, body.rows) : "";
     $("g-sources").textContent = sourceLines(body.sources).join("\n");
     const link = $("g-link");

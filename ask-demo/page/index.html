@@ -87,6 +87,9 @@
       #g-draw:empty::before { content: "The answer draws here."; color: var(--muted); font-size: 12.5px; }
       .g-edge { stroke: var(--edge); stroke-width: 1.4; }
       .g-edge.derived { stroke-dasharray: 5 4; stroke: var(--foreign); }
+      /* behold#1190: an edge drawn from the answer's rows, labelled with the column that names its far end. */
+      .g-edge.row { stroke: var(--ink2); }
+      .g-edge-label { fill: var(--muted); font: italic 12px var(--font-mono); }
       .g-arrowhead { fill: var(--edge); }
       .g-node circle { fill: var(--managed); }
       .g-node.engine circle { fill: var(--runtime); }
@@ -99,6 +102,8 @@
       table { border-collapse: collapse; width: 100%; font: 11.5px/1.35 var(--font-mono); display: block; overflow-x: auto; max-height: 220px; }
       th, td { border-bottom: 1px solid var(--line); padding: 3px 6px; text-align: left; vertical-align: top; white-space: nowrap; }
       th { color: var(--ink2); position: sticky; top: 0; background: var(--surface-pane-a); }
+      /* behold#1190: a long key cuts short, whole on hover, so every column of the answer shows. */
+      td { max-width: 26ch; overflow: hidden; text-overflow: ellipsis; }
       details summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
 
       #k-ask { display: flex; flex-direction: column; justify-content: flex-end; gap: 0.35em; height: 30vh; min-height: 170px; padding: 12px 1.4em 14px; font: 600 clamp(14px, 1.25vw, 20px)/1.3 var(--font-mono); color: var(--fg); background: var(--surface-pane-b); border-top: 1px solid var(--rule); }
@@ -170,9 +175,10 @@
           <p id="g-hint"></p>
         </form>
         <pre id="g-error"></pre>
+        <!-- behold#1190: the rows first, so the whole answer shows above the fold; the drawing takes the room after them. -->
         <h2>Answer</h2>
-        <div id="g-draw"></div>
         <div id="g-rows"></div>
+        <div id="g-draw"></div>
         <h2>Sources, and when each was read</h2>
         <pre id="g-sources"></pre>
         <details>

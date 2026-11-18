@@ -36,6 +36,9 @@
       svg { width: 100%; height: auto; max-height: 560px; }
       .g-edge { stroke: var(--edge); stroke-width: 1.4; }
       .g-edge.derived { stroke-dasharray: 5 4; stroke: var(--foreign); }
+      /* behold#1190: an edge drawn from the answer's rows, labelled with the column that names its far end. */
+      .g-edge.row { stroke: var(--fg); stroke-opacity: 0.7; }
+      .g-edge-label { fill: var(--muted); font: italic 11px var(--font-mono); }
       .g-arrowhead { fill: var(--edge); }
       .g-node circle { fill: var(--managed); }
       .g-node.engine circle { fill: var(--runtime); }

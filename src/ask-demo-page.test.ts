@@ -42,7 +42,7 @@ import { WHAT_ASK_DEMO } from "../web/kiosk.js";
 // @ts-expect-error the docs site's data module is plain ESM
 import { ASK_DEMO } from "../docs/src/data/live.mjs";
 // @ts-expect-error the page's module is plain browser ESM
-import { drawLight, loopOf, questionsOf, recordedAnswer } from "../ask-demo/page/play.js";
+import { drawLight, knownResources, loopOf, questionsOf, recordedAnswer } from "../ask-demo/page/play.js";
 
 const ROOT = join(import.meta.dirname, "..");
 const FIXTURES = join(ROOT, "src", "graph-db", "__fixtures__");
@@ -108,6 +108,8 @@ let estateDir = "";
 let out = "";
 let files: Array<{ path: string; bytes: number }> = [];
 let recordedOut = "";
+/** behold#1190: the resources the fixture estate loaded, as the page knows them for drawing an answer. */
+let known = new Map();
 
 beforeAll(async () => {
   vi.mocked(graphIr).mockImplementation((async () => chantIr) as never);
@@ -126,6 +128,7 @@ beforeAll(async () => {
     write.mockRestore();
   }
   copyFileSync(join(exported, GRAPHDB_FILE), join(estateDir, GRAPHDB_FILE));
+  known = knownResources(JSON.parse(readFileSync(join(estateDir, GRAPHDB_FILE), "utf8")));
   out = join(mkdtempSync(join(tmpdir(), "behold-ask-demo-out-")), "site");
   made.push(join(out, ".."));
   files = (await buildAskDemoBundle({ narration: NARRATION, estate: estateDir, out })).files;
@@ -335,7 +338,7 @@ async function playAll(page: Page, reduced: boolean) {
     if (!reduced) expect([atQ.phase, atQ.readOnly]).toEqual(["playing", true]);
     expect(atQ.lit).toEqual(q.light);
     expect(atQ.domLit.sort()).toEqual([...q.light].sort());
-    const drawn = drawLight(recordedAnswer(q).body);
+    const drawn = drawLight(recordedAnswer(q).body, known);
     expect(atQ.answerLit).toEqual(drawn);
     expect(atQ.domAnswerLit.sort()).toEqual([...drawn].sort());
     for (const s of q.sources) expect(atQ.sources).toContain(s.readAt);
@@ -504,7 +507,9 @@ describe.runIf(peer.ok)("the page, in a headless browser", () => {
           expect(visitorBadge[1]!.t - visitorBadge[0]!.t).toBeGreaterThan(PACED_LINGER - 60);
           const s = await waitFor(page, "the visitor's answer", (x) => x.answerLit.length > 0);
           expect(s.lit.sort()).toEqual([...q.light].sort());
-          expect(s.answerLit.sort()).toEqual([...q.keys].sort());
+          // behold#1190: both ends of each row, as the recorded turn drew them.
+          expect(s.answerLit.sort()).toEqual([...drawLight(recordedAnswer(q).body, known)].sort());
+          for (const k of q.keys) expect(s.answerLit).toContain(k);
           for (const r of q.rows) for (const v of Object.values(r)) expect(s.rows).toContain(String(v));
           // The visitor holds the loop: it does not move on while they read.
           expect(s.phase).toBe("after");
@@ -591,8 +596,8 @@ const viewBoxOf = (page: Page): Promise<Box> =>
   });
 const inside = (b: Box, v: Box) => b.x >= v.x - 0.5 && b.y >= v.y - 0.5 && b.x + b.width <= v.x + v.width + 0.5 && b.y + b.height <= v.y + v.height + 0.5;
 
-describe.runIf(peer.ok)("the estate pane's zoom, on the recording (#1175)", () => {
-  it("zooms onto a spread-out answer's cards, and the visitor's buttons and wheel move the view and hold the loop", { timeout: 120_000 }, async () => {
+describe.runIf(peer.ok)("the estate pane's zoom and the answer, on the recording (#1175, #1190)", () => {
+  it("frames both ends of a spread-out answer, draws its rows as labelled edges with the table above the fold, and the visitor's buttons and wheel move the view and hold the loop", { timeout: 120_000 }, async () => {
     const launched = await browserOrNull();
     if (!launched) {
       console.warn("ask-demo-page: no browser launches here, so the zoom was not checked");
@@ -603,11 +608,12 @@ describe.runIf(peer.ok)("the estate pane's zoom, on the recording (#1175)", () =
     const [fx, fy, fw, fh] = /viewBox="([^"]+)"/.exec(graph.svg)![1]!.split(/[\s,]+/).map(Number);
     const full: Box = { x: fx!, y: fy!, width: fw!, height: fh! };
     const boxes = cardBoxes(graph.svg);
-    // A question whose lit cards sit so far apart that framing them all would hardly zoom: dns-cross-cloud when recorded.
+    // dns-cross-cloud: the records sit in a stack at the top of the estate, the GCP cards they reach near the bottom.
     const qs = questionsOf(rec) as Narration["turns"];
-    const spread = qs.findIndex((t) => t.light.length > 1 && viewShare(frameBox(t.light.map((id) => boxes.get(id)!), full), full) > 0.6);
-    expect(spread, "a question with lit cards far apart").toBeGreaterThanOrEqual(0);
+    const spread = qs.findIndex((t) => t.id === "dns-cross-cloud");
+    expect(spread).toBeGreaterThanOrEqual(0);
     const q = qs[spread]!;
+    expect(viewShare(frameBox(q.light.map((id) => boxes.get(id)!), full), full)).toBeGreaterThan(0.6);
     const url = await serveDir(recordedOut);
     const browser = launched.browser as unknown as { newContext(o?: object): Promise<any>; close(): Promise<void> };
     const errors: string[] = [];
@@ -617,14 +623,31 @@ describe.runIf(peer.ok)("the estate pane's zoom, on the recording (#1175)", () =
       page.on("pageerror", (e: Error) => errors.push(e.message));
       await page.goto(`${url}?pace=2&loop=${spread}`, { waitUntil: "domcontentloaded" });
       await waitFor(page, `the question ${q.id}`, (s) => s.turn === q.id);
-      // The view zooms in: smaller than the graph both ways, and the cards it frames are lit ones.
+      // Every lit card is in view, a record's card and the GCP cards alike, and the view is no larger than the graph.
       const at = await viewBoxOf(page);
       expect(at.width).toBeLessThan(full.width);
       expect(at.height).toBeLessThan(full.height);
-      expect(viewShare(at, full)).toBeLessThanOrEqual(0.6);
-      const framed = q.light.filter((id) => inside(boxes.get(id)!, at));
-      expect(framed.length, `lit cards in ${JSON.stringify(at)}`).toBeGreaterThan(1);
-      expect(framed.length).toBeLessThan(q.light.length);
+      for (const id of q.light) expect(inside(boxes.get(id)!, at), `${id} in ${JSON.stringify(at)}`).toBe(true);
+      expect(q.light.some((id) => id.startsWith("dns/"))).toBe(true);
+      expect(q.light.some((id) => id.startsWith("gcp/"))).toBe(true);
+      // The answer drawing has both ends of each row: an edge from each record to what it reaches, labelled reaches.
+      const drawing = await page.evaluate(() => ({
+        labels: [...document.querySelectorAll("#g-draw line.g-edge.row")].map((l) => l.getAttribute("data-label")),
+        words: [...document.querySelectorAll("#g-draw text.g-edge-label")].map((t) => t.textContent),
+        nodes: [...document.querySelectorAll("#g-draw .g-node")].map((g) => g.getAttribute("data-key")),
+      }));
+      expect(drawing.labels.length).toBe(q.rows.length);
+      expect(new Set(drawing.labels)).toEqual(new Set(["reaches"]));
+      expect(drawing.words.length).toBeGreaterThan(0);
+      for (const r of q.rows) for (const k of [r.key, r.reaches]) expect(drawing.nodes).toContain(k);
+      // The rows table's first row shows without scrolling, at 1440x900 with the conversation open.
+      const fold = await page.evaluate(() => {
+        const pane = document.getElementById("ad-pane")!;
+        const row = document.querySelector("#g-rows tbody tr")!.getBoundingClientRect();
+        return { row: row.bottom, pane: pane.getBoundingClientRect().bottom, scrolled: pane.scrollTop, height: innerHeight };
+      });
+      expect(fold.scrolled).toBe(0);
+      expect(fold.row).toBeLessThanOrEqual(Math.min(fold.pane, fold.height));
       // The buttons: zoom in about the middle, fit the whole graph, and no further out than that.
       await page.click("#ad-zoom-in");
       const zin = await viewBoxOf(page);

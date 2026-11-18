@@ -30,10 +30,10 @@
  * question i.
  */
 import { createAskPane } from "../../web/kiosk-ask.js";
-import { drawSvg, refusalText, rowsTable } from "../../web/graph-query.js";
+import { answerDrawing, drawSvg, refusalText, rowsTable } from "../../web/graph-query.js";
 import { bindEngineBadge } from "../../web/engine-badge.js";
 import { applyKeyLight, cardIndex, lightKeys, zoomFrame } from "../../web/key-light.js";
-import { callLine, cypherFill, drawLight, loopOf, loopTiming, narrationProblems, paneOpen, panView, parseParams, recordedAnswer, recordedWords, sourceWords, zoomView } from "./play.js";
+import { callLine, cypherFill, knownResources, loopOf, loopTiming, narrationProblems, paneOpen, panView, parseParams, recordedAnswer, recordedWords, sourceWords, zoomView } from "./play.js";
 
 const $ = (id) => document.getElementById(id);
 const html = document.documentElement;
@@ -48,7 +48,7 @@ const clock = () => T0 + (Date.now() - T0) * PACE;
 /** The answer drawing's side, in its own units: smaller than the /graph page's, so its words read in a narrow pane. */
 const DRAW_SIZE = 420;
 
-const state = { narration: null, cards: new Map(), loop: null, timing: null, startedAt: 0, questionGiven: false, phase: "idle", doneAt: 0, held: false, db: null, engine: "waiting", touched: false, zoomedAt: -Infinity, gesture: false, paneChosen: null };
+const state = { narration: null, cards: new Map(), known: new Map(), loop: null, timing: null, startedAt: 0, questionGiven: false, phase: "idle", doneAt: 0, held: false, db: null, engine: "waiting", touched: false, zoomedAt: -Infinity, gesture: false, paneChosen: null };
 
 /** A recorded turn leaves the view alone this long after the visitor last zoomed or dragged it, in ms. */
 const VISITOR_VIEW_MS = 4000;
@@ -274,10 +274,17 @@ function wireZoom() {
 
 // --- The /graph pane --------------------------------------------------------
 
-function showAnswer(answer, lit) {
+/**
+ * Show an answer: its rows, and its drawing with both ends of each row
+ * (behold#1190, `answerDrawing` over the resources the recording loaded), so
+ * a recorded turn and a visitor's query draw alike.
+ */
+function showAnswer(answer) {
   const { status, body } = answer;
+  const picture = status === 200 && body.draw ? answerDrawing(body, state.known) : { nodes: [], edges: [], lit: [] };
+  const lit = picture.lit;
   $("g-error").textContent = status === 200 ? "" : refusalText(body);
-  $("g-draw").innerHTML = status === 200 && body.draw ? drawSvg(body.draw, DRAW_SIZE, lit) : "";
+  $("g-draw").innerHTML = picture.nodes.length ? drawSvg(picture, DRAW_SIZE, lit) : "";
   $("g-rows").innerHTML = status === 200 && body.columns ? rowsTable(body.columns, body.rows) : "";
   $("g-sources").textContent = status === 200 ? sourceWords(body.sources).join("\n") : "";
   html.dataset.answerLit = lit.join("\n");
@@ -287,7 +294,7 @@ function clearPane() {
   $("g-cypher").value = "";
   $("g-params").value = "";
   $("g-call").textContent = "";
-  showAnswer({ status: 200, body: {} }, []);
+  showAnswer({ status: 200, body: {} });
 }
 
 function setEditable(on) {
@@ -323,7 +330,7 @@ function onTurn(turn) {
     clearPane();
     $("g-call").textContent = callLine(turn);
     $("g-cypher").placeholder = "The load turn runs no query.";
-    showAnswer(recordedAnswer({ ...turn, keys: [], draw: { nodes: [], edges: [] } }), []);
+    showAnswer(recordedAnswer({ ...turn, keys: [], draw: { nodes: [], edges: [] } }));
     showEstate(true);
     lightEstate(turn.light, "", { auto: true });
     return;
@@ -332,8 +339,7 @@ function onTurn(turn) {
   $("g-cypher").value = fill.cypher;
   $("g-params").value = fill.params;
   $("g-call").textContent = fill.call;
-  const answer = recordedAnswer(turn);
-  showAnswer(answer, drawLight(answer.body));
+  showAnswer(recordedAnswer(turn));
   lightEstate(
     turn.light,
     turn.light.length ? "" : "The estate graph draws no card for what this answer names (indexed cloud and cluster objects). They light in the answer's drawing.",
@@ -424,7 +430,7 @@ async function ask(ev) {
   }
   $("g-call").textContent = "Your query, run in this page.";
   const answer = await badge.run(state.db.query($("g-cypher").value, p.params));
-  showAnswer(answer, answer.status === 200 ? drawLight(answer.body) : []);
+  showAnswer(answer);
   const lit = answer.status === 200 ? lightKeys(answer.body, state.cards) : [];
   lightEstate(lit, answer.status === 200 && !lit.length ? "The estate graph draws no card for what this answer names. It lights in the answer's drawing." : "");
   html.dataset.visitor = String(Number(html.dataset.visitor || 0) + 1);
@@ -442,11 +448,12 @@ function loadEngine() {
 }
 
 async function boot() {
-  const [narration, estate] = await Promise.all([getJson("./narration.json"), getJson("./estate.json")]);
+  const [narration, estate, graphdb] = await Promise.all([getJson("./narration.json"), getJson("./estate.json"), getJson("./graphdb.json")]);
   const problems = narrationProblems(narration);
   if (problems.length) throw new Error(`narration.json: ${problems.join("; ")}`);
   state.narration = narration;
   state.cards = cardIndex(estate.nodes);
+  state.known = knownResources(graphdb);
   const words = recordedWords(narration);
   $("ad-recorded").textContent = words.line;
   $("ad-command").textContent = words.command;

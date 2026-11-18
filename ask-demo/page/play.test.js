@@ -14,6 +14,7 @@ import {
   cypherFill,
   keepInside,
   drawLight,
+  knownResources,
   loopOf,
   loopTiming,
   narrationProblems,
@@ -31,6 +32,7 @@ const HERE = import.meta.dirname;
 const read = (p) => JSON.parse(readFileSync(join(HERE, "..", p), "utf8"));
 const FIXTURE = read("fixtures/page/narration.json");
 const RECORDING = read("narration.json");
+const KNOWN = knownResources(read("estate/graphdb.json"));
 
 describe("the narrations this page plays", () => {
   it("are well formed, the recording and both fixtures", () => {
@@ -150,6 +152,16 @@ describe("the recorded answer", () => {
     }
     const indexOnly = RECORDING.turns.filter((t) => t.kind === "question" && !t.light.length);
     expect(indexOnly.length).toBeGreaterThan(0);
+  });
+  it("draws both ends of each recorded row that pairs two keys, from the rows the recording loaded (#1190)", () => {
+    expect(KNOWN.get("gcp/webRule")).toEqual({ key: "gcp/webRule", kind: "GCP::Compute::ForwardingRule", name: "webRule", source: "chant", scopeKey: "chant/gcp" });
+    expect(knownResources(null).size).toBe(0);
+    const q = RECORDING.turns.find((t) => t.id === "dns-cross-cloud");
+    const lit = drawLight(recordedAnswer(q).body, KNOWN);
+    for (const r of q.rows) for (const k of [r.key, r.reaches]) expect(lit, k).toContain(k);
+    const sa = RECORDING.turns.find((t) => t.id === "serviceaccount-roles");
+    const roles = drawLight(recordedAnswer(sa).body, KNOWN);
+    for (const r of sa.rows) for (const k of [r.key, r.roleKey]) expect(roles, k).toContain(k);
   });
   it("says when each source was read, and that a declared source was not observed", () => {
     expect(sourceWords(FIXTURE.turns[0].sources)).toEqual([

@@ -8,6 +8,7 @@
  * Nothing here touches the page; ./play.test.js tests it.
  */
 import { BEAT_GAP_MS, playback } from "../../web/kiosk-ask.js";
+import { answerDrawing } from "../../web/graph-query.js";
 
 export const NARRATION_FORMAT = "behold-ask-demo-narration/1";
 /** About how long a loop takes, words and pause together. */
@@ -136,11 +137,22 @@ export function recordedAnswer(turn) {
   return { status: 200, body: { columns: turn.columns || [], rows: turn.rows || [], keys, draw, sources: turn.sources || [] } };
 }
 
-/** The keys a turn's answer drawing lights: each of its keys the drawing has. */
-export function drawLight(answerBody) {
-  const keys = new Set((answerBody && answerBody.keys) || []);
-  const nodes = (answerBody && answerBody.draw && answerBody.draw.nodes) || [];
-  return nodes.map((x) => x.key).filter((k) => keys.has(k));
+/**
+ * behold#1190: the resources the page knows, by key, for drawing an answer:
+ * graphdb.json's resources (the rows the recording loaded), each as the
+ * answer drawing's node.
+ */
+export function knownResources(graphdb) {
+  const out = new Map();
+  for (const r of (graphdb && graphdb.rows && graphdb.rows.resources) || []) {
+    if (r && typeof r.key === "string") out.set(r.key, { key: r.key, kind: r.kind || "", name: r.name || "", source: r.source || "", scopeKey: r.scopeKey || "" });
+  }
+  return out;
+}
+
+/** The keys a turn's answer drawing lights: each node it draws that the answer names (web/graph-query.js `answerDrawing`). */
+export function drawLight(answerBody, known = new Map()) {
+  return answerDrawing(answerBody, known).lit;
 }
 
 /** `2026-11-18T16:56:39Z` as `18 November 2026` (UTC). */
