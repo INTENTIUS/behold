@@ -263,6 +263,7 @@ interface Seen {
   paneTitle: string;
   call: string;
   formShown: boolean;
+  revealed: string;
   estate: string;
   pane: string;
   held: string;
@@ -280,7 +281,7 @@ const seenScript = `(() => {
   const d = document.documentElement.dataset;
   const split = (s) => (s ? s.split("\\n") : []);
   return {
-    loop: d.loop || "", turn: d.turn || "", phase: d.phase || "",
+    loop: d.loop || "", turn: d.turn || "", phase: d.phase || "", revealed: d.revealed || "",
     lit: split(d.lit), answerLit: split(d.answerLit),
     domLit: [...document.querySelectorAll('#ad-estate [data-node-id][data-kl="lit"]')].map((g) => g.getAttribute("data-node-id")),
     domAnswerLit: [...document.querySelectorAll("#g-draw .g-node.lit")].map((g) => g.getAttribute("data-key")),
@@ -351,6 +352,9 @@ async function playAll(page: Page, reduced: boolean) {
       // The first loop types the load turn's reply; it is not all there as it starts.
       if (i === 0 && !reduced) expect(atLoad.terminal.replace(/\s+/g, " ")).not.toContain(load.reply.replace(/\s+/g, " "));
     }
+    // behold#1217: once the query step fills the box, the box shows, though the reply (and the turn) hasn't started.
+    const atQuery = await waitFor(page, `loop ${i}'s query step`, (s) => s.loop === String(i) && s.revealed.split(" ").includes("query"));
+    expect([atQuery.cypher, atQuery.formShown]).toEqual([q.cypher, true]);
     const atQ = await waitFor(page, `loop ${i}'s question ${q.id}`, (s) => s.loop === String(i) && s.turn === q.id);
     expect(atQ.estate).toBe("loaded");
     expect(atQ.count).toBe(`Question ${loop.index + 1} of ${loop.of}`);

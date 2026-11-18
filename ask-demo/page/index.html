@@ -107,11 +107,13 @@
       pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.4 var(--font-mono); margin: 0; color: var(--muted); }
       #g-call:empty, #g-error:empty { display: none; }
       /* behold#1191: the load turn runs no query, so its pane shows what was loaded and no query box. */
-      html[data-turn="load"] #g-cypher-form { display: none; }
+      /* behold#1217: hidden for the load turn, and shown again as the question's query step fills it. */
+      html[data-turn="load"]:not([data-revealed~="query"]) #g-cypher-form { display: none; }
       #g-call { color: var(--ink2); font: 13px/1.4 var(--font-ui); }
       #g-error { color: var(--degraded); }
       #g-draw svg { width: 100%; height: auto; max-height: 300px; display: block; overflow: visible; }
       #g-draw:empty::before { content: "The answer draws here."; color: var(--muted); font-size: 12.5px; }
+      html[data-turn="load"]:not([data-revealed~="query"]) #g-draw:empty::before { content: none; }
       .g-edge { stroke: var(--edge); stroke-width: 1.4; }
       .g-edge.derived { stroke-dasharray: 5 4; stroke: var(--foreign); }
       /* behold#1190: an edge drawn from the answer's rows, labelled with the column that names its far end. */
