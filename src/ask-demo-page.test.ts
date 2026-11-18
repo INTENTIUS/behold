@@ -244,6 +244,7 @@ interface Seen {
   terminal: string;
   rows: string;
   sources: string;
+  estate: string;
 }
 
 const seenScript = `(() => {
@@ -259,6 +260,7 @@ const seenScript = `(() => {
     terminal: document.getElementById("k-ask").innerText,
     rows: document.getElementById("g-rows").innerText,
     sources: document.getElementById("g-sources").textContent,
+    estate: d.estate || "",
   };
 })()`;
 
@@ -280,13 +282,18 @@ async function playAll(page: Page, reduced: boolean) {
     const loop = loopOf(narration, i);
     const load = loop.load;
     const q = loop.question;
+    // Each loop starts with the estate pane empty: the agent has loaded nothing yet.
+    const before = await waitFor(page, `loop ${i}'s start`, (s) => s.loop === String(i));
+    if (!before.turn) expect(before.estate).toBe("empty");
     const atLoad = await waitFor(page, `loop ${i}'s load turn`, (s) => s.loop === String(i) && (s.turn === "load" || s.turn === q.id));
     if (atLoad.turn === "load") {
+      expect(atLoad.estate).toBe("loaded");
       expect(atLoad.lit.sort()).toEqual([...load.light].sort());
       expect(atLoad.cypher).toBe("");
       expect(atLoad.readOnly).toBe(true);
     }
     const atQ = await waitFor(page, `loop ${i}'s question ${q.id}`, (s) => s.loop === String(i) && s.turn === q.id);
+    expect(atQ.estate).toBe("loaded");
     // The Cypher box fills with the turn's query as its reply starts, and the answer draws at once.
     expect(atQ.cypher).toBe(q.cypher);
     expect(atQ.params).toBe(Object.keys(q.params).length ? JSON.stringify(q.params) : "");
