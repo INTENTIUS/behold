@@ -20,6 +20,7 @@ import {
   QUERY_READ_MS,
   QUICK_QUESTION_MS,
   REVEAL_STEPS,
+  ROWS_AFTER_MS,
   REDUCED_READ_MS,
   beatOf,
   callLine,
@@ -148,12 +149,16 @@ describe("loops", () => {
 });
 
 describe("the order a question reveals in (#1192)", () => {
-  it("shows the query on the busy line, the answer as the reply starts and the rows as it finishes", () => {
+  it("shows the query on the busy line, the answer as the reply starts and the rows soon after, while it types (#1208)", () => {
     expect(REVEAL_STEPS).toEqual(["query", "answer", "rows"]);
     expect(revealAt("start")).toEqual([]);
     expect(revealAt("busy")).toEqual(["query"]);
     expect(revealAt("light")).toEqual(["query", "answer"]);
+    expect(revealAt("rows")).toEqual(["query", "answer", "rows"]);
+    expect(ROWS_AFTER_MS).toBe(1_500);
+    // A reply that ends before the rows' moment still shows them.
     expect(revealAt("done")).toEqual(["query", "answer", "rows"]);
+    expect(newSteps(revealAt("rows"), revealAt("done"))).toEqual([]);
   });
   it("shows a step whose event never came with the next one, and each step once", () => {
     expect(newSteps([], revealAt("light"))).toEqual(["query", "answer"]);
