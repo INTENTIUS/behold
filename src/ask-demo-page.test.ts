@@ -42,7 +42,7 @@ import { WHAT_ASK_DEMO } from "../web/kiosk.js";
 // @ts-expect-error the docs site's data module is plain ESM
 import { ASK_DEMO } from "../docs/src/data/live.mjs";
 // @ts-expect-error the page's module is plain browser ESM
-import { PROMPT_TYPE_MS, QUICK_QUESTION_MS, callLine, drawLight, knownResources, loopOf, questionsOf, recordedAnswer, sourceTitle, sourceWords } from "../ask-demo/page/play.js";
+import { PROMPT_TYPE_MS, QUERY_READ_MS, QUICK_QUESTION_MS, callLine, drawLight, knownResources, loopOf, questionsOf, recordedAnswer, sourceTitle, sourceWords } from "../ask-demo/page/play.js";
 
 const ROOT = join(import.meta.dirname, "..");
 const FIXTURES = join(ROOT, "src", "graph-db", "__fixtures__");
@@ -355,7 +355,7 @@ async function playAll(page: Page, reduced: boolean) {
     expect(atQ.estate).toBe("loaded");
     expect(atQ.count).toBe(`Question ${loop.index + 1} of ${loop.of}`);
     // A later loop's question replies within a few seconds of the page's clock (at ?pace=8, real ms / 8).
-    if (i > 0) expect(atQ.now - before.now, `loop ${i}: the question soon after the loop starts`).toBeLessThan((QUICK_QUESTION_MS + 600 + q.prompt.length * PROMPT_TYPE_MS + 1200 + 2000) / 8 + 400);
+    if (i > 0) expect(atQ.now - before.now, `loop ${i}: the question soon after the loop starts`).toBeLessThan((QUICK_QUESTION_MS + 600 + q.prompt.length * PROMPT_TYPE_MS + QUERY_READ_MS + 2000) / 8 + 400);
     // behold#1183: the agent's pane is open while the turns print, and nothing offers to close it.
     // Under reduced motion the question's reply prints at once, so its beat may already be running.
     for (const s of reduced ? [before, atLoad] : [before, atLoad, atQ]) expect([s.pane, s.inert, s.control.hidden], s.turn).toEqual(["open", false, true]);
@@ -370,12 +370,13 @@ async function playAll(page: Page, reduced: boolean) {
     const drawn = drawLight(recordedAnswer(q).body, known);
     expect(atQ.answerLit).toEqual(drawn);
     expect(atQ.domAnswerLit.sort()).toEqual([...drawn].sort());
-    // behold#1191: each source in words, its scope key and raw times on hover; the call in words.
-    for (const line of sourceWords(q.sources)) expect(atQ.sources).toContain(line);
-    expect(atQ.sourceTitles).toEqual(q.sources.map(sourceTitle));
-    expect([atQ.paneTitle, atQ.call, atQ.formShown]).toEqual(["Cypher", callLine(q), true]);
-    for (const r of q.rows) for (const v of Object.values(r)) expect(atQ.rows).toContain(String(v));
     const after = await waitFor(page, `loop ${i} to finish`, (s) => s.loop === String(i) && s.phase === "after");
+    // behold#1192: the rows and sources are there once the reply has printed (checkRevealLog checks the order).
+    // behold#1191: each source in words, its scope key and raw times on hover; the call in words.
+    for (const line of sourceWords(q.sources)) expect(after.sources).toContain(line);
+    expect(after.sourceTitles).toEqual(q.sources.map(sourceTitle));
+    expect([after.paneTitle, after.call, after.formShown]).toEqual(["Cypher", callLine(q), true]);
+    for (const r of q.rows) for (const v of Object.values(r)) expect(after.rows).toContain(String(v));
     for (const text of [load.prompt, load.reply, q.prompt, q.reply]) expect(after.terminal.replace(/\s+/g, " "), text).toContain(text.replace(/\s+/g, " "));
     // behold#1195: the agent says how it reads the question, after the person's prompt and before the busy line.
     const flat = after.terminal.replace(/\s+/g, " ");
@@ -434,6 +435,14 @@ const badgeLogScript = `(() => {
   addEventListener("behold:ask-busy", (e) => log.push({ ev: "busy", busy: !!(e.detail && e.detail.busy), step: e.detail && e.detail.step, loop: loop(), t: now() }));
   addEventListener("behold:ask-light", (e) => log.push({ ev: "light", turn: e.detail && e.detail.ask && e.detail.ask.turn && e.detail.ask.turn.id, loop: loop(), t: now() }));
   document.addEventListener("DOMContentLoaded", () => {
+    // behold#1192: each step a question reveals, with what the page shows then and what is marked.
+    new MutationObserver(() => {
+      const d = document.documentElement.dataset;
+      if (!d.revealed) return;
+      const q = (id) => document.getElementById(id);
+      log.push({ ev: "reveal", revealed: d.revealed, loop: loop(), t: now(), cypher: q("g-cypher").value, drawn: !!q("g-draw").querySelector("svg"), rowsShown: q("g-rows").innerHTML !== "", lit: d.lit || "",
+        marks: [...document.querySelectorAll("[data-reveal]")].map((e) => e.id).sort() });
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-revealed"] });
     const el = document.getElementById("g-engine-badge");
     if (!el) return;
     let was = false;
@@ -448,7 +457,13 @@ const badgeLogScript = `(() => {
 })()`;
 
 interface BadgeEntry {
-  ev: "busy" | "light" | "badge";
+  ev: "busy" | "light" | "badge" | "reveal";
+  revealed?: string;
+  cypher?: string;
+  drawn?: boolean;
+  rowsShown?: boolean;
+  lit?: string;
+  marks?: string[];
   busy?: boolean;
   step?: string;
   turn?: string;
@@ -501,6 +516,41 @@ function checkBadgeLog(log: BadgeEntry[], reduced: boolean) {
   }
 }
 
+/**
+ * behold#1192: each loop's question reveals in order with motion (the query on its busy line,
+ * then the answer drawn and lit on the estate as the reply starts, then the rows as it finishes),
+ * each step marked as it shows; under reduced motion the three show together and nothing is marked.
+ */
+function checkRevealLog(log: BadgeEntry[], reduced: boolean) {
+  const qs = narration.turns.filter((t) => t.kind === "question");
+  for (let i = 0; i < qs.length; i++) {
+    const q = loopOf(narration, i).question;
+    const at = (ev: string) => log.findIndex((e) => e.loop === String(i) && e.ev === ev && (ev !== "light" || e.turn === q.id) && (ev !== "busy" || (e.busy && e.step === q.id)));
+    const steps = log.filter((e) => e.ev === "reveal" && e.loop === String(i));
+    if (reduced) {
+      expect(steps.map((e) => e.revealed), `loop ${i}`).toEqual(["query answer rows"]);
+      expect(steps[0]).toMatchObject({ cypher: q.cypher, drawn: true, rowsShown: true, marks: [] });
+      continue;
+    }
+    expect(steps.map((e) => e.revealed), `loop ${i}`).toEqual(["query", "query answer", "query answer rows"]);
+    const [query, answer, rows] = steps;
+    // The query fills and the badge runs while the busy line shows, before the reply starts.
+    expect(query, `loop ${i}: the query`).toMatchObject({ cypher: q.cypher, drawn: false, rowsShown: false, marks: ["g-cypher-form"] });
+    const qi = log.indexOf(query!);
+    expect(qi).toBeGreaterThan(at("busy"));
+    expect(qi).toBeLessThan(at("light"));
+    // The answer draws and the estate frames it as the reply starts; the rows wait.
+    expect(answer, `loop ${i}: the answer`).toMatchObject({ drawn: true, rowsShown: false, lit: q.light.join("\n") });
+    expect(answer!.marks).toEqual(expect.arrayContaining(["ad-estate", "g-draw"]));
+    expect(answer!.marks).not.toContain("g-rows");
+    expect(log.indexOf(answer!)).toBeGreaterThan(at("light") - 1);
+    // The rows show as the reply finishes, a while later.
+    expect(rows, `loop ${i}: the rows`).toMatchObject({ drawn: true, rowsShown: true });
+    expect(rows!.marks).toContain("g-rows");
+    expect(rows!.t - answer!.t).toBeGreaterThan((q.reply.length * 35) / 8 - 100);
+  }
+}
+
 describe.runIf(peer.ok)("the page, in a headless browser", () => {
   it("plays every loop with motion and under reduced motion, lights by key, fills the Cypher box, answers a visitor's query in WebAssembly, and asks only the bundle", { timeout: 240_000 }, async () => {
     const launched = await browserOrNull();
@@ -527,6 +577,7 @@ describe.runIf(peer.ok)("the page, in a headless browser", () => {
           // Long enough for the last loop's linger to run out.
           await new Promise((r) => setTimeout(r, PACED_LINGER + 600));
           checkBadgeLog(await page.evaluate("globalThis.__badge"), reducedMotion === "reduce");
+          checkRevealLog(await page.evaluate("globalThis.__badge"), reducedMotion === "reduce");
           badgeChecked.push(reducedMotion);
           if (reducedMotion === "reduce") continue;
           // After a loop the box is the visitor's: their query runs on the recorded rows in LadybugDB's WebAssembly build.

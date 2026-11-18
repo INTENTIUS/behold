@@ -64,6 +64,12 @@
       @keyframes kl-pulse { 0% { opacity: 1; } 35% { opacity: 0.35; } 70%, 100% { opacity: 1; } }
       #ad-estate [data-node-id][data-kl-pulse] { animation: kl-pulse 0.9s ease-in-out 1; }
 
+      /* behold#1192: the part a question turn has just shown is marked for a moment (main.js sets data-reveal). Reduced motion marks nothing. */
+      @keyframes ad-reveal { 0%, 35% { outline-color: var(--pending); } 100% { outline-color: transparent; } }
+      @media (prefers-reduced-motion: no-preference) {
+        #g-cypher-form[data-reveal], #g-draw[data-reveal], #g-rows[data-reveal] { outline: 2px solid transparent; outline-offset: 5px; border-radius: 4px; animation: ad-reveal 1.4s ease-out 1 both; }
+        #ad-estate[data-reveal] { outline: 2px solid transparent; outline-offset: -3px; animation: ad-reveal 1.4s ease-out 1 both; }
+      }
       #ad-pane { min-height: 0; overflow-y: auto; border-left: 1px solid var(--line); background: var(--surface-pane-a); padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 8px; }
       #ad-pane h2 { font-size: 13px; margin: 6px 0 0; color: var(--ink2); display: flex; justify-content: space-between; gap: 8px; }
       #ad-pane h2 a { font-weight: 400; font-size: 12px; }

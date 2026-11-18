@@ -17,7 +17,9 @@ import {
   MAX_ZOOM,
   PANE_BEAT_MS,
   PROMPT_TYPE_MS,
+  QUERY_READ_MS,
   QUICK_QUESTION_MS,
+  REVEAL_STEPS,
   REDUCED_READ_MS,
   beatOf,
   callLine,
@@ -29,6 +31,8 @@ import {
   knownResources,
   loadRows,
   loopOf,
+  newSteps,
+  revealAt,
   loopTiming,
   narrationProblems,
   paneOpen,
@@ -83,15 +87,19 @@ describe("loops", () => {
   it("give the prompt pane a beat per turn that types the prompt, shows the busy line and types the reply, carrying its turn", () => {
     const turn = FIXTURE.turns[1];
     const beat = beatOf(turn);
-    expect(beat).toEqual({ prompt: turn.prompt, reading: turn.reading, status: turn.busy, reply: turn.reply, turn });
+    expect(beat).toEqual({ prompt: turn.prompt, reading: turn.reading, status: turn.busy, reply: turn.reply, turn, busyMs: QUERY_READ_MS });
     expect(beatOf({ ...turn, reading: undefined })).not.toHaveProperty("reading");
+    expect(beatOf(FIXTURE.turns[0]).busyMs).toBeUndefined();
     const pb = playback([beat], 1e9);
     expect(pb.done).toBe(true);
     expect(pb.frames[0]).toMatchObject({ text: turn.prompt, replied: true, replyChars: turn.reply.length });
     const reading = playback([beat], 600 + turn.prompt.length * 90 + 80).frames[0];
     expect(reading).toMatchObject({ busy: false, replied: false, readingTyping: true });
-    const busy = playback([beat], 600 + turn.prompt.length * 90 + turn.reading.length * 35 + 10).frames[0];
-    expect(busy).toMatchObject({ busy: true, replied: false });
+    const busyAt = 600 + turn.prompt.length * 90 + turn.reading.length * 35;
+    expect(playback([beat], busyAt + 10).frames[0]).toMatchObject({ busy: true, replied: false });
+    // behold#1192: the question's busy line holds while its query is read.
+    expect(playback([beat], busyAt + QUERY_READ_MS - 10).frames[0]).toMatchObject({ busy: true, replied: false });
+    expect(playback([beat], busyAt + QUERY_READ_MS + 10).frames[0]).toMatchObject({ replied: true });
   });
 
   it("play the load turn in full the first time, its prompt typing in a few seconds, and the question after its words (#1189)", () => {
@@ -132,6 +140,26 @@ describe("loops", () => {
     expect(countWords(l, false)).toBe("");
     expect(countWords(l, true)).toBe(`Question 2 of ${l.of}`);
     expect(countWords(null, true)).toBe("");
+  });
+});
+
+describe("the order a question reveals in (#1192)", () => {
+  it("shows the query on the busy line, the answer as the reply starts and the rows as it finishes", () => {
+    expect(REVEAL_STEPS).toEqual(["query", "answer", "rows"]);
+    expect(revealAt("start")).toEqual([]);
+    expect(revealAt("busy")).toEqual(["query"]);
+    expect(revealAt("light")).toEqual(["query", "answer"]);
+    expect(revealAt("done")).toEqual(["query", "answer", "rows"]);
+  });
+  it("shows a step whose event never came with the next one, and each step once", () => {
+    expect(newSteps([], revealAt("light"))).toEqual(["query", "answer"]);
+    expect(newSteps(["query"], revealAt("light"))).toEqual(["answer"]);
+    expect(newSteps(["query", "answer", "rows"], revealAt("done"))).toEqual([]);
+  });
+  it("under reduced motion shows every step together as the reply starts", () => {
+    expect(revealAt("busy", { reduced: true })).toEqual(REVEAL_STEPS);
+    expect(revealAt("light", { reduced: true })).toEqual(REVEAL_STEPS);
+    expect(revealAt("start", { reduced: true })).toEqual([]);
   });
 });
 

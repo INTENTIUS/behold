@@ -116,6 +116,16 @@ describe("the agent's reading line (behold#1195)", () => {
   });
 });
 
+describe("a beat's own busy time (behold#1192)", () => {
+  it("holds the busy line for busyMs when that is longer than BUSY_MIN_MS, and never shorter", () => {
+    const beat = { prompt: "go", status: "Asking", reply: "ok" };
+    const base = beatTiming(beat);
+    expect(beatTiming({ ...beat, busyMs: 2500 }).replyAt - base.busyAt).toBe(2500);
+    expect(beatTiming({ ...beat, busyMs: 10 }).replyAt).toBe(base.replyAt);
+    expect(beatTiming({ ...beat, busyMs: 2500 }, { reduced: true }).replyAt).toBe(0);
+  });
+});
+
 describe("the busy line's pieces", () => {
   it("cycles the spinner glyph and steps the ellipsis every 400 ms", () => {
     expect(SPINNER).toEqual(["✻", "✶", "✳", "✢", "·"]);
