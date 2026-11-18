@@ -25,6 +25,10 @@ import {
   callLine,
   callTitle,
   countWords,
+  countdownWords,
+  pageClock,
+  turnState,
+  visitorDraft,
   cypherFill,
   keepInside,
   drawLight,
@@ -387,5 +391,44 @@ describe("what the answer found, and one of its resources (#1198)", () => {
     expect(resourceDetails("i/x", f).rows).toContainEqual(["Declared", "as logs in the web member, main.tf"]);
     expect(resourceDetails("gone/key", f)).toEqual({ key: "gone/key", name: "key", rows: [], note: "This page holds nothing more about it." });
     expect(resourceFacts(null, null).resources.size).toBe(0);
+  });
+});
+
+describe("the visitor's turn (#1193)", () => {
+  it("is playback while the recording plays, and the visitor's once the reply has printed, counting down", () => {
+    expect(turnState({ phase: "playing" })).toEqual({ mode: "playback", secs: null, stayed: false });
+    expect(turnState({ phase: "after", sinceDoneMs: 0, dwellMs: AFTER_MS })).toEqual({ mode: "yours", secs: 15, stayed: false });
+    expect(turnState({ phase: "after", sinceDoneMs: 4_200, dwellMs: AFTER_MS }).secs).toBe(11);
+    expect(turnState({ phase: "after", sinceDoneMs: 99_000, dwellMs: AFTER_MS }).secs).toBe(0);
+  });
+  it("stops counting once the visitor stays or does anything, until they move on", () => {
+    const t = turnState({ phase: "after", held: true, sinceDoneMs: 1_000, dwellMs: AFTER_MS });
+    expect(t).toEqual({ mode: "yours", secs: null, stayed: true });
+    expect(countdownWords(t)).toBe("Staying on this question. Press Next question when you're done.");
+    expect(countdownWords(turnState({ phase: "after", sinceDoneMs: 0, dwellMs: AFTER_MS }))).toBe("Next question in 15 s.");
+    expect(countdownWords(turnState({ phase: "playing" }))).toBe("");
+  });
+  it("keeps a query the visitor wrote, and nothing the recording filled", () => {
+    const filled = { cypher: "MATCH (n) RETURN n", params: "" };
+    expect(visitorDraft({ cypher: filled.cypher, params: "" }, filled)).toBeNull();
+    expect(visitorDraft({ cypher: "", params: " " }, filled)).toBeNull();
+    expect(visitorDraft({ cypher: "MATCH (n) RETURN n LIMIT 1", params: "" }, filled)).toEqual({ cypher: "MATCH (n) RETURN n LIMIT 1", params: "" });
+    expect(visitorDraft({ cypher: filled.cypher, params: '{"k":1}' }, filled)).toEqual({ cypher: filled.cypher, params: '{"k":1}' });
+    expect(visitorDraft({ cypher: "MATCH (x) RETURN x", params: "" }, null)).toEqual({ cypher: "MATCH (x) RETURN x", params: "" });
+  });
+  it("has a clock that stops while the tab is hidden and goes on from there", () => {
+    let real = 1_000;
+    const c = pageClock(() => real, 2);
+    real += 500;
+    expect(c.now()).toBe(2_000);
+    c.pause();
+    real += 10_000;
+    expect(c.paused()).toBe(true);
+    expect(c.now()).toBe(2_000);
+    c.resume();
+    c.resume();
+    expect(c.now()).toBe(2_000);
+    real += 250;
+    expect(c.now()).toBe(2_500);
   });
 });

@@ -408,3 +408,60 @@ export function resourceDetails(key, facts) {
   if (cloudId) rows.push(["Cloud id", cloudId]);
   return { key, name: r.name || key, rows: rows.filter(([, v]) => v), note };
 }
+
+// --- The visitor's turn (behold#1193) ---------------------------------------
+
+/**
+ * The page's clock: real time from `start`, `pace` times faster, that stops
+ * while paused (a hidden tab) and goes on from where it stopped.
+ */
+export function pageClock(realNow, pace = 1) {
+  const start = realNow();
+  let pausedAt = null;
+  let away = 0;
+  const real = () => (pausedAt === null ? realNow() : pausedAt) - away;
+  return {
+    now: () => start + (real() - start) * pace,
+    pause() {
+      if (pausedAt === null) pausedAt = realNow();
+    },
+    resume() {
+      if (pausedAt === null) return;
+      away += realNow() - pausedAt;
+      pausedAt = null;
+    },
+    paused: () => pausedAt !== null,
+  };
+}
+
+/**
+ * What the Cypher box is now. "playback" while the recording plays: the
+ * query is the one behold ran for the agent. "yours" once the question's
+ * reply has printed: the box and Ask are the visitor's, and unless they have
+ * stayed (`held`), the next question comes in `secs` seconds.
+ */
+export function turnState({ phase, held = false, sinceDoneMs = 0, dwellMs = 0 }) {
+  if (phase !== "after") return { mode: "playback", secs: null, stayed: false };
+  if (held) return { mode: "yours", secs: null, stayed: true };
+  return { mode: "yours", secs: Math.max(0, Math.ceil((dwellMs - sinceDoneMs) / 1000)), stayed: false };
+}
+
+/** The line under the visitor's box: when the next question comes, or that it waits for them. */
+export function countdownWords(t) {
+  if (t.mode !== "yours") return "";
+  if (t.stayed) return "Staying on this question. Press Next question when you're done.";
+  return `Next question in ${t.secs} s.`;
+}
+
+/**
+ * The query the visitor wrote, worth keeping when a loop moves on: the box
+ * and parameters as they stand, when either differs from what the turn
+ * filled them with; else null. The page never wipes a query a visitor wrote.
+ */
+export function visitorDraft(box, filled) {
+  const cypher = String((box && box.cypher) || "");
+  const params = String((box && box.params) || "");
+  if (!cypher.trim() && !params.trim()) return null;
+  if (filled && cypher === filled.cypher && params === filled.params) return null;
+  return { cypher, params };
+}
