@@ -71,6 +71,23 @@ export function loopTiming(loop, { reduced = false } = {}) {
   return { questionAt, playMs, dwellMs, totalMs: playMs + dwellMs };
 }
 
+/** How long the agent's pane stays open once the question's reply has printed, in ms of the page's clock. */
+export const PANE_BEAT_MS = 2_500;
+
+/**
+ * behold#1183: whether the agent's pane is open. It is open while a loop's
+ * turns print, and for {@link PANE_BEAT_MS} after the question's reply has
+ * printed (`sinceDoneMs` counts from then); after that it closes, so the
+ * estate graph and the Cypher pane take its room for the loop's pause. A
+ * visitor's choice (`chosen`: true to open, false to close, null for none)
+ * wins once the reply has printed; the next loop starts with none.
+ */
+export function paneOpen({ phase, sinceDoneMs = 0, chosen = null }) {
+  if (phase !== "after") return true;
+  if (chosen === true || chosen === false) return chosen;
+  return sinceDoneMs < PANE_BEAT_MS;
+}
+
 /** What the /graph pane's boxes show for a turn: its Cypher and parameters, and the call the agent made. */
 export function cypherFill(turn) {
   const params = turn && turn.params && typeof turn.params === "object" ? turn.params : {};

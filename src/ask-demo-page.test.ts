@@ -256,6 +256,14 @@ interface Seen {
   rows: string;
   sources: string;
   estate: string;
+  pane: string;
+  held: string;
+  foldHeight: number;
+  estateHeight: number;
+  svgHeight: number;
+  control: { hidden: boolean; expanded: string | null; text: string; height: number; bottom: number };
+  foldMotion: string;
+  inert: boolean;
 }
 
 const seenScript = `(() => {
@@ -272,6 +280,17 @@ const seenScript = `(() => {
     rows: document.getElementById("g-rows").innerText,
     sources: document.getElementById("g-sources").textContent,
     estate: d.estate || "",
+    pane: d.pane || "", held: d.held || "",
+    foldHeight: document.getElementById("ad-ask-fold").getBoundingClientRect().height,
+    estateHeight: document.getElementById("ad-estate").getBoundingClientRect().height,
+    svgHeight: (document.querySelector("#ad-estate-graph svg") || document.body).getBoundingClientRect().height,
+    control: (() => {
+      const b = document.getElementById("ad-convo");
+      const r = b.getBoundingClientRect();
+      return { hidden: b.hidden, expanded: b.getAttribute("aria-expanded"), text: b.textContent, height: r.height, bottom: r.bottom };
+    })(),
+    foldMotion: getComputedStyle(document.getElementById("ad-ask-fold")).transitionDuration,
+    inert: document.getElementById("ad-ask-fold").inert,
   };
 })()`;
 
@@ -305,6 +324,10 @@ async function playAll(page: Page, reduced: boolean) {
     }
     const atQ = await waitFor(page, `loop ${i}'s question ${q.id}`, (s) => s.loop === String(i) && s.turn === q.id);
     expect(atQ.estate).toBe("loaded");
+    // behold#1183: the agent's pane is open while the turns print, and nothing offers to close it.
+    // Under reduced motion the question's reply prints at once, so its beat may already be running.
+    for (const s of reduced ? [before, atLoad] : [before, atLoad, atQ]) expect([s.pane, s.inert, s.control.hidden], s.turn).toEqual(["open", false, true]);
+    expect((reduced ? atLoad : atQ).foldHeight).toBeGreaterThan(100);
     // The Cypher box fills with the turn's query as its reply starts, and the answer draws at once.
     expect(atQ.cypher).toBe(q.cypher);
     expect(atQ.params).toBe(Object.keys(q.params).length ? JSON.stringify(q.params) : "");
@@ -321,8 +344,42 @@ async function playAll(page: Page, reduced: boolean) {
     for (const text of [load.prompt, load.reply, q.prompt, q.reply]) expect(after.terminal.replace(/\s+/g, " "), text).toContain(text.replace(/\s+/g, " "));
     expect(after.terminal).toContain(load.busy.replace(/(\.{1,3}|…)\s*$/, "").trim());
     expect(after.readOnly).toBe(false);
+    await checkPaneCloses(page, i, reduced, atQ);
     if (i + 1 < qs.length) await page.click("#ad-next");
   }
+}
+
+/**
+ * behold#1183: a short beat after the question's reply the agent's pane closes, sliding (or at
+ * once under reduced motion), and the estate graph takes its room; the control at its edge opens
+ * it again and holds the loop, and closing it again is allowed. It is left closed, so the next
+ * loop's checks (open while the turns print) show that a new loop opens it.
+ */
+async function checkPaneCloses(page: Page, i: number, reduced: boolean, open: Seen) {
+  const shut = await waitFor(page, `loop ${i}'s pane to close`, (s) => s.loop === String(i) && s.pane === "closed" && s.foldHeight < 1, 10_000);
+  expect(shut.phase).toBe("after");
+  expect(shut.foldMotion).toBe(reduced ? "0s" : "0.5s");
+  expect(shut.inert).toBe(true);
+  expect(shut.control).toMatchObject({ hidden: false, expanded: "false", text: "Show the conversation" });
+  // Findable at the bottom edge, and small.
+  expect(shut.control.height).toBeLessThan(40);
+  expect(shut.control.bottom).toBeGreaterThan(900 - 40);
+  // The estate graph uses the room: its pane grows by what the agent's pane gave up, and the drawing fills it.
+  expect(shut.estateHeight).toBeGreaterThan(open.estateHeight + open.foldHeight - 60);
+  expect(Math.abs(shut.svgHeight - shut.estateHeight)).toBeLessThan(2);
+  // Still the visitor's to read in the page's text, though closed.
+  expect(shut.terminal.replace(/\s+/g, " ")).toContain(loopOf(narration, i).question.prompt.replace(/\s+/g, " "));
+  await page.click("#ad-convo");
+  const reopened = await waitFor(page, `loop ${i}'s pane to open again`, (s) => s.pane === "open" && s.foldHeight > 100, 10_000);
+  expect(reopened.loop).toBe(String(i));
+  expect(reopened.control).toMatchObject({ hidden: false, expanded: "true", text: "Hide the conversation" });
+  expect(reopened.held).toBe("1");
+  expect(reopened.inert).toBe(false);
+  // It stays open: the beat has long passed.
+  await new Promise((r) => setTimeout(r, 400));
+  expect((await waitFor(page, "the pane still open", () => true)).pane).toBe("open");
+  await page.click("#ad-convo");
+  await waitFor(page, `loop ${i}'s pane to close again`, (s) => s.pane === "closed" && s.foldHeight < 1, 10_000);
 }
 
 /**
