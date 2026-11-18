@@ -42,7 +42,7 @@
 import { createAskPane } from "../../web/kiosk-ask.js";
 import { answerDrawing, drawSvg, refusalText, rowsTable } from "../../web/graph-query.js";
 import { bindEngineBadge } from "../../web/engine-badge.js";
-import { applyKeyLight, cardIndex, lightKeys, zoomFrame } from "../../web/key-light.js";
+import { applyKeyLight, cardIndex, focusLayout, lightKeys, reserveBox, wantsFocus, zoomFrame } from "../../web/key-light.js";
 import { PROMPT_TYPE_MS, REVEAL_MARK_MS, ROWS_AFTER_MS, answerHeadline, callLine, callTitle, countWords, countdownWords, cypherFill, knownResources, pairedKeys, resourceDetails, resourceFacts, rowKeys, loadRows, loopOf, loopTiming, narrationProblems, newSteps, pageClock, paneOpen, revealAt, panView, parseParams, recordedAnswer, recordedWords, sourceTitle, sourceWords, turnState, visitorDraft, zoomView } from "./play.js";
 
 const $ = (id) => document.getElementById(id);
@@ -95,10 +95,121 @@ function drawEstate(estate) {
   svg.setAttribute("aria-label", "The estate graph behold drew for the recording");
 }
 
-const boxOf = (g) => {
+/** A card's box where the estate graph drew it. */
+const drawnBoxOf = (g) => {
   const r = g.querySelector("rect");
   return r ? { x: Number(r.getAttribute("x")), y: Number(r.getAttribute("y")), width: Number(r.getAttribute("width")), height: Number(r.getAttribute("height")) } : null;
 };
+
+/** A card's box where it shows now: moved, in the focused view (behold#1203). */
+const boxOf = (g) => {
+  const b = drawnBoxOf(g);
+  const d = b && focus.on && focus.plan.shift.get(g.getAttribute("data-node-id"));
+  return d ? { ...b, x: b.x + d.dx, y: b.y + d.dy } : b;
+};
+
+// --- The focused view (behold#1203) -----------------------------------------
+//
+// When an answer's cards sit far apart, framing them all leaves them too small
+// to read. The pane can show them on their own instead, moved close together
+// (key-light.js focusLayout), with the estate graph's edges between them:
+// each card and each edge is the estate graph's own element, moved, and
+// everything else is hidden. A control switches between that and the whole
+// estate; it is offered only for an answer that needs it.
+
+/** The answer's plan (null when it reads well framed whole), whether the visitor chose a view, and whether it shows. */
+const focus = { plan: null, chosen: null, on: false, ids: new Set(), key: null };
+const FOCUS_CAPTION = "The answer's cards on their own, moved close together, with the estate graph's edges between them.";
+
+/** The estate pane's size on screen, in px. */
+function paneSize() {
+  const r = $("ad-estate-graph").getBoundingClientRect();
+  return { width: Math.max(1, r.width), height: Math.max(1, r.height) };
+}
+
+/** Plan the focused view for the answer's lit cards `on`, or none. */
+function planFocus(on) {
+  if (!svg || !full) return;
+  const cards = on.map((g) => ({ id: g.getAttribute("data-node-id"), box: drawnBoxOf(g) })).filter((c) => c.box);
+  // The same answer lit again (a selection cleared) keeps its plan and the visitor's choice.
+  const key = cards.map((c) => c.id).sort().join("\n");
+  if (key === focus.key) return;
+  focus.key = key;
+  focus.chosen = null;
+  focus.plan = null;
+  focus.ids = new Set();
+  const ids = new Set(cards.map((c) => c.id));
+  const edges = [...svg.querySelectorAll("g[data-edge-from]")]
+    .map((e) => ({ from: e.getAttribute("data-edge-from"), to: e.getAttribute("data-edge-to") }))
+    .filter((e) => ids.has(e.from) && ids.has(e.to));
+  // Measured as the focused view would show: a phone gives the estate pane more height for it.
+  const was = html.dataset.view;
+  html.dataset.view = "focus";
+  const pane = paneSize();
+  if (was) html.dataset.view = was;
+  else delete html.dataset.view;
+  const phone = !!(oneColumn && oneColumn.matches);
+  const plan = focusLayout(cards, edges, phone ? { pane, gap: 48, pad: 24 } : { pane });
+  // Clear of the zoom controls above (a phone gives them a strip of their own) and of the caption below (none on a phone).
+  const fit = reserveBox(plan.box, pane, phone ? { top: 8, bottom: 8 } : { top: 56, bottom: 64 });
+  plan.box = fit.box;
+  plan.scale = fit.scale;
+  if (!wantsFocus(cards, svg.querySelectorAll("[data-node-id]").length, full, pane, plan)) return;
+  focus.plan = plan;
+  focus.ids = ids;
+}
+
+/** Show the focused view or the whole estate, as the plan, the visitor's choice and the lit `ids` allow. */
+function showFocus(ids) {
+  const want = !!focus.plan && focus.chosen !== false && ids.length > 0 && ids.every((id) => focus.ids.has(id));
+  const btn = $("ad-view");
+  btn.hidden = !focus.plan;
+  btn.setAttribute("aria-pressed", want ? "true" : "false");
+  btn.textContent = want ? "Whole estate" : "Answer only";
+  btn.title = want ? "Show the whole estate graph" : "Show the answer's cards on their own, close together";
+  html.dataset.view = want ? "focus" : "estate";
+  if (want === focus.on) return want;
+  focus.on = want;
+  if (!svg) return want;
+  // Each of the answer's cards, and each edge between two of them, moves; the rest hides while the view is on.
+  for (const g of svg.querySelectorAll("[data-node-id]")) {
+    const d = want && focus.plan.shift.get(g.getAttribute("data-node-id"));
+    g.style.transform = d ? `translate(${d.dx}px, ${d.dy}px)` : "";
+    g.toggleAttribute("data-focus-on", !!d);
+  }
+  const kept = new Map(want ? focus.plan.kept.map((e) => [`${e.from}\u0000${e.to}`, e]) : []);
+  for (const e of svg.querySelectorAll("g[data-edge-from]:not([data-focus-edge])")) {
+    const k = kept.get(`${e.getAttribute("data-edge-from")}\u0000${e.getAttribute("data-edge-to")}`);
+    e.style.transform = k ? `translate(${k.dx}px, ${k.dy}px)` : "";
+    e.toggleAttribute("data-focus-on", !!k);
+  }
+  for (const e of svg.querySelectorAll("[data-focus-edge]")) e.remove();
+  if (want) {
+    const ns = "http://www.w3.org/2000/svg";
+    const first = svg.querySelector("[data-node-id]");
+    for (const c of focus.plan.cross) {
+      // An edge the estate graph draws between two groups, drawn straight now they sit close.
+      const g = document.createElementNS(ns, "g");
+      g.setAttribute("data-edge-from", c.from);
+      g.setAttribute("data-edge-to", c.to);
+      g.setAttribute("data-focus-edge", "");
+      g.setAttribute("data-focus-on", "");
+      const path = document.createElementNS(ns, "path");
+      path.setAttribute("d", c.d);
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", "var(--pin-edge, #3A434F)");
+      path.setAttribute("stroke-width", "1.4");
+      g.append(path);
+      if (first && first.parentNode) first.parentNode.insertBefore(g, first);
+      else svg.append(g);
+    }
+  }
+  svg.toggleAttribute("data-focus", want);
+  return want;
+}
+
+/** The box the view can move in: the focused view's, or the whole estate's. */
+const extent = () => (focus.on ? focus.plan.box : full);
 
 const setViewBox = (b) => svg.setAttribute("viewBox", `${b.x} ${b.y} ${b.width} ${b.height}`);
 
@@ -133,15 +244,29 @@ function showEstate(on) {
  * or every card, the whole graph, and a caption saying why when there are
  * none. A recorded turn (`auto`) leaves the view where a visitor just put it.
  */
-function lightEstate(ids, why, { auto = false, select = false } = {}) {
+function lightEstate(ids, why, { auto = false, select = false, keepPlan = false } = {}) {
   // The answer's own light, to go back to when a selection is cleared (behold#1198).
   if (!select) state.answerLight = { ids, why };
+  state.shownLight = { ids, why, select };
   const on = applyKeyLight(svg, ids, { pulse: !reduced() });
+  // behold#1203: an answer spread across the estate shows its cards on their own.
+  if (!select && !keepPlan) planFocus(on);
+  const focused = showFocus(ids);
   html.dataset.lit = ids.join("\n");
-  $("ad-estate-cap").textContent = why || "";
+  $("ad-estate-cap").textContent = why || (focused && !select && !(oneColumn && oneColumn.matches) ? FOCUS_CAPTION : "");
   if (auto && (state.gesture || performance.now() - state.zoomedAt < VISITOR_VIEW_MS)) return;
   const drawn = svg ? svg.querySelectorAll("[data-node-id]").length : 0;
-  viewTo(on.length && on.length < drawn ? zoomFrame(on.map(boxOf), full) : full);
+  if (focused && !select) return viewTo(extent());
+  viewTo(on.length && on.length < drawn ? zoomFrame(on.map(boxOf), extent()) : extent());
+}
+
+/** The visitor's switch between the focused view and the whole estate. */
+function toggleView() {
+  if (!focus.plan) return;
+  focus.chosen = !focus.on;
+  visitorZoomed();
+  const { ids, why, select } = state.shownLight;
+  lightEstate(ids, why, { select, keepPlan: true });
 }
 
 // --- The visitor's zoom -----------------------------------------------------
@@ -149,7 +274,7 @@ function lightEstate(ids, why, { auto = false, select = false } = {}) {
 /** The view on screen now: mid-tween, where the tween has got to. */
 function shownView() {
   const v = (svg.getAttribute("viewBox") || "").split(/[\s,]+/).map(Number);
-  return v.length === 4 && v.every(Number.isFinite) ? { x: v[0], y: v[1], width: v[2], height: v[3] } : { ...full };
+  return v.length === 4 && v.every(Number.isFinite) ? { x: v[0], y: v[1], width: v[2], height: v[3] } : { ...extent() };
 }
 
 /** A point on screen in the graph's units. */
@@ -179,7 +304,7 @@ function setView(box) {
 function zoomButton(factor) {
   if (!svg || !full) return;
   visitorZoomed();
-  viewTo(factor ? zoomView(view || full, full, factor) : full, 250);
+  viewTo(factor ? zoomView(view || extent(), extent(), factor) : extent(), 250);
 }
 
 /** One column (a phone, a narrow window): the page scrolls, so a plain wheel scrolls it rather than zoom the estate. */
@@ -196,6 +321,7 @@ function wireZoom() {
   $("ad-zoom-in").addEventListener("click", () => zoomButton(ZOOM_STEP));
   $("ad-zoom-out").addEventListener("click", () => zoomButton(1 / ZOOM_STEP));
   $("ad-zoom-fit").addEventListener("click", () => zoomButton(0));
+  $("ad-view").addEventListener("click", toggleView);
   zoomHint();
   for (const q of [oneColumn, coarse]) if (q && q.addEventListener) q.addEventListener("change", zoomHint);
 
@@ -211,7 +337,7 @@ function wireZoom() {
       const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
       const factor = Math.exp(-dy * (e.ctrlKey ? 0.01 : 0.002));
       visitorZoomed();
-      setView(zoomView(shownView(), full, factor, at));
+      setView(zoomView(shownView(), extent(), factor, at));
     },
     { passive: false },
   );
@@ -236,7 +362,7 @@ function wireZoom() {
       host.dataset.dragging = "1";
     }
     visitorZoomed();
-    setView(panView(drag.from, full, -dx / drag.scale, -dy / drag.scale));
+    setView(panView(drag.from, extent(), -dx / drag.scale, -dy / drag.scale));
   });
   const endDrag = (e) => {
     if (!drag || e.pointerId !== drag.id) return;
@@ -270,10 +396,10 @@ function wireZoom() {
       if (!pinch || e.touches.length !== 2) return;
       e.preventDefault();
       const p = pair(e.touches);
-      const zoomed = zoomView(pinch.from, full, p.d / pinch.d, pinch.at);
+      const zoomed = zoomView(pinch.from, extent(), p.d / pinch.d, pinch.at);
       const k = (pinch.from.width / zoomed.width) * pinch.scale;
       visitorZoomed();
-      setView(panView(zoomed, full, -(p.x - pinch.x) / k, -(p.y - pinch.y) / k));
+      setView(panView(zoomed, extent(), -(p.x - pinch.x) / k, -(p.y - pinch.y) / k));
     },
     { passive: false },
   );
@@ -628,6 +754,8 @@ function startLoop(i) {
   state.badgeTurn = "idle";
   state.revealed = [];
   delete html.dataset.revealed;
+  // behold#1203: a new loop's answer gets its own view, whatever the visitor chose for the last one.
+  focus.key = null;
   clearTimeout(rowsTimer);
   unmark();
   badge.reset();

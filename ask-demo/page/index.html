@@ -75,7 +75,13 @@
       html[data-estate="empty"] #ad-zoom { visibility: hidden; }
       .ad-zoom-btns { display: flex; gap: 4px; }
       .ad-zoom-btns button { min-width: 34px; height: 32px; padding: 0 9px; font-size: 15px; line-height: 1; background: color-mix(in srgb, var(--surface-box) 90%, transparent); }
-      #ad-zoom-fit { font-size: 13px; }
+      #ad-zoom-fit, #ad-view { font-size: 13px; }
+      #ad-view[aria-pressed="true"] { border-color: var(--pending); }
+      #ad-view[hidden] { display: none; }
+      /* behold#1203: the focused view shows the answer's cards and the edges between them; the rest of the estate hides. */
+      #ad-estate svg[data-focus] * { visibility: hidden; }
+      #ad-estate svg[data-focus] [data-focus-on], #ad-estate svg[data-focus] [data-focus-on] * { visibility: visible; }
+      @media (prefers-reduced-motion: no-preference) { #ad-estate [data-node-id], #ad-estate g[data-edge-from] { transition: transform 0.6s ease-in-out; } }
       .ad-zoom-btns button:focus-visible { outline: 2px solid var(--pending); outline-offset: 1px; }
       #ad-zoom-hint { margin: 0; color: var(--muted); font-size: 12px; background: color-mix(in srgb, var(--bg) 80%, transparent); border-radius: 4px; padding: 1px 6px; }
       #ad-estate-cap { position: absolute; left: 12px; right: 12px; bottom: 10px; margin: 0; color: var(--ink2); font-size: 13px; pointer-events: none; }
@@ -199,6 +205,8 @@
         #ad-main { display: contents; }
         #ad-head { order: 0; }
         #ad-estate { order: 1; height: 44vh; min-height: 260px; }
+        /* behold#1203: the focused view gets more height, so the answer's cards read at a phone's width. */
+        html[data-view="focus"] #ad-estate { height: 58vh; }
         /* The zoom controls get a strip of their own above the graph, so the hint covers no card. */
         #ad-estate-graph { top: 46px; }
         #ad-zoom { left: 16px; right: 16px; top: 7px; flex-direction: row-reverse; justify-content: space-between; align-items: center; gap: 8px; }
@@ -250,6 +258,7 @@
           <div class="ad-zoom-btns">
             <button id="ad-zoom-in" type="button" aria-label="Zoom in" title="Zoom in">+</button>
             <button id="ad-zoom-out" type="button" aria-label="Zoom out" title="Zoom out">&minus;</button>
+            <button id="ad-view" type="button" aria-pressed="false" hidden>Answer only</button>
             <button id="ad-zoom-fit" type="button" aria-label="Fit the whole estate" title="Fit the whole estate">Fit</button>
           </div>
           <p id="ad-zoom-hint"></p>

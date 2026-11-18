@@ -111,6 +111,155 @@ export function zoomFrame(boxes, full, { pad = 60, min = 420 } = {}) {
   return frameBox(boxes, full, { pad, min });
 }
 
+/** The gap between two boxes: the larger of their horizontal and vertical gaps, 0 when they overlap. */
+export function boxGap(a, b) {
+  const gx = Math.max(0, a.x - (b.x + b.width), b.x - (a.x + a.width));
+  const gy = Math.max(0, a.y - (b.y + b.height), b.y - (a.y + a.height));
+  return Math.max(gx, gy);
+}
+
+/** Reading order: top to bottom, then left to right. */
+const readingOrder = (a, b) => a.y - b.y || a.x - b.x;
+
+/** behold#1203: a lit card is easy to read when it is at least this tall on screen, in px. */
+export const READABLE_CARD_PX = 40;
+
+/** How many screen px a graph unit is when `box` is shown in a pane of `pane` px (`{ width, height }`), as the estate pane fits it. */
+export const paneScale = (box, pane) => Math.min(pane.width / box.width, pane.height / box.height);
+
+/**
+ * behold#1203: the answer's cards on their own, drawn close together. `cards`
+ * are `{ id, box }` in the estate graph; `edges` (`{ from, to }`) are the
+ * estate graph's edges, of which only those between two of the cards are
+ * kept. Nothing is added: no card, no edge the estate graph does not draw.
+ *
+ * The cards fall into groups that sit close together: two cards no more
+ * than `near` apart ({@link boxGap}) are in one group, and so is anything
+ * near either. Each group keeps its own arrangement, so
+ * the edges inside it keep their paths, moved with it (`kept`). The groups
+ * are set `gap` apart in reading order, in a row or a column, whichever shows
+ * them larger in `pane`. An edge between two groups is drawn straight from
+ * one card's side to the other's (`cross`, with its path `d`).
+ *
+ * Returns `{ shift, box, kept, cross, groups, scale }`: each card's move
+ * (`Map id -> { dx, dy }`), the box that frames them with `pad`, the edges,
+ * how many groups there were, and the px per unit the box shows at.
+ */
+export function focusLayout(cards, edges, { pane = { width: 1, height: 1 }, near = 320, gap = 80, pad = 40 } = {}) {
+  const real = (cards || []).filter((c) => c && typeof c.id === "string" && c.box && [c.box.x, c.box.y, c.box.width, c.box.height].every(Number.isFinite));
+  const ids = new Set(real.map((c) => c.id));
+  // Groups by the same rule as boxClusters, keeping each card's id.
+  const sorted = [...real].sort((a, b) => readingOrder(a.box, b.box));
+  const group = sorted.map((_, i) => i);
+  const root = (i) => (group[i] === i ? i : (group[i] = root(group[i])));
+  for (let i = 0; i < sorted.length; i++)
+    for (let j = i + 1; j < sorted.length; j++) if (boxGap(sorted[i].box, sorted[j].box) <= near) group[root(j)] = root(i);
+  const byRoot = new Map();
+  sorted.forEach((c, i) => {
+    const r = root(i);
+    if (!byRoot.has(r)) byRoot.set(r, []);
+    byRoot.get(r).push(c);
+  });
+  const groups = [...byRoot.values()].map((list) => {
+    const x0 = Math.min(...list.map((c) => c.box.x));
+    const y0 = Math.min(...list.map((c) => c.box.y));
+    const x1 = Math.max(...list.map((c) => c.box.x + c.box.width));
+    const y1 = Math.max(...list.map((c) => c.box.y + c.box.height));
+    return { list, x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+  });
+  const arrange = (across) => {
+    const w = across ? groups.reduce((t, g) => t + g.width, 0) + gap * Math.max(0, groups.length - 1) : Math.max(0, ...groups.map((g) => g.width));
+    const h = across ? Math.max(0, ...groups.map((g) => g.height)) : groups.reduce((t, g) => t + g.height, 0) + gap * Math.max(0, groups.length - 1);
+    const box = { x: -pad, y: -pad, width: w + 2 * pad, height: h + 2 * pad };
+    let at = 0;
+    const place = groups.map((g) => {
+      // Each group centred across the other way, so a small one sits level with a large one.
+      const to = across ? { x: at, y: (h - g.height) / 2 } : { x: (w - g.width) / 2, y: at };
+      at += (across ? g.width : g.height) + gap;
+      return { dx: to.x - g.x, dy: to.y - g.y };
+    });
+    return { box, place, scale: groups.length ? paneScale(box, pane) : 0 };
+  };
+  const row = arrange(true);
+  const col = arrange(false);
+  const best = col.scale > row.scale ? col : row;
+  const shift = new Map();
+  const groupOf = new Map();
+  groups.forEach((g, i) => {
+    for (const c of g.list) {
+      shift.set(c.id, best.place[i]);
+      groupOf.set(c.id, i);
+    }
+  });
+  const boxOf = new Map(real.map((c) => [c.id, c.box]));
+  const moved = (id) => {
+    const b = boxOf.get(id);
+    const d = shift.get(id);
+    return { x: b.x + d.dx, y: b.y + d.dy, width: b.width, height: b.height };
+  };
+  const kept = [];
+  const cross = [];
+  const seen = new Set();
+  for (const e of edges || []) {
+    if (!e || !ids.has(e.from) || !ids.has(e.to) || e.from === e.to) continue;
+    if (groupOf.get(e.from) === groupOf.get(e.to)) {
+      kept.push({ from: e.from, to: e.to, ...shift.get(e.from) });
+      continue;
+    }
+    if (seen.has(`${e.from}\u0000${e.to}`)) continue;
+    seen.add(`${e.from}\u0000${e.to}`);
+    const [a, b] = [moved(e.from), moved(e.to)];
+    const p = sidePoint(a, b);
+    const q = sidePoint(b, a);
+    cross.push({ from: e.from, to: e.to, d: `M ${round(p.x)} ${round(p.y)} L ${round(q.x)} ${round(q.y)}` });
+  }
+  return { shift, box: best.box, kept, cross, groups: groups.length, scale: best.scale };
+}
+
+const round = (n) => Math.round(n * 10) / 10;
+
+/** Where the line from `a`'s centre to `b`'s centre leaves `a`'s box. */
+function sidePoint(a, b) {
+  const cx = a.x + a.width / 2;
+  const cy = a.y + a.height / 2;
+  const dx = b.x + b.width / 2 - cx;
+  const dy = b.y + b.height / 2 - cy;
+  if (!dx && !dy) return { x: cx, y: cy };
+  const k = Math.min(dx ? a.width / 2 / Math.abs(dx) : Infinity, dy ? a.height / 2 / Math.abs(dy) : Infinity);
+  return { x: cx + dx * k, y: cy + dy * k };
+}
+
+/**
+ * behold#1203: `box` grown to the pane's shape so that, fitted to a pane of
+ * `pane` px, it shows whole with `top` px clear above it and `bottom` px
+ * below (where the pane's controls and caption sit), centred across.
+ * Returns the box and the px per unit it shows at.
+ */
+export function reserveBox(box, pane, { top = 0, bottom = 0 } = {}) {
+  const room = Math.max(1, pane.height - top - bottom);
+  const scale = Math.min(pane.width / box.width, room / box.height);
+  const width = pane.width / scale;
+  const height = pane.height / scale;
+  const x = box.x - (width - box.width) / 2;
+  const y = box.y - top / scale - (room / scale - box.height) / 2;
+  return { box: { x, y, width, height }, scale };
+}
+
+/**
+ * behold#1203: whether an answer gets the focused view. Its `cards` are a
+ * few of the `drawn` cards (fewer than half), framing every one of them in
+ * `full` would leave the shortest under {@link READABLE_CARD_PX} in `pane`,
+ * and the focused layout shows them at least half as large again.
+ */
+export function wantsFocus(cards, drawn, full, pane, layout) {
+  const real = (cards || []).filter((c) => c && c.box);
+  if (real.length < 2 || real.length * 2 > drawn || !layout || layout.groups < 2) return false;
+  const all = frameBox(real.map((c) => c.box), full);
+  const shortest = Math.min(...real.map((c) => c.box.height));
+  const scale = paneScale(all, pane);
+  return shortest * scale < READABLE_CARD_PX && layout.scale >= scale * 1.5;
+}
+
 /* c8 ignore start: the DOM half, driven by the page */
 /** Take the marks off. */
 export function clearKeyLight(svg) {
