@@ -20,6 +20,7 @@ prefix on names (src/scratch.ts: anything behold creates is named
 | three-cloud-change-set-e2e.sh | `FLOCI_CONTAINER` (behold-three-cloud-floci), `FLOCI_AZ_CONTAINER` (behold-three-cloud-floci-az), `FLOCI_GCP_CONTAINER` (behold-three-cloud-floci-gcp), `FLOCI_PORT` (4661), `FLOCI_AZ_PORT` (4662), `FLOCI_GCP_PORT` (4663) |
 | both of the above | `FLOCI_IMAGE` (ghcr.io/lex00/floci:48c6e47), `FLOCI_AZ_IMAGE` (ghcr.io/lex00/floci-az:61c830e), `FLOCI_GCP_IMAGE` (ghcr.io/lex00/floci-gcp:641e6e8), read by example-three-cloud/scripts/emulators-up.sh |
 | choudoufu-estate-floci-e2e.sh, streamed-drift-e2e.sh, and `behold demo choudoufu-estate` | `BEHOLD_CHOUDOUFU_FLOCI_CONTAINER` (behold-choudoufu-floci), `BEHOLD_CHOUDOUFU_FLOCI_PORT` (4650), `BEHOLD_CHOUDOUFU_FLOCI_IMAGE` (choudoufu's live/floci-image digest, pinned in example-choudoufu-estate/scripts/choudoufu-up.sh) |
+| scripts/ask-demo/record.ts (`just ask-demo-record`) | fixed in scripts/ask-demo/scratch.ts: behold-ask-demo-floci, -floci-az and -floci-gcp on 4671, 4672 and 4673, the kind cluster behold-ask-demo, behold serve on 4674 |
 | argo-estate-k3d-e2e.sh, flux-estate-k3d-e2e.sh | `BEHOLD_E2E_CLUSTER` (behold-argo-e2e, behold-flux-e2e) |
 | every script that serves behold | `BEHOLD_E2E_PORT` (each script's own; see its head) |
 | the logical-floci scripts | `AWS_ENDPOINT_URL`, `AZURE_ENDPOINT_URL`, `GCP_ENDPOINT_URL` (the shared emulator's 4566, 4577, 4588) |

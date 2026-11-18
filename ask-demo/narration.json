@@ -1,0 +1,1267 @@
+{
+  "$schema": "./narration.schema.json",
+  "format": "behold-ask-demo-narration/1",
+  "recordedAt": "2026-11-18T16:56:39.001Z",
+  "note": "A recording of one run on emulators: example-three-cloud applied to floci, floci-az and floci-gcp, the floci AWS account indexed with behold index aws, and a kind cluster indexed with behold index kubernetes. Each question turn is one behold mcp ask call against behold serve of that estate, with the rows it answered. Nothing here is read when the page plays.",
+  "recordCommand": "just ask-demo-record",
+  "agentCommand": "behold mcp --url http://localhost:4674",
+  "versions": {
+    "behold": "0.34.1",
+    "chant": "0.124.105",
+    "choudoufu": "0.35.0",
+    "plunge": "0.2.1"
+  },
+  "turns": [
+    {
+      "id": "load",
+      "kind": "load",
+      "prompt": "Load my estate into behold: the three-cloud workspace, the AWS account, and the cluster.",
+      "call": {
+        "commands": [
+          "behold index aws --endpoint http://localhost:4671 --account 000000000000 --regions us-east-1",
+          "behold index kubernetes --kubeconfig kubeconfig --context kind-behold-ask-demo --regions orders",
+          "behold serve three-cloud --port 4674"
+        ]
+      },
+      "busy": "behold serve three-cloud --port 4674: loading every source into one graph",
+      "cypher": null,
+      "params": {},
+      "columns": [
+        "scopeKey",
+        "source",
+        "name",
+        "nodes",
+        "edges"
+      ],
+      "rows": [
+        {
+          "scopeKey": "chant/aws",
+          "source": "chant",
+          "name": "chant",
+          "nodes": 28,
+          "edges": 42
+        },
+        {
+          "scopeKey": "chant/azure",
+          "source": "chant",
+          "name": "chant",
+          "nodes": 7,
+          "edges": 0
+        },
+        {
+          "scopeKey": "chant/dns",
+          "source": "chant",
+          "name": "chant",
+          "nodes": 12,
+          "edges": 15
+        },
+        {
+          "scopeKey": "chant/gcp",
+          "source": "chant",
+          "name": "chant",
+          "nodes": 11,
+          "edges": 11
+        },
+        {
+          "scopeKey": "engine/choudoufu/three-cloud-azure@azure",
+          "source": "engine",
+          "name": "choudoufu",
+          "nodes": 7,
+          "edges": 15
+        },
+        {
+          "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c",
+          "source": "index",
+          "name": "chant-lister",
+          "nodes": 17,
+          "edges": 11
+        },
+        {
+          "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
+          "source": "index",
+          "name": "chant-lister",
+          "nodes": 4,
+          "edges": 0
+        }
+      ],
+      "keys": [],
+      "light": [
+        "dns/front-door",
+        "dns/zone",
+        "aws/aws/aws:cloudwatch/logGroup:LogGroup::web-log-group",
+        "aws/aws/aws:ec2/eip:Eip::network-nat-eip",
+        "aws/aws/aws:ec2/internetGateway:InternetGateway::network-igw",
+        "aws/aws/aws:ec2/internetGatewayAttachment:InternetGatewayAttachment::network-igw-attachment",
+        "aws/aws/aws:ec2/natGateway:NatGateway::network-nat-gateway",
+        "aws/aws/aws:ec2/route:Route::network-private-route",
+        "aws/aws/aws:ec2/route:Route::network-public-route",
+        "aws/aws/aws:ec2/routeTable:RouteTable::network-private-route-table",
+        "aws/aws/aws:ec2/routeTable:RouteTable::network-public-route-table",
+        "aws/aws/aws:ec2/securityGroup:SecurityGroup::web-alb-sg",
+        "aws/aws/aws:ec2/securityGroup:SecurityGroup::web-task-sg",
+        "aws/aws/aws:ec2/vpc:Vpc::network-vpc",
+        "aws/aws/aws:ecs/cluster:Cluster::web-cluster",
+        "aws/aws/aws:ecs/service:Service::web-service",
+        "aws/aws/aws:ecs/taskDefinition:TaskDefinition::web-task-def",
+        "aws/aws/aws:iam/role:Role::web-execution-role",
+        "aws/aws/aws:iam/role:Role::web-task-role",
+        "aws/aws/aws:lb/listener:Listener::web-listener",
+        "aws/aws/aws:lb/loadBalancer:LoadBalancer::web-alb",
+        "aws/aws/aws:lb/targetGroup:TargetGroup::web-target-group",
+        "azure/azurerm_container_app.web",
+        "azure/azurerm_container_app_environment.site",
+        "azure/azurerm_log_analytics_workspace.logs",
+        "azure/azurerm_resource_group.site",
+        "azure/azurerm_subnet.apps",
+        "azure/azurerm_user_assigned_identity.web",
+        "azure/azurerm_virtual_network.network",
+        "gcp/networkSubnet",
+        "gcp/networkVpc",
+        "gcp/webAddress",
+        "gcp/webBackend",
+        "gcp/webNeg",
+        "gcp/webProxy",
+        "gcp/webPublicAccess",
+        "gcp/webRule",
+        "gcp/webRuntime",
+        "gcp/webService",
+        "gcp/webUrlMap",
+        "dns/HealthCheck ×3",
+        "dns/Parameter ×3",
+        "dns/RecordSet ×4",
+        "aws/routeTableAssociation:RouteTableAssociation ×4",
+        "aws/subnet:Subnet ×4"
+      ],
+      "sources": [
+        {
+          "scopeKey": "chant/aws",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 28,
+          "edges": 42
+        },
+        {
+          "scopeKey": "chant/azure",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 7,
+          "edges": 0
+        },
+        {
+          "scopeKey": "chant/dns",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 12,
+          "edges": 15
+        },
+        {
+          "scopeKey": "chant/gcp",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 11,
+          "edges": 11
+        },
+        {
+          "scopeKey": "engine/choudoufu/three-cloud-azure@azure",
+          "source": "engine",
+          "name": "choudoufu",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 7,
+          "edges": 15
+        },
+        {
+          "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c",
+          "source": "index",
+          "name": "chant-lister",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": "2026-11-18T16:55:59.438Z",
+          "nodes": 17,
+          "edges": 11
+        },
+        {
+          "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
+          "source": "index",
+          "name": "chant-lister",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": "2026-11-18T16:56:28.385Z",
+          "nodes": 4,
+          "edges": 0
+        }
+      ],
+      "reply": "Loaded 86 resources from 7 sources: chant/aws (28), chant/azure (7), chant/dns (12), chant/gcp (11), engine/choudoufu/three-cloud-azure@azure (7), cloud/aws/000000000000/db1d7f66ad8c (17) and cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6 (4)."
+    },
+    {
+      "id": "dns-cross-cloud",
+      "kind": "question",
+      "prompt": "Which of my DNS records depend on something in another cloud?",
+      "call": {
+        "tool": "ask",
+        "arguments": {
+          "cypher": "MATCH (rec:Resource {kind: $record})-[:REF*1..4]->(dep:Resource {source: 'chant'}) WHERE dep.scopeKey <> rec.scopeKey RETURN DISTINCT rec.key AS key, rec.name AS record, dep.key AS reaches, dep.kind AS kind ORDER BY record, reaches",
+          "params": "{\"record\":\"AWS::Route53::RecordSet\"}"
+        }
+      },
+      "busy": "behold mcp ask: running a Cypher query over the estate graph",
+      "cypher": "MATCH (rec:Resource {kind: $record})-[:REF*1..4]->(dep:Resource {source: 'chant'}) WHERE dep.scopeKey <> rec.scopeKey RETURN DISTINCT rec.key AS key, rec.name AS record, dep.key AS reaches, dep.kind AS kind ORDER BY record, reaches",
+      "params": {
+        "record": "AWS::Route53::RecordSet"
+      },
+      "columns": [
+        "key",
+        "record",
+        "reaches",
+        "kind"
+      ],
+      "rows": [
+        {
+          "key": "dns/gcpOrigin",
+          "record": "gcp.three-cloud.example.",
+          "reaches": "gcp/webAddress",
+          "kind": "GCP::Compute::Address"
+        },
+        {
+          "key": "dns/gcpOrigin",
+          "record": "gcp.three-cloud.example.",
+          "reaches": "gcp/webProxy",
+          "kind": "GCP::Compute::TargetHTTPProxy"
+        },
+        {
+          "key": "dns/gcpOrigin",
+          "record": "gcp.three-cloud.example.",
+          "reaches": "gcp/webRule",
+          "kind": "GCP::Compute::ForwardingRule"
+        },
+        {
+          "key": "dns/gcpOrigin",
+          "record": "gcp.three-cloud.example.",
+          "reaches": "gcp/webUrlMap",
+          "kind": "GCP::Compute::URLMap"
+        },
+        {
+          "key": "dns/gcpRecord",
+          "record": "www.three-cloud.example.",
+          "reaches": "gcp/webAddress",
+          "kind": "GCP::Compute::Address"
+        },
+        {
+          "key": "dns/gcpRecord",
+          "record": "www.three-cloud.example.",
+          "reaches": "gcp/webProxy",
+          "kind": "GCP::Compute::TargetHTTPProxy"
+        },
+        {
+          "key": "dns/gcpRecord",
+          "record": "www.three-cloud.example.",
+          "reaches": "gcp/webRule",
+          "kind": "GCP::Compute::ForwardingRule"
+        }
+      ],
+      "keys": [
+        "dns/gcpOrigin",
+        "dns/gcpRecord"
+      ],
+      "light": [
+        "dns/RecordSet ×4",
+        "gcp/webAddress",
+        "gcp/webProxy",
+        "gcp/webRule",
+        "gcp/webUrlMap"
+      ],
+      "draw": {
+        "nodes": [
+          {
+            "key": "dns/gcpOrigin",
+            "kind": "AWS::Route53::RecordSet",
+            "name": "gcp.three-cloud.example.",
+            "source": "chant",
+            "scopeKey": "chant/dns"
+          },
+          {
+            "key": "dns/gcpRecord",
+            "kind": "AWS::Route53::RecordSet",
+            "name": "www.three-cloud.example.",
+            "source": "chant",
+            "scopeKey": "chant/dns"
+          }
+        ],
+        "edges": [
+          {
+            "from": "dns/gcpRecord",
+            "to": "dns/gcpOrigin",
+            "viaAttr": "ResourceRecords",
+            "origin": "derived",
+            "rule": "aws:AWS::Route53::RecordSet:ResourceRecords[]"
+          }
+        ]
+      },
+      "sources": [
+        {
+          "scopeKey": "chant/aws",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 28,
+          "edges": 42
+        },
+        {
+          "scopeKey": "chant/azure",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 7,
+          "edges": 0
+        },
+        {
+          "scopeKey": "chant/dns",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 12,
+          "edges": 15
+        },
+        {
+          "scopeKey": "chant/gcp",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 11,
+          "edges": 11
+        },
+        {
+          "scopeKey": "engine/choudoufu/three-cloud-azure@azure",
+          "source": "engine",
+          "name": "choudoufu",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 7,
+          "edges": 15
+        },
+        {
+          "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c",
+          "source": "index",
+          "name": "chant-lister",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": "2026-11-18T16:55:59.438Z",
+          "nodes": 17,
+          "edges": 11
+        },
+        {
+          "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
+          "source": "index",
+          "name": "chant-lister",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": "2026-11-18T16:56:28.385Z",
+          "nodes": 4,
+          "edges": 0
+        }
+      ],
+      "reply": "2 Route 53 records reach into another member (gcp.three-cloud.example. and www.three-cloud.example.), and between them they depend on 4 resources there: gcp/webAddress, gcp/webProxy, gcp/webRule and gcp/webUrlMap."
+    },
+    {
+      "id": "forwarding-rule-dependents",
+      "kind": "question",
+      "prompt": "If the GCP forwarding rule went away, what would break?",
+      "call": {
+        "tool": "ask",
+        "arguments": {
+          "resource": "webRule",
+          "template": "dependents-all"
+        }
+      },
+      "busy": "behold mcp ask: resolving webRule, then running the dependents-all template on it",
+      "cypher": "MATCH (o:Resource)-[:REF*1..6]->(r:Resource {key: $key}) RETURN DISTINCT o.key AS key, o.kind AS kind, o.scopeKey AS scope",
+      "params": {
+        "key": "gcp/webRule"
+      },
+      "columns": [
+        "key",
+        "kind",
+        "scope"
+      ],
+      "rows": [
+        {
+          "key": "dns/gcpRecord",
+          "kind": "AWS::Route53::RecordSet",
+          "scope": "chant/dns"
+        },
+        {
+          "key": "dns/gcpCheck",
+          "kind": "AWS::Route53::HealthCheck",
+          "scope": "chant/dns"
+        },
+        {
+          "key": "dns/gcpOrigin",
+          "kind": "AWS::Route53::RecordSet",
+          "scope": "chant/dns"
+        },
+        {
+          "key": "dns/gcpEndpoint",
+          "kind": "AWS::CloudFormation::Parameter",
+          "scope": "chant/dns"
+        }
+      ],
+      "keys": [
+        "dns/gcpRecord",
+        "dns/gcpCheck",
+        "dns/gcpOrigin",
+        "dns/gcpEndpoint"
+      ],
+      "light": [
+        "dns/RecordSet ×4",
+        "dns/HealthCheck ×3",
+        "dns/Parameter ×3"
+      ],
+      "draw": {
+        "nodes": [
+          {
+            "key": "dns/gcpCheck",
+            "kind": "AWS::Route53::HealthCheck",
+            "name": "gcpCheck",
+            "source": "chant",
+            "scopeKey": "chant/dns"
+          },
+          {
+            "key": "dns/gcpEndpoint",
+            "kind": "AWS::CloudFormation::Parameter",
+            "name": "gcpEndpoint",
+            "source": "chant",
+            "scopeKey": "chant/dns"
+          },
+          {
+            "key": "dns/gcpOrigin",
+            "kind": "AWS::Route53::RecordSet",
+            "name": "gcp.three-cloud.example.",
+            "source": "chant",
+            "scopeKey": "chant/dns"
+          },
+          {
+            "key": "dns/gcpRecord",
+            "kind": "AWS::Route53::RecordSet",
+            "name": "www.three-cloud.example.",
+            "source": "chant",
+            "scopeKey": "chant/dns"
+          }
+        ],
+        "edges": [
+          {
+            "from": "dns/gcpCheck",
+            "to": "dns/gcpEndpoint",
+            "viaAttr": "HealthCheckConfig",
+            "origin": "declared",
+            "rule": ""
+          },
+          {
+            "from": "dns/gcpOrigin",
+            "to": "dns/gcpEndpoint",
+            "viaAttr": "ResourceRecords",
+            "origin": "declared",
+            "rule": ""
+          },
+          {
+            "from": "dns/gcpRecord",
+            "to": "dns/gcpCheck",
+            "viaAttr": "HealthCheckId",
+            "origin": "declared",
+            "rule": ""
+          },
+          {
+            "from": "dns/gcpRecord",
+            "to": "dns/gcpOrigin",
+            "viaAttr": "ResourceRecords",
+            "origin": "derived",
+            "rule": "aws:AWS::Route53::RecordSet:ResourceRecords[]"
+          }
+        ]
+      },
+      "sources": [
+        {
+          "scopeKey": "chant/aws",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 28,
+          "edges": 42
+        },
+        {
+          "scopeKey": "chant/azure",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 7,
+          "edges": 0
+        },
+        {
+          "scopeKey": "chant/dns",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 12,
+          "edges": 15
+        },
+        {
+          "scopeKey": "chant/gcp",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 11,
+          "edges": 11
+        },
+        {
+          "scopeKey": "engine/choudoufu/three-cloud-azure@azure",
+          "source": "engine",
+          "name": "choudoufu",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 7,
+          "edges": 15
+        },
+        {
+          "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c",
+          "source": "index",
+          "name": "chant-lister",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": "2026-11-18T16:55:59.438Z",
+          "nodes": 17,
+          "edges": 11
+        },
+        {
+          "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
+          "source": "index",
+          "name": "chant-lister",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": "2026-11-18T16:56:28.385Z",
+          "nodes": 4,
+          "edges": 0
+        }
+      ],
+      "reply": "4 resources depend on webRule, all of them in chant/dns: dns/gcpRecord, dns/gcpCheck, dns/gcpOrigin and dns/gcpEndpoint."
+    },
+    {
+      "id": "aws-account-owned",
+      "kind": "question",
+      "prompt": "Which resources in the AWS account does the aws member own?",
+      "call": {
+        "tool": "ask",
+        "arguments": {
+          "cypher": "MATCH (i:Resource {source: 'index', lexicon: 'aws'}) WITH i, regexp_extract(i.facts, '\"address\":\"([^\"]+)\"', 1) AS owner MATCH (d:Resource {source: 'chant'}) WHERE owner <> '' AND d.key ENDS WITH ('/' + owner) RETURN i.key AS key, i.kind AS kind, i.name AS name, d.key AS declaredAs, regexp_extract(d.key, '::([^:]+)$', 1) AS declared ORDER BY kind, name"
+        }
+      },
+      "busy": "behold mcp ask: running a Cypher query over the estate graph",
+      "cypher": "MATCH (i:Resource {source: 'index', lexicon: 'aws'}) WITH i, regexp_extract(i.facts, '\"address\":\"([^\"]+)\"', 1) AS owner MATCH (d:Resource {source: 'chant'}) WHERE owner <> '' AND d.key ENDS WITH ('/' + owner) RETURN i.key AS key, i.kind AS kind, i.name AS name, d.key AS declaredAs, regexp_extract(d.key, '::([^:]+)$', 1) AS declared ORDER BY kind, name",
+      "params": {},
+      "columns": [
+        "key",
+        "kind",
+        "name",
+        "declaredAs",
+        "declared"
+      ],
+      "rows": [
+        {
+          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-01070945a68658109",
+          "kind": "AWS::EC2::SecurityGroup",
+          "name": "sg-01070945a68658109",
+          "declaredAs": "aws/aws/aws:ec2/securityGroup:SecurityGroup::web-alb-sg",
+          "declared": "web-alb-sg"
+        },
+        {
+          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-7a1d7ab385f89646e",
+          "kind": "AWS::EC2::SecurityGroup",
+          "name": "sg-7a1d7ab385f89646e",
+          "declaredAs": "aws/aws/aws:ec2/securityGroup:SecurityGroup::web-task-sg",
+          "declared": "web-task-sg"
+        },
+        {
+          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-18e2fc4a",
+          "kind": "AWS::EC2::Subnet",
+          "name": "subnet-18e2fc4a",
+          "declaredAs": "aws/aws/aws:ec2/subnet:Subnet::network-public-subnet-1",
+          "declared": "network-public-subnet-1"
+        },
+        {
+          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-aac5af37",
+          "kind": "AWS::EC2::Subnet",
+          "name": "subnet-aac5af37",
+          "declaredAs": "aws/aws/aws:ec2/subnet:Subnet::network-public-subnet-2",
+          "declared": "network-public-subnet-2"
+        },
+        {
+          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-bba617fc",
+          "kind": "AWS::EC2::Subnet",
+          "name": "subnet-bba617fc",
+          "declaredAs": "aws/aws/aws:ec2/subnet:Subnet::network-private-subnet-2",
+          "declared": "network-private-subnet-2"
+        },
+        {
+          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-d8ed7ac1",
+          "kind": "AWS::EC2::Subnet",
+          "name": "subnet-d8ed7ac1",
+          "declaredAs": "aws/aws/aws:ec2/subnet:Subnet::network-private-subnet-1",
+          "declared": "network-private-subnet-1"
+        },
+        {
+          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-bb141a8f",
+          "kind": "AWS::EC2::VPC",
+          "name": "vpc-bb141a8f",
+          "declaredAs": "aws/aws/aws:ec2/vpc:Vpc::network-vpc",
+          "declared": "network-vpc"
+        }
+      ],
+      "keys": [
+        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-01070945a68658109",
+        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-7a1d7ab385f89646e",
+        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-18e2fc4a",
+        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-aac5af37",
+        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-bba617fc",
+        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-d8ed7ac1",
+        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-bb141a8f"
+      ],
+      "light": [
+        "aws/aws/aws:ec2/securityGroup:SecurityGroup::web-alb-sg",
+        "aws/aws/aws:ec2/securityGroup:SecurityGroup::web-task-sg",
+        "aws/subnet:Subnet ×4",
+        "aws/aws/aws:ec2/vpc:Vpc::network-vpc"
+      ],
+      "draw": {
+        "nodes": [
+          {
+            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-01070945a68658109",
+            "kind": "AWS::EC2::SecurityGroup",
+            "name": "sg-01070945a68658109",
+            "source": "index",
+            "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
+          },
+          {
+            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-7a1d7ab385f89646e",
+            "kind": "AWS::EC2::SecurityGroup",
+            "name": "sg-7a1d7ab385f89646e",
+            "source": "index",
+            "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
+          },
+          {
+            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-18e2fc4a",
+            "kind": "AWS::EC2::Subnet",
+            "name": "subnet-18e2fc4a",
+            "source": "index",
+            "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
+          },
+          {
+            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-aac5af37",
+            "kind": "AWS::EC2::Subnet",
+            "name": "subnet-aac5af37",
+            "source": "index",
+            "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
+          },
+          {
+            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-bba617fc",
+            "kind": "AWS::EC2::Subnet",
+            "name": "subnet-bba617fc",
+            "source": "index",
+            "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
+          },
+          {
+            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-d8ed7ac1",
+            "kind": "AWS::EC2::Subnet",
+            "name": "subnet-d8ed7ac1",
+            "source": "index",
+            "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
+          },
+          {
+            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-bb141a8f",
+            "kind": "AWS::EC2::VPC",
+            "name": "vpc-bb141a8f",
+            "source": "index",
+            "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
+          }
+        ],
+        "edges": [
+          {
+            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-01070945a68658109",
+            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-bb141a8f",
+            "viaAttr": "VpcId",
+            "origin": "derived",
+            "rule": "aws:AWS::EC2::SecurityGroup:VpcId"
+          },
+          {
+            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-7a1d7ab385f89646e",
+            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-bb141a8f",
+            "viaAttr": "VpcId",
+            "origin": "derived",
+            "rule": "aws:AWS::EC2::SecurityGroup:VpcId"
+          },
+          {
+            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-18e2fc4a",
+            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-bb141a8f",
+            "viaAttr": "VpcId",
+            "origin": "derived",
+            "rule": "aws:AWS::EC2::Subnet:VpcId"
+          },
+          {
+            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-aac5af37",
+            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-bb141a8f",
+            "viaAttr": "VpcId",
+            "origin": "derived",
+            "rule": "aws:AWS::EC2::Subnet:VpcId"
+          },
+          {
+            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-bba617fc",
+            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-bb141a8f",
+            "viaAttr": "VpcId",
+            "origin": "derived",
+            "rule": "aws:AWS::EC2::Subnet:VpcId"
+          },
+          {
+            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-d8ed7ac1",
+            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-bb141a8f",
+            "viaAttr": "VpcId",
+            "origin": "derived",
+            "rule": "aws:AWS::EC2::Subnet:VpcId"
+          }
+        ]
+      },
+      "sources": [
+        {
+          "scopeKey": "chant/aws",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 28,
+          "edges": 42
+        },
+        {
+          "scopeKey": "chant/azure",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 7,
+          "edges": 0
+        },
+        {
+          "scopeKey": "chant/dns",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 12,
+          "edges": 15
+        },
+        {
+          "scopeKey": "chant/gcp",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 11,
+          "edges": 11
+        },
+        {
+          "scopeKey": "engine/choudoufu/three-cloud-azure@azure",
+          "source": "engine",
+          "name": "choudoufu",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 7,
+          "edges": 15
+        },
+        {
+          "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c",
+          "source": "index",
+          "name": "chant-lister",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": "2026-11-18T16:55:59.438Z",
+          "nodes": 17,
+          "edges": 11
+        },
+        {
+          "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
+          "source": "index",
+          "name": "chant-lister",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": "2026-11-18T16:56:28.385Z",
+          "nodes": 4,
+          "edges": 0
+        }
+      ],
+      "reply": "7 of the account's indexed resources carry the aws member's ownership markers, and each matches a resource it declares: sg-01070945a68658109 is web-alb-sg, sg-7a1d7ab385f89646e is web-task-sg, subnet-18e2fc4a is network-public-subnet-1, subnet-aac5af37 is network-public-subnet-2, subnet-bba617fc is network-private-subnet-2, subnet-d8ed7ac1 is network-private-subnet-1 and vpc-bb141a8f is network-vpc."
+    },
+    {
+      "id": "aws-account-unmanaged",
+      "kind": "question",
+      "prompt": "What's in the AWS account's network and storage that nothing in the workspace declares?",
+      "call": {
+        "tool": "ask",
+        "arguments": {
+          "cypher": "MATCH (i:Resource {source: 'index', lexicon: 'aws'}) WHERE i.kind IN ['AWS::EC2::VPC', 'AWS::EC2::Subnet', 'AWS::EC2::SecurityGroup', 'AWS::S3::Bucket'] WITH i, regexp_extract(i.facts, '\"address\":\"([^\"]+)\"', 1) AS owner OPTIONAL MATCH (d:Resource {source: 'chant'}) WHERE owner <> '' AND d.key ENDS WITH ('/' + owner) WITH i, d WHERE d IS NULL RETURN i.key AS key, i.kind AS kind, i.name AS name ORDER BY kind, name"
+        }
+      },
+      "busy": "behold mcp ask: running a Cypher query over the estate graph",
+      "cypher": "MATCH (i:Resource {source: 'index', lexicon: 'aws'}) WHERE i.kind IN ['AWS::EC2::VPC', 'AWS::EC2::Subnet', 'AWS::EC2::SecurityGroup', 'AWS::S3::Bucket'] WITH i, regexp_extract(i.facts, '\"address\":\"([^\"]+)\"', 1) AS owner OPTIONAL MATCH (d:Resource {source: 'chant'}) WHERE owner <> '' AND d.key ENDS WITH ('/' + owner) WITH i, d WHERE d IS NULL RETURN i.key AS key, i.kind AS kind, i.name AS name ORDER BY kind, name",
+      "params": {},
+      "columns": [
+        "key",
+        "kind",
+        "name"
+      ],
+      "rows": [
+        {
+          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-default-us-east-1",
+          "kind": "AWS::EC2::SecurityGroup",
+          "name": "sg-default-us-east-1"
+        },
+        {
+          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-fd80d041aa33f4f3e",
+          "kind": "AWS::EC2::SecurityGroup",
+          "name": "sg-fd80d041aa33f4f3e"
+        },
+        {
+          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-default-us-east-1-a",
+          "kind": "AWS::EC2::Subnet",
+          "name": "subnet-default-us-east-1-a"
+        },
+        {
+          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-default-us-east-1-b",
+          "kind": "AWS::EC2::Subnet",
+          "name": "subnet-default-us-east-1-b"
+        },
+        {
+          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-default-us-east-1-c",
+          "kind": "AWS::EC2::Subnet",
+          "name": "subnet-default-us-east-1-c"
+        },
+        {
+          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-default-us-east-1",
+          "kind": "AWS::EC2::VPC",
+          "name": "vpc-default-us-east-1"
+        },
+        {
+          "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::S3::Bucket/orders-export-archive",
+          "kind": "AWS::S3::Bucket",
+          "name": "orders-export-archive"
+        }
+      ],
+      "keys": [
+        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-default-us-east-1",
+        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-fd80d041aa33f4f3e",
+        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-default-us-east-1-a",
+        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-default-us-east-1-b",
+        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-default-us-east-1-c",
+        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-default-us-east-1",
+        "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::S3::Bucket/orders-export-archive"
+      ],
+      "light": [],
+      "draw": {
+        "nodes": [
+          {
+            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-default-us-east-1",
+            "kind": "AWS::EC2::SecurityGroup",
+            "name": "sg-default-us-east-1",
+            "source": "index",
+            "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
+          },
+          {
+            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-fd80d041aa33f4f3e",
+            "kind": "AWS::EC2::SecurityGroup",
+            "name": "sg-fd80d041aa33f4f3e",
+            "source": "index",
+            "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
+          },
+          {
+            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-default-us-east-1-a",
+            "kind": "AWS::EC2::Subnet",
+            "name": "subnet-default-us-east-1-a",
+            "source": "index",
+            "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
+          },
+          {
+            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-default-us-east-1-b",
+            "kind": "AWS::EC2::Subnet",
+            "name": "subnet-default-us-east-1-b",
+            "source": "index",
+            "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
+          },
+          {
+            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-default-us-east-1-c",
+            "kind": "AWS::EC2::Subnet",
+            "name": "subnet-default-us-east-1-c",
+            "source": "index",
+            "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
+          },
+          {
+            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-default-us-east-1",
+            "kind": "AWS::EC2::VPC",
+            "name": "vpc-default-us-east-1",
+            "source": "index",
+            "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
+          },
+          {
+            "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::S3::Bucket/orders-export-archive",
+            "kind": "AWS::S3::Bucket",
+            "name": "orders-export-archive",
+            "source": "index",
+            "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c"
+          }
+        ],
+        "edges": [
+          {
+            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::SecurityGroup/sg-default-us-east-1",
+            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-default-us-east-1",
+            "viaAttr": "VpcId",
+            "origin": "derived",
+            "rule": "aws:AWS::EC2::SecurityGroup:VpcId"
+          },
+          {
+            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-default-us-east-1-a",
+            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-default-us-east-1",
+            "viaAttr": "VpcId",
+            "origin": "derived",
+            "rule": "aws:AWS::EC2::Subnet:VpcId"
+          },
+          {
+            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-default-us-east-1-b",
+            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-default-us-east-1",
+            "viaAttr": "VpcId",
+            "origin": "derived",
+            "rule": "aws:AWS::EC2::Subnet:VpcId"
+          },
+          {
+            "from": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::Subnet/subnet-default-us-east-1-c",
+            "to": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/us-east-1/AWS::EC2::VPC/vpc-default-us-east-1",
+            "viaAttr": "VpcId",
+            "origin": "derived",
+            "rule": "aws:AWS::EC2::Subnet:VpcId"
+          }
+        ]
+      },
+      "sources": [
+        {
+          "scopeKey": "chant/aws",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 28,
+          "edges": 42
+        },
+        {
+          "scopeKey": "chant/azure",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 7,
+          "edges": 0
+        },
+        {
+          "scopeKey": "chant/dns",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 12,
+          "edges": 15
+        },
+        {
+          "scopeKey": "chant/gcp",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 11,
+          "edges": 11
+        },
+        {
+          "scopeKey": "engine/choudoufu/three-cloud-azure@azure",
+          "source": "engine",
+          "name": "choudoufu",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 7,
+          "edges": 15
+        },
+        {
+          "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c",
+          "source": "index",
+          "name": "chant-lister",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": "2026-11-18T16:55:59.438Z",
+          "nodes": 17,
+          "edges": 11
+        },
+        {
+          "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
+          "source": "index",
+          "name": "chant-lister",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": "2026-11-18T16:56:28.385Z",
+          "nodes": 4,
+          "edges": 0
+        }
+      ],
+      "reply": "7 resources there have no owner in the workspace: sg-default-us-east-1 (AWS::EC2::SecurityGroup), sg-fd80d041aa33f4f3e (AWS::EC2::SecurityGroup), subnet-default-us-east-1-a (AWS::EC2::Subnet), subnet-default-us-east-1-b (AWS::EC2::Subnet), subnet-default-us-east-1-c (AWS::EC2::Subnet), vpc-default-us-east-1 (AWS::EC2::VPC) and orders-export-archive (AWS::S3::Bucket)."
+    },
+    {
+      "id": "serviceaccount-roles",
+      "kind": "question",
+      "prompt": "Which AWS roles can the cluster's ServiceAccounts assume?",
+      "call": {
+        "tool": "ask",
+        "arguments": {
+          "cypher": "MATCH (sa:Resource {kind: 'K8s::Core::ServiceAccount'})-[e:REF]->(role:Resource {kind: 'AWS::IAM::Role'}) RETURN sa.key AS key, sa.name AS serviceAccount, role.key AS roleKey, role.name AS role, e.viaAttr AS via, e.rule AS rule ORDER BY serviceAccount"
+        }
+      },
+      "busy": "behold mcp ask: running a Cypher query over the estate graph",
+      "cypher": "MATCH (sa:Resource {kind: 'K8s::Core::ServiceAccount'})-[e:REF]->(role:Resource {kind: 'AWS::IAM::Role'}) RETURN sa.key AS key, sa.name AS serviceAccount, role.key AS roleKey, role.name AS role, e.viaAttr AS via, e.rule AS rule ORDER BY serviceAccount",
+      "params": {},
+      "columns": [
+        "key",
+        "serviceAccount",
+        "roleKey",
+        "role",
+        "via",
+        "rule"
+      ],
+      "rows": [
+        {
+          "key": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6/kubernetes/kind-behold-ask-demo/orders/v1%2FServiceAccount/orders/orders-api",
+          "serviceAccount": "orders-api",
+          "roleKey": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/global/AWS::IAM::Role/orders-reader",
+          "role": "orders-reader",
+          "via": "metadata.annotations.eks.amazonaws.com/role-arn",
+          "rule": "identity:arn"
+        },
+        {
+          "key": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6/kubernetes/kind-behold-ask-demo/orders/v1%2FServiceAccount/orders/web",
+          "serviceAccount": "web",
+          "roleKey": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/global/AWS::IAM::Role/web-task-role-460e979",
+          "role": "web-task-role-460e979",
+          "via": "metadata.annotations.eks.amazonaws.com/role-arn",
+          "rule": "identity:arn"
+        }
+      ],
+      "keys": [
+        "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6/kubernetes/kind-behold-ask-demo/orders/v1%2FServiceAccount/orders/orders-api",
+        "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6/kubernetes/kind-behold-ask-demo/orders/v1%2FServiceAccount/orders/web"
+      ],
+      "light": [],
+      "draw": {
+        "nodes": [
+          {
+            "key": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6/kubernetes/kind-behold-ask-demo/orders/v1%2FServiceAccount/orders/orders-api",
+            "kind": "K8s::Core::ServiceAccount",
+            "name": "orders-api",
+            "source": "index",
+            "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6"
+          },
+          {
+            "key": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6/kubernetes/kind-behold-ask-demo/orders/v1%2FServiceAccount/orders/web",
+            "kind": "K8s::Core::ServiceAccount",
+            "name": "web",
+            "source": "index",
+            "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6"
+          }
+        ],
+        "edges": []
+      },
+      "sources": [
+        {
+          "scopeKey": "chant/aws",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 28,
+          "edges": 42
+        },
+        {
+          "scopeKey": "chant/azure",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 7,
+          "edges": 0
+        },
+        {
+          "scopeKey": "chant/dns",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 12,
+          "edges": 15
+        },
+        {
+          "scopeKey": "chant/gcp",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 11,
+          "edges": 11
+        },
+        {
+          "scopeKey": "engine/choudoufu/three-cloud-azure@azure",
+          "source": "engine",
+          "name": "choudoufu",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 7,
+          "edges": 15
+        },
+        {
+          "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c",
+          "source": "index",
+          "name": "chant-lister",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": "2026-11-18T16:55:59.438Z",
+          "nodes": 17,
+          "edges": 11
+        },
+        {
+          "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
+          "source": "index",
+          "name": "chant-lister",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": "2026-11-18T16:56:28.385Z",
+          "nodes": 4,
+          "edges": 0
+        }
+      ],
+      "reply": "2 ServiceAccounts carry an IRSA annotation that names a role in the account: orders-api assumes orders-reader and web assumes web-task-role-460e979. behold joined them on metadata.annotations.eks.amazonaws.com/role-arn by the identity:arn rule."
+    },
+    {
+      "id": "orders-reader-readers",
+      "kind": "question",
+      "prompt": "What reaches the orders-reader role from outside the AWS account?",
+      "call": {
+        "tool": "ask",
+        "arguments": {
+          "resource": "orders-reader",
+          "template": "readers"
+        }
+      },
+      "busy": "behold mcp ask: resolving orders-reader, then running the readers template on it",
+      "cypher": "MATCH (o:Resource)-[e:REF]->(r:Resource {key: $key}) WHERE o.scopeKey <> r.scopeKey RETURN o.key AS key, o.scopeKey AS scope, e.viaAttr AS via, e.origin AS origin, e.rule AS rule UNION MATCH (r:Resource {key: $key})-[:KNOWN_AS]->(:CloudId)<-[:KNOWN_AS]-(t:Resource)<-[e:REF]-(o:Resource) WHERE o.scopeKey <> r.scopeKey RETURN o.key AS key, o.scopeKey AS scope, e.viaAttr AS via, e.origin AS origin, e.rule AS rule",
+      "params": {
+        "key": "cloud/aws/000000000000/db1d7f66ad8c/aws/000000000000/global/AWS::IAM::Role/orders-reader"
+      },
+      "columns": [
+        "key",
+        "scope",
+        "via",
+        "origin",
+        "rule"
+      ],
+      "rows": [
+        {
+          "key": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6/kubernetes/kind-behold-ask-demo/orders/v1%2FServiceAccount/orders/orders-api",
+          "scope": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
+          "via": "metadata.annotations.eks.amazonaws.com/role-arn",
+          "origin": "derived",
+          "rule": "identity:arn"
+        }
+      ],
+      "keys": [
+        "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6/kubernetes/kind-behold-ask-demo/orders/v1%2FServiceAccount/orders/orders-api"
+      ],
+      "light": [],
+      "draw": {
+        "nodes": [
+          {
+            "key": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6/kubernetes/kind-behold-ask-demo/orders/v1%2FServiceAccount/orders/orders-api",
+            "kind": "K8s::Core::ServiceAccount",
+            "name": "orders-api",
+            "source": "index",
+            "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6"
+          }
+        ],
+        "edges": []
+      },
+      "sources": [
+        {
+          "scopeKey": "chant/aws",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 28,
+          "edges": 42
+        },
+        {
+          "scopeKey": "chant/azure",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 7,
+          "edges": 0
+        },
+        {
+          "scopeKey": "chant/dns",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 12,
+          "edges": 15
+        },
+        {
+          "scopeKey": "chant/gcp",
+          "source": "chant",
+          "name": "chant",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 11,
+          "edges": 11
+        },
+        {
+          "scopeKey": "engine/choudoufu/three-cloud-azure@azure",
+          "source": "engine",
+          "name": "choudoufu",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": null,
+          "nodes": 7,
+          "edges": 15
+        },
+        {
+          "scopeKey": "cloud/aws/000000000000/db1d7f66ad8c",
+          "source": "index",
+          "name": "chant-lister",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": "2026-11-18T16:55:59.438Z",
+          "nodes": 17,
+          "edges": 11
+        },
+        {
+          "scopeKey": "cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6",
+          "source": "index",
+          "name": "chant-lister",
+          "readAt": "2026-11-18T16:56:35.506Z",
+          "observedAt": "2026-11-18T16:56:28.385Z",
+          "nodes": 4,
+          "edges": 0
+        }
+      ],
+      "reply": "Readers from outside the account: 1, from cloud/kubernetes/kind-behold-ask-demo/eb3c475548a6, joined on metadata.annotations.eks.amazonaws.com/role-arn by the identity:arn rule."
+    }
+  ]
+}
