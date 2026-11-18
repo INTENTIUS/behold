@@ -82,5 +82,13 @@ missing sibling just marks the entry unsatisfiable. `fountain-ops` runs its
 setup in your working checkout and switches your kubectl context, so avoid it
 unless asked.
 
-`just release` tags `behold-v<version>` after the version-bump PR is in.
-A tag push publishes, so never push a `behold-v*` tag by hand.
+The npm package is released with `chant release`. chant.config.ts declares
+it, and `just release-workflow` renders .github/workflows/release.yml from it;
+never edit that file by hand. A release is the version-bump PR (package.json,
+server.json and the files that pin the version), then `just release`, which
+dispatches release.yml with main's version as the label. That run cuts main's
+head once its checks are green, pushes `behold-v<version>`, publishes to npm
+and creates the GitHub release; mcp-registry.yml then lists the version in the
+MCP Registry. Never push a `behold-v*` tag by hand. The plugin surfaces
+(kubectl-behold, Argo CD, Headlamp, Backstage, VS Code) keep their own
+tag-driven workflows.

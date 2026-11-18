@@ -1,0 +1,118 @@
+name: mcp-registry
+
+# The official MCP Registry listing (behold#1050), once a release is out. The
+# release itself is release.yml, which chant writes from chant.config.ts and
+# which publishes to npm and creates the GitHub release. This workflow runs
+# when that one finishes, lists the version it released, and keeps the listing
+# steps release.yml carried before: mcp-publisher pinned and its Sigstore
+# bundle checked with cosign before it runs.
+#
+# workflow_run, not `release: published` or a tag push: the release workflow
+# pushes its tag and creates its GitHub release with the run's GITHUB_TOKEN,
+# and GitHub starts no workflow from those. workflow_run reads this file from
+# the default branch.
+on:
+  workflow_run:
+    workflows: ["chant release"]
+    types: [completed]
+  # List a release again, such as one whose listing failed, by its tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The released tag to list, such as behold-v0.34.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  list:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      # github-oidc login to the registry; the token grants io.github.<owner>/*.
+      id-token: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+
+      # The tag the release workflow's cut pushed is on the commit that run was
+      # dispatched at (release.green is forge-checks, so the gate hands that
+      # commit on). Check it out so server.json is the released one.
+      - name: the release to list
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = workflow_dispatch ]; then
+            tag="$INPUT_TAG"
+          else
+            tag="$(git tag --points-at "$HEAD_SHA" --list 'behold-v*' | sort -V | tail -1)"
+          fi
+          case "$tag" in
+            behold-v[0-9]*) ;;
+            *) echo "no behold-v<version> tag to list (got '${tag}')" >&2; exit 1 ;;
+          esac
+          git checkout --quiet --detach "refs/tags/${tag}"
+          V="$(node -p 'require("./server.json").version')"
+          if [ "$V" != "${tag#behold-v}" ]; then
+            echo "server.json at ${tag} says ${V}" >&2
+            exit 1
+          fi
+          echo "listing ${tag}"
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+
+      # The registry reads mcpName from the published tarball, so this runs
+      # after the npm publish. The registry refuses a version it already holds,
+      # so a run for a listed version skips instead of failing. mcp-publisher is
+      # pinned and its Sigstore bundle verified before it runs, as the
+      # registry's own workflow guide does; move MCP_PUBLISHER_VERSION on
+      # purpose.
+      - name: install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: list in the MCP Registry
+        env:
+          MCP_PUBLISHER_VERSION: v1.8.9
+        run: |
+          set -euo pipefail
+          name="$(node -p 'require("./server.json").name')"
+          V="$(node -p 'require("./server.json").version')"
+          # The registry checks that npm serves this version, and npm can take
+          # minutes to show a fresh publish; both 0.32.0 and 0.33.0 failed here
+          # with "version not found". Wait up to ten minutes for npm first.
+          pkg="$(node -p 'require("./server.json").packages[0].identifier')"
+          for i in $(seq 1 60); do
+            [ "$(npm view "${pkg}@${V}" version 2>/dev/null || true)" = "$V" ] && break
+            [ "$i" = 60 ] && { echo "npm does not serve ${pkg}@${V} after ten minutes" >&2; exit 1; }
+            sleep 10
+          done
+          code="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            "https://registry.modelcontextprotocol.io/v0/servers/${name//\//%2F}/versions/${V}")"
+          if [ "$code" = "200" ]; then
+            echo "${name}@${V} is already in the registry, skipping"
+            exit 0
+          fi
+          os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          arch="$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
+          archive="mcp-publisher_${os}_${arch}.tar.gz"
+          base="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}"
+          curl --fail --location --silent --show-error --output "$archive" "$base/$archive"
+          curl --fail --location --silent --show-error --output "$archive.sigstore.json" "$base/$archive.sigstore.json"
+          cosign verify-blob \
+            --bundle "$archive.sigstore.json" \
+            --certificate-identity "https://github.com/modelcontextprotocol/registry/.github/workflows/release.yml@refs/tags/${MCP_PUBLISHER_VERSION}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$archive"
+          tar xzf "$archive" mcp-publisher
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
