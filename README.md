@@ -168,6 +168,31 @@ npx @intentius/behold index kubernetes --context <name>
 
 The graph pane at `/graph` on a served page loads every member's IR, engine graph document, index version and cloud listing it finds into one read-only database, and answers Cypher queries and templates over it (`GET /api/graphdb/*`). The query side needs the optional peer `@ladybugdb/core`.
 
+### Add an investigation template
+
+A template is a named question with the resource filled in, so a click in the graph pane and `behold mcp ask` with `resource` and `template` run the same query. behold offers chant's templates, and a project adds its own in `.chant/templates.json` at the workspace root (the folder holding `chant.workspace.json`), or at the project root when there is no workspace:
+
+```json
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "bucket-users",
+      "title": "Who uses this bucket",
+      "question": "Which resources reference this bucket?",
+      "kinds": ["aws_s3_bucket"],
+      "inputs": [{ "name": "node", "kind": "resource", "description": "the bucket" }],
+      "reads": "session",
+      "query": { "kind": "cypher", "text": "MATCH (u:Resource)-[:REF]->(b:Resource {key: $key}) RETURN u.key AS key ORDER BY key" }
+    }
+  ]
+}
+```
+
+The shape is chant's own `templates.json`. The first input is the resource; a Cypher query binds it as `$key` and every other input as `$<name>`, and a `chant search` path pattern (`"kind": "path"`) fills in `{{<name>}}`. A `scope` input is the environment the query is read in. `kinds` and `sources` limit the nodes a template is offered on. An id chant already uses is refused, and so is a query that writes.
+
+`GET /api/graphdb/templates` lists every template with its `origin` (`chant` or `project`) and, under `refused`, each project entry left out, with the file and field at fault, such as `.chant/templates.json templates[1].title`. When the database opens, behold prepares each project Cypher template on it without running it, and one LadybugDB cannot bind or does not report read-only moves to `refused` with the engine's message. Edits to the file show after a project switch or `GET /api/graphdb?rebuild=1`.
+
 ## Driving behold from an agent
 
 `GET /api` on a running server lists the routes with a one-line description each. `GET /api/graph` answers `{ir, svg, meta}` and `GET /api/overlay?env=<env>` the live overlay; each node's `sourceLoc.file` is the source that declared it, and a failed precondition answers `{code, error, remedy}`. [AGENTS.md](./AGENTS.md), shipped in the package, is the read and act contract, and [Driving it from an agent](https://intentius.io/behold/using/agents/) is the long form.

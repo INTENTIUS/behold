@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { emptyRows, finishRows, rowsFromChantIr, rowsFromEngineGraph, rowsFromIndex } from "./rows.ts";
-import { TEMPLATES, TemplateError, expandTemplate, resolveResource } from "./templates.ts";
+import { TemplateError, chantCatalog, expandTemplate as expandIn, resolveResource } from "./templates.ts";
+
+const TEMPLATES = chantCatalog().templates;
+const expandTemplate = (name: string, node: Parameters<typeof expandIn>[2], inputs?: Record<string, string>) => expandIn(TEMPLATES, name, node, inputs);
 import type { EngineGraphDocument, IndexDocument } from "./types.ts";
 
 const fixture = (name: string): unknown => JSON.parse(readFileSync(join(import.meta.dirname, "__fixtures__", name), "utf8"));

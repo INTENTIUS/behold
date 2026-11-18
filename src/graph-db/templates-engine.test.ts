@@ -13,7 +13,9 @@ import { GraphDb } from "./db.ts";
 import { realLadybug } from "./fake-lbug.ts";
 import type { LbugModule } from "./peer.ts";
 import { emptyRows, finishRows, rowsFromChantIr } from "./rows.ts";
-import { TEMPLATES, expandTemplate } from "./templates.ts";
+import { chantCatalog, expandTemplate } from "./templates.ts";
+
+const TEMPLATES = chantCatalog().templates;
 
 const readAt = "2026-11-16T12:00:00.000Z";
 
@@ -119,7 +121,7 @@ describe.runIf(peer.ok)("every Cypher template, on the real engine, over disjoin
     for (let k = 0; k < COPIES; k++) {
       for (const e of EXPECTED) {
         const node = e.node.replace("{k}", String(k));
-        const x = expandTemplate(e.template, { key: node, source: "chant" });
+        const x = expandTemplate(TEMPLATES, e.template, { key: node, source: "chant" });
         const a = await db.query(x.query, x.params);
         if (e.rows !== undefined) {
           if (a.rows.length !== e.rows) wrong.push(`${e.template}(${node}): ${a.rows.length} rows, want ${e.rows}`);
@@ -134,7 +136,7 @@ describe.runIf(peer.ok)("every Cypher template, on the real engine, over disjoin
   });
 
   it("ownership names the other copy of the same object, and only that one", async () => {
-    const x = expandTemplate("ownership", { key: "app3/aws_s3_bucket.data", source: "chant" });
+    const x = expandTemplate(TEMPLATES, "ownership", { key: "app3/aws_s3_bucket.data", source: "chant" });
     const a = await db.query(x.query, x.params);
     expect(a.rows[0]?.sameObject).toEqual(["net3/aws_s3_bucket.data"]);
   });

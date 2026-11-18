@@ -8,13 +8,19 @@
  * LadybugDB from them (src/graph-db/db.ts) and keeps it read-only. A switch of
  * the served project, or `GET /api/graphdb?rebuild=1`, builds a new one.
  *
+ * The session also holds the project's template catalog (behold#1142):
+ * chant's templates and the project's `.chant/templates.json`, read again on
+ * a project switch or a rebuild. When the database opens, each project
+ * Cypher template is prepared on it without running, and one the engine
+ * cannot bind, or does not report read-only, moves to `refused`.
+ *
  * Routes, every one a GET, none of which acts (the test in
  * src/graph-db/pane.test.ts walks them):
  *
  *   GET /api/graphdb              what is loaded, from where, read when; the peer's state
  *   GET /api/graphdb/query        ?cypher=&params=<JSON object>: one read-only Cypher query
  *   GET /api/graphdb/resolve      ?ref=: a name, id, address or cloud id to candidates and templates
- *   GET /api/graphdb/templates    the template catalog (chant's)
+ *   GET /api/graphdb/templates    the template catalog (chant's and the project's), with the refused project entries
  *   GET /api/graphdb/template     ?name=&node=&in.<input>=: one template filled for one node, run when it is Cypher
  *   GET /graph                    the pane's page (web/graph.html)
  *   GET /api/graphdb/index-versions, /api/graphdb/index-diff
@@ -39,7 +45,7 @@ import { emptyRows, finishRows, rowsFromChantIr, rowsFromEngineGraph, rowsFromIn
 import { INDEX_DIFF_ROUTES, mountIndexDiff } from "./index-diff-routes.ts";
 import { activeLayout, type ActiveLayout } from "./layout.ts";
 import { findDocuments, type EngineRunner, type Git, type MemberRef } from "./sources.ts";
-import { TEMPLATES, TEMPLATE_CATALOG, TemplateError, applies, expandTemplate, resolveResource, type Expanded } from "./templates.ts";
+import { TemplateError, applies, catalogFor, expandTemplate, resolveResource, withEngineRefusals, type Expanded, type Template, type TemplateCatalog } from "./templates.ts";
 
 /** The chant read the session starts from: one project's IR, or a composed estate with its member names. */
 export interface ChantRead {
@@ -69,6 +75,8 @@ export interface GraphPaneDeps {
   now?: () => Date;
   /** The layout the database is built with (behold#1031); absent, the installed chant's schema when it ships one, else behold's vendored copy. */
   layout?: () => ActiveLayout;
+  /** The project's template catalog (behold#1142); absent, chant's `templateCatalog` read through ./templates.ts `catalogFor`. */
+  templates?: (projectDir: string) => TemplateCatalog;
 }
 
 export class GraphPeerMissing extends Error {
@@ -91,6 +99,7 @@ export class GraphSession {
   private db?: GraphDb;
   private dbFor?: Built;
   private opening?: Promise<GraphDb>;
+  private cat?: { project: string; catalog: TemplateCatalog; checkedOn?: GraphDb };
 
   constructor(private readonly deps: GraphPaneDeps) {}
 
@@ -103,6 +112,7 @@ export class GraphSession {
     const project = this.deps.projectDir();
     if (!rebuild && this.built?.project === project) return this.built;
     if (!rebuild && this.building) return this.building;
+    if (rebuild) this.cat = undefined;
     this.building = this.load(project).finally(() => (this.building = undefined));
     this.built = await this.building;
     return this.built;
@@ -150,9 +160,49 @@ export class GraphSession {
       this.db = db;
       this.dbFor = built;
       await old?.close();
+      await this.checkTemplates(db);
       return db;
     })().finally(() => (this.opening = undefined));
     return this.opening;
+  }
+
+  /** The project's template catalog, read once per project and again after a rebuild. */
+  catalog(): TemplateCatalog {
+    const project = this.deps.projectDir();
+    if (this.cat?.project !== project) this.cat = { project, catalog: (this.deps.templates ?? catalogFor)(project) };
+    return this.cat.catalog;
+  }
+
+  /** Prepare the project's Cypher templates on `db`, once per database, moving the ones it refuses. */
+  private async checkTemplates(db: GraphDb): Promise<void> {
+    this.catalog();
+    const cat = this.cat!;
+    if (cat.checkedOn === db) return;
+    cat.catalog = await withEngineRefusals(cat.catalog, (q) => db.refusal(q));
+    cat.checkedOn = db;
+  }
+
+  /** Whether the catalog's project Cypher templates have been prepared on the session's database. */
+  engineChecked(): boolean {
+    return !!this.cat?.checkedOn && this.cat.project === this.deps.projectDir() && this.cat.checkedOn === this.db;
+  }
+
+  /**
+   * The catalog to offer: when it holds project Cypher templates and the peer
+   * is installed, the database opens first, so what is offered has been
+   * prepared on it. Without the peer, or when the database cannot be built,
+   * they are listed unchecked (`engineChecked: false`); a Cypher template is
+   * then offered as unavailable, or refused with the reason when run.
+   */
+  async offered(): Promise<TemplateCatalog> {
+    const cat = this.catalog();
+    if (this.deps.public || !cat.templates.some(ownCypher)) return cat;
+    try {
+      await this.checkTemplates(await this.database());
+    } catch {
+      // The query route reports why the database cannot open; the catalog still lists.
+    }
+    return this.catalog();
   }
 
   async peerState(): Promise<{ available: true; version?: string } | { available: false; refusal: PeerRefusal }> {
@@ -164,6 +214,13 @@ export class GraphSession {
     await this.db?.close();
     this.db = undefined;
   }
+}
+
+const ownCypher = (t: Template): boolean => t.origin === "project" && t.language === "cypher";
+
+/** A catalog as the routes list it: the templates and the refused project entries, without its helpers. */
+function listed(cat: TemplateCatalog, engineChecked: boolean) {
+  return { templates: cat.templates, refused: cat.refused, catalog: cat.note, catalogSource: cat.source, engineChecked };
 }
 
 /** The answer's keys, with the edges among them: what the pane draws. */
@@ -223,7 +280,7 @@ export const GRAPH_ROUTES = [
   { method: "GET", path: "/api/graphdb", desc: "behold#1027: the graph pane's sources (each with observedAt and readAt), counts, notes and whether the LadybugDB peer is installed; ?rebuild=1 reloads them" },
   { method: "GET", path: "/api/graphdb/query", desc: "behold#1027: one read-only Cypher query over every member's graph and every index: ?cypher=&params=<JSON>; refused without @ladybugdb/core" },
   { method: "GET", path: "/api/graphdb/resolve", desc: "behold#1027: a name, IR id, address or cloud id to candidate nodes, with the templates that apply: ?ref=" },
-  { method: "GET", path: "/api/graphdb/templates", desc: "behold#1027: the investigation templates (search path patterns and Cypher)" },
+  { method: "GET", path: "/api/graphdb/templates", desc: "behold#1027: the investigation templates (search path patterns and Cypher), chant's and the project's own (.chant/templates.json, behold#1142), each with its origin, and the refused project entries" },
   { method: "GET", path: "/api/graphdb/template", desc: "behold#1027: one template filled for one node: ?name=&node=&in.<input>=; a Cypher one runs" },
   { method: "GET", path: "/graph", desc: "behold#1027: the graph pane (a Cypher box and resolve-from-resource)" },
   ...INDEX_DIFF_ROUTES,
@@ -295,7 +352,10 @@ export function mountGraphPane(app: Hono, deps: GraphPaneDeps): GraphSession {
     return runCypher(c, cypher, params, { cypher });
   });
 
-  app.get("/api/graphdb/templates", (c) => c.json({ templates: TEMPLATES, catalog: TEMPLATE_CATALOG.note, catalogSource: TEMPLATE_CATALOG.source }));
+  app.get("/api/graphdb/templates", async (c) => {
+    const cat = await session.offered();
+    return c.json(listed(cat, session.engineChecked()));
+  });
 
   app.get("/api/graphdb/resolve", async (c) => {
     const pub = refusePublic(c);
@@ -305,21 +365,23 @@ export function mountGraphPane(app: Hono, deps: GraphPaneDeps): GraphSession {
     const { rows } = await session.rows();
     const candidates = resolveResource(rows, ref);
     const peer = await session.peerState();
+    const cat = await session.offered();
     const one = candidates.length === 1 ? rows.resources.find((r) => r.key === candidates[0]!.key) : undefined;
     const templates = one
-      ? TEMPLATES.filter((t) => applies(t, one)).map((t) => ({
+      ? cat.templates.filter((t) => applies(t, one)).map((t) => ({
           name: t.name,
           title: t.title,
+          origin: t.origin,
           language: t.language,
           reads: t.reads,
           inputs: t.inputs,
           ...(t.note ? { note: t.note } : {}),
           available: t.language === "search" || peer.available,
           ...(t.language === "cypher" && !peer.available ? { refusal: peer.refusal.error, install: peer.refusal.install } : {}),
-          ...(t.inputs.length === 0 ? { expanded: expandTemplate(t.name, one) } : {}),
+          ...(t.inputs.length === 0 ? { expanded: expandTemplate(cat.templates, t.name, one) } : {}),
         }))
       : [];
-    return c.json({ ref, resolved: candidates.length === 1, candidates, templates, link: viewLinkFor(origin(c), rows, candidates.map((x) => x.key)), sources: stamps(rows) });
+    return c.json({ ref, resolved: candidates.length === 1, candidates, templates, refused: cat.refused, link: viewLinkFor(origin(c), rows, candidates.map((x) => x.key)), sources: stamps(rows) });
   });
 
   app.get("/api/graphdb/template", async (c) => {
@@ -332,9 +394,10 @@ export function mountGraphPane(app: Hono, deps: GraphPaneDeps): GraphSession {
     if (!node) return c.json({ error: `no node ${nodeKey}; resolve it first`, code: "template-node", sources: stamps(rows) }, 404);
     const inputs: Record<string, string> = {};
     for (const [k, v] of Object.entries(c.req.queries())) if (k.startsWith("in.") && v[0] !== undefined) inputs[k.slice(3)] = v[0];
+    const cat = await session.offered();
     let x: Expanded;
     try {
-      x = expandTemplate(name, node, inputs);
+      x = expandTemplate(cat.templates, name, node, inputs);
     } catch (e) {
       if (e instanceof TemplateError) return c.json({ error: e.message, code: e.code, sources: stamps(rows) }, 400);
       throw e;

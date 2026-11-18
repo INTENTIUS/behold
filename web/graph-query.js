@@ -176,7 +176,7 @@ export function initGraphPane(doc = document, fetchJson = (u) => fetch(u, { head
     for (const t of r.body.templates ?? []) {
       const b = doc.createElement("button");
       b.type = "button";
-      b.textContent = `${t.title}${t.language === "cypher" ? " (Cypher)" : ""}`;
+      b.textContent = `${t.title}${t.language === "cypher" ? " (Cypher)" : ""}${t.origin === "project" ? ", this project's" : ""}`;
       b.disabled = !t.available;
       if (!t.available) b.title = `${t.refusal} ${t.install}`;
       b.addEventListener("click", async () => {
