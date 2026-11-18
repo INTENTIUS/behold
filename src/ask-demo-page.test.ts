@@ -11,8 +11,9 @@
 // The page plays every loop, with motion and under reduced motion, and for each turn the test
 // reads the prompt pane's words, the Cypher box, the estate graph's lit cards and the answer
 // drawing's lit nodes. After a loop it runs a visitor's query through LadybugDB's WebAssembly
-// build. Every request the page makes must be for a file in the bundle. Skipped, saying so,
-// where no browser launches.
+// build. Every request the page makes must be for a file in the bundle, and the page is served
+// under the bundle's content security policy (behold#1164). Skipped, saying so, where no
+// browser launches.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createServer, type Server } from "node:http";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -31,10 +32,15 @@ import { launchShotBrowser } from "./shot.ts";
 import { GRAPHDB_FILE } from "./graph-db/graphdb-file.ts";
 import { LOCAL_INDEX_DIR } from "./graph-db/sources.ts";
 import { realLadybug } from "./graph-db/fake-lbug.ts";
-import { BundleRefusal, buildAskDemoBundle, estateFile, unlitCards } from "../scripts/ask-demo/bundle.ts";
+import { ASK_DEMO_CSP, BundleRefusal, WORKER_NAME, buildAskDemoBundle, estateFile, unlitCards } from "../scripts/ask-demo/bundle.ts";
+import { checkFiles, cspDirectives, outsideRequests, sameCsp, serveBundle, verdictText } from "../scripts/ask-demo/check.ts";
 import { validateNarration, type Narration } from "../scripts/ask-demo/narration.ts";
 import { narrationSchema } from "../scripts/ask-demo/record.ts";
 import { cardIndex, lightKeys } from "../web/key-light.js";
+// @ts-expect-error the kiosk is plain browser ESM
+import { WHAT_ASK_DEMO } from "../web/kiosk.js";
+// @ts-expect-error the docs site's data module is plain ESM
+import { ASK_DEMO } from "../docs/src/data/live.mjs";
 // @ts-expect-error the page's module is plain browser ESM
 import { drawLight, loopOf, recordedAnswer } from "../ask-demo/page/play.js";
 
@@ -85,7 +91,8 @@ function serveDir(dir: string): Promise<string> {
         res.writeHead(404).end("not found");
         return;
       }
-      res.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream" });
+      // behold#1164: under the policy the Worker serves the bundle with (its _headers).
+      res.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream", "content-security-policy": ASK_DEMO_CSP });
       res.end(body);
     });
     servers.push(server);
@@ -148,7 +155,7 @@ describe("the fixture narration", () => {
 describe("the bundle", () => {
   it("carries the page, the recording, the estate, the rows and the engine, every file under 25 MiB", () => {
     const paths = files.map((f) => f.path);
-    for (const f of ["index.html", "ask-demo.js", "narration.json", "estate.json", "graphdb.json", "graph-db-wasm.js", "lbug-wasm.js", "lbug_wasm_worker.js", "graph.html", "graph-static.js", "graph-query.js", "index-diff.js", "LICENSE", "wrangler.jsonc", ".assetsignore"]) {
+    for (const f of ["index.html", "ask-demo.js", "narration.json", "estate.json", "graphdb.json", "graph-db-wasm.js", "lbug-wasm.js", "lbug_wasm_worker.js", "graph.html", "graph-static.js", "graph-query.js", "index-diff.js", "LICENSE", "wrangler.jsonc", ".assetsignore", "_headers"]) {
       expect(paths, f).toContain(f);
     }
     for (const f of files) expect(f.bytes, f.path).toBeLessThanOrEqual(25 * 1024 * 1024);
@@ -159,6 +166,42 @@ describe("the bundle", () => {
     expect(js).not.toContain("setWorkerPath");
     // Nothing reaches outside the bundle: no URL with a host in the page or its script.
     for (const f of ["index.html", "ask-demo.js"]) expect(readFileSync(join(out, f), "utf8"), f).not.toMatch(/(?:src|href)=["']?(?:https?:)?\/\//);
+  });
+
+  it("gives every path the content security policy in _headers, and the static server serves it so (#1164)", async () => {
+    const headers = readFileSync(join(out, "_headers"), "utf8");
+    expect(headers.split("\n")[0]).toBe("/*");
+    expect(headers).toContain(`Content-Security-Policy: ${ASK_DEMO_CSP}`);
+    const csp = cspDirectives(ASK_DEMO_CSP);
+    expect(csp.get("default-src")).toBe("'self'");
+    expect(csp.get("connect-src")).toBe("'self'");
+    expect(csp.get("script-src")).not.toMatch(/'unsafe-inline'|https?:|\*/);
+    expect(sameCsp("connect-src 'self';  default-src 'self'", "default-src 'self'; connect-src 'self'")).toBe(true);
+    expect(sameCsp("default-src 'self'", "default-src 'self'; connect-src 'self'")).toBe(false);
+    expect(sameCsp(null, ASK_DEMO_CSP)).toBe(false);
+
+    const served = await serveBundle(out, "static");
+    try {
+      const verdicts = await checkFiles(served.base, out);
+      expect(verdicts.filter((v) => !v.ok).map(verdictText)).toEqual([]);
+      expect(verdicts.map(verdictText).join("\n")).toMatch(/GET narration\.json 200[\s\S]*GET lbug_wasm_worker\.js 200[\s\S]*GET wrangler\.jsonc 404/);
+    } finally {
+      served.stop();
+    }
+  });
+
+  it("is linked at the Worker's address from the kiosk and the docs site (#1164)", () => {
+    expect(ASK_DEMO).toBe(`https://${WORKER_NAME}.intentius.workers.dev/`);
+    expect(WHAT_ASK_DEMO.url).toBe(ASK_DEMO);
+    expect(`${WHAT_ASK_DEMO.text}${WHAT_ASK_DEMO.note}`).not.toMatch(/\blive\b/i);
+  });
+
+  it("names a request that leaves the bundle's origin (#1164)", () => {
+    const o = "http://127.0.0.1:4600";
+    expect(outsideRequests([`${o}/`, `${o}/lbug_wasm_worker.js`, "blob:http://127.0.0.1:4600/1-2", "data:image/png;base64,AA", "https://fonts.example/x.woff2", "http://127.0.0.1:4601/"], o)).toEqual([
+      "https://fonts.example/x.woff2",
+      "http://127.0.0.1:4601/",
+    ]);
   });
 
   it("is refused when the estate is missing, or is not the one the narration lights", async () => {

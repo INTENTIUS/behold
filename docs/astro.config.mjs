@@ -101,6 +101,7 @@ export default defineConfig({
 						{ label: 'Outside the cluster in Argo CD', slug: 'using/argocd-extension' },
 						{ label: 'Draw the graph in Grafana', slug: 'using/grafana' },
 						{ label: 'The three-cloud demo', slug: 'using/three-cloud' },
+						{ label: 'The ask demo', slug: 'using/ask-demo' },
 						{ label: 'Driving it from an agent', slug: 'using/agents' },
 					],
 				},

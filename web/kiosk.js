@@ -1610,6 +1610,8 @@ export function introLine({ chant = false, tg = false, vendor = false } = {}) {
 }
 const introFor = (s) => introLine({ chant: !!(s.chantLoop || s.source === "chant-demo"), tg: !!s.tgRepo, vendor: !!vendorOf(s.vendor) });
 export const WHAT_DOCS = { text: "behold's documentation", url: "https://intentius.io/behold/" };
+/** behold#1164: the ask demo, a recording of an agent asking an estate in Cypher, linked under the docs. */
+export const WHAT_ASK_DEMO = { text: "The ask demo", note: ", a recording of an agent asking an estate questions in Cypher", url: "https://behold-ask-demo.intentius.workers.dev/" };
 
 /** behold#571: a fade at a box's edge where its text goes on past it. */
 function fade(b) {
@@ -2984,7 +2986,13 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     docs.rel = "noopener";
     const more = el("p", "k-what-more");
     more.append(docs);
-    tools.pop.replaceChildren(el("p", null, words), more);
+    const ask = el("a", null, WHAT_ASK_DEMO.text);
+    ask.href = WHAT_ASK_DEMO.url;
+    ask.target = "_blank";
+    ask.rel = "noopener";
+    const askLine = el("p", "k-what-more");
+    askLine.append(ask, WHAT_ASK_DEMO.note);
+    tools.pop.replaceChildren(el("p", null, words), more, askLine);
   };
   if (tools && tools.what && tools.pop) {
     const setWhat = (open) => {

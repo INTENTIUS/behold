@@ -11,7 +11,7 @@ import LinkRows from './LinkRows.astro';
 import Picker from './Picker.astro';
 import ProductHome from './ProductHome.astro';
 import { setupPrompt } from '../prompts';
-import { LIVE, LIVE_TOOLS } from '../data/live.mjs';
+import { ASK_DEMO, LIVE, LIVE_TOOLS } from '../data/live.mjs';
 import { base, docsHref } from '../site';
 
 interface Props {
@@ -46,6 +46,8 @@ const pillars = [
 				<ul class="tools">
 					{LIVE_TOOLS.map((t) => <li><a href={t.href}>{t.label}</a></li>)}
 				</ul>
+				<p class="tools-h">Recorded</p>
+				<p><a href={ASK_DEMO}>The ask demo</a>: a recording of an agent asking an estate questions that behold answers in Cypher. Your own query runs in the browser.</p>
 			</section>
 			<section class="bh-prompt-wrap" aria-label="Hand it to an agent">
 				<AgentPrompt text={setupPrompt} label="Start by handing this to an agent" note="Paste it into Claude Code, or any coding agent with a shell." />
