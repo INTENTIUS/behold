@@ -892,6 +892,10 @@ describe.runIf(peer.ok)("the estate pane's zoom and the answer, on the recording
       page.on("pageerror", (e: Error) => errors.push(e.message));
       await page.goto(`${url}?pace=2&loop=${spread}`, { waitUntil: "domcontentloaded" });
       await waitFor(page, `the question ${q.id}`, (s) => s.turn === q.id);
+      // behold#1203: this answer opens in the focused view; the zoom below is the whole estate's, so switch to it.
+      await page.waitForFunction(() => document.documentElement.dataset.view === "focus", null, { timeout: 10_000 });
+      await page.click("#ad-view");
+      expect(await page.evaluate(() => document.documentElement.dataset.view)).toBe("estate");
       // Every lit card is in view, a record's card and the GCP cards alike, and the view is no larger than the graph.
       const at = await viewBoxOf(page);
       expect(at.width).toBeLessThan(full.width);
@@ -1108,6 +1112,113 @@ describe.runIf(peer.ok)("the answer on a phone (#1205)", () => {
         expect(after.drawWidth).toBeLessThanOrEqual(390);
         await context.close();
       }
+    } finally {
+      await browser.close();
+    }
+    expect(errors).toEqual([]);
+  });
+});
+
+describe.runIf(peer.ok)("the focused view of a spread answer (#1203)", () => {
+  it("shows the answer's cards on their own and readable, switches to the whole estate and back, and selects in both views", { timeout: 180_000 }, async () => {
+    const launched = await browserOrNull();
+    if (!launched) {
+      console.warn("ask-demo-page: no browser launches here, so the focused view was not checked");
+      return;
+    }
+    const rec = JSON.parse(readFileSync(RECORDING, "utf8")) as Narration;
+    const graph = JSON.parse(readFileSync(join(RECORDED_ESTATE, "graph.json"), "utf8")) as { svg: string };
+    const qs = questionsOf(rec) as Narration["turns"];
+    const spread = qs.findIndex((t) => t.id === "dns-cross-cloud");
+    const near = qs.findIndex((t) => t.id === "forwarding-rule-dependents");
+    expect(spread).toBeGreaterThanOrEqual(0);
+    expect(near).toBeGreaterThanOrEqual(0);
+    const q = qs[spread]!;
+    // The edges the estate graph draws between two of the answer's cards: the only ones the focused view may show.
+    const between = new Set([...graph.svg.matchAll(/data-edge-from="([^"]+)" data-edge-to="([^"]+)"/g)].filter((m) => q.light.includes(m[1]!) && q.light.includes(m[2]!)).map((m) => `${m[1]} -> ${m[2]}`));
+    expect(between.size).toBeGreaterThan(0);
+    const url = await serveDir(recordedOut);
+    const browser = launched.browser as unknown as { newContext(o?: object): Promise<any>; close(): Promise<void> };
+    const errors: string[] = [];
+    const look = `(() => {
+      const host = document.getElementById("ad-estate-graph").getBoundingClientRect();
+      const lit = (document.documentElement.dataset.lit || "").split("\\n").filter(Boolean);
+      const cards = [...document.querySelectorAll("#ad-estate [data-node-id]")].filter((g) => g.querySelector("rect")).map((g) => {
+        const r = g.querySelector("rect").getBoundingClientRect();
+        return { id: g.getAttribute("data-node-id"), shown: getComputedStyle(g.querySelector("rect")).visibility === "visible", top: r.top, bottom: r.bottom, left: r.left, right: r.right, height: r.height };
+      });
+      const edges = [...document.querySelectorAll("#ad-estate g[data-edge-from]")].filter((e) => e.querySelector("path") && getComputedStyle(e.querySelector("path")).visibility === "visible").map((e) => e.getAttribute("data-edge-from") + " -> " + e.getAttribute("data-edge-to"));
+      const btn = document.getElementById("ad-view");
+      return { view: document.documentElement.dataset.view || "", lit, cards, edges, host: { top: host.top, bottom: host.bottom, left: host.left, right: host.right }, button: { hidden: btn.hidden, text: btn.textContent, pressed: btn.getAttribute("aria-pressed") }, caption: document.getElementById("ad-estate-cap").textContent };
+    })()`;
+    type Look = { view: string; lit: string[]; cards: Array<{ id: string; shown: boolean; top: number; bottom: number; left: number; right: number; height: number }>; edges: string[]; host: { top: number; bottom: number; left: number; right: number }; button: { hidden: boolean; text: string; pressed: string }; caption: string };
+    const inPane = (c: Look["cards"][number], h: Look["host"]) => c.top >= h.top - 1 && c.bottom <= h.bottom + 1 && c.left >= h.left - 1 && c.right <= h.right + 1;
+    const settle = (page: Page) => page.waitForTimeout(900);
+    try {
+      for (const [name, viewport] of [["desktop", { width: 1440, height: 900 }], ["phone", { width: 390, height: 844 }]] as const)
+        for (const reducedMotion of ["no-preference", "reduce"] as const) {
+          const tag = `${name}, ${reducedMotion}`;
+          const context = await browser.newContext({ reducedMotion, viewport, ...(name === "phone" ? { isMobile: true, hasTouch: true } : {}) });
+          const page = await context.newPage();
+          page.on("pageerror", (e: Error) => errors.push(e.message));
+          await page.goto(`${url}?pace=4&loop=${spread}`, { waitUntil: "domcontentloaded" });
+          await waitFor(page, `the question ${q.id}`, (s) => s.turn === q.id && s.lit.length > 0);
+          await page.waitForFunction(() => document.documentElement.dataset.view === "focus", null, { timeout: 10_000 });
+          await settle(page);
+          // The answer's cards on their own: each lit card shows, in the pane, at a readable size; no other card shows.
+          const focused = (await page.evaluate(look)) as Look;
+          expect(focused.lit, tag).toEqual(q.light);
+          for (const c of focused.cards) {
+            const isLit = q.light.includes(c.id);
+            expect(c.shown, `${tag}: ${c.id}`).toBe(isLit);
+            if (!isLit) continue;
+            expect(inPane(c, focused.host), `${tag}: ${c.id} in the pane`).toBe(true);
+            expect(c.height, `${tag}: ${c.id} on screen`).toBeGreaterThanOrEqual(40);
+          }
+          // Only the estate graph's own edges between them, every one of them.
+          expect(new Set(focused.edges), tag).toEqual(between);
+          expect(focused.button, tag).toEqual({ hidden: false, text: "Whole estate", pressed: "true" });
+          // A desktop says what the view is; a phone has no room for the caption, and the switch says it.
+          if (name === "desktop") expect(focused.caption, tag).toMatch(/on their own/);
+          else expect(focused.caption, tag).toBe("");
+          // The whole estate, at a click: every card shows again where the estate graph drew it.
+          await page.click("#ad-view");
+          await settle(page);
+          const whole = (await page.evaluate(look)) as Look;
+          expect(whole.view, tag).toBe("estate");
+          expect(whole.cards.every((c) => c.shown), tag).toBe(true);
+          expect(whole.button, tag).toEqual({ hidden: false, text: "Answer only", pressed: "false" });
+          expect(whole.lit, tag).toEqual(q.light);
+          // Selecting a row works in the whole estate: both its cards light.
+          await page.click("#g-rows tbody tr[data-row='0']");
+          const row = q.rows[0]!;
+          const picked = (await page.evaluate(look)) as Look;
+          expect(picked.view, tag).toBe("estate");
+          expect(picked.lit, tag).toContain("dns/RecordSet ×4");
+          await page.keyboard.press("Escape");
+          // And back to the answer's cards, where a row selects too, both its cards in the pane.
+          await page.click("#ad-view");
+          await settle(page);
+          expect(((await page.evaluate(look)) as Look).view, tag).toBe("focus");
+          await page.click("#g-rows tbody tr[data-row='0']");
+          await settle(page);
+          const sel = (await page.evaluate(look)) as Look;
+          expect(sel.view, tag).toBe("focus");
+          expect(sel.lit.length, tag).toBe(2);
+          for (const id of sel.lit) expect(inPane(sel.cards.find((c) => c.id === id)!, sel.host), `${tag}: ${id} selected in the pane`).toBe(true);
+          expect(sel.lit, tag).toContain("dns/RecordSet ×4");
+          expect(row.key).toBe("dns/gcpOrigin");
+          // Escape goes back to the answer's light, still focused.
+          await page.keyboard.press("Escape");
+          const back = (await page.evaluate(look)) as Look;
+          expect([back.view, back.lit], tag).toEqual(["focus", q.light]);
+          // An answer whose cards sit together keeps the whole estate, with no switch.
+          await page.goto(`${url}?pace=4&loop=${near}`, { waitUntil: "domcontentloaded" });
+          await waitFor(page, `the question ${qs[near]!.id}`, (s) => s.turn === qs[near]!.id && s.lit.length > 0);
+          const together = (await page.evaluate(look)) as Look;
+          expect([together.view, together.button.hidden], tag).toEqual(["estate", true]);
+          await context.close();
+        }
     } finally {
       await browser.close();
     }
