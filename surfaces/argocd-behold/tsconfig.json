@@ -8,7 +8,7 @@
     "noEmit": true,
     "skipLibCheck": true,
     "allowJs": false,
-    "types": []
+    "types": ["node"]
   },
   "include": ["src/**/*", "../headlamp-behold/src/model.ts"]
 }
