@@ -4,6 +4,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { BEAT_GAP_MS, playback } from "../../web/kiosk-ask.js";
 import {
+  DEMO_DOCS,
+  DOCS,
+  LINKS,
   LOOP_MS,
   MAX_ZOOM,
   MIN_DWELL_MS,
@@ -166,11 +169,37 @@ describe("the page's words", () => {
   it("say the answers are a recording from a real run on emulators, with its date, and give the command that records it", () => {
     const w = recordedWords(RECORDING);
     expect(w.line).toBe("Recorded 18 November 2026 from a real run on emulators. Every answer is behold's, replayed as it came back.");
+    expect(w.line).toBe(`${w.date} ${w.replay}`);
     expect(w.command).toBe("just ask-demo-record");
     expect(w.versions).toContain("behold ");
     expect(`${w.line} ${RECORDING.note}`).not.toMatch(/\blive\b/i);
     expect(recordedDate("2026-01-02T23:59:59Z")).toBe("2 January 2026");
     expect(recordedDate("nope")).toBe("");
+  });
+});
+
+describe("the header (#1188)", () => {
+  const page = readFileSync(join(HERE, "index.html"), "utf8");
+  const head = page.slice(page.indexOf('<header id="ad-head">'), page.indexOf("</header>"));
+  it("says what behold is and what the loop shows, who asks whom, and never that it is live", () => {
+    const text = head.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+    expect(text).toContain("A coding agent asks behold about an estate");
+    expect(text).toContain("behold reads infrastructure code, cloud accounts and clusters into one graph.");
+    expect(text).toMatch(/the agent asks behold, which answers in Cypher/);
+    expect(text).not.toMatch(/\blive\b/i);
+  });
+  it("links to behold's docs, this demo's page and running the loop on your own estate, and gives no repository recipe", () => {
+    expect(DEMO_DOCS.startsWith(DOCS)).toBe(true);
+    for (const l of LINKS) expect(head).toContain(`<a id="${l.id}" href="${l.href}">${l.text}</a>`);
+    expect(head).not.toContain("just ask-demo");
+    // The recipe moved to About this recording, which links the docs page's section on it.
+    const about = page.slice(page.indexOf("<summary>About this recording</summary>"));
+    expect(about).toContain('<code id="ad-command">just ask-demo-record</code>');
+  });
+  it("links docs sections that exist", () => {
+    const mdx = readFileSync(join(HERE, "..", "..", "docs", "src", "content", "docs", "using", "ask-demo.mdx"), "utf8");
+    const slugs = [...mdx.matchAll(/^## (.+)$/gm)].map((m) => m[1].toLowerCase().replace(/[^a-z0-9 -]/g, "").replace(/ /g, "-"));
+    for (const [, slug] of page.matchAll(/https:\/\/intentius\.io\/behold\/using\/ask-demo\/#([a-z0-9-]+)/g)) expect(slugs).toContain(slug);
   });
 });
 

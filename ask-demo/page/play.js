@@ -150,16 +150,29 @@ export function recordedDate(iso) {
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }
 
-/** The words the page says about where the answers come from: never that they are live. */
+/** The words the page says about where the answers come from: never that they are live. `line` is both sentences; the phone shows `date` alone. */
 export function recordedWords(n) {
+  const date = `Recorded ${recordedDate(n.recordedAt)} from a real run on emulators.`;
+  const replay = "Every answer is behold's, replayed as it came back.";
   return {
-    line: `Recorded ${recordedDate(n.recordedAt)} from a real run on emulators. Every answer is behold's, replayed as it came back.`,
+    date,
+    replay,
+    line: `${date} ${replay}`,
     command: typeof n.recordCommand === "string" && n.recordCommand ? n.recordCommand : RECORD_COMMAND,
     versions: Object.entries(n.versions || {})
       .map(([k, v]) => `${k} ${v}`)
       .join(", "),
   };
 }
+
+/** behold#1188: where the header's links go, on behold's docs site. */
+export const DOCS = "https://intentius.io/behold/";
+export const DEMO_DOCS = `${DOCS}using/ask-demo/`;
+export const LINKS = [
+  { id: "ad-link-docs", href: DOCS, text: "behold's docs" },
+  { id: "ad-link-demo", href: DEMO_DOCS, text: "About this demo" },
+  { id: "ad-link-yours", href: `${DEMO_DOCS}#the-same-loop-on-your-estate`, text: "Run it on your estate" },
+];
 
 /** The visitor's parameters box as an object: empty is none; anything else must be a JSON object. */
 export function parseParams(raw) {
