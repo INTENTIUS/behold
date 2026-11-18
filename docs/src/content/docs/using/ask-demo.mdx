@@ -1,0 +1,89 @@
+---
+title: The ask demo
+description: A recording of a coding agent loading an estate into behold and asking it questions, answered in Cypher. Your own query runs in the browser over the same rows.
+---
+
+import { ASK_DEMO } from '../../../data/live.mjs';
+
+The ask demo is a page at <a href={ASK_DEMO}>behold-ask-demo.intentius.workers.dev</a>. A person asks their coding agent to load their estate into behold, then asks one question about it in plain words. The agent asks behold with a Cypher query over the estate's graph, and the page shows the whole exchange: the prompt and the agent's reply in the prompt pane at the bottom, the query and the rows it returned in the graph pane on the right, and the answer's resources lit on the estate graph. One loop takes about a minute, and each loop asks the next question.
+
+## What is recorded
+
+The answers on the page are a recording. They come from one run of behold on emulators, and the page's header gives the date of that run and the versions of behold, chant, choudoufu and plunge it used. The estate was:
+
+- `example-three-cloud`, a chant workspace with members on chant, choudoufu and plunge, applied to the floci, floci-az and floci-gcp emulators (see [the three-cloud demo](/behold/using/three-cloud/));
+- the emulated AWS account, indexed with `behold index aws`, holding a bucket and a role that nothing in the workspace declares;
+- a kind cluster indexed with `behold index kubernetes`, whose ServiceAccounts name roles in that account.
+
+Each question is one call to the `ask` tool of `behold mcp`, made against `behold serve` of that estate, and the page plays the rows behold answered. The prompts and the agent's sentences were written for the demo. Every number and every resource in a reply is from the recorded answer. While the page plays, nothing reads a cloud, a cluster or a behold server.
+
+## Your own query
+
+After a loop has played, the Cypher box is yours: edit the query, or write a new one, and press Ask. It runs in your browser, in LadybugDB's WebAssembly build, over the rows the recording loaded. The rules are the ones `behold serve` applies, so a query that writes (`CREATE`, `MERGE`, `SET`, `DELETE` and the like) is refused. The database engine is about 23 MiB and loads after the page has drawn; the box says when it is ready.
+
+The tables are the graph pane's: `Resource` (keyed `<member>/<id>`, with `kind`, `source`, `scopeKey`, `name`, `attrs`, `facts` and more), `CloudId`, and the `REF` and `KNOWN_AS` edges between them. For example:
+
+```cypher
+MATCH (a:Resource)-[:KNOWN_AS]->(c:CloudId)<-[:KNOWN_AS]-(b:Resource)
+WHERE a.scopeKey <> b.scopeKey
+RETURN a.key, b.key, c.value
+```
+
+## The same loop on your estate
+
+Serve your project or workspace, with the optional `@ladybugdb/core` peer installed beside behold so the graph pane can answer Cypher:
+
+```sh
+npm install @intentius/behold @ladybugdb/core
+npx behold serve ./estate --port 4600
+```
+
+To bring a cloud account or a cluster into the same graph, index it first; `behold serve` loads every index version it finds:
+
+```sh
+npx behold index aws --account <account-id> --regions us-east-1
+npx behold index kubernetes --context <kube-context>
+```
+
+Then give your agent `behold mcp` for the same directory. It finds the running serve of that directory (`--url` names one directly):
+
+```sh
+claude mcp add behold -- npx behold mcp ./estate
+```
+
+Ask the agent your question. It answers through the `ask` tool with a `cypher` argument, and `params` for the query's parameters as a JSON string. One of the recorded calls, for "If the GCP forwarding rule went away, what would break?", was:
+
+```json
+{
+  "cypher": "MATCH (o:Resource)-[:REF*1..6]->(r:Resource {key: $key}) RETURN DISTINCT o.key AS key, o.kind AS kind, o.scopeKey AS scope",
+  "params": "{\"key\": \"gcp/webRule\"}"
+}
+```
+
+The answer carries the rows, the keys of the resources they name, and when each source was read. The graph pane at `/graph` on the serve runs the same query, so you can open the answer there. [Driving it from an agent](/behold/using/agents/) lists the other tools.
+
+## Re-recording it
+
+From a checkout of behold:
+
+```sh
+just ask-demo-record
+```
+
+It boots the estate above on emulators, asks each question through `behold mcp`, and writes `ask-demo/narration.json` and the estate it answered from to `ask-demo/estate/`. It prints one verdict line per question. A question that errors or answers nothing is left out, and the run fails when fewer than three are left. It needs Docker, kind, kubectl, the aws CLI, choudoufu v0.22.0 or newer (`CHOUDOUFU_BIN` or on `PATH`) and plunge (`PLUNGE_BIN` or on `PATH`). It runs under `e2e/lib/safe-env.sh`, which clears every real cloud credential first, and it removes the containers and the cluster it made when it ends.
+
+## Redeploying it
+
+The page is a Cloudflare Worker that serves static files. One command builds the bundle into `dist-ask-demo/` and deploys it, after `npx wrangler login` once:
+
+```sh
+just ask-demo-deploy
+```
+
+`just ask-demo-check` checks the bundle before it goes out. It serves `dist-ask-demo/` with `wrangler dev`, fetches the page, `narration.json` and the WebAssembly worker, then plays a loop in headless Chrome and runs a visitor's query, printing a verdict line for each check. It fails on a missing file, a request that leaves the bundle's origin, or a content security policy violation. To check the deployed Worker:
+
+```sh
+just ask-demo-check --url https://behold-ask-demo.intentius.workers.dev
+```
+
+Every file is served with a content security policy that allows only the bundle's own origin. Its `script-src` allows `'unsafe-eval'` as well as `'wasm-unsafe-eval'`, because the database engine's WebAssembly bindings build their functions at load time; without it the engine does not start.

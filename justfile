@@ -205,9 +205,25 @@ ask-demo-record *args:
 # folder given): ask-demo/narration.json played over the estate the recorder
 # kept in ask-demo/estate/, LadybugDB's WebAssembly build for a visitor's
 # Cypher, and an assets-only Worker config. Deploy with
-# `cd dist-ask-demo && npx wrangler deploy`.
+# `just ask-demo-deploy`.
 ask-demo-bundle out="dist-ask-demo":
     npx tsx scripts/ask-demo/bundle.ts --out {{out}}
+
+# behold#1164: check the ask demo bundle as the Worker serves it. Serves
+# dist-ask-demo/ with `wrangler dev` (or `--serve static`), GETs the page,
+# narration.json and the WebAssembly worker, then plays a loop in headless
+# Chrome and asks a visitor's query. Fails on a missing file, a request that
+# leaves the bundle, or a content security policy violation. After a deploy:
+#   just ask-demo-check --url https://behold-ask-demo.intentius.workers.dev
+ask-demo-check *args:
+    npx tsx scripts/ask-demo/check.ts {{args}}
+
+# behold#1164: build the ask demo bundle and deploy it as the
+# behold-ask-demo Worker (https://behold-ask-demo.intentius.workers.dev).
+# A person runs this, logged in to Cloudflare with `npx wrangler login`.
+ask-demo-deploy:
+    npx tsx scripts/ask-demo/bundle.ts --out dist-ask-demo
+    cd dist-ask-demo && npx --yes wrangler@4.156.2 deploy
 
 # behold#490: terragucci's example painted from example-terragucci-reports,
 # through the real server and the real Terraform read. Needs TERRAGUCCI (a

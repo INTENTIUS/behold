@@ -23,6 +23,9 @@
  *   graph.html, graph-static.js, graph-query.js, index-diff.js
  *                         the full /graph pane over the same rows
  *   LICENSE, THIRD_PARTY.md, licenses/, wrangler.jsonc, .assetsignore
+ *   _headers              the content security policy the Worker serves every
+ *                         file with (behold#1164): the bundle's own origin only,
+ *                         plus WebAssembly and the engine's blob: worker
  *
  * Refused, naming what is wrong, when the estate is missing or is not the
  * one the narration lights.
@@ -42,9 +45,40 @@ const PAGE = join(ROOT, "ask-demo", "page");
 
 export const DEFAULT_OUT = "dist-ask-demo";
 export const WORKER_NAME = "behold-ask-demo";
+/** The wrangler the check serves the bundle with and the deploy recipe runs, pinned. */
+export const WRANGLER_VERSION = "4.156.2";
 export const ESTATE_FILE = "estate.json";
 /** The /graph pane's own files, from web/, beside the page. */
 export const GRAPH_PANE_FILES = ["graph-static.js", "graph-query.js", "index-diff.js"] as const;
+
+/**
+ * behold#1164: the policy every file is served with. Nothing loads from
+ * outside the bundle. LadybugDB starts its worker from a blob: URL that
+ * importScripts lbug_wasm_worker.js, and the worker inherits this policy. It
+ * compiles WebAssembly ('wasm-unsafe-eval'), and its embind glue builds each
+ * C++ binding's invoker with `new Function`, so the worker needs
+ * 'unsafe-eval' too (without it the engine does not load; `just
+ * ask-demo-check` shows it). Every script is a file of the bundle: no inline
+ * script, no other origin. Inline styles stay: the page and the drawn SVG
+ * carry them.
+ */
+export const ASK_DEMO_CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'",
+  "worker-src 'self' blob:",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-ancestors 'none'",
+].join("; ");
+
+/** Cloudflare's `_headers` file: every path gets the policy. Wrangler reads it and does not serve it. */
+export function headersFile(): string {
+  return `/*\n  Content-Security-Policy: ${ASK_DEMO_CSP}\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: no-referrer\n`;
+}
 
 export class BundleRefusal extends Error {}
 
@@ -152,6 +186,7 @@ export async function buildAskDemoBundle(o: BundleOptions): Promise<BundleResult
   }
   writeFileSync(join(out, "wrangler.jsonc"), `${JSON.stringify({ $schema: "node_modules/wrangler/config-schema.json", name: WORKER_NAME, compatibility_date: "2025-06-01", assets: { directory: "." } }, null, 2)}\n`);
   writeFileSync(join(out, ".assetsignore"), ".wrangler\n.assetsignore\nwrangler.jsonc\n");
+  writeFileSync(join(out, "_headers"), headersFile());
 
   const files = filesUnder(out).map((path) => ({ path, bytes: statSync(join(out, path)).size }));
   for (const f of files) {
@@ -178,8 +213,8 @@ async function main(argv: string[]): Promise<number> {
   process.stdout.write(
     `ask-demo bundle → ${out}\n  ${r.files.length} files, ${mib(r.files.reduce((s, f) => s + f.bytes, 0))}; largest ${largest.path} ${mib(largest.bytes)} (a static asset may be 25 MiB)\n` +
       `  ${r.turns} turns from ${relative(process.cwd(), narration) || narration}\n` +
-      `  View:   npx serve ${relative(process.cwd(), out) || out}\n` +
-      `  Deploy: cd ${relative(process.cwd(), out) || out} && npx wrangler deploy\n`,
+      `  Check:  just ask-demo-check ${relative(process.cwd(), out) || out}\n` +
+      `  Deploy: cd ${relative(process.cwd(), out) || out} && npx wrangler@${WRANGLER_VERSION} deploy (or just ask-demo-deploy)\n`,
   );
   return 0;
 }
