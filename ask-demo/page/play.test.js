@@ -14,10 +14,12 @@ import {
   REDUCED_READ_MS,
   beatOf,
   callLine,
+  callTitle,
   cypherFill,
   keepInside,
   drawLight,
   knownResources,
+  loadRows,
   loopOf,
   loopTiming,
   narrationProblems,
@@ -26,7 +28,9 @@ import {
   parseParams,
   recordedAnswer,
   recordedDate,
+  recordedTime,
   recordedWords,
+  sourceTitle,
   sourceWords,
   zoomView,
 } from "./play.js";
@@ -123,16 +127,28 @@ describe("the agent's pane (#1183)", () => {
 describe("the Cypher box fill", () => {
   it("is a question's query and its parameters as JSON, and the call it made", () => {
     const q = FIXTURE.turns[1];
-    expect(cypherFill(q)).toEqual({ cypher: q.cypher, params: '{"key":"aws_s3_bucket.logs"}', call: "ask cypher=<the query below> params={\"key\":\"aws_s3_bucket.logs\"}" });
+    expect(cypherFill(q)).toEqual({ cypher: q.cypher, params: '{"key":"aws_s3_bucket.logs"}', call: "The agent asked behold this query through its ask tool, with the parameters below it." });
+    expect(cypherFill(FIXTURE.turns[2]).call).toBe("The agent asked behold this query through its ask tool.");
+    // The call as the agent made it stays on hover.
+    expect(callTitle(q)).toBe(`ask ${JSON.stringify(q.call.arguments)}`);
     expect(cypherFill(FIXTURE.turns[2]).params).toBe("");
   });
-  it("is empty for the load turn, whose call is the commands that loaded the estate", () => {
+  it("is empty for the load turn, which says what it loaded, with the commands on hover (#1191)", () => {
     const fill = cypherFill(FIXTURE.turns[0]);
-    expect(fill).toEqual({ cypher: "", params: "", call: "$ behold serve app --port 4674" });
+    expect(fill).toEqual({ cypher: "", params: "", call: "The agent loaded the estate into behold: 4 sources, each one a row below. No query has run yet." });
+    expect(callTitle(FIXTURE.turns[0])).toBe("$ behold serve app --port 4674");
+    expect(callTitle({})).toBe("");
+    const rows = loadRows(RECORDING.turns[0]);
+    expect(rows.columns).toEqual(["what", ...RECORDING.turns[0].columns]);
+    expect(rows.rows.map((r) => r.what)).toContain("the AWS account's index");
+    expect(rows.rows.every((r, i) => r.scopeKey === RECORDING.turns[0].rows[i].scopeKey)).toBe(true);
   });
   it("names a template call's resource and template", () => {
     const t = RECORDING.turns.find((x) => x.call.arguments && x.call.arguments.template);
-    expect(callLine(t)).toBe(`ask resource=${t.call.arguments.resource} template=${t.call.arguments.template} (behold ran it as the query below)`);
+    expect(callLine(t)).toBe(`The agent asked behold, through its ask tool, to run the ${t.call.arguments.template} template on ${t.call.arguments.resource}. behold ran it as this query.`);
+    expect(callLine({ call: { tool: "ask", arguments: { resource: "r", template: "t", inputs: '{"kind":"x"}' } } })).toBe('The agent asked behold, through its ask tool, to run the t template on r, with the inputs {"kind":"x"}. behold ran it as this query.');
+    // No wire format above a recorded query.
+    for (const turn of RECORDING.turns) expect(callLine(turn), turn.id).not.toMatch(/=|<the query|\$ /);
     expect(cypherFill(t).cypher).toBe(t.cypher);
   });
 });
@@ -166,14 +182,22 @@ describe("the recorded answer", () => {
     const roles = drawLight(recordedAnswer(sa).body, KNOWN);
     for (const r of sa.rows) for (const k of [r.key, r.roleKey]) expect(roles, k).toContain(k);
   });
-  it("says when each source was read, and that a declared source was not observed", () => {
+  it("names each source in words, says when it was read, and keeps the scope key for hover (#1191)", () => {
     expect(sourceWords(FIXTURE.turns[0].sources)).toEqual([
-      "chant/. (chant): declared, not observed; read 2026-11-18T12:00:00.000Z, 2 nodes, 1 edges",
-      "engine/choudoufu/web (choudoufu): observed 2026-10-26T12:00:00Z; read 2026-11-18T12:00:00.000Z, 6 nodes, 2 edges",
-      "engine/plunge/app/dev (plunge): observed 2026-10-26T12:00:00Z; read 2026-11-18T12:00:00.000Z, 4 nodes, 3 edges",
-      "cloud/aws/000000000000/9bd41033bb42 (behold-lister): observed 2026-10-26T12:00:00Z; read 2026-11-18T12:00:00.000Z, 1 nodes, 0 edges",
+      "The project: 2 resources and 1 edge as declared; loaded into behold 18 November 2026, 12:00 UTC",
+      "Choudoufu's graph of web: 6 resources and 2 edges as indexed 26 October 2026, 12:00 UTC; loaded into behold 18 November 2026, 12:00 UTC",
+      "Plunge's graph of app/dev: 4 resources and 3 edges as indexed 26 October 2026, 12:00 UTC; loaded into behold 18 November 2026, 12:00 UTC",
+      "The AWS account's index: 1 resource and 0 edges as indexed 26 October 2026, 12:00 UTC; loaded into behold 18 November 2026, 12:00 UTC",
     ]);
-    expect(sourceWords([{ scopeKey: "s", name: "n", readAt: "r", observedAt: null }])).toEqual(["s (n): declared, not observed; read r"]);
+    expect(sourceWords([{ scopeKey: "s", name: "n", readAt: "r", observedAt: null }])).toEqual(["S: its resources as declared; loaded into behold r"]);
+    expect(sourceTitle(FIXTURE.turns[0].sources[3])).toBe("cloud/aws/000000000000/9bd41033bb42 (behold-lister), loaded 2026-11-18T12:00:00.000Z, observed 2026-10-26T12:00:00Z");
+    expect(sourceTitle({ scopeKey: "chant/.", name: "chant", readAt: "r", observedAt: null })).toBe("chant/. (chant), loaded r, declared, not observed");
+    expect(recordedTime("2026-11-18T17:20:15.866Z")).toBe("18 November 2026, 17:20 UTC");
+    // The recording's lines and replies print no scope key or emulator account id.
+    for (const t of RECORDING.turns) {
+      for (const line of sourceWords(t.sources)) expect(line, t.id).not.toMatch(/000000000000|cloud\/|engine\/|chant\//);
+      expect(t.reply, t.id).not.toMatch(/000000000000|cloud\/aws|cloud\/kubernetes|engine\/|chant\//);
+    }
   });
 });
 

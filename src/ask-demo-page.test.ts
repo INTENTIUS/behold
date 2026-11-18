@@ -42,7 +42,7 @@ import { WHAT_ASK_DEMO } from "../web/kiosk.js";
 // @ts-expect-error the docs site's data module is plain ESM
 import { ASK_DEMO } from "../docs/src/data/live.mjs";
 // @ts-expect-error the page's module is plain browser ESM
-import { drawLight, knownResources, loopOf, questionsOf, recordedAnswer } from "../ask-demo/page/play.js";
+import { callLine, drawLight, knownResources, loopOf, questionsOf, recordedAnswer, sourceTitle, sourceWords } from "../ask-demo/page/play.js";
 
 const ROOT = join(import.meta.dirname, "..");
 const FIXTURES = join(ROOT, "src", "graph-db", "__fixtures__");
@@ -259,6 +259,10 @@ interface Seen {
   terminal: string;
   rows: string;
   sources: string;
+  sourceTitles: string[];
+  paneTitle: string;
+  call: string;
+  formShown: boolean;
   estate: string;
   pane: string;
   held: string;
@@ -283,6 +287,10 @@ const seenScript = `(() => {
     terminal: document.getElementById("k-ask").innerText,
     rows: document.getElementById("g-rows").innerText,
     sources: document.getElementById("g-sources").textContent,
+    sourceTitles: [...document.querySelectorAll("#g-sources span")].map((x) => x.title),
+    paneTitle: document.getElementById("ad-pane-title").textContent,
+    call: document.getElementById("g-call").textContent,
+    formShown: getComputedStyle(document.getElementById("g-cypher-form")).display !== "none",
     estate: d.estate || "",
     pane: d.pane || "", held: d.held || "",
     foldHeight: document.getElementById("ad-ask-fold").getBoundingClientRect().height,
@@ -325,6 +333,9 @@ async function playAll(page: Page, reduced: boolean) {
       expect(atLoad.lit.sort()).toEqual([...load.light].sort());
       expect(atLoad.cypher).toBe("");
       expect(atLoad.readOnly).toBe(true);
+      // behold#1191: the load turn's pane says what was loaded, in words, with no query box.
+      expect([atLoad.paneTitle, atLoad.call, atLoad.formShown]).toEqual(["What behold loaded", callLine(load), false]);
+      for (const line of sourceWords(load.sources)) expect(atLoad.sources).toContain(line);
     }
     const atQ = await waitFor(page, `loop ${i}'s question ${q.id}`, (s) => s.loop === String(i) && s.turn === q.id);
     expect(atQ.estate).toBe("loaded");
@@ -342,7 +353,10 @@ async function playAll(page: Page, reduced: boolean) {
     const drawn = drawLight(recordedAnswer(q).body, known);
     expect(atQ.answerLit).toEqual(drawn);
     expect(atQ.domAnswerLit.sort()).toEqual([...drawn].sort());
-    for (const s of q.sources) expect(atQ.sources).toContain(s.readAt);
+    // behold#1191: each source in words, its scope key and raw times on hover; the call in words.
+    for (const line of sourceWords(q.sources)) expect(atQ.sources).toContain(line);
+    expect(atQ.sourceTitles).toEqual(q.sources.map(sourceTitle));
+    expect([atQ.paneTitle, atQ.call, atQ.formShown]).toEqual(["Cypher", callLine(q), true]);
     for (const r of q.rows) for (const v of Object.values(r)) expect(atQ.rows).toContain(String(v));
     const after = await waitFor(page, `loop ${i} to finish`, (s) => s.loop === String(i) && s.phase === "after");
     for (const text of [load.prompt, load.reply, q.prompt, q.reply]) expect(after.terminal.replace(/\s+/g, " "), text).toContain(text.replace(/\s+/g, " "));
@@ -682,6 +696,12 @@ describe.runIf(peer.ok)("the estate pane's zoom and the answer, on the recording
       expect(new Set(drawing.labels)).toEqual(new Set(["reaches"]));
       expect(drawing.words.length).toBeGreaterThan(0);
       for (const r of q.rows) for (const k of [r.key, r.reaches]) expect(drawing.nodes).toContain(k);
+      // behold#1191: the reply and the source lines name no emulator account or scope key; the table keeps the raw keys.
+      const words = await waitFor(page, "the reply", (x) => x.terminal.includes(q.reply.slice(0, 40)));
+      expect(words.sources).not.toMatch(/000000000000|cloud\/aws|cloud\/kubernetes|engine\//);
+      expect(words.terminal).not.toMatch(/cloud\/aws\/000000000000/);
+      expect(words.call).not.toMatch(/cypher=|<the query/);
+      expect(words.sourceTitles.join("\n")).toContain("cloud/aws/000000000000/");
       // The rows table's first row shows without scrolling, at 1440x900 with the conversation open.
       const fold = await page.evaluate(() => {
         const pane = document.getElementById("ad-pane")!;

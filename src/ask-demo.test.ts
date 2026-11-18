@@ -100,7 +100,7 @@ describe("fillReply", () => {
       for (const m of q.reply.matchAll(/\{\{each:([^}]*(?:\}[^}][^}]*)*)\}\}/g)) for (const c of m[1]!.matchAll(/\{([A-Za-z]+)\}/g)) names.push(c[1]!);
       if ("cypher" in q.ask) for (const n of names) expect(q.ask.cypher, `${q.id} returns ${n}`).toMatch(new RegExp(`AS ${n}\\b`));
     }
-    expect(fillReply(LOAD.reply, { columns: ["scopeKey", "nodes"], rows: [{ scopeKey: "chant/dns", nodes: 3 }] })).toBe("Loaded 3 resources from 1 sources: chant/dns (3).");
+    expect(fillReply(LOAD.reply, { columns: ["scopeKey", "nodes"], rows: [{ scopeKey: "chant/dns", nodes: 3 }] })).toBe("Loaded 3 resources from 1 sources: the dns member (3).");
   });
 });
 
@@ -177,7 +177,7 @@ describe("the cards to light", () => {
       { scopeKey: "chant/dns", source: "chant", name: "chant", nodes: 3, edges: 2 },
       { scopeKey: "cloud/aws/1/d", source: "index", name: "chant-lister", nodes: 4, edges: 2 },
     ]);
-    expect(t.reply).toBe("Loaded 7 resources from 2 sources: chant/dns (3) and cloud/aws/1/d (4).");
+    expect(t.reply).toBe("Loaded 7 resources from 2 sources: the dns member (3) and the AWS account's index (4).");
     expect(t.light).toEqual(["dns/zone", "dns/RecordSet ×2", "gcp/webRule"]);
     expect(t.call).toEqual({ commands: ["behold serve three-cloud --port 4674"] });
     expect(() => loadTurn({ prompt: "p", commands: ["c"], reply: LOAD.reply, sources: [], cards: CARDS })).toThrow(/no source/);
@@ -241,6 +241,16 @@ describe("the reply frame and the refill (behold#1174)", () => {
     expect(doc.turns[1]!.reply).toBe("old");
   });
 
+  it("fills the load turn again too when given its template, each source in words (behold#1191)", () => {
+    const load = { ...doc, turns: [{ id: "load", kind: "load", columns: ["scopeKey", "nodes"], rows: [{ scopeKey: "cloud/kubernetes/kind-x/ab12", nodes: 4 }], reply: "old" }, doc.turns[1]!] };
+    const next = refillNarration(load, qs, { reply: "From {{each:{scopeKey|source} ({nodes})}}; {{first:scopeKey|source}}." });
+    expect(next.turns[0]!.reply).toBe("From the kind cluster's index (4); the kind cluster's index.");
+    expect(refillNarration(load, qs).turns[0]!.reply).toBe("old");
+    expect(() => refillNarration(load, qs, { reply: "{{list:gone}}" })).toThrow(/turn load: the reply cannot be filled.*gone/);
+    expect(fillReply("{{list:scopeKey|source}}", { columns: ["scopeKey"], rows: [{ scopeKey: "chant/aws" }, { scopeKey: "somewhere" }] })).toBe("the aws member and somewhere");
+    expect(() => fillReply("{{list:scopeKey|loud}}", { columns: ["scopeKey"], rows: [{ scopeKey: "chant/aws" }] })).toThrow(ReplyError);
+  });
+
   it("names the turn whose template no longer fills, or that has no question", () => {
     expect(() => refillNarration(doc, [{ ...qs[0]!, reply: "{{list:gone}}" }])).toThrow(/turn q: the reply cannot be filled.*gone/);
     expect(() => refillNarration(doc, [])).toThrow(/turn q has no question/);
@@ -249,7 +259,7 @@ describe("the reply frame and the refill (behold#1174)", () => {
   it("leaves the committed recording and fixture as the templates fill them", () => {
     for (const f of ["ask-demo/narration.json", "ask-demo/fixtures/narration.fixture.json"]) {
       const n = read(f) as Narration;
-      expect(refillNarration(n, QUESTIONS).turns.map((t) => t.reply), f).toEqual(n.turns.map((t) => t.reply));
+      expect(refillNarration(n, QUESTIONS, LOAD).turns.map((t) => t.reply), f).toEqual(n.turns.map((t) => t.reply));
     }
   });
 });

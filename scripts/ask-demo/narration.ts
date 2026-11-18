@@ -13,6 +13,7 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { lightKeys } from "../../web/key-light.js";
+import { sourceLabel } from "../../web/source-label.js";
 
 /** The format string every narration carries. */
 export const NARRATION_FORMAT = "behold-ask-demo-narration/1";
@@ -116,11 +117,24 @@ export function joinList(items: readonly string[]): string {
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
-function column(rows: ReadonlyArray<Record<string, unknown>>, columns: readonly string[], name: string, placeholder: string): string[] {
+/**
+ * A column as a placeholder names it: `col`, or `col|source` for a column of
+ * scope keys, printed as a person names the source (web/source-label.js,
+ * behold#1191).
+ */
+function columnSpec(spec: string): { name: string; show: (v: string) => string } {
+  const [name, filter] = spec.split("|");
+  if (filter === undefined) return { name: name!, show: (v) => v };
+  if (filter === "source") return { name: name!, show: (v) => (v ? sourceLabel(v) : v) };
+  throw new ReplyError(`${spec} names a filter this filler does not know (source)`);
+}
+
+function column(rows: ReadonlyArray<Record<string, unknown>>, columns: readonly string[], spec: string, placeholder: string): string[] {
+  const { name, show } = columnSpec(spec);
   if (!columns.includes(name)) throw new ReplyError(`${placeholder} names column ${name}, and the answer's columns are ${columns.join(", ") || "none"}`);
   const out: string[] = [];
   for (const r of rows) {
-    const v = cell(r[name]);
+    const v = show(cell(r[name]));
     if (v && !out.includes(v)) out.push(v);
   }
   return out;
@@ -135,6 +149,9 @@ function column(rows: ReadonlyArray<Record<string, unknown>>, columns: readonly 
  *   {{list:col}}         col's distinct non-empty values, joined "a, b and c"
  *   {{first:col}}        col in the first row
  *   {{each:… {col} …}}   the pattern once per row, joined "a, b and c"
+ *
+ * Where a placeholder names a column, `col|source` prints a scope key as a
+ * person names the source: "the aws member", "the AWS account's index".
  *
  * A placeholder that names a column the answer lacks, or that would print
  * nothing, throws {@link ReplyError}: a reply never says less than it claims.
@@ -160,13 +177,15 @@ export function fillReply(template: string, answer: { columns: readonly string[]
     if (op === "list" || op === "first") {
       const values = column(rows, columns, arg, whole);
       if (!values.length) throw new ReplyError(`${whole} has no value to print: ${arg} is empty in every row`);
-      return op === "list" ? joinList(values) : cell(rows[0]![arg]) || values[0]!;
+      const { name, show } = columnSpec(arg);
+      return op === "list" ? joinList(values) : show(cell(rows[0]![name])) || values[0]!;
     }
     if (op === "each") {
       const parts = rows.map((r) =>
-        arg.replace(/\{([^{}]+)\}/g, (_, name: string) => {
+        arg.replace(/\{([^{}]+)\}/g, (_, spec: string) => {
+          const { name, show } = columnSpec(spec);
           if (!columns.includes(name)) throw new ReplyError(`${whole} names column ${name}, and the answer's columns are ${columns.join(", ")}`);
-          const v = cell(r[name]);
+          const v = show(cell(r[name]));
           if (!v) throw new ReplyError(`${whole}: ${name} is empty in a row`);
           return v;
         }),
@@ -393,13 +412,23 @@ export function validateNarration(doc: unknown, schema: object): string[] {
 /**
  * Fill every question turn's reply again from the templates in `questions`,
  * matching turns by id and leaving everything else as it is (behold#1174).
- * The load turn is kept. Throws naming the turn whose template no longer fills.
+ * With `load` (behold#1191), the load turn's reply is filled again from its
+ * template too; without it the load turn is kept. Throws naming the turn
+ * whose template no longer fills.
  */
-export function refillNarration<N extends { turns: Array<{ id: string; kind: string; columns: string[]; rows: Array<Record<string, unknown>>; reply: string }> }>(doc: N, questions: readonly Question[]): N {
+export function refillNarration<N extends { turns: Array<{ id: string; kind: string; columns: string[]; rows: Array<Record<string, unknown>>; reply: string }> }>(doc: N, questions: readonly Question[], load?: { reply: string }): N {
   const byId = new Map(questions.map((q) => [q.id, q]));
   return {
     ...doc,
     turns: doc.turns.map((t) => {
+      if (t.kind === "load" && load) {
+        try {
+          return { ...t, reply: fillReply(load.reply, t) };
+        } catch (e) {
+          if (e instanceof ReplyError) throw new Error(`turn ${t.id}: the reply cannot be filled: ${e.message}`);
+          throw e;
+        }
+      }
       if (t.kind !== "question") return t;
       const q = byId.get(t.id);
       if (!q) throw new Error(`turn ${t.id} has no question in scripts/ask-demo/questions.ts`);
