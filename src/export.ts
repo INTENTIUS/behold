@@ -18,7 +18,7 @@ import { S3Error, S3Object } from "./s3-object.ts";
 import { fileURLToPath } from "node:url";
 import { beholdVersion, createApp, graphSessionOf, type ServerOptions } from "./server.ts";
 import { GRAPHDB_FILE, GRAPHDB_MODULE_FILE, LBUG_MODULE_FILE, LBUG_WORKER_FILE } from "./graph-db/graphdb-file.ts";
-import { GraphDbExportRefusal, WASM_LICENSE_FILE, WASM_PACKAGE, browserModule, checkAssetSize, findWasmCore, graphDbFile, staticGraphHtml, type WasmCore } from "./graph-db/export-graphdb.ts";
+import { GraphDbExportRefusal, WASM_LICENSE_FILE, WASM_PACKAGE, browserModule, checkAssetSize, findWasmCore, graphDbFile, staticGraphHtml, type GraphBundle, type WasmCore } from "./graph-db/export-graphdb.ts";
 import { documentOptions } from "./graph-document-context.ts";
 import { toDocument, type GraphSnapshot } from "./to-document.ts";
 import type { GraphDocument } from "./graph-document.ts";
@@ -600,7 +600,9 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
       mkdirSync(join(outDir, "licenses"), { recursive: true });
       copyFileSync(wasm.license, join(outDir, WASM_LICENSE_FILE));
     }
-    writeFileSync(join(outDir, "graph.html"), staticGraphHtml(readFileSync(join(webDir(), "graph.html"), "utf8")));
+    // behold#1180: its estate view is this folder's index.html, which answers only the queries --q captured.
+    const bundle: GraphBundle = { estate: { href: "./" }, back: { href: "./", label: "Back to the estate" }, searches: axes.queries ?? [], indexVersions: false };
+    writeFileSync(join(outDir, "graph.html"), staticGraphHtml(readFileSync(join(webDir(), "graph.html"), "utf8"), bundle));
     graphdbLine = `  Graph DB: ${join(outDir, GRAPHDB_FILE)} (${file.rows.resources.length} resources, ${file.rows.refs.length} edges; ${LBUG_WORKER_FILE} ${(wasm.workerBytes / 1024 / 1024).toFixed(1)} MiB, ${WASM_PACKAGE} ${wasm.version})\n`;
   }
   writeFileSync(join(outDir, "README.md"), BUNDLE_README);

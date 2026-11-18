@@ -35,7 +35,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { copyNotices } from "../../src/export.ts";
-import { WASM_LICENSE_FILE, browserModule, checkAssetSize, findWasmCore, staticGraphHtml } from "../../src/graph-db/export-graphdb.ts";
+import { WASM_LICENSE_FILE, browserModule, checkAssetSize, findWasmCore, staticGraphHtml, type GraphBundle } from "../../src/graph-db/export-graphdb.ts";
 import { GRAPHDB_FILE, GRAPHDB_MODULE_FILE, LBUG_MODULE_FILE, LBUG_WORKER_FILE, isGraphDbFile } from "../../src/graph-db/graphdb-file.ts";
 import { cardIndex, type IrNodeLike } from "../../web/key-light.js";
 import { validateNarration, type Narration } from "./narration.ts";
@@ -104,6 +104,23 @@ export function estateFile(graph: { ir?: { nodes?: IrNodeLike[] }; svg?: string 
 export function unlitCards(narration: Pick<Narration, "turns">, nodes: readonly IrNodeLike[]): string[] {
   const cards = new Set(cardIndex(nodes).values());
   return narration.turns.flatMap((t) => t.light.filter((id) => !cards.has(id)).map((id) => `${t.id}: ${id}`));
+}
+
+/**
+ * behold#1180: what the demo's graph.html is told about the bundle. It has no
+ * estate view (index.html is the demo page), so the header link goes back to
+ * the demo and an answer has no estate link; the Cypher box starts with the
+ * first question's query and parameters.
+ */
+export function askDemoGraphBundle(narration: Pick<Narration, "turns">): GraphBundle {
+  const first = narration.turns.find((t) => t.kind === "question" && t.cypher);
+  return {
+    estate: null,
+    back: { href: "./", label: "Back to the demo" },
+    searches: [],
+    indexVersions: false,
+    ...(first?.cypher ? { cypher: { query: first.cypher, params: first.params ?? {} } } : {}),
+  };
 }
 
 export interface BundleOptions {
@@ -177,7 +194,7 @@ export async function buildAskDemoBundle(o: BundleOptions): Promise<BundleResult
   writeFileSync(join(out, GRAPHDB_MODULE_FILE), await browserModule(ROOT));
   copyFileSync(wasm.module, join(out, LBUG_MODULE_FILE));
   copyFileSync(wasm.worker, join(out, LBUG_WORKER_FILE));
-  writeFileSync(join(out, "graph.html"), staticGraphHtml(readFileSync(join(ROOT, "web", "graph.html"), "utf8")));
+  writeFileSync(join(out, "graph.html"), staticGraphHtml(readFileSync(join(ROOT, "web", "graph.html"), "utf8"), askDemoGraphBundle(narration)));
   for (const f of GRAPH_PANE_FILES) cpSync(join(ROOT, "web", f), join(out, f));
   copyNotices(out, ROOT);
   if (wasm.license) {

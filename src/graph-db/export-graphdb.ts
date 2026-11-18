@@ -8,7 +8,8 @@
  *                        single-threaded, no cross-origin isolation)
  *   lbug_wasm_worker.js  its worker, which holds the engine
  *   graph-static.js      the /graph page's glue (web/graph-static.js)
- *   graph.html           web/graph.html with its inline script swapped for graph-static.js
+ *   graph.html           web/graph.html with its inline script swapped for graph-static.js,
+ *                        and what the bundle holds (staticGraphHtml)
  *   licenses/ladybugdb-wasm-core.LICENSE
  *
  * wasm-core is pinned at the version the `@ladybugdb/core` dev dependency
@@ -93,10 +94,42 @@ export async function browserModule(root: string = packageRoot()): Promise<strin
   return readFileSync(built, "utf8");
 }
 
-/** web/graph.html as a bundle serves it: its inline module script replaced by graph-static.js, which a strict policy allows. */
-export function staticGraphHtml(html: string): string {
-  const swapped = html.replace(/<script type="module">[\s\S]*?<\/script>/, '<script type="module" src="./graph-static.js"></script>');
+/**
+ * behold#1180: what a bundle holds, so its /graph page offers only what works
+ * there. `estate` is the bundle's estate view (`./` in a plain export; none in
+ * the ask demo, whose index.html is the demo page); `back` is where the header
+ * link goes; `searches` are the queries `--q` captured, the only search
+ * templates the estate view answers; `indexVersions` is false when the bundle
+ * carries none for the diff; `cypher` starts the Cypher box.
+ */
+export interface GraphBundle {
+  estate: { href: string } | null;
+  back: { href: string; label: string };
+  searches: string[];
+  indexVersions: boolean;
+  cypher?: { query: string; params: Record<string, unknown> };
+}
+
+/** The id of the JSON block graph.html carries a {@link GraphBundle} in. */
+export const GRAPH_BUNDLE_ID = "g-bundle";
+
+/**
+ * web/graph.html as a bundle serves it: its inline module script replaced by
+ * graph-static.js, which a strict policy allows, after a JSON block (data, not
+ * run) saying what the bundle holds. The diff section is left out when the
+ * bundle has no index versions.
+ */
+export function staticGraphHtml(html: string, bundle: GraphBundle): string {
+  // "<" escaped so no value can close the block.
+  const data = JSON.stringify(bundle).replace(/</g, "\\u003c");
+  const block = `<script type="application/json" id="${GRAPH_BUNDLE_ID}">${data}</script>\n    <script type="module" src="./graph-static.js"></script>`;
+  let swapped = html.replace(/<script type="module">[\s\S]*?<\/script>/, () => block);
   if (swapped === html) throw new Error("web/graph.html has no inline module script to replace");
+  if (!bundle.indexVersions) {
+    const cut = swapped.replace(/\n *<div id="d-section">[\s\S]*?<\/div>/, "");
+    if (cut === swapped) throw new Error('web/graph.html has no <div id="d-section"> to leave out');
+    swapped = cut;
+  }
   return swapped;
 }
 
