@@ -13,6 +13,7 @@
     "@intentius/chant-lexicon-aws": "^0.124.104",
     "@intentius/chant-lexicon-gcp": "^0.124.102",
     "@intentius/chant-lexicon-pulumi": "^0.124.102",
-    "@intentius/chant-lexicon-terraform": "^0.124.102"
+    "@intentius/chant-lexicon-terraform": "^0.124.102",
+    "tsx": "^4.19.0"
   }
 }
