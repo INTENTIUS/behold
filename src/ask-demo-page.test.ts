@@ -813,6 +813,11 @@ describe.runIf(peer.ok)("the bundle's /graph page, in a headless browser (behold
       const rows = await page.evaluate(() => document.getElementById("g-rows")!.innerText);
       for (const r of first.rows) for (const v of Object.values(r)) expect(rows).toContain(String(v));
       expect(await page.evaluate(() => (document.getElementById("g-link") as HTMLAnchorElement).hidden)).toBe(true);
+      // behold#1204: the /graph page draws the answer with no label over another, each inside the drawing.
+      const words = await drawingLabels(page);
+      expect(words.words.length).toBeGreaterThan(0);
+      expect(words.overlaps).toEqual([]);
+      expect(words.outside).toEqual([]);
       expect(await page.evaluate(() => (globalThis as unknown as { __csp: string[] }).__csp)).toEqual([]);
       expect(errors).toEqual([]);
     } finally {
@@ -822,6 +827,24 @@ describe.runIf(peer.ok)("the bundle's /graph page, in a headless browser (behold
 });
 
 type Box = { x: number; y: number; width: number; height: number };
+
+/**
+ * behold#1204: the answer drawing's words as the browser lays them out: the pairs of labels whose
+ * boxes overlap (by more than a pixel), the labels that stick out of the drawing, and the text of
+ * each. Every label is a node's name, a column heading, a derived edge's attribute or the legend.
+ */
+async function drawingLabels(page: Page): Promise<{ overlaps: string[]; outside: string[]; words: string[] }> {
+  return page.evaluate(() => {
+    const svg = document.querySelector("#g-draw svg")!;
+    const frame = svg.getBoundingClientRect();
+    const texts = [...svg.querySelectorAll("text")].map((t) => ({ text: t.textContent ?? "", r: t.getBoundingClientRect() }));
+    const hit = (a: DOMRect, b: DOMRect) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
+    const overlaps: string[] = [];
+    for (let i = 0; i < texts.length; i++) for (let j = i + 1; j < texts.length; j++) if (hit(texts[i]!.r, texts[j]!.r)) overlaps.push(`${texts[i]!.text} / ${texts[j]!.text}`);
+    const outside = texts.filter(({ r }) => r.left < frame.left - 1 || r.right > frame.right + 1 || r.top < frame.top - 1 || r.bottom > frame.bottom + 1).map((t) => t.text);
+    return { overlaps, outside, words: texts.map((t) => t.text) };
+  });
+}
 
 /** Each card the estate graph draws, by id, to its box: the first rect in its group. */
 function cardBoxes(svg: string): Map<string, Box> {
@@ -885,12 +908,20 @@ describe.runIf(peer.ok)("the estate pane's zoom and the answer, on the recording
       expect(new Set(drawing.labels)).toEqual(new Set(["reaches"]));
       expect(drawing.words.length).toBeGreaterThan(0);
       for (const r of q.rows) for (const k of [r.key, r.reaches]) expect(drawing.nodes).toContain(k);
+      // behold#1204: "reaches" heads the nodes it reaches once, no label overlaps another or leaves the drawing,
+      // and the dotted edge between the two records carries its attribute and the legend says what it is.
+      const words = await drawingLabels(page);
+      expect(words.overlaps).toEqual([]);
+      expect(words.outside).toEqual([]);
+      expect(words.words.filter((w) => w === "reaches")).toHaveLength(1);
+      expect(words.words).toContain("ResourceRecords");
+      expect(words.words.some((w) => w.startsWith("dashed: derived from ResourceRecords"))).toBe(true);
       // behold#1191: the reply and the source lines name no emulator account or scope key; the table keeps the raw keys.
-      const words = await waitFor(page, "the reply", (x) => x.terminal.includes(q.reply.slice(0, 40)));
-      expect(words.sources).not.toMatch(/000000000000|cloud\/aws|cloud\/kubernetes|engine\//);
-      expect(words.terminal).not.toMatch(/cloud\/aws\/000000000000/);
-      expect(words.call).not.toMatch(/cypher=|<the query/);
-      expect(words.sourceTitles.join("\n")).toContain("cloud/aws/000000000000/");
+      const said = await waitFor(page, "the reply", (x) => x.terminal.includes(q.reply.slice(0, 40)));
+      expect(said.sources).not.toMatch(/000000000000|cloud\/aws|cloud\/kubernetes|engine\//);
+      expect(said.terminal).not.toMatch(/cloud\/aws\/000000000000/);
+      expect(said.call).not.toMatch(/cypher=|<the query/);
+      expect(said.sourceTitles.join("\n")).toContain("cloud/aws/000000000000/");
       // The rows table's first row shows without scrolling, at 1440x900 with the conversation open.
       const fold = await page.evaluate(() => {
         const pane = document.getElementById("ad-pane")!;
