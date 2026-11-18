@@ -1,6 +1,6 @@
 {
   "name": "@intentius/behold",
-  "version": "0.33.3",
+  "version": "0.34.0",
   "license": "Apache-2.0",
   "type": "module",
   "description": "Your infrastructure repo as a graph, from the files. Draws Terraform roots, no state needed.",
