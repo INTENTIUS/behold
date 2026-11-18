@@ -156,3 +156,34 @@ export function parseParams(raw) {
     return { ok: false, error: "Parameters are a JSON object." };
   }
 }
+
+// --- The visitor's zoom (behold#1175) ---------------------------------------
+
+/** How far in a visitor can zoom: the view's larger side no smaller than 1/MAX_ZOOM of the full graph's. */
+export const MAX_ZOOM = 8;
+
+/** `view` moved back inside `full` where it fits, and centred on `full` along a side where it is larger. */
+export function keepInside(view, full) {
+  const side = (s, size, lo, span) => (size >= span ? lo + (span - size) / 2 : Math.max(lo, Math.min(s, lo + span - size)));
+  return { x: side(view.x, view.width, full.x, full.width), y: side(view.y, view.height, full.y, full.height), width: view.width, height: view.height };
+}
+
+/**
+ * `view` zoomed by `factor` (above 1 zooms in) about the point `at`, in the
+ * graph's units, which stays where it is on screen. The zoom stops at the
+ * full graph on the way out and at MAX_ZOOM on the way in, and the view
+ * stays inside the graph.
+ */
+export function zoomView(view, full, factor, at = { x: view.x + view.width / 2, y: view.y + view.height / 2 }) {
+  const share = Math.max(view.width / full.width, view.height / full.height);
+  const next = Math.min(1, Math.max(1 / MAX_ZOOM, share / factor));
+  const k = next / share;
+  const width = view.width * k;
+  const height = view.height * k;
+  return keepInside({ x: at.x - (at.x - view.x) * k, y: at.y - (at.y - view.y) * k, width, height }, full);
+}
+
+/** `view` moved by `dx`, `dy` graph units, inside `full`. */
+export function panView(view, full, dx, dy) {
+  return keepInside({ ...view, x: view.x + dx, y: view.y + dy }, full);
+}

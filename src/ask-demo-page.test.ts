@@ -36,13 +36,13 @@ import { ASK_DEMO_CSP, BundleRefusal, WORKER_NAME, buildAskDemoBundle, estateFil
 import { checkFiles, cspDirectives, outsideRequests, sameCsp, serveBundle, verdictText } from "../scripts/ask-demo/check.ts";
 import { validateNarration, type Narration } from "../scripts/ask-demo/narration.ts";
 import { narrationSchema } from "../scripts/ask-demo/record.ts";
-import { cardIndex, lightKeys } from "../web/key-light.js";
+import { cardIndex, frameBox, lightKeys, viewShare } from "../web/key-light.js";
 // @ts-expect-error the kiosk is plain browser ESM
 import { WHAT_ASK_DEMO } from "../web/kiosk.js";
 // @ts-expect-error the docs site's data module is plain ESM
 import { ASK_DEMO } from "../docs/src/data/live.mjs";
 // @ts-expect-error the page's module is plain browser ESM
-import { drawLight, loopOf, recordedAnswer } from "../ask-demo/page/play.js";
+import { drawLight, loopOf, questionsOf, recordedAnswer } from "../ask-demo/page/play.js";
 
 const ROOT = join(import.meta.dirname, "..");
 const FIXTURES = join(ROOT, "src", "graph-db", "__fixtures__");
@@ -62,6 +62,9 @@ const chantIr: GraphIR = {
 const made: string[] = [];
 const servers: Server[] = [];
 const narration = JSON.parse(readFileSync(NARRATION, "utf8")) as Narration;
+// behold#1175: the recording itself, over the estate it was recorded from, for the zoom.
+const RECORDING = join(ROOT, "ask-demo", "narration.json");
+const RECORDED_ESTATE = join(ROOT, "ask-demo", "estate");
 
 function project(): string {
   const dir = mkdtempSync(join(tmpdir(), "behold-ask-demo-src-"));
@@ -104,6 +107,7 @@ let app: ReturnType<typeof createApp>;
 let estateDir = "";
 let out = "";
 let files: Array<{ path: string; bytes: number }> = [];
+let recordedOut = "";
 
 beforeAll(async () => {
   vi.mocked(graphIr).mockImplementation((async () => chantIr) as never);
@@ -125,6 +129,9 @@ beforeAll(async () => {
   out = join(mkdtempSync(join(tmpdir(), "behold-ask-demo-out-")), "site");
   made.push(join(out, ".."));
   files = (await buildAskDemoBundle({ narration: NARRATION, estate: estateDir, out })).files;
+  recordedOut = join(mkdtempSync(join(tmpdir(), "behold-ask-demo-rec-")), "site");
+  made.push(join(recordedOut, ".."));
+  await buildAskDemoBundle({ narration: RECORDING, estate: RECORDED_ESTATE, out: recordedOut });
 }, 240_000);
 
 afterAll(() => {
@@ -408,5 +415,89 @@ describe.runIf(peer.ok)("the bundle's /graph page, in a headless browser (behold
     } finally {
       await browser.close();
     }
+  });
+});
+
+type Box = { x: number; y: number; width: number; height: number };
+
+/** Each card the estate graph draws, by id, to its box: the first rect in its group. */
+function cardBoxes(svg: string): Map<string, Box> {
+  const out = new Map<string, Box>();
+  const re = /<g[^>]*data-node-id="([^"]+)"[^>]*>\s*<rect([^>]*)>/g;
+  for (const m of svg.matchAll(re)) {
+    const n = (a: string) => Number(new RegExp(`\\s${a}="([-\\d.]+)"`).exec(m[2]!)?.[1]);
+    out.set(m[1]!, { x: n("x"), y: n("y"), width: n("width"), height: n("height") });
+  }
+  return out;
+}
+
+const viewBoxOf = (page: Page): Promise<Box> =>
+  page.evaluate(() => {
+    const [x, y, width, height] = document.querySelector("#ad-estate-graph svg")!.getAttribute("viewBox")!.split(/[\s,]+/).map(Number);
+    return { x, y, width, height };
+  });
+const inside = (b: Box, v: Box) => b.x >= v.x - 0.5 && b.y >= v.y - 0.5 && b.x + b.width <= v.x + v.width + 0.5 && b.y + b.height <= v.y + v.height + 0.5;
+
+describe.runIf(peer.ok)("the estate pane's zoom, on the recording (#1175)", () => {
+  it("zooms onto a spread-out answer's cards, and the visitor's buttons and wheel move the view and hold the loop", { timeout: 120_000 }, async () => {
+    const launched = await browserOrNull();
+    if (!launched) {
+      console.warn("ask-demo-page: no browser launches here, so the zoom was not checked");
+      return;
+    }
+    const rec = JSON.parse(readFileSync(RECORDING, "utf8")) as Narration;
+    const graph = JSON.parse(readFileSync(join(RECORDED_ESTATE, "graph.json"), "utf8")) as { svg: string };
+    const [fx, fy, fw, fh] = /viewBox="([^"]+)"/.exec(graph.svg)![1]!.split(/[\s,]+/).map(Number);
+    const full: Box = { x: fx!, y: fy!, width: fw!, height: fh! };
+    const boxes = cardBoxes(graph.svg);
+    // A question whose lit cards sit so far apart that framing them all would hardly zoom: dns-cross-cloud when recorded.
+    const qs = questionsOf(rec) as Narration["turns"];
+    const spread = qs.findIndex((t) => t.light.length > 1 && viewShare(frameBox(t.light.map((id) => boxes.get(id)!), full), full) > 0.6);
+    expect(spread, "a question with lit cards far apart").toBeGreaterThanOrEqual(0);
+    const q = qs[spread]!;
+    const url = await serveDir(recordedOut);
+    const browser = launched.browser as unknown as { newContext(o?: object): Promise<any>; close(): Promise<void> };
+    const errors: string[] = [];
+    try {
+      const context = await browser.newContext({ reducedMotion: "reduce", viewport: { width: 1440, height: 900 } });
+      const page = await context.newPage();
+      page.on("pageerror", (e: Error) => errors.push(e.message));
+      await page.goto(`${url}?pace=2&loop=${spread}`, { waitUntil: "domcontentloaded" });
+      await waitFor(page, `the question ${q.id}`, (s) => s.turn === q.id);
+      // The view zooms in: smaller than the graph both ways, and the cards it frames are lit ones.
+      const at = await viewBoxOf(page);
+      expect(at.width).toBeLessThan(full.width);
+      expect(at.height).toBeLessThan(full.height);
+      expect(viewShare(at, full)).toBeLessThanOrEqual(0.6);
+      const framed = q.light.filter((id) => inside(boxes.get(id)!, at));
+      expect(framed.length, `lit cards in ${JSON.stringify(at)}`).toBeGreaterThan(1);
+      expect(framed.length).toBeLessThan(q.light.length);
+      // The buttons: zoom in about the middle, fit the whole graph, and no further out than that.
+      await page.click("#ad-zoom-in");
+      const zin = await viewBoxOf(page);
+      expect(zin.width).toBeCloseTo(at.width / 1.5, 3);
+      expect(zin.height).toBeCloseTo(at.height / 1.5, 3);
+      expect(zin.x + zin.width / 2).toBeCloseTo(at.x + at.width / 2, 3);
+      await page.click("#ad-zoom-fit");
+      expect(await viewBoxOf(page)).toEqual(full);
+      await page.click("#ad-zoom-out");
+      expect(await viewBoxOf(page)).toEqual(full);
+      // The wheel zooms in about the pointer.
+      const pane = await page.evaluate(() => {
+        const r = document.getElementById("ad-estate-graph")!.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      });
+      await page.mouse.move(pane.x, pane.y);
+      await page.mouse.wheel(0, -300);
+      await page.waitForFunction((w: number) => Number(document.querySelector("#ad-estate-graph svg")!.getAttribute("viewBox")!.split(" ")[2]) < w, full.width, { timeout: 5_000 });
+      // The visitor zoomed while the loop played, so once the answer has printed the loop holds for them.
+      const after = await waitFor(page, "the loop to finish", (s) => s.phase === "after");
+      expect(after.turn).toBe(q.id);
+      expect(await page.evaluate(() => document.documentElement.dataset.held)).toBe("1");
+      await context.close();
+    } finally {
+      await browser.close();
+    }
+    expect(errors).toEqual([]);
   });
 });

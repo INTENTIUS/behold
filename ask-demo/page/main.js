@@ -10,6 +10,10 @@
  *     names (web/key-light.js, by key), and the /graph pane beside it fills
  *     its Cypher box with the turn's query and draws the recorded answer, its
  *     nodes lit, with when each source was read;
+ *   - the estate pane zooms onto what a turn lit (web/key-light.js
+ *     `zoomFrame`), and a visitor can zoom it with its buttons, the wheel or a
+ *     pinch, and drag it; doing so holds the loop as editing the query does,
+ *     and the next recorded turn does not move the view out from under them;
  *   - after a loop the Cypher box can be edited, and once LadybugDB's
  *     WebAssembly build has loaded (after the first draw), a visitor's query
  *     runs in the page on the recorded rows (graph-db-wasm.js).
@@ -20,8 +24,8 @@
  */
 import { createAskPane } from "../../web/kiosk-ask.js";
 import { drawSvg, refusalText, rowsTable } from "../../web/graph-query.js";
-import { applyKeyLight, cardIndex, frameBox, lightKeys } from "../../web/key-light.js";
-import { callLine, cypherFill, drawLight, loopOf, loopTiming, narrationProblems, parseParams, recordedAnswer, recordedWords, sourceWords } from "./play.js";
+import { applyKeyLight, cardIndex, lightKeys, zoomFrame } from "../../web/key-light.js";
+import { callLine, cypherFill, drawLight, loopOf, loopTiming, narrationProblems, panView, parseParams, recordedAnswer, recordedWords, sourceWords, zoomView } from "./play.js";
 
 const $ = (id) => document.getElementById(id);
 const html = document.documentElement;
@@ -36,7 +40,12 @@ const clock = () => T0 + (Date.now() - T0) * PACE;
 /** The answer drawing's side, in its own units: smaller than the /graph page's, so its words read in a narrow pane. */
 const DRAW_SIZE = 420;
 
-const state = { narration: null, cards: new Map(), loop: null, timing: null, startedAt: 0, questionGiven: false, phase: "idle", doneAt: 0, held: false, db: null, engine: "waiting" };
+const state = { narration: null, cards: new Map(), loop: null, timing: null, startedAt: 0, questionGiven: false, phase: "idle", doneAt: 0, held: false, db: null, engine: "waiting", touched: false, zoomedAt: -Infinity, gesture: false };
+
+/** A recorded turn leaves the view alone this long after the visitor last zoomed or dragged it, in ms. */
+const VISITOR_VIEW_MS = 4000;
+/** How far one press of a zoom button zooms. */
+const ZOOM_STEP = 1.5;
 
 async function getJson(path) {
   const r = await fetch(path, { headers: { accept: "application/json" } });
@@ -49,6 +58,8 @@ async function getJson(path) {
 let svg = null;
 let full = null;
 let tween = 0;
+/** Where the view is going: the box the last tween or gesture set. */
+let view = null;
 
 function drawEstate(estate) {
   const host = $("ad-estate-graph");
@@ -69,15 +80,18 @@ const boxOf = (g) => {
   return r ? { x: Number(r.getAttribute("x")), y: Number(r.getAttribute("y")), width: Number(r.getAttribute("width")), height: Number(r.getAttribute("height")) } : null;
 };
 
-function viewTo(box) {
+const setViewBox = (b) => svg.setAttribute("viewBox", `${b.x} ${b.y} ${b.width} ${b.height}`);
+
+function viewTo(box, ms = 700) {
   if (!svg || !box) return;
   const from = (svg.getAttribute("viewBox") || "").split(/[\s,]+/).map(Number);
-  const set = (b) => svg.setAttribute("viewBox", `${b.x} ${b.y} ${b.width} ${b.height}`);
+  const set = setViewBox;
+  view = { ...box };
   cancelAnimationFrame(tween);
   if (reduced() || from.length !== 4) return set(box);
   const start = performance.now();
   const step = (t) => {
-    const k = Math.min(1, (t - start) / 700);
+    const k = Math.min(1, (t - start) / ms);
     const e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
     set({ x: from[0] + (box.x - from[0]) * e, y: from[1] + (box.y - from[1]) * e, width: from[2] + (box.width - from[2]) * e, height: from[3] + (box.height - from[3]) * e });
     if (k < 1) tween = requestAnimationFrame(step);
@@ -94,12 +108,160 @@ function showEstate(on) {
   $("ad-estate-graph").setAttribute("aria-hidden", on ? "false" : "true");
 }
 
-/** Light `ids` on the estate graph and frame them; with none, the whole graph and a caption saying why. */
-function lightEstate(ids, why) {
+/**
+ * Light `ids` on the estate graph and zoom onto them (`zoomFrame`); with none,
+ * or every card, the whole graph, and a caption saying why when there are
+ * none. A recorded turn (`auto`) leaves the view where a visitor just put it.
+ */
+function lightEstate(ids, why, { auto = false } = {}) {
   const on = applyKeyLight(svg, ids, { pulse: !reduced() });
   html.dataset.lit = ids.join("\n");
-  viewTo(on.length && on.length < state.cards.size ? frameBox(on.map(boxOf), full) : full);
   $("ad-estate-cap").textContent = why || "";
+  if (auto && (state.gesture || performance.now() - state.zoomedAt < VISITOR_VIEW_MS)) return;
+  const drawn = svg ? svg.querySelectorAll("[data-node-id]").length : 0;
+  viewTo(on.length && on.length < drawn ? zoomFrame(on.map(boxOf), full) : full);
+}
+
+// --- The visitor's zoom -----------------------------------------------------
+
+/** The view on screen now: mid-tween, where the tween has got to. */
+function shownView() {
+  const v = (svg.getAttribute("viewBox") || "").split(/[\s,]+/).map(Number);
+  return v.length === 4 && v.every(Number.isFinite) ? { x: v[0], y: v[1], width: v[2], height: v[3] } : { ...full };
+}
+
+/** A point on screen in the graph's units. */
+function graphPoint(clientX, clientY) {
+  const m = svg.getScreenCTM();
+  if (!m) return null;
+  const p = svg.createSVGPoint();
+  p.x = clientX;
+  p.y = clientY;
+  return p.matrixTransform(m.inverse());
+}
+
+/** The visitor moved the view: hold the loop once it can be held, and keep recorded turns off the view for a while. */
+function visitorZoomed() {
+  state.touched = true;
+  state.zoomedAt = performance.now();
+  hold();
+}
+
+/** Put the view at `box` at once, as a gesture does. */
+function setView(box) {
+  cancelAnimationFrame(tween);
+  view = { ...box };
+  setViewBox(box);
+}
+
+function zoomButton(factor) {
+  if (!svg || !full) return;
+  visitorZoomed();
+  viewTo(factor ? zoomView(view || full, full, factor) : full, 250);
+}
+
+/** One column (a phone, a narrow window): the page scrolls, so a plain wheel scrolls it rather than zoom the estate. */
+const oneColumn = typeof matchMedia === "function" ? matchMedia("(max-width: 820px)") : null;
+const coarse = typeof matchMedia === "function" ? matchMedia("(pointer: coarse)") : null;
+
+function zoomHint() {
+  $("ad-zoom-hint").textContent =
+    coarse && coarse.matches ? "Pinch to zoom and move" : oneColumn && oneColumn.matches ? "Pinch or Ctrl+scroll to zoom, drag to move" : "Scroll to zoom, drag to move";
+}
+
+function wireZoom() {
+  const host = $("ad-estate-graph");
+  $("ad-zoom-in").addEventListener("click", () => zoomButton(ZOOM_STEP));
+  $("ad-zoom-out").addEventListener("click", () => zoomButton(1 / ZOOM_STEP));
+  $("ad-zoom-fit").addEventListener("click", () => zoomButton(0));
+  zoomHint();
+  for (const q of [oneColumn, coarse]) if (q && q.addEventListener) q.addEventListener("change", zoomHint);
+
+  host.addEventListener(
+    "wheel",
+    (e) => {
+      if (!svg || !full || html.dataset.estate !== "loaded") return;
+      // A trackpad pinch comes as a wheel with ctrlKey; a plain wheel zooms only where the page does not scroll.
+      if (!e.ctrlKey && oneColumn && oneColumn.matches) return;
+      const at = graphPoint(e.clientX, e.clientY);
+      if (!at) return;
+      e.preventDefault();
+      const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+      const factor = Math.exp(-dy * (e.ctrlKey ? 0.01 : 0.002));
+      visitorZoomed();
+      setView(zoomView(shownView(), full, factor, at));
+    },
+    { passive: false },
+  );
+
+  // Drag to move, with a mouse or a pen. A finger is left to scroll the page; two fingers pinch (below).
+  let drag = null;
+  host.addEventListener("pointerdown", (e) => {
+    if (!svg || !full || e.pointerType === "touch" || e.button !== 0 || html.dataset.estate !== "loaded") return;
+    const m = svg.getScreenCTM();
+    if (!m) return;
+    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, from: shownView(), scale: m.a, moved: false };
+  });
+  host.addEventListener("pointermove", (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dx = e.clientX - drag.x;
+    const dy = e.clientY - drag.y;
+    if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+    if (!drag.moved) {
+      drag.moved = true;
+      state.gesture = true;
+      host.setPointerCapture(e.pointerId);
+      host.dataset.dragging = "1";
+    }
+    visitorZoomed();
+    setView(panView(drag.from, full, -dx / drag.scale, -dy / drag.scale));
+  });
+  const endDrag = (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    drag = null;
+    state.gesture = false;
+    delete host.dataset.dragging;
+  };
+  host.addEventListener("pointerup", endDrag);
+  host.addEventListener("pointercancel", endDrag);
+
+  // Pinch with two fingers: zoom about where they started, and follow them as they move.
+  let pinch = null;
+  const pair = (t) => ({ d: Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY), x: (t[0].clientX + t[1].clientX) / 2, y: (t[0].clientY + t[1].clientY) / 2 });
+  host.addEventListener(
+    "touchstart",
+    (e) => {
+      if (!svg || !full || e.touches.length !== 2 || html.dataset.estate !== "loaded") return;
+      const m = svg.getScreenCTM();
+      const p = pair(e.touches);
+      const at = graphPoint(p.x, p.y);
+      if (!m || !at || !p.d) return;
+      e.preventDefault();
+      pinch = { ...p, at, from: shownView(), scale: m.a };
+      state.gesture = true;
+    },
+    { passive: false },
+  );
+  host.addEventListener(
+    "touchmove",
+    (e) => {
+      if (!pinch || e.touches.length !== 2) return;
+      e.preventDefault();
+      const p = pair(e.touches);
+      const zoomed = zoomView(pinch.from, full, p.d / pinch.d, pinch.at);
+      const k = (pinch.from.width / zoomed.width) * pinch.scale;
+      visitorZoomed();
+      setView(panView(zoomed, full, -(p.x - pinch.x) / k, -(p.y - pinch.y) / k));
+    },
+    { passive: false },
+  );
+  const endPinch = (e) => {
+    if (!pinch || e.touches.length === 2) return;
+    pinch = null;
+    state.gesture = false;
+  };
+  host.addEventListener("touchend", endPinch);
+  host.addEventListener("touchcancel", endPinch);
 }
 
 // --- The /graph pane --------------------------------------------------------
@@ -155,7 +317,7 @@ function onTurn(turn) {
     $("g-cypher").placeholder = "The load turn runs no query.";
     showAnswer(recordedAnswer({ ...turn, keys: [], draw: { nodes: [], edges: [] } }), []);
     showEstate(true);
-    lightEstate(turn.light, "");
+    lightEstate(turn.light, "", { auto: true });
     return;
   }
   const fill = cypherFill(turn);
@@ -167,6 +329,7 @@ function onTurn(turn) {
   lightEstate(
     turn.light,
     turn.light.length ? "" : "The estate graph draws no card for what this answer names (indexed cloud and cluster objects). They light in the answer's drawing.",
+    { auto: true },
   );
 }
 
@@ -181,6 +344,7 @@ function startLoop(i) {
   state.startedAt = clock();
   state.questionGiven = false;
   state.held = false;
+  state.touched = false;
   state.phase = "playing";
   html.dataset.loop = String(i);
   delete html.dataset.turn;
@@ -251,6 +415,7 @@ async function boot() {
   $("ad-versions").textContent = words.versions;
   $("ad-note").textContent = narration.note;
   drawEstate(estate);
+  wireZoom();
 
   pane = createAskPane({ host: $("k-ask"), now: () => new Date(clock()), reduced });
   addEventListener("behold:ask-light", (e) => {
@@ -263,6 +428,8 @@ async function boot() {
     state.phase = "after";
     state.doneAt = clock();
     setEditable(true);
+    // A visitor who zoomed or dragged the estate while it played is looking at it: hold the loop for them.
+    if (state.touched) hold();
   });
   $("g-cypher-form").addEventListener("submit", ask);
   for (const id of ["g-cypher", "g-params"]) {
