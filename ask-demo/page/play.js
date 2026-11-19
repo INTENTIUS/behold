@@ -150,13 +150,12 @@ export function callLine(turn) {
   if (!call) return "";
   if (Array.isArray(call.commands)) {
     const n = Array.isArray(turn.rows) ? turn.rows.length : 0;
-    return `The agent loaded the estate into behold: ${n} source${n === 1 ? "" : "s"}, each one a row below. No query has run yet.`;
+    return `The agent loaded the estate into behold: ${n} source${n === 1 ? "" : "s"}, one per row below.`;
   }
   const args = call.arguments || {};
-  const params = typeof args.params === "string" && args.params && args.params !== "{}";
-  if (typeof args.cypher === "string") return `The agent asked behold this query through its ask tool${params ? ", with the parameters below it" : ""}.`;
+  if (typeof args.cypher === "string") return "The agent sent behold this query.";
   const inputs = typeof args.inputs === "string" && args.inputs && args.inputs !== "{}" ? `, with the inputs ${args.inputs}` : "";
-  return `The agent asked behold, through its ask tool, to run the ${args.template} template on ${args.resource}${inputs}. behold ran it as this query.`;
+  return `The agent ran behold's ${args.template} template on ${args.resource}${inputs} as this query.`;
 }
 
 /** The call as the agent made it, for hover: the commands that loaded the estate, or the ask tool's arguments. */

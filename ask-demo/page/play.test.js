@@ -201,15 +201,15 @@ describe("the agent's pane (#1183)", () => {
 describe("the Cypher box fill", () => {
   it("is a question's query and its parameters as JSON, and the call it made", () => {
     const q = FIXTURE.turns[1];
-    expect(cypherFill(q)).toEqual({ cypher: q.cypher, params: '{"key":"aws_s3_bucket.logs"}', call: "The agent asked behold this query through its ask tool, with the parameters below it." });
-    expect(cypherFill(FIXTURE.turns[2]).call).toBe("The agent asked behold this query through its ask tool.");
+    expect(cypherFill(q)).toEqual({ cypher: q.cypher, params: '{"key":"aws_s3_bucket.logs"}', call: "The agent sent behold this query." });
+    expect(cypherFill(FIXTURE.turns[2]).call).toBe("The agent sent behold this query.");
     // The call as the agent made it stays on hover.
     expect(callTitle(q)).toBe(`ask ${JSON.stringify(q.call.arguments)}`);
     expect(cypherFill(FIXTURE.turns[2]).params).toBe("");
   });
   it("is empty for the load turn, which says what it loaded, with the commands on hover (#1191)", () => {
     const fill = cypherFill(FIXTURE.turns[0]);
-    expect(fill).toEqual({ cypher: "", params: "", call: "The agent loaded the estate into behold: 4 sources, each one a row below. No query has run yet." });
+    expect(fill).toEqual({ cypher: "", params: "", call: "The agent loaded the estate into behold: 4 sources, one per row below." });
     expect(callTitle(FIXTURE.turns[0])).toBe("$ behold serve app --port 4674");
     expect(callTitle({})).toBe("");
     const rows = loadRows(RECORDING.turns[0]);
@@ -219,8 +219,8 @@ describe("the Cypher box fill", () => {
   });
   it("names a template call's resource and template", () => {
     const t = RECORDING.turns.find((x) => x.call.arguments && x.call.arguments.template);
-    expect(callLine(t)).toBe(`The agent asked behold, through its ask tool, to run the ${t.call.arguments.template} template on ${t.call.arguments.resource}. behold ran it as this query.`);
-    expect(callLine({ call: { tool: "ask", arguments: { resource: "r", template: "t", inputs: '{"kind":"x"}' } } })).toBe('The agent asked behold, through its ask tool, to run the t template on r, with the inputs {"kind":"x"}. behold ran it as this query.');
+    expect(callLine(t)).toBe(`The agent ran behold's ${t.call.arguments.template} template on ${t.call.arguments.resource} as this query.`);
+    expect(callLine({ call: { tool: "ask", arguments: { resource: "r", template: "t", inputs: '{"kind":"x"}' } } })).toBe('The agent ran behold\'s t template on r, with the inputs {"kind":"x"} as this query.');
     // No wire format above a recorded query.
     for (const turn of RECORDING.turns) expect(callLine(turn), turn.id).not.toMatch(/=|<the query|\$ /);
     expect(cypherFill(t).cypher).toBe(t.cypher);
@@ -305,7 +305,7 @@ describe("the header (#1188)", () => {
     const text = head.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
     expect(text).toContain("A coding agent asks behold about an estate");
     expect(text).toContain("behold reads infrastructure code, cloud accounts and clusters into one graph.");
-    expect(text).toMatch(/the agent asks behold, which answers in Cypher/);
+    expect(text).toMatch(/The agent asks behold in Cypher/);
     expect(text).not.toMatch(/\blive\b/i);
   });
   it("links to behold's docs, this demo's page and running the loop on your own estate, and gives no repository recipe", () => {

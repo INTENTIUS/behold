@@ -5,21 +5,21 @@ description: A recording of a coding agent asking behold questions about an esta
 
 import { ASK_DEMO } from '../../../data/live.mjs';
 
-The ask demo at <a href={ASK_DEMO}>behold-ask-demo.intentius.workers.dev</a> plays a person asking their coding agent about an estate. The agent asks behold with a Cypher query. The page shows that query with its rows, and lights what they name on the estate graph. Each loop asks one question. After the answer, the query box is yours.
+The ask demo at <a href={ASK_DEMO}>behold-ask-demo.intentius.workers.dev</a> plays a person asking their coding agent about an estate. The agent asks behold with a Cypher query. The page shows that query with its rows. Each loop asks one question. After the answer, the query box is yours.
 
 ## Reading an answer
 
-The prompt and the agent's reply type in the pane at the bottom. Before it calls behold, the agent says in one line how it reads the question. The query and its parameters fill the Cypher pane on the right, and the estate graph frames the cards the answer names. When those cards sit too far apart to read, the graph shows them on their own, moved close together with the edges between them. **Whole estate** switches back. On a phone the answer moves up under the estate graph once the reply has printed.
+The prompt and the agent's reply type in the pane at the bottom. Before it calls behold, the agent says in one line how it reads the question. The query fills the Cypher pane on the right. When those cards sit too far apart to read, the graph shows them on their own, moved close together with the edges between them. **Whole estate** switches back. On a phone the answer moves up under the estate graph once the reply has printed.
 
-Under the query, a headline says what was found. The rows follow, with a drawing of them. The drawing joins two resources with an edge when a row pairs them, such as a DNS record and what it `reaches`. Those edges come from the answer's rows, and behold adds no join of its own. A dashed edge is one behold derived because one resource's attribute holds the other's cloud id.
+A headline says what was found. The rows and a drawing of them follow. The drawing joins two resources when a row pairs them. Those edges come from the answer's rows, and behold adds no join of its own. A dashed edge is one behold derived because one resource's attribute holds the other's cloud id.
 
-Click a row or a node, or reach it with Tab and Enter, to light it on the estate graph. A card opens with where it's declared and its cloud id. Escape clears it. Cards on the estate graph can be clicked too, and a stacked card lists the resources it holds. Hover over a name for its full key.
+Click a row or a node to light it on the estate graph. A card opens with where it's declared and its cloud id. Escape clears it. Cards on the estate graph can be clicked too. Hover over a name for its full key.
 
 ## Your turn
 
-While the recording plays, the box is marked **Playback**. Once the reply has printed it's marked **Your turn**, and a countdown runs to the next question. Any click or keystroke stops the countdown, and **Next question** moves on when you're ready.
+While the recording plays, the box is marked **Playback**. Once the reply has printed it's marked **Your turn**. **Next question** moves on when you're ready.
 
-Your query runs over the recorded rows in your browser, on LadybugDB's WebAssembly build. The rules match `behold serve`, so a query that writes is refused. The engine is about 23 MiB and loads after the page draws.
+Your query runs in your browser on LadybugDB's WebAssembly build. Writes are refused, as on `behold serve`. The engine is about 23 MiB and loads after the page draws.
 
 ```cypher
 MATCH (a:Resource)-[:KNOWN_AS]->(c:CloudId)<-[:KNOWN_AS]-(b:Resource)
@@ -31,18 +31,18 @@ RETURN a.key, b.key, c.value
 
 ## What was recorded
 
-The answers come from one run of behold. The header gives its date, and **About this recording** gives the versions it used. The estate was:
+The answers come from one run of behold. The header gives its date. The estate was:
 
-- `example-three-cloud`, with members on chant, choudoufu and plunge, applied to the floci, floci-az and floci-gcp emulators;
-- the emulated AWS account, indexed with `behold index aws`, holding resources nothing in the workspace declares;
-- a kind cluster indexed with `behold index kubernetes`, whose ServiceAccounts name roles in that account;
-- for the SSH question, one read of a real AWS account's `us-west-2` security groups, with the account id replaced by `123456789012`. floci doesn't list ingress rules, so this is the only part that didn't run on an emulator.
+- `example-three-cloud` on the floci, floci-az and floci-gcp emulators;
+- the emulated AWS account, indexed with `behold index aws`;
+- a kind cluster indexed with `behold index kubernetes`;
+- for the SSH question, one read of a real AWS account's `us-west-2` security groups. Its account id is replaced by `123456789012`.
 
 Each question is one call to `behold mcp`'s `ask` tool. We wrote the prompts and the replies. Every number and resource in a reply comes from the recorded rows. While the page plays, it reads nothing outside its own files.
 
 ## The same loop on your estate
 
-Install behold with its optional graph engine. Index any cloud account or cluster you want in the graph, then serve the estate.
+Install behold with its optional graph engine. Index any cloud account or cluster you want in the graph. Then serve the estate.
 
 ```sh
 npm install @intentius/behold @ladybugdb/core
@@ -79,4 +79,4 @@ From a checkout of behold:
 | `just ask-demo-deploy` | Builds `dist-ask-demo/` and deploys it as a Cloudflare Worker. |
 | `just ask-demo-check [--url <url>]` | Plays a loop in headless Chrome, runs a visitor's query and fails on a missing file, a request leaving the bundle or a content security policy violation. |
 
-The bundle's policy allows `'unsafe-eval'` beside `'wasm-unsafe-eval'`, because the engine's WebAssembly bindings build functions as they load.
+The bundle's policy allows `'unsafe-eval'` for the engine's WebAssembly bindings.

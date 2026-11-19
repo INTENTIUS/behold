@@ -359,7 +359,7 @@ export function turnSources(sources: readonly SourceStamp[]): TurnSource[] {
  */
 export function questionReply(template: string, answer: { columns: readonly string[]; rows: ReadonlyArray<Record<string, unknown>> }): string {
   const n = answer.rows.length;
-  return `behold's query ran and returned ${n} row${n === 1 ? "" : "s"}. ${fillReply(template, answer)} The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.`;
+  return `behold's query returned ${n} row${n === 1 ? "" : "s"}. ${fillReply(template, answer)} Its Cypher is in the Cypher pane.`;
 }
 
 /** One question's turn from its answer. Throws Dropped when the answer is empty or the reply cannot be filled. */

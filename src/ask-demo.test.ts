@@ -119,9 +119,9 @@ describe("a question asked of a stubbed behold mcp", () => {
     });
     const { turns, verdicts } = await askAll([cypherQ], mcp.ask, CARDS, SERVE);
     expect(verdicts.map((v) => v.ok)).toEqual([true]);
-    expect(verdicts[0]!.line).toMatch(/^ok {4}cross: 2 rows, 2 cards lit\. behold's query ran and returned 2 rows\. 2 cross: www and zone\. /);
+    expect(verdicts[0]!.line).toMatch(/^ok {4}cross: 2 rows, 2 cards lit\. behold's query returned 2 rows\. 2 cross: www and zone\. /);
     const t = turns[0]!;
-    expect(t).toMatchObject({ id: "cross", kind: "question", cypher: "cypher" in cypherQ.ask ? cypherQ.ask.cypher : "", params: { k: "AWS::Route53::RecordSet" }, columns: ["key", "name"], keys: ["dns/gcpRecord", "dns/zone"], reply: "behold's query ran and returned 2 rows. 2 cross: www and zone. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done." });
+    expect(t).toMatchObject({ id: "cross", kind: "question", cypher: "cypher" in cypherQ.ask ? cypherQ.ask.cypher : "", params: { k: "AWS::Route53::RecordSet" }, columns: ["key", "name"], keys: ["dns/gcpRecord", "dns/zone"], reply: "behold's query returned 2 rows. 2 cross: www and zone. Its Cypher is in the Cypher pane." });
     expect(t.call).toEqual({ tool: "ask", arguments: askArguments(cypherQ.ask) });
     expect(JSON.parse((t.call as unknown as { arguments: { params: string } }).arguments.params)).toEqual({ k: "AWS::Route53::RecordSet" });
     expect(t.light).toEqual(["dns/RecordSet ×2", "dns/zone"]);
@@ -137,7 +137,7 @@ describe("a question asked of a stubbed behold mcp", () => {
     });
     const { turns } = await askAll([templateQ], mcp.ask, CARDS, SERVE);
     expect(mcp.asked.map((a) => a.split("?")[0])).toEqual(["/api/graphdb/resolve", "/api/graphdb/template"]);
-    expect(turns[0]).toMatchObject({ cypher: query, params: { key: "gcp/webRule" }, call: { tool: "ask", arguments: { resource: "webRule", template: "dependents-all" } }, light: ["dns/RecordSet ×2"], reply: "behold's query ran and returned 1 row. 1 depend on it: dns/gcpRecord. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done." });
+    expect(turns[0]).toMatchObject({ cypher: query, params: { key: "gcp/webRule" }, call: { tool: "ask", arguments: { resource: "webRule", template: "dependents-all" } }, light: ["dns/RecordSet ×2"], reply: "behold's query returned 1 row. 1 depend on it: dns/gcpRecord. Its Cypher is in the Cypher pane." });
   });
 
   it("drops a question whose answer is empty, naming it, and keeps the rest", async () => {
@@ -229,8 +229,8 @@ describe("ask-demo/narration.json and its schema", () => {
 describe("the reply frame and the refill (behold#1174)", () => {
   it("says the query ran and how many rows, then the template, then where the Cypher is", () => {
     const rows = [{ name: "a" }, { name: "b" }];
-    expect(questionReply("{{list:name}} match.", { columns: ["name"], rows })).toBe("behold's query ran and returned 2 rows. a and b match. The Cypher it ran is in the Cypher pane; you can edit it there once I'm done.");
-    expect(questionReply("{{count}} match.", { columns: ["name"], rows: [rows[0]!] })).toMatch(/^behold's query ran and returned 1 row\. /);
+    expect(questionReply("{{list:name}} match.", { columns: ["name"], rows })).toBe("behold's query returned 2 rows. a and b match. Its Cypher is in the Cypher pane.");
+    expect(questionReply("{{count}} match.", { columns: ["name"], rows: [rows[0]!] })).toMatch(/^behold's query returned 1 row\. /);
   });
 
   const qs: Question[] = [{ id: "q", prompt: "p", reading: "r", ask: { cypher: "RETURN 1" }, reply: "{{list:name}} match." }];
@@ -299,16 +299,16 @@ describe("the reply frame and the refill (behold#1174)", () => {
     const reply = (id: string) => n.turns.find((t) => t.id === id)!.reply;
     expect(reply("dns-cross-cloud")).toContain("2 of our domains depend on the gcp member (gcp.three-cloud.example. and www.three-cloud.example.)");
     expect(reply("forwarding-rule-dependents")).toContain("4 resources in the dns member depend on the forwarding rule");
-    expect(reply("aws-account-unmanaged")).toContain("Yes, 7 resources in the account have no owner");
+    expect(reply("aws-account-unmanaged")).toContain("Yes. 7 resources have no owner in the workspace");
     expect(reply("serviceaccount-roles")).toContain("Our pods can use 2 AWS roles");
     expect(reply("orders-reader-readers")).toContain("1 resource from outside AWS can use it: orders-api");
     // One rule each way: the words agree with the count, and the reply says nothing the header already does.
-    expect(reply("aws-ssh-open")).toContain("Yes: 1 ingress rule opens SSH (tcp port 22) to anywhere");
+    expect(reply("aws-ssh-open")).toContain("Yes. 1 ingress rule opens SSH to anywhere");
     expect(reply("aws-ssh-open")).toMatch(/The other rule open to anywhere is sgr-\w+ \(tcp 443\)\./);
     expect(reply("aws-ssh-open")).not.toMatch(/rules open to anywhere are|redacted/);
     for (const t of n.turns.filter((x) => x.kind === "question")) {
-      expect(t.reply, t.id).toMatch(/^behold's query ran and returned \d+ rows?\. /);
-      expect(t.reply, t.id).toMatch(/The Cypher it ran is in the Cypher pane; you can edit it there once I'm done\.$/);
+      expect(t.reply, t.id).toMatch(/^behold's query returned \d+ rows?\. /);
+      expect(t.reply, t.id).toMatch(/Its Cypher is in the Cypher pane\.$/);
       expect(t.reply, t.id).not.toMatch(/reach into another member|identity:arn/);
     }
   });
