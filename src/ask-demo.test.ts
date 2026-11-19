@@ -70,6 +70,11 @@ const CARDS = cardIndex([
 ]);
 
 describe("fillReply", () => {
+  it("names a kind's cloud with |cloud, and refuses a value that is no kind (#1232)", () => {
+    const a = { columns: ["kind"], rows: [{ kind: "GCP::Compute::Address" }, { kind: "GCP::Compute::URLMap" }] };
+    expect(fillReply("{{list:kind|cloud}} resources", a)).toBe("GCP resources");
+    expect(() => fillReply("{{list:kind|cloud}}", { columns: ["kind"], rows: [{ kind: "webRule" }] })).toThrow(ReplyError);
+  });
   const rows = [
     { key: "dns/gcpRecord", record: "www", reaches: "gcp/webRule", n: 2 },
     { key: "dns/gcpRecord", record: "www", reaches: "gcp/webProxy", n: 3 },

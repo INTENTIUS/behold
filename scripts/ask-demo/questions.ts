@@ -33,7 +33,7 @@ export const QUESTIONS: readonly Question[] = [
   {
     id: "dns-cross-cloud",
     prompt: "If GCP has an outage, which of our domains go with it?",
-    reading: "I'll find the DNS records that depend on GCP resources.",
+    reading: "Our DNS is in AWS Route 53, so I'll start from those records and follow what they point at into other clouds.",
     ask: {
       cypher:
         "MATCH (rec:Resource {kind: $record})-[:REF*1..4]->(dep:Resource {source: 'chant'}) " +
@@ -42,7 +42,7 @@ export const QUESTIONS: readonly Question[] = [
       params: { record: "AWS::Route53::RecordSet" },
     },
     reply: "{{count:record}} of our domains depend on {{list:reaches|member}} ({{list:record}}), and between them they go through {{list:reaches|id}}.",
-    headline: "{{count:record}} domains depend on {{count:reaches}} resources in {{list:reaches|member}}",
+    headline: "{{count:record}} domains with DNS in AWS depend on {{count:reaches}} {{list:kind|cloud}} resources",
   },
   {
     id: "forwarding-rule-dependents",

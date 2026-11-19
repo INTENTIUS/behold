@@ -149,6 +149,8 @@ function memberKey(v: string, spec: string): { member: string; id: string } {
  *   id       a member's key without its member: `gcp/webRule` is "webRule"
  *   name     any key's last segment, decoded: a cluster object's key ends
  *            in its name
+ *   cloud    a resource kind's first segment: `GCP::Compute::Address` is
+ *            "GCP" (behold#1232); any other value throws
  */
 function columnSpec(spec: string): { name: string; show: (v: string) => string } {
   const [name, filter] = spec.split("|");
@@ -156,6 +158,15 @@ function columnSpec(spec: string): { name: string; show: (v: string) => string }
   if (filter === "source") return { name: name!, show: (v) => (v ? sourceLabel(v) : v) };
   if (filter === "member") return { name: name!, show: (v) => (v ? sourceLabel(`chant/${memberKey(v, spec).member}`) : v) };
   if (filter === "id") return { name: name!, show: (v) => (v ? memberKey(v, spec).id : v) };
+  if (filter === "cloud")
+    return {
+      name: name!,
+      show: (v) => {
+        const at = v.indexOf("::");
+        if (at <= 0) throw new ReplyError(`${spec}: ${v} is not a resource kind (<Cloud>::<Service>::<Type>)`);
+        return v.slice(0, at);
+      },
+    };
   if (filter === "name")
     return {
       name: name!,
