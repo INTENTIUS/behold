@@ -33,7 +33,7 @@ export const QUESTIONS: readonly Question[] = [
   {
     id: "dns-cross-cloud",
     prompt: "If GCP has an outage, which of our domains go with it?",
-    reading: "Our DNS is in AWS Route 53, so I'll start from those records and follow what they point at into other clouds.",
+    reading: "Our DNS is in AWS Route 53. I'll follow what those records point at.",
     ask: {
       cypher:
         "MATCH (rec:Resource {kind: $record})-[:REF*1..4]->(dep:Resource {source: 'chant'}) " +
@@ -41,7 +41,7 @@ export const QUESTIONS: readonly Question[] = [
         "RETURN DISTINCT rec.key AS key, rec.name AS record, dep.key AS reaches, dep.kind AS kind ORDER BY record, reaches",
       params: { record: "AWS::Route53::RecordSet" },
     },
-    reply: "{{count:record}} of our domains depend on {{list:reaches|member}} ({{list:record}}), and between them they go through {{list:reaches|id}}.",
+    reply: "{{count:record}} of our domains depend on {{list:reaches|member}} ({{list:record}}). They go through {{list:reaches|id}}.",
     headline: "{{count:record}} domains with DNS in AWS depend on {{count:reaches}} {{list:kind|cloud}} resources",
   },
   {
@@ -49,13 +49,13 @@ export const QUESTIONS: readonly Question[] = [
     prompt: "What breaks if I delete the GCP load balancer's forwarding rule?",
     reading: "I'll find everything that depends on that forwarding rule.",
     ask: { resource: "webRule", template: "dependents-all" },
-    reply: "{{count}} resources in {{list:key|member}} depend on the forwarding rule, so they would break with it: {{each:{key|id} ({kind})}}.",
+    reply: "{{count}} resources in {{list:key|member}} depend on the forwarding rule: {{each:{key|id} ({kind})}}.",
     headline: "{{count}} resources in {{list:key|member}} depend on the forwarding rule",
   },
   {
     id: "aws-account-unmanaged",
     prompt: "Is anything in our AWS account that nobody owns?",
-    reading: "I'll compare the network and storage resources in the account the workspace deploys to with what the workspace declares, and list those it does not.",
+    reading: "I'll compare the account's network and storage with what the workspace declares.",
     ask: {
       // behold#1202: only the account the workspace deploys to, the one whose
       // index holds resources with the aws member's ownership markers; the
@@ -69,8 +69,8 @@ export const QUESTIONS: readonly Question[] = [
         "MATCH (o:Resource {source: 'index', lexicon: 'aws'}) WHERE o.scopeKey = i.scopeKey AND o.facts CONTAINS '\"address\":' " +
         "RETURN DISTINCT i.key AS key, i.kind AS kind, i.name AS name ORDER BY kind, name",
     },
-    reply: "Yes, {{count}} resources in the account have no owner in the workspace: {{each:{name} ({kind})}}.",
-    headline: "{{count}} network and storage resources in the AWS account have no owner in the workspace",
+    reply: "Yes. {{count}} resources have no owner in the workspace: {{each:{name} ({kind})}}.",
+    headline: "{{count}} network and storage resources have no owner in the workspace",
   },
   {
     // behold#1202: floci lists no ingress rules, so this reads the one real
@@ -92,20 +92,20 @@ export const QUESTIONS: readonly Question[] = [
         "CASE WHEN ssh THEN r.nativeId ELSE '' END AS sshRule, CASE WHEN ssh THEN '' ELSE r.nativeId + ' (' + opens + ')' END AS other ORDER BY sshRule DESC, rule",
     },
     reply:
-      "Yes: {{count:sshRule}} ingress {{pick:sshRule|rule opens|rules open}} SSH (tcp port 22) to anywhere, {{list:sshRule}} in {{list:region}}. " +
+      "Yes. {{count:sshRule}} ingress {{pick:sshRule|rule opens|rules open}} SSH to anywhere: {{list:sshRule}} in {{list:region}}. " +
       "The other {{pick:other|rule open to anywhere is|rules open to anywhere are}} {{list:other}}.",
     headline: "{{count:sshRule}} {{pick:sshRule|rule opens|rules open}} SSH to the internet",
   },
   {
     id: "serviceaccount-roles",
     prompt: "Which AWS roles can our Kubernetes pods use?",
-    reading: "Pods get AWS roles through their ServiceAccounts, so I'll find the roles the cluster's ServiceAccounts point at.",
+    reading: "Pods get AWS roles through their ServiceAccounts. I'll follow those.",
     ask: {
       cypher:
         "MATCH (sa:Resource {kind: 'K8s::Core::ServiceAccount'})-[e:REF]->(role:Resource {kind: 'AWS::IAM::Role'}) " +
         "RETURN sa.key AS key, sa.name AS serviceAccount, role.key AS roleKey, role.name AS role, e.viaAttr AS via, e.rule AS rule ORDER BY serviceAccount",
     },
-    reply: "Our pods can use {{count:roleKey}} AWS roles: {{each:{role} through the {serviceAccount} ServiceAccount}}. Each ServiceAccount's role annotation names its role.",
+    reply: "Our pods can use {{count:roleKey}} AWS roles: {{each:{role} through the {serviceAccount} ServiceAccount}}.",
     headline: "Pods in the cluster can use {{count:roleKey}} AWS roles through {{count:key}} ServiceAccounts",
   },
   {
@@ -113,7 +113,7 @@ export const QUESTIONS: readonly Question[] = [
     prompt: "Who outside AWS can use the orders-reader role?",
     reading: "I'll find what reaches the orders-reader role from outside the account.",
     ask: { resource: "orders-reader", template: "readers" },
-    reply: "{{count}} resource from outside AWS can use it: {{list:key|name}}, from {{list:scope|source}}. Its role annotation names the role.",
+    reply: "{{count}} resource from outside AWS can use it: {{list:key|name}} in {{list:scope|source}}.",
     headline: "{{count}} resource from {{list:scope|source}} can use the role",
   },
 ];

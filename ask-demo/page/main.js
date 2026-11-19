@@ -688,9 +688,9 @@ function setEditable(on) {
   $("ad-turn-tag").textContent = on ? "Your turn" : "Playback";
   $("ad-restore").hidden = !on || !state.draft;
   $("g-hint").textContent = !on
-    ? `Playing the recording. The box shows each query behold ran for the agent, and is yours to edit once the question's reply has printed.${state.draft ? " Your own query is kept for then." : ""}`
+    ? `Playing the recording. The box is yours once the reply has printed.${state.draft ? " Your own query is kept for then." : ""}`
     : ready
-      ? "Edit the query and press Ask. It runs in this page, on the rows the recording loaded."
+      ? "Edit the query and press Ask. It runs in this page."
       : state.engine === "failed"
         ? "The graph database did not load in this page, so a query cannot run here."
         : "Edit the query; Ask works once the graph database has loaded in this page.";
