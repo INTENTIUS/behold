@@ -39,9 +39,14 @@ TypeScript on pulumi-aws 7.51.1, pinned as plunge's corpus pins it.
 on plunge. Its provider is explicit and goes to floci at AWS_ENDPOINT_URL
 (default http://localhost:4566) with floci's fake key pair; the program
 refuses an endpoint that is not on this machine. `apply-aws` runs `plunge
-up` on the stack `local` and then `plunge stack export` into
+up` on the stack `local`, then `plunge stack export` into
 `aws/stack-export.json`, which is what chant draws the member's graph from
-(the graph read never runs the program). That export, `aws/.plunge` and the
+(the graph read never runs the program), and `plunge graph --json` into
+`aws/engine-graph.json`, whose ownership word each aws card shows. Before the
+first apply, `?plan=1` (⌘K, "Read the preview on the Pulumi members") draws
+the aws member from `plunge preview`, each card saying what the update
+creates. The pulumi catalog joins aws's resources to each other, as it joins
+a Terraform root's. That export, the engine graph, `aws/.plunge` and the
 stack file `Pulumi.local.yaml` (only its encryption salt) are that
 machine's state and stay untracked, so a fresh checkout draws aws with no
 cards until it has applied once.

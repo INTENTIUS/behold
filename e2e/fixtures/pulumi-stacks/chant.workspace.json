@@ -1,0 +1,27 @@
+{
+  "name": "pulumi-stacks",
+  "schema": 1,
+  "pins": [
+    {
+      "package": "@intentius/chant-lexicon-pulumi",
+      "version": "0.124.102"
+    }
+  ],
+  "members": [
+    {
+      "name": "network",
+      "dir": "network",
+      "kind": "pulumi"
+    },
+    {
+      "name": "app",
+      "dir": "app",
+      "kind": "pulumi"
+    },
+    {
+      "name": "edge",
+      "dir": "edge",
+      "kind": "pulumi"
+    }
+  ]
+}

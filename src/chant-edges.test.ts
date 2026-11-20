@@ -14,7 +14,7 @@ import {
 
 // behold#1030: the inferred edges of a declared graph come from chant
 // (chant#4522's catalog pass, #4523's identity pass) when chant can draw them,
-// and from src/value-match.ts while it cannot. Both paths are pinned here.
+// and from nowhere else: behold#1227 removed behold's own name matcher.
 
 const GROUP_NAME = "loom-local-a-loom-db-subnet-group";
 
@@ -47,10 +47,8 @@ function fakePasses(catalogEdges: DerivedEdge[], identityEdges: DerivedEdge[] = 
   return passes as typeof passes & ChantEdgePasses;
 }
 
-const matcherEdge = { from: "db", to: "group", kind: "ref", viaAttr: "DBSubnetGroupName", inferred: true, join: "value-match" };
-
-describe("deriveGraphEdges: value-match fallback (a lexicon has no catalog)", () => {
-  it("runs today's matcher when a lexicon of the graph has no catalog beside behold, and runs no chant pass", async () => {
+describe("deriveGraphEdges: a lexicon with no catalog (behold#1227)", () => {
+  it("runs chant's passes with the catalogs it has and names the lexicons it has none for", async () => {
     const passes = fakePasses([derived("db", "group")]);
     const ir = rds();
     (ir.nodes as IRNode[]).push({ id: "deploy", kind: "K8s::Apps::Deployment", lexicon: "k8s", attrs: {} } as unknown as IRNode);
@@ -58,19 +56,33 @@ describe("deriveGraphEdges: value-match fallback (a lexicon has no catalog)", ()
       passes: async () => passes,
       lexicon: async (name) => (name === "aws" ? awsLexicon : undefined),
     });
-    expect(source).toEqual({ source: "value-match", reason: expect.stringContaining("k8s") });
-    expect(passes.reconstructIndexedEdges).not.toHaveBeenCalled();
-    expect(ir.edges).toEqual([matcherEdge]);
+    expect(source).toEqual({ source: "chant", edges: 1, lexicons: ["aws"], uncovered: ["k8s"] });
+    expect(ir.edges).toEqual([derived("db", "group")]);
   });
 
-  it("treats a plugin with no referenceCatalog as no catalog", async () => {
+  it("draws nothing for a graph whose lexicons have no catalog: there is no matcher to fall back on", async () => {
     const passes = fakePasses([]);
     const { source, ir } = await deriveGraphEdgesWithSource(rds(), { passes: async () => passes, lexicon: async () => ({ name: "aws" }) });
-    expect(source.source).toBe("value-match");
-    expect(ir.edges).toEqual([matcherEdge]);
+    expect(source).toEqual({ source: "chant", edges: 0, lexicons: [], uncovered: ["aws"] });
+    expect(passes.reconstructIndexedEdges).not.toHaveBeenCalled();
+    expect(ir.edges).toEqual([]);
   });
 
-  it("keeps addValueMatchEdges' contract: mutates and returns the same graph", async () => {
+  it("reads choudoufu roster nodes with the terraform catalog, through chant's lexicon alias (chant#5340)", async () => {
+    const passes = fakePasses([]);
+    const roster = {
+      nodes: [{ id: "aws_db_instance.main", kind: "aws_db_instance", lexicon: "choudoufu", attrs: {} }],
+      edges: [],
+      groups: {},
+    } as unknown as GraphIR;
+    const terraform: EdgeLexicon = { name: "terraform", referenceCatalog: { identities: [], refs: [] } };
+    const { source } = await deriveGraphEdgesWithSource(roster, { passes: async () => passes, lexicon: async (name) => (name === "terraform" ? terraform : undefined) });
+    expect(source).toEqual({ source: "chant", edges: 0, lexicons: ["terraform"] });
+    const [, catalogs] = passes.reconstructIndexedEdges.mock.calls[0] as unknown as [IRNode[], unknown[]];
+    expect(catalogs).toEqual([{ lexicon: "terraform", catalog: terraform.referenceCatalog, aliases: ["choudoufu"] }]);
+  });
+
+  it("mutates and returns the same graph", async () => {
     const ir = rds();
     expect(await deriveGraphEdges(ir, { passes: async () => fakePasses([]) })).toBe(ir);
   });
@@ -88,7 +100,7 @@ describe("deriveGraphEdges: chant's edges", () => {
     expect(ir.edges.some((e) => (e as { inferred?: boolean }).inferred)).toBe(false);
   });
 
-  it("draws chant's edges in place of the matcher's when every lexicon has a catalog", async () => {
+  it("draws chant's edges when every lexicon has a catalog", async () => {
     const passes = fakePasses([derived("db", "group")]);
     const { ir, source } = await deriveGraphEdgesWithSource(rds(), { passes: async () => passes, lexicon: async () => awsLexicon });
     expect(source).toEqual({ source: "chant", edges: 1, lexicons: ["aws"] });
@@ -96,7 +108,7 @@ describe("deriveGraphEdges: chant's edges", () => {
     expect(graphCarriesChantEdges(ir)).toBe(true);
   });
 
-  it("draws nothing chant did not draw: an empty chant answer is not filled in by the matcher", async () => {
+  it("draws nothing chant did not draw", async () => {
     const passes = fakePasses([]);
     const { ir, source } = await deriveGraphEdgesWithSource(rds(), { passes: async () => passes, lexicon: async () => awsLexicon });
     expect(source).toEqual({ source: "chant", edges: 0, lexicons: ["aws"] });

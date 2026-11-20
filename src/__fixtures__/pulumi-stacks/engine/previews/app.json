@@ -1,0 +1,319 @@
+{
+ "steps": [
+  {
+   "op": "same",
+   "urn": "urn:pulumi:dev::app::pulumi:pulumi:Stack::app-dev",
+   "oldState": {
+    "urn": "urn:pulumi:dev::app::pulumi:pulumi:Stack::app-dev",
+    "custom": false,
+    "type": "pulumi:pulumi:Stack"
+   },
+   "newState": {
+    "urn": "urn:pulumi:dev::app::pulumi:pulumi:Stack::app-dev",
+    "custom": false,
+    "type": "pulumi:pulumi:Stack"
+   }
+  },
+  {
+   "op": "same",
+   "urn": "urn:pulumi:dev::app::pulumi:pulumi:StackReference::network/dev",
+   "oldState": {
+    "urn": "urn:pulumi:dev::app::pulumi:pulumi:StackReference::network/dev",
+    "type": "pulumi:pulumi:StackReference",
+    "custom": true,
+    "id": "network/dev",
+    "inputs": {
+     "name": "network/dev"
+    },
+    "outputs": {
+     "name": "network/dev",
+     "outputs": {
+      "vpcId": "vpc-0a1b2c",
+      "subnetId": "subnet-0d3e4f"
+     },
+     "secretOutputNames": []
+    }
+   },
+   "newState": {
+    "urn": "urn:pulumi:dev::app::pulumi:pulumi:StackReference::network/dev",
+    "type": "pulumi:pulumi:StackReference",
+    "custom": true,
+    "inputs": {
+     "name": "network/dev"
+    }
+   }
+  },
+  {
+   "op": "same",
+   "urn": "urn:pulumi:dev::app::aws:ecs/cluster:Cluster::cluster",
+   "oldState": {
+    "urn": "urn:pulumi:dev::app::aws:ecs/cluster:Cluster::cluster",
+    "type": "aws:ecs/cluster:Cluster",
+    "custom": true,
+    "id": "website",
+    "inputs": {
+     "name": "website"
+    },
+    "outputs": {
+     "name": "website",
+     "arn": "arn:aws:ecs:us-east-1:111122223333:cluster/website",
+     "id": "arn:aws:ecs:us-east-1:111122223333:cluster/website"
+    }
+   },
+   "newState": {
+    "urn": "urn:pulumi:dev::app::aws:ecs/cluster:Cluster::cluster",
+    "type": "aws:ecs/cluster:Cluster",
+    "custom": true,
+    "inputs": {
+     "name": "website"
+    }
+   }
+  },
+  {
+   "op": "same",
+   "urn": "urn:pulumi:dev::app::aws:iam/role:Role::web",
+   "oldState": {
+    "urn": "urn:pulumi:dev::app::aws:iam/role:Role::web",
+    "type": "aws:iam/role:Role",
+    "custom": true,
+    "id": "web-task-role",
+    "inputs": {
+     "name": "web-task-role",
+     "assumeRolePolicy": "{}",
+     "description": {
+      "4dabf18193072939515e22adb298388d": "1b47061264138c4ac30d75fd1eb44270",
+      "ciphertext": "v1:abc:def"
+     }
+    },
+    "outputs": {
+     "name": "web-task-role",
+     "arn": "arn:aws:iam::111122223333:role/web-task-role",
+     "id": "web-task-role"
+    }
+   },
+   "newState": {
+    "urn": "urn:pulumi:dev::app::aws:iam/role:Role::web",
+    "type": "aws:iam/role:Role",
+    "custom": true,
+    "inputs": {
+     "name": "web-task-role",
+     "assumeRolePolicy": "{}",
+     "description": {
+      "4dabf18193072939515e22adb298388d": "1b47061264138c4ac30d75fd1eb44270",
+      "ciphertext": "v1:abc:def"
+     }
+    }
+   }
+  },
+  {
+   "op": "same",
+   "urn": "urn:pulumi:dev::app::aws:iam/rolePolicyAttachment:RolePolicyAttachment::web-logs",
+   "oldState": {
+    "urn": "urn:pulumi:dev::app::aws:iam/rolePolicyAttachment:RolePolicyAttachment::web-logs",
+    "type": "aws:iam/rolePolicyAttachment:RolePolicyAttachment",
+    "custom": true,
+    "id": "web-task-role-20261101",
+    "inputs": {
+     "role": "web-task-role",
+     "policyArn": "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+    },
+    "outputs": {
+     "role": "web-task-role",
+     "policyArn": "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+    }
+   },
+   "newState": {
+    "urn": "urn:pulumi:dev::app::aws:iam/rolePolicyAttachment:RolePolicyAttachment::web-logs",
+    "type": "aws:iam/rolePolicyAttachment:RolePolicyAttachment",
+    "custom": true,
+    "inputs": {
+     "role": "web-task-role",
+     "policyArn": "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+    }
+   }
+  },
+  {
+   "op": "same",
+   "urn": "urn:pulumi:dev::app::aws:ecs/taskDefinition:TaskDefinition::web",
+   "oldState": {
+    "urn": "urn:pulumi:dev::app::aws:ecs/taskDefinition:TaskDefinition::web",
+    "type": "aws:ecs/taskDefinition:TaskDefinition",
+    "custom": true,
+    "id": "website-web:1",
+    "inputs": {
+     "family": "website-web",
+     "taskRoleArn": "arn:aws:iam::111122223333:role/web-task-role"
+    },
+    "outputs": {
+     "family": "website-web",
+     "arn": "arn:aws:ecs:us-east-1:111122223333:task-definition/website-web:1",
+     "id": "arn:aws:ecs:us-east-1:111122223333:task-definition/website-web:1"
+    }
+   },
+   "newState": {
+    "urn": "urn:pulumi:dev::app::aws:ecs/taskDefinition:TaskDefinition::web",
+    "type": "aws:ecs/taskDefinition:TaskDefinition",
+    "custom": true,
+    "inputs": {
+     "family": "website-web",
+     "taskRoleArn": "arn:aws:iam::111122223333:role/web-task-role"
+    }
+   }
+  },
+  {
+   "op": "update",
+   "urn": "urn:pulumi:dev::app::aws:ecs/service:Service::web",
+   "oldState": {
+    "urn": "urn:pulumi:dev::app::aws:ecs/service:Service::web",
+    "type": "aws:ecs/service:Service",
+    "custom": true,
+    "id": "website/web",
+    "inputs": {
+     "name": "web",
+     "cluster": "arn:aws:ecs:us-east-1:111122223333:cluster/website",
+     "taskDefinition": "arn:aws:ecs:us-east-1:111122223333:task-definition/website-web:1",
+     "networkConfiguration": {
+      "subnets": [
+       "subnet-0d3e4f"
+      ],
+      "securityGroups": [
+       "sg-05a6b7"
+      ]
+     }
+    },
+    "outputs": {
+     "name": "web"
+    }
+   },
+   "newState": {
+    "urn": "urn:pulumi:dev::app::aws:ecs/service:Service::web",
+    "type": "aws:ecs/service:Service",
+    "custom": true,
+    "inputs": {
+     "name": "web",
+     "cluster": "arn:aws:ecs:us-east-1:111122223333:cluster/website",
+     "taskDefinition": "arn:aws:ecs:us-east-1:111122223333:task-definition/website-web:1",
+     "networkConfiguration": {
+      "subnets": [
+       "subnet-0d3e4f"
+      ],
+      "securityGroups": [
+       "sg-05a6b7"
+      ]
+     },
+     "desiredCount": 3
+    }
+   },
+   "diffReasons": [
+    "desiredCount"
+   ],
+   "detailedDiff": {
+    "desiredCount": {
+     "kind": "add",
+     "inputDiff": true
+    }
+   }
+  },
+  {
+   "op": "create-replacement",
+   "urn": "urn:pulumi:dev::app::aws:s3/bucketV2:BucketV2::assets",
+   "oldState": {
+    "urn": "urn:pulumi:dev::app::aws:s3/bucketV2:BucketV2::assets",
+    "type": "aws:s3/bucketV2:BucketV2",
+    "custom": true,
+    "id": "three-cloud-assets",
+    "inputs": {
+     "bucket": "three-cloud-assets"
+    },
+    "outputs": {
+     "bucket": "three-cloud-assets",
+     "arn": "arn:aws:s3:::three-cloud-assets",
+     "id": "three-cloud-assets"
+    }
+   },
+   "newState": {
+    "urn": "urn:pulumi:dev::app::aws:s3/bucketV2:BucketV2::assets",
+    "type": "aws:s3/bucketV2:BucketV2",
+    "custom": true,
+    "inputs": {
+     "bucket": "three-cloud-assets-v2"
+    }
+   },
+   "replaceReasons": [
+    "bucket"
+   ],
+   "diffReasons": [
+    "bucket"
+   ],
+   "detailedDiff": {
+    "bucket": {
+     "kind": "update-replace",
+     "inputDiff": true
+    }
+   }
+  },
+  {
+   "op": "replace",
+   "urn": "urn:pulumi:dev::app::aws:s3/bucketV2:BucketV2::assets",
+   "oldState": {
+    "urn": "urn:pulumi:dev::app::aws:s3/bucketV2:BucketV2::assets",
+    "type": "aws:s3/bucketV2:BucketV2",
+    "custom": true,
+    "id": "three-cloud-assets",
+    "inputs": {
+     "bucket": "three-cloud-assets"
+    },
+    "outputs": {
+     "bucket": "three-cloud-assets",
+     "arn": "arn:aws:s3:::three-cloud-assets",
+     "id": "three-cloud-assets"
+    }
+   },
+   "newState": {
+    "urn": "urn:pulumi:dev::app::aws:s3/bucketV2:BucketV2::assets",
+    "type": "aws:s3/bucketV2:BucketV2",
+    "custom": true,
+    "inputs": {
+     "bucket": "three-cloud-assets-v2"
+    }
+   },
+   "replaceReasons": [
+    "bucket"
+   ]
+  },
+  {
+   "op": "delete-replaced",
+   "urn": "urn:pulumi:dev::app::aws:s3/bucketV2:BucketV2::assets",
+   "oldState": {
+    "urn": "urn:pulumi:dev::app::aws:s3/bucketV2:BucketV2::assets",
+    "type": "aws:s3/bucketV2:BucketV2",
+    "custom": true,
+    "id": "three-cloud-assets",
+    "inputs": {
+     "bucket": "three-cloud-assets"
+    },
+    "outputs": {
+     "bucket": "three-cloud-assets",
+     "arn": "arn:aws:s3:::three-cloud-assets",
+     "id": "three-cloud-assets"
+    }
+   },
+   "newState": {
+    "urn": "urn:pulumi:dev::app::aws:s3/bucketV2:BucketV2::assets",
+    "type": "aws:s3/bucketV2:BucketV2",
+    "custom": true,
+    "inputs": {
+     "bucket": "three-cloud-assets"
+    }
+   },
+   "replaceReasons": [
+    "bucket"
+   ]
+  }
+ ],
+ "changeSummary": {
+  "same": 6,
+  "update": 1,
+  "replace": 1
+ }
+}

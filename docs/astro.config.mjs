@@ -112,6 +112,7 @@ export default defineConfig({
 					items: [
 						{ label: 'Serve a chant workspace', slug: 'using/workspace' },
 						{ label: 'Look at a Terraform estate', slug: 'using/terraform' },
+						{ label: 'Look at a Pulumi stack', slug: 'using/pulumi' },
 						{ label: 'Look at a terragucci estate', slug: 'using/terragucci' },
 						{ label: 'Apps from templates', slug: 'using/templates' },
 						{ label: 'Look at a SQL Yodeler project', slug: 'using/sql-yodeler' },

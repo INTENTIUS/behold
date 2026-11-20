@@ -110,12 +110,18 @@ would be a coincidence of variable naming rather than a relationship either root
 states, so the data source card says what it reads and no edge is drawn. That
 was measured on a real estate before it was refused.
 
-## There is no live half
+## The live half is the drift record
 
-`behold serve <terraform-dir>` reads source. There is no `--env`, no drift
-colour, and no overlay: behold strips `live`, `overlay` and `env` for a
-Terraform member, because a reader lexicon would be asking chant to observe
-entities it never applied.
+`behold serve <terraform-dir>` reads source: behold strips `live`, `overlay`
+and `env` from the root's own read, because a reader lexicon would be asking
+chant to observe entities it never applied.
+
+The colour comes from chant's drift record instead. With an environment
+picked, a Terraform member of a declared workspace is read with
+`chant workspace drift --member <name>`, which reads the root with its own
+engine, and each card the record places is coloured through the same
+`(status, read)` table every member uses: in sync, drifted, missing, or not
+observed with the reason. A card the record does not place stays neutral.
 
 The live cloud has two other readers here:
 

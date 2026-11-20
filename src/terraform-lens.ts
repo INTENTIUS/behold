@@ -41,6 +41,7 @@
  */
 import type { GraphIR, IRNode } from "@intentius/chant";
 import { tfTypeOf } from "./carve-lens.ts";
+import { engineOwnershipRows } from "./engine-ownership.ts";
 
 /** The lexicon chant's terraform plugin stamps on every entity it emits. */
 export const TERRAFORM_LEXICON = "terraform";
@@ -309,7 +310,8 @@ export function terraformCardFields(node: { attrs: Record<string, unknown> }): A
   const root = typeof a.root === "string" ? [{ label: "root", value: a.root }] : [];
   // #996: a counted block is the rollup of its instance cards.
   const instances = Array.isArray(a._instances) && a._instances.length ? [{ label: "instances", value: String(a._instances.length) }] : [];
-  const fields = [...planCardRows(a._plan), ...instances, ...reads, ...root];
+  // behold#1227: chant's ownership word, on a choudoufu live root's block (chant#5333).
+  const fields = [...planCardRows(a._plan), ...engineOwnershipRows(node), ...instances, ...reads, ...root];
   return fields.length ? fields : [{ label: "block", value: a.block }];
 }
 

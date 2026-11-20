@@ -32,6 +32,7 @@ import { carveCardFields } from "./carve-lens.ts";
 import { cardFaces } from "./card-face.ts";
 import { CHOUDOUFU_LEXICON, choudoufuCardFields, moduleInstanceOf } from "./choudoufu-card.ts";
 import { terraformCardFields } from "./terraform-lens.ts";
+import { PULUMI_LEXICON, pulumiCardFields, pulumiIconFor } from "./pulumi-card.ts";
 import { carveProgress, splitCarveState, type CarveState } from "./carve-state.ts";
 import { opCardFields } from "./ops-lens.ts";
 import { ROW_ASPECT, ROW_MIN_CARDS, rowColumns, withRowChains, type RowBand, type RowGrid } from "./edgeless.ts";
@@ -128,6 +129,11 @@ registerPack({ lexicon: "op", iconFor: () => undefined, fields: opCardFields });
 // Terraform type (`aws_subnet`, `aws_iam_role`), so it takes the same vendor
 // icons the terraform lexicon does (#872).
 registerPack({ lexicon: CHOUDOUFU_LEXICON, iconFor: terraformIconFor, fields: choudoufuCardFields });
+
+// behold#1227: a Pulumi member's resource wears the icon its Terraform type
+// wears, by its provider token, and its card leads with what the preview says
+// the next update does and chant's ownership word (src/pulumi-card.ts).
+registerPack({ lexicon: PULUMI_LEXICON, iconFor: pulumiIconFor, fields: pulumiCardFields });
 
 // The apply-order lens (#426) registers behold's own lexicon for the same
 // reason the ops lens does: a stack card must lead with the wave it applies in

@@ -11488,7 +11488,7 @@ function replayMemberFrames(load) {
  */
 async function readTerraformPlan() {
   terraformPlanOnce = true;
-  nowline("↻ reading the plan on the Terraform roots…");
+  nowline("↻ reading the plan on the Terraform roots and Pulumi members…");
   await load();
   const note = lastMeta && lastMeta.note ? String(lastMeta.note).split(" · ").find((p) => p.startsWith("plan: ")) : null;
   nowline(note ? `↻ ${note}` : "↻ the plan could not be read");
@@ -12624,6 +12624,10 @@ function paletteCommands() {
   // #910: a stock Terraform root's plan, through chant, onto its cards.
   if (!staticMode && !publicMode && !view.env && projectInfo && (projectInfo.memberKinds || []).includes("terraform")) {
     c.push(["Read the plan on the Terraform roots (replaces, forcing attributes, unknowns, drift)", () => readTerraformPlan()]);
+  }
+  // behold#1227: a Pulumi member's preview, through chant, onto its cards: the same `plan=1` read.
+  if (!staticMode && !publicMode && !view.env && projectInfo && (projectInfo.memberKinds || []).includes("pulumi")) {
+    c.push(["Read the preview on the Pulumi members (replaces, forcing inputs, unknowns)", () => readTerraformPlan()]);
   }
   // behold#998: stream one member's drift, card by card. A read, but a POST.
   if (!staticMode && !publicMode && projectInfo && projectInfo.workspace) {

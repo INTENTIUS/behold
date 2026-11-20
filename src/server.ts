@@ -187,6 +187,7 @@ import { TerraformReadError, terraformMemberWorkspace, terraformReaderState, ter
 import { addInstanceCards } from "./instance-cards.ts";
 import { APPLY_RUNS_WHERE, LedgerRunsCache, ledgerRunsOf, memberLocalApplies, rootMemberWhere, unknownRootApplies, unknownRootNote, withLocalApplies, type LocalApply } from "./member-local-applies.ts";
 import { paintTerraformPlan, readTerraformPlan, terraformPlanNote, type MemberPlanAnswer, type PlanReadDeps, type TerraformPlanRead } from "./terraform-plan.ts";
+import { paintPulumiPreview, pulumiPlanAnswer, readPulumiPreview, type PulumiPreviewDeps, type PulumiPreviewRead } from "./pulumi-preview.ts";
 import { normalizeTerraformNodes } from "./terraform-lens.ts";
 import { invalidateMember, memberIr, memberIrCacheStats, memberSourceStamp } from "./member-ir.ts";
 import { diagnose } from "./doctor.ts";
@@ -379,6 +380,8 @@ export interface ServerOptions {
   /** #910: how the plan read on a stock Terraform root runs — the chant spawn
    * and the versions it is checked against. Absent outside a test. */
   terraformPlan?: PlanReadDeps;
+  /** behold#1227: how the preview read on a Pulumi member runs. Absent outside a test. */
+  pulumiPreview?: PulumiPreviewDeps;
   port: number;
 }
 
@@ -2792,7 +2795,7 @@ export function createApp(
         { method: "POST", path: "/api/layout", desc: "store one lens's deltas: JSON body {lens, deltas: {<node id>: {dx,dy,dw,dh}}} (the only file behold writes in your project)" },
         { method: "GET", path: "/api/health", desc: "runtime health for ?env= from chant lifecycle health (chant 0.124.33+): {env, nodes: {<id>: {state: healthy|unhealthy|unknown|unobserved|absent, detail, observedAt, checkedAt?, reason?}}, rotation: {<record id>: {check, inRotation: true|false|null, line}}, members, counts}; cached 30 s, ?fresh=1 reads again (#825)" },
         { method: "GET", path: "/api/diff", desc: "per-node live diff for ?env= — {env, nodes: {<id>: {observed, diff, health, fieldDrift}}}" },
-        { method: "GET", path: "/api/terraform/plan", desc: "the plan on each stock Terraform root, read through chant (chant 0.124.46+, #910): {members: [{member?, roots: [{root, answered: plan|state|none, note}], cards: {<id>: {source, action, reason, replacePaths, forcedFrom, afterUnknown, changes, drift}}} | {member?, refusal}]}; sensitive values are (sensitive); /api/graph?plan=1 puts the same facts on the cards" },
+        { method: "GET", path: "/api/terraform/plan", desc: "the plan on each stock Terraform root, read through chant (chant 0.124.46+, #910), and the preview on each declared Pulumi member (CHANT_PULUMI_OBSERVE=preview, behold#1227, where root is the member): {members: [{member?, roots: [{root, answered: plan|state|none, note}], cards: {<id>: {source, action, reason, replacePaths, forcedFrom, afterUnknown, changes, drift}}} | {member?, refusal}]}; sensitive values are (sensitive); /api/graph?plan=1 puts the same facts on the cards" },
         { method: "GET", path: "/api/reconcile", desc: "pending-change summary for ?env=" },
         { method: "GET", path: "/api/resources", desc: "component → declared resources" },
         { method: "GET", path: "/api/components/compare", desc: "cross-env digest comparison: ?env=&to= — is one env running what the other tested (ledger-only)" },
@@ -2938,12 +2941,30 @@ export function createApp(
       }),
     );
   };
+  /**
+   * behold#1227: the plan read on each declared Pulumi member served, through
+   * chant's preview depth (src/pulumi-preview.ts). The same `?plan=1` and the
+   * same card rows as a Terraform root.
+   */
+  const pulumiPlans = async (multi: boolean): Promise<Array<{ member: string; answer: MemberPlanAnswer; read?: PulumiPreviewRead }>> => {
+    const ws = servedWorkspace();
+    if (!ws) return [];
+    const dirs = multi ? cfg.projectDirs! : [cfg.projectDir];
+    const members = estateMembers(dirs).filter((m) => m.kind === "pulumi");
+    return Promise.all(
+      members.map(async (m) => {
+        const res = await readPulumiPreview({ name: m.name }, ws.root, cfg.pulumiPreview);
+        return { member: m.name, answer: pulumiPlanAnswer(m.name, res), ...(res.ok ? { read: res.read } : {}) };
+      }),
+    );
+  };
   const paintTerraformPlans = async (ir: GraphIR, multi: boolean): Promise<MemberPlanAnswer[]> => {
-    const answers = await terraformPlans(multi);
+    const [answers, previews] = await Promise.all([terraformPlans(multi), pulumiPlans(multi)]);
     for (const a of answers) if (a.read) paintTerraformPlan(ir, a.read, a.member);
+    for (const p of previews) if (p.read) paintPulumiPreview(ir, p.read, multi ? p.member : undefined);
     // #996: each `count`/`for_each` instance the plan names, as its own card beside its block.
     addInstanceCards(ir);
-    return answers.map(({ dir: _dir, read: _read, ...a }) => a);
+    return [...answers.map(({ dir: _dir, read: _read, ...a }) => a), ...previews.map((p) => p.answer)];
   };
 
   /**
@@ -2955,13 +2976,15 @@ export function createApp(
    */
   app.get("/api/terraform/plan", async (c) => {
     const multi = !!cfg.projectDirs;
-    const answers = await terraformPlans(multi);
+    const [answers, previews] = await Promise.all([terraformPlans(multi), pulumiPlans(multi)]);
+    const cardsOf = (member: string | undefined, cards: Record<string, unknown>) => Object.fromEntries(Object.entries(cards).map(([id, f]) => [member ? `${member}/${id}` : id, f]));
     return c.json({
-      members: answers.map(({ dir: _dir, read, ...a }) => ({
-        ...a,
-        ...(read ? { cards: Object.fromEntries(Object.entries(read.cards).map(([id, f]) => [a.member ? `${a.member}/${id}` : id, f])) } : {}),
-      })),
-      ...(answers.length ? {} : { note: terraformPlanNote([]) }),
+      members: [
+        ...answers.map(({ dir: _dir, read, ...a }) => ({ ...a, ...(read ? { cards: cardsOf(a.member, read.cards) } : {}) })),
+        // behold#1227: a Pulumi member's preview, in the same shape.
+        ...previews.map((p) => ({ ...p.answer, ...(p.read ? { cards: cardsOf(multi ? p.member : undefined, p.read.cards) } : {}) })),
+      ],
+      ...(answers.length || previews.length ? {} : { note: terraformPlanNote([]) }),
     });
   });
 
@@ -3363,12 +3386,12 @@ export function createApp(
         if ((opts.detail ?? 2) < 3) ir = pruneImports(ir);
         // Kubernetes declared-attribute joins (#143) — selector / ingress
         // backend / scaleTargetRef. chant's IR carries no k8s edges at all, so
-        // this is the k8s half's only edge source, exactly as value-match is
-        // azure's. First of the two since #166 — see the estate branch above.
+        // this is the k8s half's own edge source. First of the two since #166 —
+        // see the estate branch above.
         ir = addK8sDeclaredEdges(ir);
         // Connect resources wired by a literal name/ARN value the symbolic-ref
-        // graph misses: chant's derived edges when it can draw them, else
-        // value-match (src/chant-edges.ts, behold#1030).
+        // graph misses: chant's derived edges (src/chant-edges.ts, behold#1030,
+        // behold#1227).
         ir = await deriveGraphEdges(ir);
         // #234's free rider — see the estate branch above.
         ir = markOperatorHome(ir);
@@ -4348,8 +4371,8 @@ export function createApp(
       if ((query.detail ?? 2) < 3) ir = pruneImports(ir);
       // Kubernetes declared-attribute joins (#143) — selector / ingress backend /
       // scaleTargetRef. chant's IR carries no k8s edges at all, so this is the
-      // k8s half's only edge source, exactly as value-match is azure's. First of
-      // the two since #166 — see /api/graph's estate branch.
+      // k8s half's own edge source. First of the two since #166 — see
+      // /api/graph's estate branch.
       ir = addK8sDeclaredEdges(ir);
       // Connect resources wired by a literal name/ARN value (e.g. an RDS
       // instance's DBSubnetGroupName) that the symbolic-ref graph misses.
@@ -4483,7 +4506,7 @@ export function createApp(
       if (new URL(c.req.url).searchParams.get("runtime") === "1") attachRuntimeContainment(result.ir);
       else pruneRuntimeChildren(result.ir);
     }
-    // And the same import-handle pruning below ATTRIBUTES tier + value-matched edges.
+    // And the same import-handle pruning below ATTRIBUTES tier + chant's derived edges.
     if ((optsFromQuery(new URL(c.req.url)).detail ?? 2) < 3) pruneImports(result.ir);
     addK8sDeclaredEdges(result.ir);
     await deriveGraphEdges(result.ir);

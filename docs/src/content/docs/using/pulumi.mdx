@@ -1,0 +1,127 @@
+---
+title: Look at a Pulumi stack
+description: Draw the Pulumi members of a chant workspace. What behold reads, the edges chant draws between stacks, and the preview on each card.
+prompt: |
+  Read https://intentius.io/behold/using/pulumi/.
+  Serve this workspace with `npx @intentius/behold serve <dir>` and tell me the URL.
+  List each Pulumi member, how many resources it drew, and the stacks each one reads through a StackReference.
+  Never deploy with the Deploy button, `POST /api/apply` or `POST /api/ci/dispatch`. Gate approvals stay mine as well (`/api/ops/:name/signal/:gate`, `/api/workspace/gates/approve`, `/api/operator/approve/:op/:gate`). Op runs (`/api/ops/:name/run`) and rollbacks (`/api/rollback`) are mine too. Leave `--auto-sync` off, and keep a `behold preview` or `--public` serve read-only.
+---
+
+A Pulumi program is a member of a chant workspace, declared with kind
+`pulumi` in `chant.workspace.json`:
+
+```json
+{ "name": "app", "dir": "app", "kind": "pulumi" }
+```
+
+One command draws the workspace:
+
+```sh
+npx @intentius/behold serve .
+```
+
+Each Pulumi member is a box of its resources, joined by the edges chant reads
+from the stack. The stack can run on stock `pulumi` or on
+[plunge](https://github.com/INTENTIUS/plunge); behold draws both the same way.
+
+## behold runs no Pulumi
+
+`@intentius/chant-lexicon-pulumi` reads a member, and behold reads chant. The
+graph is the stack's `pulumi stack export`: the copy chant's `pulumi-up`
+writes to its index store after an apply, or `stack-export.json` checked in
+beside `Pulumi.yaml`. behold asks for it with `chant workspace graph --member
+<name>`, and the program never runs to draw it.
+
+A node holds the inputs the export records, with the resource's `id` and its
+top-level string outputs. Secrets and credential-like keys stay with chant and
+never reach behold.
+
+## Members are declared, and what was read is reported
+
+A Pulumi member is the directory the declaration names, and only that
+directory. chant reports on the member's `meta` which export it read and how
+many objects it held, or why it found none. A member with no export draws an
+empty box that says why; the plan below draws its resources from the preview.
+
+## What is a card
+
+A card is a resource. Its kind is the Pulumi type token, such as
+`aws:ec2/vpc:Vpc`, and its icon is the one the same resource wears in a
+Terraform root: the token is spelt the way the provider's Terraform types
+spell it (`aws_vpc`, `google_storage_bucket`, `azurerm_container_app`), and a
+Kubernetes resource takes the Kubernetes icon for its kind.
+
+| row | what it says |
+| --- | --- |
+| `plan` | what the next update does, with the preview below |
+| `forced by` | the input that forces a replace, before and after |
+| `ownership` | chant's word for who owns the resource: `bound`, `pending`, `unowned` or `foreign` |
+| `reads` | on a StackReference, the stack it reads |
+| `stack` | on a member's stack card, the stack it applies |
+
+The `ownership` row comes from the engine. A member on plunge that checks in
+`engine-graph.json` beside its export (what `plunge graph --json` prints) has
+each resource's verdict on its node, and the card prints chant's word as it
+is. A choudoufu member's cards print the same row when chant's live read
+carries it. A resource with no verdict has no row.
+
+Zoom works as it does for a Terraform root: the detail tier goes to chant,
+which draws the member as one card at the lowest zoom and its resources from
+the next one up.
+
+## The edges come from chant
+
+Every edge is chant's. The export gives `dependencies` and `parent`.
+
+The pulumi lexicon's reference catalog joins a resource to the resource one of
+its inputs names by ARN, id or name. A reference can end in another member, so
+an ECS service in `app` joins the subnet `network` declares.
+
+A StackReference is drawn too. When `app` reads `network/dev`, chant draws one
+edge per output read from `app`'s stack card to `network`'s, and the edge names
+the output. A stack no member applies is a card of its own, marked external.
+
+A value that names no resource, or names several, draws no edge. The catalog
+legend says which rule drew each line.
+
+## The live half is the drift record
+
+With an environment picked, a Pulumi member is read with `chant workspace
+drift --member <name>`: `pulumi refresh --preview-only` per resource, or
+plunge's drift read for a member on plunge. Each card the record places is
+coloured through the same `(status, read)` table every member uses. A card
+the record does not place stays neutral and says why.
+
+## The plan, when you ask for it
+
+Press ⌘K and pick **Read the preview on the Pulumi members** (or
+`GET /api/graph?plan=1`), the same request that reads the plan on a
+Terraform root. behold asks chant to read
+each Pulumi member at the preview depth:
+
+```sh
+CHANT_PULUMI_OBSERVE=preview chant workspace graph <root> --member <name> --live --overlay --env behold-plan --detail 3
+```
+
+That runs `pulumi preview --json --show-sames`, or `plunge preview` for a
+member on plunge, in the member's directory. A preview changes nothing, and
+chant never runs `pulumi install` for it.
+
+Each card then leads with the preview's rows, the same rows a Terraform card
+shows: `plan` (`create`, `update`, `replace`, `delete` or `no changes`),
+`forced by` and `read`. A resource the export does not hold, such as one the
+next update creates, is a card of its own, so a stack with no export draws
+every resource from its preview.
+
+When the preview cannot run, the member's note gives chant's reason, such as
+missing credentials or an engine that is not on `PATH`. Its cards then say `plan: not read` and which read answered instead.
+
+`GET /api/terraform/plan` lists the same facts per card for an agent, with
+each Pulumi member beside the Terraform roots.
+
+## Not adoption
+
+This page draws a stack. Bringing the resources of a stock Pulumi stack under
+plunge is [adoption](/behold/using/acting/), which plunge classifies and you
+run.

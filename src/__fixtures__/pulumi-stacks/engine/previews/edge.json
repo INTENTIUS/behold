@@ -1,0 +1,37 @@
+{
+ "steps": [
+  {
+   "op": "create",
+   "urn": "urn:pulumi:dev::edge::pulumi:pulumi:Stack::edge-dev",
+   "newState": {
+    "urn": "urn:pulumi:dev::edge::pulumi:pulumi:Stack::edge-dev",
+    "type": "pulumi:pulumi:Stack",
+    "custom": false
+   }
+  },
+  {
+   "op": "create",
+   "urn": "urn:pulumi:dev::edge::aws:sqs/queue:Queue::events",
+   "newState": {
+    "urn": "urn:pulumi:dev::edge::aws:sqs/queue:Queue::events",
+    "type": "aws:sqs/queue:Queue",
+    "custom": true,
+    "inputs": {
+     "name": "edge-events"
+    }
+   }
+  },
+  {
+   "op": "create",
+   "urn": "urn:pulumi:dev::edge::aws:sns/topic:Topic::alerts",
+   "newState": {
+    "urn": "urn:pulumi:dev::edge::aws:sns/topic:Topic::alerts",
+    "type": "aws:sns/topic:Topic",
+    "custom": true,
+    "inputs": {
+     "name": "edge-alerts"
+    }
+   }
+  }
+ ]
+}

@@ -134,7 +134,7 @@ describe("toDocument: the fields an overlay paints and a join draws", () => {
         ir: ir({
           nodes: [node("a"), node("b")] as never,
           edges: [
-            { from: "a", to: "b", kind: "ref", viaAttr: "Name", inferred: true, join: "value-match" },
+            { from: "a", to: "b", kind: "ref", viaAttr: "Name", inferred: true, join: "estate-member" },
             { from: "a", to: "b", kind: "ref", viaAttr: "Name", origin: "derived", rule: "aws:Role:Tags.Value" },
             { from: "a", to: "b", kind: "ref", viaAttr: "Name" },
           ] as never,
@@ -143,7 +143,7 @@ describe("toDocument: the fields an overlay paints and a join draws", () => {
       { generator: { behold: "x" } },
     );
     expect(doc.edges.map((e) => [e.id, e.inferred, e.rule])).toEqual([
-      ["a->b:ref:Name", true, "behold:value-match"],
+      ["a->b:ref:Name", true, "behold:estate-member"],
       ["a->b:ref:Name#2", true, "aws:Role:Tags.Value"],
       ["a->b:ref:Name#3", false, undefined],
     ]);

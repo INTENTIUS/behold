@@ -209,6 +209,18 @@ export const TERRAFORM_PLAN_CHANT_FLOOR = "0.124.46";
  * through it, one `live-plan` for both (#924). Below it `?plan=1` paints
  * ownership from behold's own `live-plan` and reads no plan. */
 export const CHOUDOUFU_PLAN_CHANT_FLOOR = "0.124.46";
+/** The first chant whose pulumi lexicon reads a member at the preview depth:
+ * `CHANT_PULUMI_OBSERVE=preview` runs `pulumi preview` (or `plunge preview`)
+ * and puts the terraform plan depth's attributes on each node, draws a stack
+ * with no export from it, and says on the member's `rootReads` why a preview
+ * did not answer (INTENTIUS/chant#5332). The same release carries the pulumi
+ * reference catalog (chant#5330), StackReference edges (chant#5331),
+ * `facts.ownership` on a choudoufu live root (chant#5333) and the lexicon
+ * alias the terraform catalog reads roster nodes through (chant#5340). The
+ * cards' plan facts on a Pulumi member (behold#1227). Below it `?plan=1`
+ * reads no preview for a pulumi member. Planned release: the lexicon at
+ * 0.124.103 with chant 0.124.110. */
+export const PULUMI_PREVIEW_CHANT_FLOOR = "0.124.110";
 /** The first chant whose `graph` honours `graph.lint: "report"` in a project's
  * config: it draws source that lint finds errors in and carries the findings
  * on `meta.lint`, each with the `entity` it is about (INTENTIUS/chant commit
@@ -290,6 +302,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "plan read on a Terraform root", floor: TERRAFORM_PLAN_CHANT_FLOOR, adds: "the terraform lexicon reads a saved plan as an observation depth, CHANT_TERRAFORM_OBSERVE=plan (chant#4358)" },
   { read: "groups lit by count", floor: SEARCH_COUNT_BY_IDS_CHANT_FLOOR, adds: "chant search --count-by --json lists each group's ids (chant#4382)", degraded: "the groups and the total are listed and no card is lit" },
   { read: "search", floor: SEARCH_CONTRACT_CHANT_FLOOR, adds: "the read contract's search document, from chant search --json and chant workspace search (chant#4374)" },
+  { read: "plan read on a Pulumi member", floor: PULUMI_PREVIEW_CHANT_FLOOR, adds: "the pulumi lexicon's preview depth, CHANT_PULUMI_OBSERVE=preview (chant#5332)", degraded: "a Pulumi member's cards show the stack export only, and a stack with no export draws no cards" },
   { read: "plan read on a choudoufu member", floor: CHOUDOUFU_PLAN_CHANT_FLOOR, adds: "the plan depth on a live choudoufu root (chant#4371) and its live-plan document handed back (chant#4383)", degraded: "Re-check live with plan re-reads ownership and draws no plan marks on a choudoufu member" },
   { read: "capability catalog", floor: CAPABILITIES_CHANT_FLOOR, adds: "the capabilities document, from chant search --capabilities --json and chant workspace search --capabilities --json (chant#4375)" },
   { read: "a Terraform folder with lint errors", floor: GRAPH_LINT_REPORT_CHANT_FLOOR, adds: "graph.lint: \"report\" draws it, the findings on meta.lint (behold#919)", degraded: "a bare Terraform estate that lint finds errors in is refused, and the refusal says which chant draws it" },

@@ -414,11 +414,18 @@ export function memberIrFromGraphDocument(doc: WorkspaceDocument, member: string
     if (typeof n.runtimeOwner === "string") out.runtimeOwner = un(n.runtimeOwner);
     return out;
   });
-  const edges = (Array.isArray(doc.edges) ? doc.edges : []).filter(mine).map((e) => {
-    const { member: _m, ...rest } = e;
-    return { ...rest, from: un(e.from), to: un(e.to) };
-  });
   const own = new Set(nodes.map((n) => n.id as string));
+  // behold#1227: an edge of this member's that lands in another member (a
+  // StackReference read, chant#5331) names a node this IR does not hold, and
+  // composeStacks would prefix its far end with this member's name. The whole
+  // workspace's read carries it instead (src/reference-catalog.ts).
+  const edges = (Array.isArray(doc.edges) ? doc.edges : [])
+    .filter(mine)
+    .map((e) => {
+      const { member: _m, ...rest } = e;
+      return { ...rest, from: un(e.from), to: un(e.to) };
+    })
+    .filter((e) => own.has(e.from) && own.has(e.to));
   const groups: Record<string, Record<string, string[]>> = {};
   if (isRecord(doc.groups)) {
     for (const [key, table] of Object.entries(doc.groups)) {
@@ -453,6 +460,8 @@ export function memberIrFromGraphDocument(doc: WorkspaceDocument, member: string
   const ir: Record<string, unknown> = { version: 1, nodes, edges, groups, exports, imports };
   if (dangling.length) ir.dangling = dangling;
   if (isRecord(entry.meta)) ir.meta = entry.meta;
+  // behold#1227: a live read says on the member which read answered it (`pulumi.members.<member>` at the preview depth, chant#5332).
+  if (isRecord(entry.rootReads)) ir.rootReads = entry.rootReads;
   if (entry.pipeline !== undefined) ir.pipeline = entry.pipeline;
   if (isRecord(doc.derivedAttrs)) ir.derivedAttrs = doc.derivedAttrs;
   // #919: a terraform or choudoufu member that lint finds errors in is composed
@@ -515,9 +524,11 @@ export function workspaceVia(member: WorkspaceMember, root: string, fallback: Me
  *
  * There is no fallback. A pulumi directory has no chant.config and no `.tf`,
  * so the member's own `chant graph` cannot read it, and the options the
- * contract does not carry (a detail level, a lens, up/down, a namespace,
- * traffic) are dropped rather than sent there to fail: every node is a
- * resource already, and none of them has a lens.
+ * contract does not carry (a lens, up/down, a namespace, traffic) are
+ * dropped rather than sent there to fail: every node is a resource already,
+ * and none of them has a lens. The zoom is carried (behold#1227), so chant
+ * draws a Pulumi member at each detail tier as it draws a Terraform root:
+ * the member as one card at 0, its resources from 1.
  *
  * Nor is there a live read of its own. chant has none for this kind, so a
  * live or overlay read throws {@link PULUMI_NO_LIVE_READ} and the estate
@@ -539,7 +550,9 @@ export function pulumiWorkspaceVia(member: WorkspaceMember, root: string): Membe
     },
     read: async (_dir, opts) => {
       if (opts.live || opts.overlay) throw new Error(PULUMI_NO_LIVE_READ);
-      const { detail: _detail, lens: _lens, up: _up, down: _down, namespace: _namespace, traffic: _traffic, ...source } = opts;
+      const { detail, lens: _lens, up: _up, down: _down, namespace: _namespace, traffic: _traffic, ...rest } = opts;
+      // behold#1227: the zoom goes to chant, as a Terraform root's does, on a chant that takes it.
+      const source = detail !== undefined && meetsFloor(resolveChant(root).version, WORKSPACE_DETAIL_CHANT_FLOOR) ? { ...rest, detail } : rest;
       const doc = await rootReader(root, envOverridesFor(source)).read("graph", workspaceGraphArgs(root, member.name, source));
       return memberIrFromGraphDocument(doc, member.name);
     },
