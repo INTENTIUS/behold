@@ -22,16 +22,20 @@
  *    behold with a `referenceCatalog`, and their edges are added. A declared
  *    graph is one declaration, so every node is in one scope (an account
  *    with no region), and chant's rules (target kinds, ambiguity) decide what
- *    a value joins to. A lexicon with no catalog draws no edges of its own;
- *    its nodes can still be named by another lexicon's rules.
+ *    a value joins to.
  *
  * The pulumi lexicon's catalog (INTENTIUS/chant#5330) covers a Pulumi
  * member's resources. A choudoufu roster node carries `lexicon: "choudoufu"`
  * and its provider type as its kind, and the terraform catalog reads it
  * through the alias INTENTIUS/chant#5340 added (`NamedCatalog.aliases`,
- * {@link CATALOG_ALIASES}). behold's own name matcher (src/value-match.ts)
- * is retired: on behold's roster fixtures and the choudoufu examples it drew no
- * edge chant does not (behold#1227).
+ * {@link CATALOG_ALIASES}). On behold's roster fixtures and the choudoufu
+ * examples, behold's own name matcher drew no edge chant does not
+ * (behold#1227), so every catalogued lexicon is chant's alone.
+ *
+ * A lexicon chant has no catalog for (docker, sql, github and others) keeps
+ * the matcher (src/value-match.ts) as its fallback: an edge it draws with an
+ * end on such a node is added after chant's ({@link addFallbackEdges}), as on
+ * every release before. It goes once chant has those catalogs.
  *
  * The passes are a static import from `@intentius/chant/graph-refs`, which
  * every chant behold accepts carries (src/chant-release.ts, behold#1005). A
@@ -40,6 +44,7 @@
  */
 import type { GraphIR, IREdge, IRNode } from "@intentius/chant";
 import { reconstructIdentityEdges, reconstructIndexedEdges } from "@intentius/chant/graph-refs";
+import { addValueMatchEdges } from "./value-match.ts";
 
 /** chant's `IndexedNodeScope` (graph-refs.ts): the scope a node's identifiers are unique in. */
 export interface EdgeScope {
@@ -72,8 +77,14 @@ export interface ChantEdgePasses {
   ): { edges: DerivedEdge[] };
 }
 
-/** Where a graph's inferred edges came from. `uncovered` lists the lexicons of the graph with no catalog beside behold. */
-export type EdgeSource = { source: "graph"; edges: number } | { source: "chant"; edges: number; lexicons: string[]; uncovered?: string[] };
+/**
+ * Where a graph's inferred edges came from. `uncovered` lists the lexicons of
+ * the graph with no catalog beside behold, and `fallback` the matcher's edges
+ * drawn for their nodes ({@link addFallbackEdges}).
+ */
+export type EdgeSource =
+  | { source: "graph"; edges: number }
+  | { source: "chant"; edges: number; lexicons: string[]; uncovered?: string[]; fallback?: { lexicons: string[]; edges: number } };
 
 /**
  * Other lexicon names a catalog also reads (INTENTIUS/chant#5340): a
@@ -211,5 +222,25 @@ export async function deriveGraphEdgesWithSource(ir: GraphIR, deps: DeriveEdgeDe
   const read = new Set(lexicons.flatMap((l) => [l.name, ...(CATALOG_ALIASES[l.name] ?? [])]));
   const uncovered = [...new Set(ir.nodes.map((n) => n.lexicon))].filter((l): l is string => typeof l === "string" && l !== "" && !read.has(l)).sort();
   const edges = lexicons.length > 0 ? addChantEdges(ir, await (deps.passes ?? chantEdgePasses)(), lexicons) : 0;
-  return { ir, source: { source: "chant", edges, lexicons: lexicons.map((l) => l.name), ...(uncovered.length ? { uncovered } : {}) } };
+  const fallback = uncovered.length > 0 ? addFallbackEdges(ir, new Set(uncovered)) : 0;
+  return {
+    ir,
+    source: { source: "chant", edges, lexicons: lexicons.map((l) => l.name), ...(uncovered.length ? { uncovered, fallback: { lexicons: uncovered, edges: fallback } } : {}) },
+  };
+}
+
+/**
+ * The matcher's edges for the nodes of lexicons chant has no catalog for
+ * (behold#1227): src/value-match.ts runs over the whole graph, as on every
+ * release before, and only an edge with an end on such a node is kept. An
+ * edge between two catalogued nodes is chant's to draw or not. A pair the
+ * graph already joins is not drawn twice. Mutates `ir`; returns how many
+ * edges it added.
+ */
+export function addFallbackEdges(ir: GraphIR, uncovered: ReadonlySet<string>): number {
+  const lexiconOf = new Map(ir.nodes.map((n) => [n.id, n.lexicon]));
+  const matched = addValueMatchEdges({ nodes: ir.nodes, edges: [...ir.edges], groups: ir.groups } as GraphIR).edges.slice(ir.edges.length);
+  const kept = matched.filter((e) => uncovered.has(lexiconOf.get(e.from) ?? "") || uncovered.has(lexiconOf.get(e.to) ?? ""));
+  ir.edges.push(...kept);
+  return kept.length;
 }

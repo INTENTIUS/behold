@@ -11,10 +11,12 @@ import {
   type DerivedEdge,
   type EdgeLexicon,
 } from "./chant-edges.ts";
+import { addValueMatchEdges } from "./value-match.ts";
 
 // behold#1030: the inferred edges of a declared graph come from chant
-// (chant#4522's catalog pass, #4523's identity pass) when chant can draw them,
-// and from nowhere else: behold#1227 removed behold's own name matcher.
+// (chant#4522's catalog pass, #4523's identity pass). behold#1227: every
+// catalogued lexicon is chant's alone, and a lexicon chant has no catalog for
+// keeps src/value-match.ts for the edges that touch its nodes.
 
 const GROUP_NAME = "loom-local-a-loom-db-subnet-group";
 
@@ -47,24 +49,43 @@ function fakePasses(catalogEdges: DerivedEdge[], identityEdges: DerivedEdge[] = 
   return passes as typeof passes & ChantEdgePasses;
 }
 
-describe("deriveGraphEdges: a lexicon with no catalog (behold#1227)", () => {
-  it("runs chant's passes with the catalogs it has and names the lexicons it has none for", async () => {
+const matcherEdge = { from: "db", to: "group", kind: "ref", viaAttr: "DBSubnetGroupName", inferred: true, join: "value-match" };
+
+/** The rds graph with two docker nodes: a network, and a container on it whose env names the subnet group by its literal name. */
+const mixed = (): GraphIR => {
+  const ir = rds();
+  (ir.nodes as IRNode[]).push(
+    { id: "net", kind: "Docker::Network", lexicon: "docker", attrs: { NetworkName: "loom-local-network" } } as unknown as IRNode,
+    { id: "app", kind: "Docker::Container", lexicon: "docker", attrs: { Networks: ["loom-local-network"], Env: { DB_SUBNET_GROUP: GROUP_NAME } } } as unknown as IRNode,
+  );
+  return ir;
+};
+
+describe("deriveGraphEdges: a lexicon with no catalog keeps value-match (behold#1227)", () => {
+  it("gives the aws nodes chant's edges and the docker nodes the edges main's value-match gives them", async () => {
     const passes = fakePasses([derived("db", "group")]);
-    const ir = rds();
-    (ir.nodes as IRNode[]).push({ id: "deploy", kind: "K8s::Apps::Deployment", lexicon: "k8s", attrs: {} } as unknown as IRNode);
-    const { source } = await deriveGraphEdgesWithSource(ir, {
-      passes: async () => passes,
-      lexicon: async (name) => (name === "aws" ? awsLexicon : undefined),
-    });
-    expect(source).toEqual({ source: "chant", edges: 1, lexicons: ["aws"], uncovered: ["k8s"] });
-    expect(ir.edges).toEqual([derived("db", "group")]);
+    const ir = mixed();
+    const { source } = await deriveGraphEdgesWithSource(ir, { passes: async () => passes, lexicon: async (name) => (name === "aws" ? awsLexicon : undefined) });
+    // main: the matcher over the whole graph, because docker has no catalog.
+    const main = addValueMatchEdges(mixed()).edges;
+    const touchesDocker = (e: { from: string; to: string }) => [e.from, e.to].some((id) => id === "net" || id === "app");
+    expect(main.filter(touchesDocker).length).toBe(2);
+    expect(ir.edges).toEqual([derived("db", "group"), ...main.filter(touchesDocker)]);
+    // The aws pair is chant's, not the matcher's.
+    expect(ir.edges).not.toContainEqual(matcherEdge);
+    expect(source).toEqual({ source: "chant", edges: 1, lexicons: ["aws"], uncovered: ["docker"], fallback: { lexicons: ["docker"], edges: 2 } });
   });
 
-  it("draws nothing for a graph whose lexicons have no catalog: there is no matcher to fall back on", async () => {
+  it("falls back for every node when no lexicon of the graph has a catalog, as main does", async () => {
     const passes = fakePasses([]);
     const { source, ir } = await deriveGraphEdgesWithSource(rds(), { passes: async () => passes, lexicon: async () => ({ name: "aws" }) });
-    expect(source).toEqual({ source: "chant", edges: 0, lexicons: [], uncovered: ["aws"] });
+    expect(source).toEqual({ source: "chant", edges: 0, lexicons: [], uncovered: ["aws"], fallback: { lexicons: ["aws"], edges: 1 } });
     expect(passes.reconstructIndexedEdges).not.toHaveBeenCalled();
+    expect(ir.edges).toEqual([matcherEdge]);
+  });
+
+  it("draws no matcher edge between two catalogued nodes, even when chant draws none", async () => {
+    const { ir } = await deriveGraphEdgesWithSource(rds(), { passes: async () => fakePasses([]), lexicon: async () => awsLexicon });
     expect(ir.edges).toEqual([]);
   });
 

@@ -216,7 +216,8 @@ export async function readComposed(
   // join on attribute values, never node ids, so composed ids pass through and
   // a join across two members is the cross-member edge an estate needs. #166:
   // the declared contracts go first, since whichever pass runs first claims a
-  // pair, and chant's catalog and identity passes fill what is left.
+  // pair, and chant's catalog and identity passes fill what is left, with
+  // value match for the lexicons chant has no catalog for.
   ir = addK8sDeclaredEdges(ir);
   ir = await deriveGraphEdges(ir);
   // #166: a control-plane member's Kustomization or Application names the

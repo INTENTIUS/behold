@@ -16,6 +16,7 @@ import { composeStacks } from "@intentius/pinhole";
 import type { GraphIR, IRNode } from "@intentius/chant";
 import { addEstateMemberEdges, declaredDeliveries, deriveEstateMemberEdges } from "./estate-edges.ts";
 import { addK8sDeclaredEdges } from "./k8s-edges.ts";
+import { addValueMatchEdges } from "./value-match.ts";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO_URL = "https://github.com/INTENTIUS/behold";
@@ -95,7 +96,7 @@ function argoControlPlane(): IRNode[] {
  * to find each member's entry nodes. */
 function served(estate: string, members: { name: string; nodes: IRNode[] }[]) {
   const composed = composeStacks(members.map((m) => ({ name: m.name, ir: ir(m.nodes) }))) as GraphIR;
-  addK8sDeclaredEdges(composed);
+  addValueMatchEdges(addK8sDeclaredEdges(composed));
   return {
     ir: composed,
     members: members.map((m) => ({ name: m.name, dir: join(REPO, estate, m.name) })),

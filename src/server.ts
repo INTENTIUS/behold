@@ -3390,8 +3390,8 @@ export function createApp(
         // see the estate branch above.
         ir = addK8sDeclaredEdges(ir);
         // Connect resources wired by a literal name/ARN value the symbolic-ref
-        // graph misses: chant's derived edges (src/chant-edges.ts, behold#1030,
-        // behold#1227).
+        // graph misses: chant's derived edges, and value-match for a lexicon
+        // chant has no catalog for (src/chant-edges.ts, behold#1030, behold#1227).
         ir = await deriveGraphEdges(ir);
         // #234's free rider — see the estate branch above.
         ir = markOperatorHome(ir);

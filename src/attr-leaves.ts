@@ -1,8 +1,8 @@
 /**
- * The string leaves of a node's declared attrs, moved out of behold's old name
- * matcher (behold#1030; the matcher went in behold#1227, its edges come from
- * chant): src/ops-lens.ts joins op steps onto these leaves and is not an edge
- * pass. The walk is unchanged since #166.
+ * The string leaves of a node's declared attrs, moved out of src/value-match.ts
+ * (behold#1030) so that module can go when behold#1005's value-match step
+ * lands: src/ops-lens.ts joins op steps onto these leaves and is not an edge
+ * pass. The walk is the one value-match used, unchanged (#166).
  */
 
 /** How deep the consumer walk goes before it stops, counting an array as a step
