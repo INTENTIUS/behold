@@ -412,6 +412,8 @@ export function memberIrFromGraphDocument(doc: WorkspaceDocument, member: string
     const out: Record<string, unknown> = { ...rest, id: un(n.id), attrs: stripRefs(n.attrs ?? {}, p) };
     if (typeof n.compositeInstance === "string") out.compositeInstance = un(n.compositeInstance);
     if (typeof n.runtimeOwner === "string") out.runtimeOwner = un(n.runtimeOwner);
+    // behold#1227: the Pulumi component that registered the node (chant#5403), in the member's own ids.
+    if (typeof n.component === "string") out.component = un(n.component);
     return out;
   });
   const own = new Set(nodes.map((n) => n.id as string));

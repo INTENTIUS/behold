@@ -70,6 +70,11 @@ Zoom works as it does for a Terraform root: the detail tier goes to chant,
 which draws the member as one card at the lowest zoom and its resources from
 the next one up.
 
+A component resource is a box inside the member's, the way a Terraform module
+call is: chant names on each resource the component that registered it, and
+the box holds the component and everything registered under it, nested
+components included.
+
 ## The edges come from chant
 
 Every edge is chant's. The export gives `dependencies` and `parent`.

@@ -49,23 +49,66 @@ const FAKE_IR = JSON.stringify({
   edges: [],
 });
 
-/** The chant seam: one `graph` read per member, which hands back the
- * member's recorded `live-plan` document where `CHANT_TERRAFORM_LIVE_PLAN_DIR`
- * says, the way chant does (INTENTIUS/chant#4383). Records every read. */
+/** A recorded `live-plan` document as chant's live read carries it
+ * (behold#1227): one node per address, `<root>/<address with / between its
+ * module calls>`, with `facts.ownership` and `facts.ownershipRows`
+ * (INTENTIUS/chant#5333, #5402). */
+function liveNodes(root: string, plan: Record<string, unknown>): Array<Record<string, unknown>> {
+  const idOf = (addr: string): string => `${root}/${addr.replace(/(\]|[A-Za-z0-9_-])\.(?=module\.|[a-z0-9_]+\.[A-Za-z0-9_-]+(?:\[[^\]]*\])?$)/g, "$1/")}`;
+  const list = (k: string) => (Array.isArray(plan[k]) ? (plan[k] as Array<Record<string, unknown>>) : []);
+  const out = new Map<string, Record<string, unknown>>();
+  const at = (addr: string) => out.get(addr) ?? out.set(addr, { id: idOf(addr), kind: "Terraform::Resource", lexicon: "terraform", attrs: {}, facts: { ownershipRows: {} } }).get(addr)!;
+  for (const b of list("bound")) {
+    const n = at(b.addr as string);
+    n.facts = { ownership: "bound", ownershipRows: { boundBy: b.source, ...(b.identity_values ? { identityValues: b.identity_values } : {}) } };
+    if (b.identity) n.physicalId = b.identity;
+  }
+  for (const o of list("omissions")) {
+    const n = at(o.addr as string);
+    const f = n.facts as { ownership?: string; ownershipRows: Record<string, unknown> };
+    f.ownershipRows.omission = { reason: o.reason, detail: o.detail ?? "" };
+    if (o.reason === "ABSENT") f.ownership = "pending";
+  }
+  for (const u of list("unowned")) {
+    const n = at(u.addr as string);
+    const f = n.facts as { ownership?: string; ownershipRows: Record<string, unknown>; markers?: unknown };
+    if (u.adopt_tofu_estate) {
+      f.ownership = "unowned";
+      f.ownershipRows.adopt = { owner: u.adopt_tofu_estate, ...(u.adopt_tofu_address ? { address: u.adopt_tofu_address } : {}) };
+    } else {
+      f.ownership = "foreign";
+      if (u.tofu_estate) f.markers = { owner: u.tofu_estate };
+    }
+    if (u.identity) n.physicalId = u.identity;
+  }
+  return [...out.values()];
+}
+
+/** The chant seam: one `graph` read per member, answering the member's
+ * recorded `live-plan` as chant's facts, and at the plan depth the plan's
+ * attributes too. Records every read. */
 function fakeChant(reads: Array<{ args: string[]; project: string; env: Record<string, string> }>) {
   return {
-    chantVersion: () => "0.124.46",
-    lexiconVersion: () => "0.124.46",
+    chantVersion: () => "0.124.110",
+    lexiconVersion: () => "0.124.110",
     readerAbsent: () => undefined,
     run: async (args: string[], project: string, env: Record<string, string>) => {
       reads.push({ args, project, env });
       const config = readFileSync(join(project, "chant.config.json"), "utf8");
       const root = /"(mono|team-a)": \{/.exec(config)![1]!;
-      writeFileSync(join(env.CHANT_TERRAFORM_LIVE_PLAN_DIR!, `${root}.live-plan.json`), root === "mono" ? raw("choudoufu-live-plan-monolith-clean.json") : raw("choudoufu-live-plan-team-a-after-split.json"));
+      const nodes = liveNodes(root, JSON.parse(root === "mono" ? raw("choudoufu-live-plan-monolith-clean.json") : raw("choudoufu-live-plan-team-a-after-split.json")));
+      const plan = env.CHANT_TERRAFORM_OBSERVE === "plan";
+      if (plan && root === "mono") {
+        for (const p of (JSON.parse(FAKE_IR) as { nodes: Array<{ id: string; attrs: Record<string, unknown> }> }).nodes) {
+          const n = nodes.find((x) => x.id === p.id);
+          if (n) n.attrs = { ...(n.attrs as object), ...p.attrs };
+          else nodes.push({ ...p, kind: "Terraform::Resource", lexicon: "terraform" });
+        }
+      }
       return {
         code: 0,
-        stdout: root === "mono" ? FAKE_IR : '{"nodes":[],"edges":[]}',
-        stderr: `warning: [terraform] terraform.roots.${root}: the plan read answered (\`choudoufu plan -input=false -lock=false -out=<tmp>/plan.tfplan\`), beside \`live-plan -json\`, which answered presence and ownership\n`,
+        stdout: JSON.stringify({ nodes, edges: [], rootReads: { [`terraform.roots.${root}`]: { depth: plan ? "live+plan" : "live" } } }),
+        stderr: "",
       };
     },
   };
@@ -211,7 +254,7 @@ describe("GET /api/choudoufu/split (#371)", () => {
       for (const r of reads) {
         expect(r.args).toEqual(["graph", ".", "--live", "--overlay", "--env", "behold-plan", "--format", "ir", "--detail", "3"]);
         expect(r.env.CHANT_TERRAFORM_OBSERVE).toBe("plan");
-        expect(r.env.CHANT_TERRAFORM_LIVE_PLAN_DIR).toMatch(/behold-choudoufu-live-plan-/);
+        expect(r.env.CHANT_TERRAFORM_LIVE_LISTING).toBe("1");
         expect(readFileSync(join(r.project, "chant.config.json"), "utf8")).toContain('"binary": "choudoufu"');
       }
       expect(spawns.filter((a) => ["live-plan", "plan", "show"].includes(a[0]!))).toEqual([]);
@@ -233,7 +276,7 @@ describe("GET /api/choudoufu/split (#371)", () => {
       expect({ reads: reads.length, spawns: spawns.slice(before.spawns).map((a) => a[0]).filter((v) => v !== "live-check") }).toEqual({ reads: before.reads, spawns: [] });
     });
 
-    it("with no chant to read through, a re-check paints ownership from behold's own live-plan and reads no plan", async () => {
+    it("with no chant to read through, the member is not observed and nothing of choudoufu's own is read for ownership (behold#1227)", async () => {
       const spawns: string[][] = [];
       const { mono, teamA } = estate();
       const broadcaster = new Broadcaster();
@@ -244,10 +287,9 @@ describe("GET /api/choudoufu/split (#371)", () => {
         new OpRunner({ projectDir: mono, broadcaster, onDone: () => {} }),
       );
       const body = await overlay(app, "&plan=1");
-      expect(body.meta.drift).toEqual({ read: false, note: expect.stringMatching(/^mono: the plan was not read: no chant to read the plan through; team-a: /) });
-      expect(body.ir.nodes.find((n) => n.id === "mono/aws_iam_role.team_a")!.attrs._status).toBe("good");
-      expect(spawns.filter((a) => a[0] === "live-plan")).toHaveLength(2);
-      expect(spawns.map((a) => a[0])).not.toContain("plan");
+      expect(body.meta.drift).toEqual({ read: false, note: expect.stringMatching(/^mono: the member was not read: no chant to read the member through; team-a: /) });
+      expect(body.ir.nodes.find((n) => n.id === "mono/aws_iam_role.team_a")!.attrs._status).toBe("neutral");
+      expect(spawns.filter((a) => ["live-ls", "live-plan", "plan"].includes(a[0]!))).toEqual([]);
     });
 
     it("names the changed attributes on /api/diff, in the pane's own before/after shape", async () => {
@@ -363,16 +405,19 @@ describe("what does not exist (#371)", () => {
 // `live-ls` and `live-plan` per member — four seconds on `terralith-4`, with
 // the graph frozen, to draw the same document a different way.
 describe("collapse and expand are re-renders, not second live reads (#396 finding 6)", () => {
-  const observes = (spawns: string[][]): number => spawns.filter((a) => a[0] === "live-ls" || a[0] === "live-plan").length;
+  // behold#1227: a member's live read is one chant read; behold spawns no `live-ls` or `live-plan` of its own.
+  let chantReads: Parameters<typeof fakeChant>[0] = [];
+  const observes = (spawns: string[][]): number => spawns.filter((a) => a[0] === "live-ls" || a[0] === "live-plan").length + chantReads.length;
 
   it("serves both pictures from one live read per member", async () => {
     const spawns: string[][] = [];
-    const { app } = served(spawns);
+    chantReads = [];
+    const { app } = served(spawns, chantReads);
     resetOverlayCache();
 
     await app.request("/api/overlay?alike=0&env=live");
     const once = observes(spawns);
-    expect(once).toBe(4); // two choudoufu members, two documents each
+    expect(once).toBe(2); // two choudoufu members, one chant read each
 
     await app.request("/api/overlay?alike=0&env=live&collapse=1"); // "Collapse large boxes"
     await app.request("/api/overlay?alike=0&env=live"); // "Expand all"
@@ -382,23 +427,22 @@ describe("collapse and expand are re-renders, not second live reads (#396 findin
 
   it("observes again when the palette asks — a re-check re-checks both halves", async () => {
     const spawns: string[][] = [];
-    const reads: Parameters<typeof fakeChant>[0] = [];
-    const { app } = served(spawns, reads);
+    chantReads = [];
+    const { app } = served(spawns, chantReads);
     resetOverlayCache();
 
     await app.request("/api/overlay?alike=0&env=live");
     const once = observes(spawns);
-    // "Re-check live with plan (attribute drift)" — the ownership read behind
-    // the plan is fresh too, or the two halves would describe two moments.
-    // Since #924 its `live-plan` is chant's (one read per member, beside
-    // behold's own `live-ls`), so the plan sits on the same document.
+    // "Re-check live with plan (attribute drift)": the ownership read behind
+    // the plan is fresh too, one chant read per member at the plan depth.
     await app.request("/api/overlay?alike=0&env=live&plan=1");
-    expect(observes(spawns) + reads.length).toBe(once * 2);
+    expect(observes(spawns)).toBe(once * 2);
   });
 
   it("observes again after a member's source moves", async () => {
     const spawns: string[][] = [];
-    const { app, mono } = served(spawns);
+    chantReads = [];
+    const { app, mono } = served(spawns, chantReads);
     resetOverlayCache();
 
     await app.request("/api/overlay?alike=0&env=live");
@@ -407,6 +451,6 @@ describe("collapse and expand are re-renders, not second live reads (#396 findin
     await app.request("/api/overlay?alike=0&env=live");
 
     // The moved member is read again; the one that did not move is not.
-    expect(observes(spawns)).toBe(once + 2);
+    expect(observes(spawns)).toBe(once + 1);
   });
 });

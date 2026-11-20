@@ -4586,7 +4586,7 @@ export function createApp(
       try {
         const r = await readChoudoufuLive(m.dir, diffPlan ? { plan: true } : {});
         const diffDrift = choudoufuPlanDrift([m.dir]);
-        Object.assign(nodes, choudoufuDiffNodes(r.check, r.ls, r.plan, multi ? m.name : undefined, diffDrift.byDir.get(m.dir)?.drift));
+        Object.assign(nodes, choudoufuDiffNodes(r, multi ? m.name : undefined, diffDrift.byDir.get(m.dir)?.drift));
       } catch {
         // painted unobserved on the overlay; nothing to slice
       }
@@ -4730,7 +4730,7 @@ export function createApp(
         // and the whole estate's pane cannot disagree about what drifted.
         const r = await readChoudoufuLive(owner.dir, new URL(c.req.url).searchParams.get("plan") === "1" ? { plan: true } : {});
         const one = choudoufuPlanDrift([owner.dir]);
-        const entry = choudoufuDiffNodes(r.check, r.ls, r.plan, multi ? owner.name : undefined, one.byDir.get(owner.dir)?.drift)[node];
+        const entry = choudoufuDiffNodes(r, multi ? owner.name : undefined, one.byDir.get(owner.dir)?.drift)[node];
         return c.json({ node, env, ...(entry ?? { diff: null, observed: null, health: "unknown", fieldDrift: null }) });
       } catch (err) {
         return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);

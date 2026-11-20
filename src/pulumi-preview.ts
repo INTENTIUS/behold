@@ -145,7 +145,8 @@ export function paintPulumiPreview(ir: GraphIR, read: PulumiPreviewRead, member?
   for (const n of read.nodes) {
     if (n.lexicon !== PULUMI_LEXICON || have.has(id(n.id)) || !read.cards[n.id]) continue;
     const { _status: _s, ...attrs } = (n.attrs ?? {}) as Record<string, unknown>;
-    ir.nodes.push({ ...n, id: id(n.id), attrs: { ...attrs, _plan: read.cards[n.id] } } as IRNode);
+    const component = (n as { component?: unknown }).component;
+    ir.nodes.push({ ...n, id: id(n.id), ...(typeof component === "string" ? { component: id(component) } : {}), attrs: { ...attrs, _plan: read.cards[n.id] } } as IRNode);
     if (member) {
       const groups = ir.groups as Record<string, Record<string, string[]> | undefined>;
       const byStack = (groups.byStack ??= {});

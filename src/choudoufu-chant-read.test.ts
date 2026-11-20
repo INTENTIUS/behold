@@ -1,5 +1,5 @@
 import { describe, expect, it, afterAll } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,7 +8,6 @@ import { paintPlanDrift } from "./choudoufu-live.ts";
 import {
   choudoufuChantArgs,
   choudoufuChantUnavailable,
-  livePlanDocumentFile,
   planDriftFromIr,
   readChoudoufuThroughChant,
   rootAnswerOf,
@@ -28,7 +27,9 @@ import {
 //       chant graph . --live --overlay --env behold-plan --format ir --detail 3
 //
 // `.ir.json` is its stdout, `.stderr.txt` its `terraform.roots` notes, and
-// `.live-plan.json` the document it handed back. Nothing hand-edited. The
+// `.live-plan.json` the document it handed back. Nothing hand-edited. Since
+// behold#1227 the read hands back no document: the ownership is on the IR's
+// nodes (chant#5402), and these tests read only the plan half of the IR. The
 // three are the cases #404 recorded through behold's own plan read:
 //
 //  1. clean: the estate as applied. Every block `no-op`.
@@ -78,21 +79,20 @@ const withRootRead = (text: string, rootRead: Record<string, unknown> | null): s
   return JSON.stringify(doc);
 };
 
-/** chant, answered from a recording: the document handed to the directory the
- * variable names, the IR on stdout (with its root's report), the notes on stderr. */
-function recorded(c: Case, seen: Array<{ args: string[]; project: string; env: Record<string, string> }> = [], over: Partial<{ code: number; stderr: string; hand: boolean; rootRead: Record<string, unknown> | null }> = {}): ChoudoufuChantDeps {
+/** chant, answered from a recording: the IR on stdout (with its root's report), the notes on stderr. */
+function recorded(c: Case, seen: Array<{ args: string[]; project: string; env: Record<string, string> }> = [], over: Partial<{ code: number; stderr: string; rootRead: Record<string, unknown> | null }> = {}): ChoudoufuChantDeps {
   return {
-    chantVersion: () => "0.124.46",
-    lexiconVersion: () => "0.124.46",
+    chantVersion: () => "0.124.110",
+    lexiconVersion: () => "0.124.110",
     readerAbsent: () => undefined,
     run: async (args, project, env) => {
       seen.push({ args, project, env });
-      if (over.hand !== false) writeFileSync(join(env.CHANT_TERRAFORM_LIVE_PLAN_DIR!, livePlanDocumentFile(ROOT)), raw(`choudoufu-chant-iam-ecr-${c}.live-plan.json`));
       const rootRead = over.rootRead === undefined ? BOTH : over.rootRead;
       return { code: over.code ?? 0, stdout: withRootRead(raw(`choudoufu-chant-iam-ecr-${c}.ir.json`), rootRead), stderr: over.stderr ?? raw(`choudoufu-chant-iam-ecr-${c}.stderr.txt`) };
     },
   };
 }
+const PLAN = { plan: true };
 
 /** Every file under `dir` with its size and mtime. */
 function snapshot(dir: string): Record<string, string> {
@@ -110,15 +110,15 @@ function snapshot(dir: string): Record<string, string> {
 
 describe("the three recorded IAM/ECR cases, read through chant (#924)", () => {
   it("clean: nothing would change", async () => {
-    const r = await readChoudoufuThroughChant(member(), recorded("clean"));
+    const r = await readChoudoufuThroughChant(member(), PLAN, recorded("clean"));
     expect(r.answered).toBe("live+plan");
     expect(r.drift.size).toBe(0);
-    expect(r.plan.estate).toBe("iam-ecr-cohort");
-    expect(r.plan.bound).toHaveLength(6);
+    expect(r.root).toBe(ROOT);
+    expect(r.ir.nodes.length).toBeGreaterThan(0);
   });
 
   it("drift: the map and the scalar changed out of band, live value before, declared value after", async () => {
-    const r = await readChoudoufuThroughChant(member(), recorded("drift"));
+    const r = await readChoudoufuThroughChant(member(), PLAN, recorded("drift"));
     expect([...r.drift.keys()].sort()).toEqual(["aws_ecr_repository.app", "aws_iam_role.iam-ecr"]);
     expect(r.drift.get("aws_ecr_repository.app")).toEqual({
       address: "aws_ecr_repository.app",
@@ -138,12 +138,9 @@ describe("the three recorded IAM/ECR cases, read through chant (#924)", () => {
   });
 
   it("create: a deleted resource's planned create is not attribute drift, and the drift beside it still reads", async () => {
-    const r = await readChoudoufuThroughChant(member(), recorded("create"));
+    const r = await readChoudoufuThroughChant(member(), PLAN, recorded("create"));
     expect(r.drift.has("aws_iam_group.app")).toBe(false);
     expect([...r.drift.keys()].sort()).toEqual(["aws_ecr_repository.app", "aws_iam_role.iam-ecr"]);
-    // Ownership says why: live-plan omits the group as ABSENT, which the
-    // overlay paints pending, from the document chant handed back.
-    expect(r.plan.omissions?.find((o) => o.addr === "aws_iam_group.app")?.reason).toBe("ABSENT");
   });
 
   it("the card names the attributes, once each, and only on a bound card", () => {
@@ -162,15 +159,14 @@ describe("the three recorded IAM/ECR cases, read through chant (#924)", () => {
 });
 
 describe("the read (#924)", () => {
-  it("is one chant read at the plan depth, handing its live-plan document to a directory behold made and removes", async () => {
+  it("is one chant read at the plan depth, with the listing asked for (behold#1227)", async () => {
     const seen: Array<{ args: string[]; project: string; env: Record<string, string> }> = [];
-    await readChoudoufuThroughChant(member(), recorded("drift", seen));
+    await readChoudoufuThroughChant(member(), PLAN, recorded("drift", seen));
     expect(seen).toHaveLength(1);
     const [read] = seen;
     expect(read!.args).toEqual(choudoufuChantArgs());
     expect(read!.env.CHANT_TERRAFORM_OBSERVE).toBe("plan");
-    expect(read!.env.CHANT_TERRAFORM_LIVE_PLAN_DIR).toContain("behold-choudoufu-live-plan-");
-    expect(existsSync(read!.env.CHANT_TERRAFORM_LIVE_PLAN_DIR!)).toBe(false);
+    expect(read!.env.CHANT_TERRAFORM_LIVE_LISTING).toBe("1");
     // The reader project is the member's `chdf` one: choudoufu, one root.
     const config = readFileSync(join(read!.project, "chant.config.json"), "utf8");
     expect(config).toContain('"binary": "choudoufu"');
@@ -180,23 +176,31 @@ describe("the read (#924)", () => {
   it("leaves the served folder unchanged", async () => {
     const dir = member();
     const before = snapshot(dir);
-    await readChoudoufuThroughChant(dir, recorded("drift"));
+    await readChoudoufuThroughChant(dir, PLAN, recorded("drift"));
     expect(snapshot(dir)).toEqual(before);
   });
 
-  it("a failed plan read is live-plan alone: ownership from the document, no drift, and why", async () => {
+  it("a failed plan read is the live read alone: no drift, and why", async () => {
     const stderr =
       "warning: [terraform] terraform.roots.beh924: the plan read failed (no provider credentials: choudoufu plan failed), so `live-plan -json` alone answered; plan attributes are absent\n";
-    const r = await readChoudoufuThroughChant(member(), recorded("drift", [], { stderr, rootRead: { depth: "live+plan", fellBackTo: "live", reason: "no-credentials" } }));
+    const r = await readChoudoufuThroughChant(member(), PLAN, recorded("drift", [], { stderr, rootRead: { depth: "live+plan", fellBackTo: "live", reason: "no-credentials" } }));
     expect(r.answered).toBe("live");
     expect(r.drift.size).toBe(0);
     expect(r.note).toMatch(/the live\+plan read failed \(no provider credentials\)/);
-    expect(r.plan.bound).toHaveLength(6);
   });
 
-  it("no live-plan document means no live-plan answered: the member is not observed, and chant's note says why", async () => {
+  it("a read with no answer leaves the member not observed, and chant's note says why", async () => {
     const stderr = "warning: [terraform] terraform.roots.beh924: no read answered (`live-plan -json` failed, so the plan read was not tried)\n";
-    await expect(readChoudoufuThroughChant(member(), recorded("drift", [], { stderr, hand: false, rootRead: null }))).rejects.toThrow(/live-plan -json` failed/);
+    await expect(readChoudoufuThroughChant(member(), PLAN, recorded("drift", [], { code: 1, stderr, rootRead: null }))).rejects.toThrow(/live-plan -json` failed/);
+  });
+
+  it("without plan, reads live at the default depth and gives no drift", async () => {
+    const seen: Array<{ args: string[]; project: string; env: Record<string, string> }> = [];
+    const r = await readChoudoufuThroughChant(member(), {}, recorded("clean", seen, { rootRead: { depth: "live" } }));
+    expect(seen[0]!.env.CHANT_TERRAFORM_OBSERVE).toBeUndefined();
+    expect(seen[0]!.env.CHANT_TERRAFORM_LIVE_LISTING).toBe("1");
+    expect(r).toMatchObject({ answered: "live" });
+    expect(r.drift.size).toBe(0);
   });
 
   it("reads which reads answered off the IR's rootReads, never chant's note (behold#995)", () => {
@@ -234,12 +238,12 @@ describe("the read (#924)", () => {
   });
 });
 
-describe("the floor (#924)", () => {
-  it("reads through chant only at or above 0.124.46, and says which piece is short", async () => {
-    const at = { readerAbsent: () => undefined, chantVersion: () => "0.124.46", lexiconVersion: () => "0.124.46" };
+describe("the floor (#924, behold#1227)", () => {
+  it("reads through chant only at or above the ownership rows floor, and says which piece is short", async () => {
+    const at = { readerAbsent: () => undefined, chantVersion: () => "0.124.110", lexiconVersion: () => "0.124.110" };
     expect(await choudoufuChantUnavailable(at)).toBeUndefined();
-    expect(await choudoufuChantUnavailable({ ...at, chantVersion: () => "0.124.45" })).toMatch(/needs chant 0\.124\.46 or newer; behold has 0\.124\.45/);
-    expect(await choudoufuChantUnavailable({ ...at, lexiconVersion: () => "0.124.38" })).toMatch(/chant-lexicon-terraform 0\.124\.46 or newer; behold has 0\.124\.38/);
+    expect(await choudoufuChantUnavailable({ ...at, chantVersion: () => "0.124.109" })).toMatch(/needs chant 0\.124\.110 or newer; behold has 0\.124\.109/);
+    expect(await choudoufuChantUnavailable({ ...at, lexiconVersion: () => "0.124.38" })).toMatch(/chant-lexicon-terraform 0\.124\.110 or newer; behold has 0\.124\.38/);
     expect(await choudoufuChantUnavailable({ ...at, readerAbsent: () => "the terraform lexicon is not installed" })).toMatch(/not installed/);
     expect(await choudoufuChantUnavailable(null)).toMatch(/no chant/);
   });

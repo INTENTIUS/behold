@@ -1,43 +1,28 @@
 /**
- * The choudoufu member's live half (#370, M2 of #366): what the account holds
- * under the estate tag, and what a plan would do about it, as colour on the
- * cards M1 drew.
+ * The choudoufu member's live half (#370, M2 of #366): who owns each declared
+ * instance, and what a plan would do about it, as colour on the cards M1 drew.
  *
- * Two reads per member, both under the ambient read-only role, both in the
- * member's directory with no `-estate` flag (the `live` block names it, and
- * `-estate` beside one is refused):
- *
- *  - `live-ls -json .` — every resource the account holds under the estate's
- *    tag (the Resource Groups Tagging API's index plus an IAM pass), each with
- *    its ARN, type and decoded address; and `gaps[]`, the declared instances
- *    the listing cannot see, named by the rung that explains it.
- *  - `live-plan -json` — `bound[]` (declared instances matched to a live
- *    object, with how), `omissions[]` (declared instances the plan left out,
- *    with a reason), `unowned[]` (a live object at a declared identity that is
- *    not ours: adoptable, or belonging to another estate), `diagnostics[]`.
- *
- * A re-check with plan (`opts.plan`, #924) takes the `live-plan` document from
- * chant instead of spawning its own: chant's plan-depth read of the member
- * hands back the document its plan was merged on (src/choudoufu-chant-read.ts),
- * so one `live-plan` answers both the paint and the plan marks.
+ * One chant read answers it (behold#1227, src/choudoufu-chant-read.ts):
+ * `chant graph --live --overlay` over the member's reader project, which reads
+ * the root with `choudoufu live-plan -json`, `live-graph` and `live-ls -json`
+ * and puts the verdict on each instance node, `facts.ownership`, with the rows
+ * behind it, `facts.ownershipRows` (INTENTIUS/chant#5333, #5402). The roster
+ * still comes from `live-check -json`, offline, because its instance ids are
+ * the cards' and its rungs are choudoufu's own; src/choudoufu-ownership.ts
+ * paints it from chant's facts. A re-check with plan (`opts.plan`, #924) is the
+ * same read at the plan depth.
  *
  * The palette is the one behold already paints, `good | warn | accent |
- * neutral`, mapped from three vocabularies choudoufu deliberately did not
- * unify (`bound[].source`, `gaps[].rung`, the ten omission reasons) — the
- * table in `paintChoudoufu`. Nothing new is invented: a bound instance is
- * `good` whatever bound it (marker versus derived is how the plan found the
- * object, not who owns it; the card's identity mark shows it), an unowned object is the drift case, an absent one is
- * pending, and everything the tool could not answer is `neutral`.
- *
- * Join on the decoded `address`, never the raw `tofu-address` tag (which
- * escapes `[0]` as `:0`). The document conventions differ and are handled
- * here: `live-check` and `live-ls` always print their arrays, `live-plan`'s
- * three sections may be `null`, `gaps` was `omitempty` before choudoufu#966.
+ * neutral`, through the `(status, read)` table (src/drift-tone.ts), read
+ * `ownership`. A bound instance is `good` whatever bound it (marker versus
+ * derived is how the plan found the object, not who owns it; the card's
+ * identity mark shows it), an unowned or foreign object is the drift case,
+ * an absent one is pending, and everything the read could not answer is
+ * `neutral` with the reason.
  *
  * behold does not run `choudoufu init` in a served project (#366's decision):
  * a member whose rungs came from the built-in table serves with the caveat on
- * its cards and a doctor warn, and the live half paints it the same — bound
- * is bound whichever table classified the type.
+ * its cards and a doctor warn, and the live half paints it the same.
  */
 import type { GraphIR } from "@intentius/chant";
 import type { GraphOptions } from "./chant.ts";
@@ -49,115 +34,17 @@ import {
   isChoudoufuEstate,
   liveCheckToIr,
   readLiveCheck,
-  stripAnsiLines,
   type Captured,
-  type ChoudoufuRefusal,
   type LiveCheckDocument,
 } from "./choudoufu-member.ts";
+import { paintChoudoufuOwnership } from "./choudoufu-ownership.ts";
 import { addIntraEstateEdges, lexiconStamp } from "./choudoufu-refs.ts";
 import type { MemberVia } from "./member-ir.ts";
-// Imported when a re-check needs it: the chant read reaches the member-kind
+// Imported when a read needs it: the chant read reaches the member-kind
 // registry through src/terraform-member.ts, which registers this module's spec.
-import type { ChoudoufuChantAnswer } from "./choudoufu-chant-read.ts";
+import type { ChoudoufuChantAnswer, PlanResourceDrift } from "./choudoufu-chant-read.ts";
 import { resolve } from "node:path";
 import type { MemberKindSpec } from "./member-kind.ts";
-import { toneFor } from "./drift-tone.ts";
-
-// ---------------------------------------------------------------------------
-// The documents.
-// ---------------------------------------------------------------------------
-
-/** `bound[].source`, pinned (choudoufu `views/live_plan.go`). */
-export const BOUND_SOURCES = ["marker", "record", "derived", "cache"] as const;
-/** `gaps[].rung`, pinned (choudoufu `views/live_ls.go`): two words, one of
- * them a second spelling of live-check's `record-only`. */
-export const GAP_RUNGS = ["record", "declaration-carried"] as const;
-/** `omissions[].reason`, pinned (choudoufu `internal/live/projection/result.go`).
- * `UNREADABLE` and `INCOMPLETE_BLOCK` are documented as unreachable from a
- * plan document and painted anyway, so a document that carries one is not a
- * crash. */
-export const OMISSION_REASONS = [
-  "NEEDS_DISCOVERY",
-  "PARENT_UNAVAILABLE",
-  "ABSENT",
-  "FAILED",
-  "CYCLE",
-  "UNOWNED",
-  "UNREADABLE",
-  "INCOMPLETE_BLOCK",
-  "SUPERSEDED",
-  "LISTED_NOT_IMPORTABLE",
-] as const;
-
-export interface LiveLsItem {
-  id: string;
-  type: string;
-  address?: string;
-  slot?: string;
-  declared: boolean;
-  source: string;
-  tags: Record<string, string>;
-}
-
-export interface LiveLsGap {
-  address: string;
-  type: string;
-  rung: string;
-  detail: string;
-}
-
-export interface LiveLsDocument {
-  estate: string;
-  region?: string;
-  consistent: boolean;
-  stabilized: boolean;
-  attempts: number;
-  config_dir?: string;
-  schemas?: string;
-  items: LiveLsItem[];
-  gaps?: LiveLsGap[] | null;
-  gaps_skipped?: string;
-}
-
-export interface LivePlanBound {
-  addr: string;
-  type: string;
-  identity?: string;
-  identity_values?: Record<string, string>;
-  source: string;
-}
-
-export interface LivePlanOmission {
-  addr: string;
-  reason: string;
-  detail: string;
-}
-
-/** Two shapes: adoptable (`adopt_tofu_*`) and belongs-elsewhere (`tofu_estate`). */
-export interface LivePlanUnowned {
-  addr: string;
-  type: string;
-  identity: string;
-  tofu_estate?: string;
-  adopt_tofu_estate?: string;
-  adopt_tofu_address?: string;
-  /** The one-line command that writes those two tags, when choudoufu composed
-   * one. Its human render prints it after `adopt with:` and its views call the
-   * field `Hint`, but on 0.16.0 no such field is marshalled onto an `unowned[]`
-   * entry — `StatelessUnowned` carries the two marker values and nothing else
-   * (verified against a real `live-plan -json`, choudoufu v0.16.0). Read here
-   * so the day one arrives behold shows choudoufu's own line instead of the
-   * tags; behold composes no command of its own, because the API that writes a
-   * tag differs per resource type and guessing it is worse than saying nothing. */
-  hint?: string;
-  adopt_command?: string;
-}
-
-export interface LivePlanDiagnostic {
-  severity: string;
-  summary: string;
-  detail?: string;
-}
 
 /**
  * The account-inventory opt-in (#412, M1 of #410).
@@ -186,314 +73,6 @@ export const ADOPTION_SWEEP_VAR = "TOFU_LIVE_COLLECT_UNCLAIMED";
  * choudoufu's own spelling, not a truthiness test of behold's invention. */
 export function adoptionSweepRequested(env: NodeJS.ProcessEnv = process.env): boolean {
   return env[ADOPTION_SWEEP_VAR] === "1";
-}
-
-export interface LivePlanDocument {
-  estate: string;
-  choudoufu_version: string;
-  upstream_version: string;
-  bound?: LivePlanBound[] | null;
-  omissions?: LivePlanOmission[] | null;
-  unowned?: LivePlanUnowned[] | null;
-  /** choudoufu#962: live objects the estate-wide sweep matched to a declared
-   * instance BY CONTENT — the identity-bearing arguments agree exactly and the
-   * object carries no marker for this estate. Empty unless the run asked the
-   * account-inventory question (`TOFU_LIVE_COLLECT_UNCLAIMED=1`, #412);
-   * `swept` says whether it did. */
-  adoptable?: LivePlanAdoptable[] | null;
-  swept?: string[] | null;
-  diagnostics?: LivePlanDiagnostic[] | null;
-}
-
-/**
- * A live object the sweep matched to a declaration that names no identity.
- *
- * choudoufu shaped this so one consumer handles both halves: the field names
- * follow `StatelessUnowned`'s rather than the Go type's, so {@link adoptLine}
- * reads an adoptable row with the same code it reads an unowned one. What is
- * added is {@link matched} — and that is the whole difference in kind.
- *
- * An UNOWNED row is a live object sitting at an identity the configuration
- * DECLARES, so the claim needs no evidence: the identity is the match. Here
- * the declaration names no identity at all, and choudoufu is asserting that
- * this live object is that declaration because their identity-bearing
- * arguments agree. A person about to stamp two tags onto somebody's resource
- * needs to see which arguments those were.
- */
-export interface LivePlanAdoptable extends LivePlanUnowned {
-  /** The arguments the sweep compared, in the order it compared them. */
-  matched?: { attribute: string; value: string }[] | null;
-}
-
-export type LiveLsParse = { ok: true; doc: LiveLsDocument } | { ok: false; refusal: ChoudoufuRefusal };
-export type LivePlanParse = { ok: true; doc: LivePlanDocument } | { ok: false; refusal: ChoudoufuRefusal };
-
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-const refuse = (error: string, remedy: string): { ok: false; refusal: ChoudoufuRefusal } => ({ ok: false, refusal: { error, code: "choudoufu-live-check", remedy } });
-const CREDS = "Give behold the ambient read-only AWS credentials the estate's `live-ls` and `live-plan` need (AWS_PROFILE, or AWS_ENDPOINT_URL for an emulator), then reload.";
-
-/** What a failed spawn said, as one line: choudoufu's own `Error:` line when
- * there is one. */
-function said(run: Captured, fallback: string): string {
-  const lines = stripAnsiLines(run.stderr);
-  return lines.find((l) => /^Error:/.test(l)) ?? lines[0] ?? fallback;
-}
-
-/** Validate `live-ls -json` output. Shallow: the fields painted, plus the
- * `schemas` key that marks a document new enough to trust. */
-export function parseLiveLs(run: Captured, dir: string): LiveLsParse {
-  if (run.code === 127) return refuse("choudoufu is not on PATH.", "Install choudoufu and put it on PATH.");
-  const text = run.stdout.trim();
-  if (!text) return refuse(`choudoufu live-ls could not list ${dir}: ${said(run, `exit ${run.code}`)}`, CREDS);
-  let json: unknown;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    return refuse(`choudoufu live-ls printed something that is not JSON in ${dir}: ${said(run, "unparseable stdout")}`, CREDS);
-  }
-  if (!isRecord(json) || typeof json.estate !== "string" || !Array.isArray(json.items)) {
-    return refuse("That is not a live-ls document — no `estate` and `items`.", CREDS);
-  }
-  if (typeof json.schemas !== "string") {
-    return refuse("This live-ls document carries no `schemas` field: it was written by a choudoufu older than 0.16.0.", "Upgrade choudoufu to 0.16.0 or newer.");
-  }
-  return { ok: true, doc: json as unknown as LiveLsDocument };
-}
-
-/** Validate `live-plan -json` output. A document whose `diagnostics[]` carry
- * an error is still a document; the caller decides what an error means. */
-export function parseLivePlan(run: Captured, dir: string): LivePlanParse {
-  if (run.code === 127) return refuse("choudoufu is not on PATH.", "Install choudoufu and put it on PATH.");
-  const text = run.stdout.trim();
-  if (!text) return refuse(`choudoufu live-plan could not plan ${dir}: ${said(run, `exit ${run.code}`)}`, CREDS);
-  let json: unknown;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    return refuse(`choudoufu live-plan printed something that is not JSON in ${dir}: ${said(run, "unparseable stdout")}`, CREDS);
-  }
-  if (!isRecord(json) || typeof json.estate !== "string" || !("bound" in json)) {
-    return refuse("That is not a live-plan document — no `estate` and `bound`.", CREDS);
-  }
-  return { ok: true, doc: json as unknown as LivePlanDocument };
-}
-
-// ---------------------------------------------------------------------------
-// The paint.
-// ---------------------------------------------------------------------------
-
-/** What the live half says about one address, in the pane's own words. Every
- * key is a plain attr (an inspect row) except `_status`, which is the paint. */
-export interface LiveVerdict {
-  _status: "good" | "warn" | "accent" | "neutral";
-  /** behold#995: the drift status chant's record gives this verdict; `_status` is the table's tone for it, read `ownership`. */
-  _drift?: string;
-  _unobserved?: string;
-  physicalId?: string;
-  ownership?: "owned" | "foreign";
-  attrs: Record<string, unknown>;
-}
-
-/**
- * behold#995: the drift status chant's record gives each omission reason
- * (INTENTIUS/chant#4451, `choudoufuLivePlanDriftRecords`): `ABSENT` is
- * pending, and every other reason is not-observed, `UNOWNED` with no
- * `unowned[]` row included (chant's ruling, which behold follows: nothing in
- * the document says what holds the identity). The colour is then the one
- * `(status, read)` table's (src/drift-tone.ts), read `ownership`.
- */
-export function omissionStatus(reason: string): "pending" | "not-observed" {
-  return reason === "ABSENT" ? "pending" : "not-observed";
-}
-
-/** The paint for a status from an ownership read: the table's, never a tone chosen here. */
-const ownershipTone = (status: string): LiveVerdict["_status"] => toneFor({ status, read: "ownership" }).tone as LiveVerdict["_status"];
-
-/** The reasons whose `neutral` is "looked and could not answer" — carried as
- * `_unobserved` so the cover note and the pane say so — as opposed to the
- * ones whose rung already said why. */
-const UNOBSERVED_REASONS = new Set(["FAILED", "CYCLE", "SUPERSEDED", "UNREADABLE", "INCOMPLETE_BLOCK"]);
-
-const BOUND_WORDS: Record<string, string> = {
-  marker: "by its marker (the estate-wide tag sweep)",
-  // #393 item 8 read this as "no marker yet", and that holds only for an
-  // object that carries none. choudoufu binds a named instance (an IAM role,
-  // a log group) by the name the configuration states whether or not a
-  // marker is on it (internal/command/views/live_plan.go,
-  // LivePlanBoundDerived: "no marker sweep and no record store involved"),
-  // and a stamped log group still reads `derived`. Whether the object
-  // carries the marker is live-ls's answer, so it is its own row, `marker`,
-  // below.
-  derived: "by derived identity (the name the configuration states)",
-  record: "from the estate's record store",
-  cache: "from the local state cache",
-};
-
-/** The `marker` row: what the listing says the object wears. */
-export const MARKER_ON = "on the object (tofu-estate, tofu-address)";
-export const MARKER_NONE = "no marker on the object";
-
-/** The two tags that adopt an unowned object, as the one line a person writes:
- * choudoufu's own composed command when the document carries one, else the
- * marker pair itself. Never a command behold made up — see `LivePlanUnowned.hint`. */
-export function adoptLine(u: LivePlanUnowned): string | undefined {
-  const composed = u.hint || u.adopt_command;
-  if (composed) return composed;
-  if (!u.adopt_tofu_estate) return undefined;
-  return `tofu-estate=${u.adopt_tofu_estate} tofu-address=${u.adopt_tofu_address ?? u.addr}`;
-}
-
-/**
- * The verdict for one declared address, from the plan and the listing. The
- * plan decides first (it is the claim about ownership); the listing adds
- * the live id and the gap detail. Undefined for an address neither document
- * mentions, which the caller paints `neutral` with a reason.
- */
-export function verdictFor(address: string, ls: LiveLsDocument | undefined, plan: LivePlanDocument | undefined): LiveVerdict | undefined {
-  const bound = plan?.bound?.find((b) => b.addr === address);
-  const item = ls?.items.find((i) => i.address === address);
-  const gap = ls?.gaps?.find((g) => g.address === address);
-  const omission = plan?.omissions?.find((o) => o.addr === address);
-  const unowned = plan?.unowned?.find((u) => u.addr === address);
-  const adoptable = plan?.adoptable?.find((a) => a.addr === address);
-  const listing = gap ? { listing: gap.detail } : {};
-  if (bound) {
-    const id = bound.identity || item?.id;
-    // The marker-vs-derived mark (web/identity-mark.js): how the plan found
-    // the instance, and whether the object wears this estate's marker, which
-    // is whether live-ls lists it under the estate's tag.
-    const marked = !!item;
-    return {
-      _status: ownershipTone("in-sync"),
-      _drift: "in-sync",
-      ...(id ? { physicalId: id } : {}),
-      ownership: "owned",
-      attrs: {
-        bound: BOUND_WORDS[bound.source] ?? bound.source,
-        marker: marked ? MARKER_ON : MARKER_NONE,
-        _identity: { source: bound.source, marked },
-        ...(bound.identity_values ? { identity: bound.identity_values } : {}),
-        ...listing,
-      },
-    };
-  }
-  if (omission) {
-    const base: Record<string, unknown> = { omission: omission.reason, detail: omission.detail, ...listing };
-    // #413: the same gesture one branch over. NEEDS_DISCOVERY means the
-    // declaration carries no identity of its own, which on its own is a
-    // neutral "could not answer" — but when the sweep found the live object
-    // anyway, there IS something to do about it, and the card says so.
-    //
-    // `warn` rather than neutral, and it is the same word for the same
-    // reason: the live object carries no marker for this estate, so it is
-    // unowned in choudoufu's own vocabulary (src/status-vocabulary.ts). What
-    // separates it from the UNOWNED branch is the evidence, not the verdict.
-    if (omission.reason === "NEEDS_DISCOVERY" && adoptable) {
-      const adopt = adoptLine(adoptable);
-      const matched = (adoptable.matched ?? []).filter((m) => m && m.attribute);
-      return {
-        _status: ownershipTone("unclaimed"),
-        _drift: "unclaimed",
-        physicalId: adoptable.identity,
-        ownership: "foreign",
-        attrs: {
-          // The write to run first, as #393 item 10 settled for the unowned
-          // card. behold composes none of its own: `adoptLine` prints
-          // choudoufu's `adopt_command` when there is one and the two marker
-          // values when there is not.
-          ...(adopt ? { adopt } : {}),
-          // Then why choudoufu believes it. Rendered as the estate's own
-          // words rather than a shape behold invented.
-          ...(matched.length ? { matchedOn: matched.map((m) => `${m.attribute}=${m.value}`).join(", ") } : {}),
-          ...base,
-        },
-      };
-    }
-    if (omission.reason === "UNOWNED" && unowned) {
-      const adopt = adoptLine(unowned);
-      if (adopt) {
-        // #393 item 10: the adoption line FIRST. What a person wants off an
-        // UNOWNED card is the write to run; the paragraph explaining why the
-        // plan left the instance out is the second thing, not the first, and
-        // it used to be the whole thing with the tags under it as JSON.
-        return {
-          _status: ownershipTone("unclaimed"),
-          _drift: "unclaimed",
-          physicalId: unowned.identity,
-          ownership: "foreign",
-          attrs: { adopt, ...base },
-        };
-      }
-      return {
-        _status: ownershipTone("unclaimed"),
-        _drift: "unclaimed",
-        physicalId: unowned.identity,
-        ownership: "foreign",
-        attrs: { ...base, ...(unowned.tofu_estate ? { ownedBy: unowned.tofu_estate } : {}) },
-      };
-    }
-    const status = omissionStatus(omission.reason);
-    return {
-      _status: ownershipTone(status),
-      _drift: status,
-      // chant reads every reason but ABSENT as not-observed; the ones whose rung
-      // already said why keep their detail as a row rather than an unobserved line.
-      ...(status === "not-observed" && (UNOBSERVED_REASONS.has(omission.reason) || omission.reason === "UNOWNED") ? { _unobserved: omission.detail || `${omission.reason} with no unowned[] row` } : {}),
-      attrs: base,
-    };
-  }
-  if (gap) return { _status: ownershipTone("not-observed"), _drift: "not-observed", attrs: { listing: gap.detail } };
-  if (item) {
-    // Listed under the estate's tag and not in the plan's document at all —
-    // the plan did not consider it, which is a fact worth a row, not a colour
-    // the plan never gave.
-    return { _status: ownershipTone("not-observed"), _drift: "not-observed", _unobserved: "listed under the estate's tag but absent from live-plan's document", physicalId: item.id, ownership: "owned", attrs: {} };
-  }
-  return undefined;
-}
-
-/**
- * Paint the declared graph with the live half. Mutates and returns `ir`.
- * Every instance card gets a verdict; a data-source card (the declared read,
- * not a resource) stays uncoloured; a resource the listing holds under the
- * estate's tag that the roster does not declare becomes a new `warn` card —
- * marked for this estate, declared nowhere.
- */
-export function paintChoudoufu(ir: GraphIR, ls: LiveLsDocument | undefined, plan: LivePlanDocument | undefined, estate?: string): GraphIR {
-  const declared = new Set<string>();
-  for (const n of ir.nodes) {
-    if (n.lexicon !== CHOUDOUFU_LEXICON || isRecord(n.attrs.producer)) continue;
-    declared.add(n.id);
-    const v = verdictFor(n.id, ls, plan) ?? {
-      _status: ownershipTone("not-observed"),
-      _unobserved: plan ? "not mentioned by live-plan or live-ls" : "no live-plan document for this estate",
-      attrs: {},
-    };
-    // behold#995: the card carries the record's words beside the table's tone, as a card painted from chant's drift document does (src/drift-overlay.ts).
-    const status = v._drift ?? "not-observed";
-    n.attrs = { ...n.attrs, ...v.attrs, _status: v._status, _drift: { status, read: "ownership", label: toneFor({ status, read: "ownership" }).label }, ...(v._unobserved ? { _unobserved: v._unobserved } : {}) };
-    if (v.physicalId) n.physicalId = v.physicalId;
-    if (v.ownership) n.ownership = v.ownership;
-  }
-  for (const item of ls?.items ?? []) {
-    if (!item.address || declared.has(item.address)) continue;
-    declared.add(item.address);
-    ir.nodes.push({
-      id: item.address,
-      kind: item.type,
-      lexicon: CHOUDOUFU_LEXICON,
-      physicalId: item.id,
-      ownership: "owned",
-      attrs: {
-        ...(estate ? { estate } : {}),
-        marked: "carries this estate's marker, declared nowhere in its configuration",
-        ...(item.slot ? { slot: item.slot } : {}),
-        // undeclared, read ownership, in chant's record (`choudoufuLiveLsDriftRecords`).
-        _status: ownershipTone("undeclared"),
-      },
-    });
-  }
-  return ir;
 }
 
 // ---------------------------------------------------------------------------
@@ -550,76 +129,40 @@ export function paintPlanDrift(ir: GraphIR, drift: Map<string, { actions: string
 /** A run of choudoufu, injectable. */
 export type Runner = (args: string[], cwd: string) => Promise<Captured>;
 
-/** The three documents a live read of one member produces. */
+/** What a live read of one member gives: the roster, and the roster painted from chant's facts. */
 export interface ChoudoufuLiveRead {
   check: LiveCheckDocument;
-  ls: LiveLsDocument;
-  plan: LivePlanDocument;
+  /** The roster with each card's ownership from chant's live read. */
+  ir: GraphIR;
+  /** The plan's attribute drift by instance address; empty unless a plan was read. */
+  drift: Map<string, PlanResourceDrift>;
 }
 
 /**
- * Read a member live: the roster (offline), then the listing and the plan
- * against the account, concurrently. A refusal on any of the three throws
- * `ChoudoufuReadError`, and a plan whose diagnostics carry an error throws
- * with that error's summary — `composeEstateOverlay` catches either and
- * paints the member's source graph `neutral` with the reason in its cover
- * note, which is what "could not observe" should look like.
+ * Read a member live: the roster (offline, `live-check`), then chant's live
+ * read of the root, at the plan depth when `opts.plan` asks. A roster refusal
+ * or a chant that cannot read the member throws `ChoudoufuReadError`, and
+ * `composeEstateOverlay` paints the member's source graph `neutral` with the
+ * reason in its cover note, which is what "could not observe" looks like.
  */
 export async function readChoudoufuLive(dir: string, opts: GraphOptions, run: Runner = captureChoudoufu): Promise<ChoudoufuLiveRead> {
-  const chantRead = opts.plan ? await import("./choudoufu-chant-read.ts") : undefined;
-  const unavailable = chantRead ? await chantRead.choudoufuChantUnavailable() : undefined;
-  // The roster first, offline: `live-ls` reads no configuration and REQUIRES
-  // `-estate=NAME` (it lists what the account holds under one tag, and has
-  // nothing to derive the name from), and the name is on this document.
-  // `live-plan` is the opposite: it reads the configuration and REFUSES
-  // `-estate` beside a `live` block. The two then run together.
+  const chantRead = await import("./choudoufu-chant-read.ts");
   const check = await readLiveCheck(dir, run);
   if (!check.ok) throw new ChoudoufuReadError(check.refusal, dir);
-  const estate = check.doc.estate;
-  if (!estate) {
-    throw new ChoudoufuReadError(
-      {
-        error: `${dir} names no estate, so there is no estate tag to list the account under.`,
-        code: "choudoufu-live-check",
-        remedy: "Declare it — `estate = \"…\"` in an `estate.chdf.hcl` sidecar, or a `live { estate = … }` block in a root *.tf (choudoufu's `live-check` says what else the configuration needs) — then reload.",
-      },
-      dir,
-    );
+  const unavailable = await chantRead.choudoufuChantUnavailable();
+  if (unavailable) {
+    if (opts.plan) planAnswers.set(resolve(dir), { answered: "live", note: `the member was not read: ${unavailable}` });
+    throw new ChoudoufuReadError({ error: `${dir} was not read live: ${unavailable}`, code: "chant-too-old", remedy: "Upgrade the chant and terraform lexicon beside behold; `behold doctor` lists the floor." }, dir);
   }
-  const lsRead = run(["live-ls", `-estate=${estate}`, "-json", ...(opts.consistent ? ["-consistent"] : []), "."], dir);
-  // #924: a re-check with plan reads ownership and the plan through ONE chant
-  // read (src/choudoufu-chant-read.ts), which hands back the `live-plan`
-  // document its verdicts came from. Every other read, and a re-check chant
-  // cannot answer, runs behold's own `live-plan`.
-  const stamp = chantRead?.memberSourceStamp(dir);
-  const [lsRun, planDoc] = await Promise.all([
-    lsRead,
-    chantRead && !unavailable
-      ? chantRead.readChoudoufuThroughChant(dir).then((r) => {
-          planAnswers.set(resolve(dir), { answered: r.answered, ...(r.note ? { note: r.note } : {}) });
-          if (r.answered === "live+plan") chantRead.cacheChoudoufuPlan(resolve(dir), stamp, r.drift);
-          // A re-check whose plan was not read must not leave an older change
-          // set standing as if it were this one.
-          else chantRead.resetChoudoufuPlanCache(resolve(dir));
-          return r.plan;
-        })
-      : run(["live-plan", "-json"], dir).then((planRun) => {
-          if (opts.plan) {
-            planAnswers.set(resolve(dir), { answered: "live", note: `the plan was not read: ${unavailable}` });
-            chantRead?.resetChoudoufuPlanCache(resolve(dir));
-          }
-          const plan = parseLivePlan(planRun, dir);
-          if (!plan.ok) throw new ChoudoufuReadError(plan.refusal, dir);
-          return plan.doc;
-        }),
-  ]);
-  const ls = parseLiveLs(lsRun, dir);
-  if (!ls.ok) throw new ChoudoufuReadError(ls.refusal, dir);
-  const error = planDoc.diagnostics?.find((d) => d.severity === "error");
-  if (error) {
-    throw new ChoudoufuReadError({ error: `live-plan: ${error.summary}${error.detail ? ` — ${error.detail.split("\n")[0]}` : ""}`, code: "choudoufu-live-check", remedy: CREDS }, dir);
+  const stamp = chantRead.memberSourceStamp(dir);
+  const r = await chantRead.readChoudoufuThroughChant(dir, { plan: !!opts.plan });
+  if (opts.plan) {
+    planAnswers.set(resolve(dir), { answered: r.answered, ...(r.note ? { note: r.note } : {}) });
+    if (r.answered === "live+plan") chantRead.cacheChoudoufuPlan(resolve(dir), stamp, r.drift);
+    // A re-check whose plan was not read must not leave an older change set standing as if it were this one.
+    else chantRead.resetChoudoufuPlanCache(resolve(dir));
   }
-  return { check: check.doc, ls: ls.doc, plan: planDoc };
+  return { check: check.doc, ir: paintChoudoufuOwnership(liveCheckToIr(check.doc), r.ir, r.root, check.doc.estate), drift: r.drift };
 }
 
 /** What the last re-check with plan said for a member, by resolved directory:
@@ -631,8 +174,7 @@ export function choudoufuPlanAnswer(dir: string): { answered: ChoudoufuChantAnsw
 
 /** The live read as an IR: the declared graph, painted. */
 export async function choudoufuLiveIr(dir: string, opts: GraphOptions, run: Runner = captureChoudoufu): Promise<GraphIR> {
-  const { check, ls, plan } = await readChoudoufuLive(dir, opts, run);
-  return paintChoudoufu(liveCheckToIr(check), ls, plan, check.estate);
+  return (await readChoudoufuLive(dir, opts, run)).ir;
 }
 
 /** How a choudoufu member is read (the `via` of its kind): the declared half
@@ -679,8 +221,8 @@ export interface DiffNode {
   fieldDrift: unknown;
 }
 
-/** One `/api/diff` entry per declared address and per marked-undeclared
- * resource of a member, keyed by the COMPOSED id (`<member>/<address>`) when
+/** One `/api/diff` entry per card of a member's painted roster (behold#1227:
+ * from chant's ownership facts), declared or marked-undeclared, keyed by the COMPOSED id (`<member>/<address>`) when
  * a member name is given, so the pane's lookup by node id lands. `health` is
  * the pane's own vocabulary: `healthy` for a bound instance, `degraded` for
  * an unowned object, `unknown` otherwise; `healthDetail` is the verdict's own
@@ -698,54 +240,50 @@ export interface DiffNode {
  * `fieldDrift` stays null: it is the k8s managed-fields question (which
  * MANAGER owns a path), and a Terraform plan answers nothing about it. */
 export function choudoufuDiffNodes(
-  check: LiveCheckDocument,
-  ls: LiveLsDocument,
-  plan: LivePlanDocument,
+  live: ChoudoufuLiveRead,
   member?: string,
   drift?: Map<string, { actions: string[]; changes: { path: string; oldValue: unknown; newValue: unknown }[] }>,
 ): Record<string, DiffNode> {
   const key = (address: string): string => (member ? `${member}/${address}` : address);
+  const rung = new Map(live.check.instances.map((i) => [i.address, i.rung]));
   const out: Record<string, DiffNode> = {};
-  const seen = new Set<string>();
-  for (const i of check.instances) {
-    seen.add(i.address);
-    const v = verdictFor(i.address, ls, plan);
-    const health = !v ? "unknown" : v._status === "good" ? "healthy" : v._status === "warn" ? "degraded" : "unknown";
-    const detail = !v
-      ? "not mentioned by live-plan or live-ls"
-      : typeof v.attrs.bound === "string"
-        ? `bound ${v.attrs.bound}${v.attrs.marker === MARKER_NONE ? `; ${MARKER_NONE}` : ""}`
-        : typeof v.attrs.omission === "string"
-          ? `${v.attrs.omission}: ${String(v.attrs.detail ?? "")}`
-          : (v._unobserved ?? (typeof v.attrs.listing === "string" ? v.attrs.listing : undefined));
-    out[key(i.address)] = {
-      observed: v
+  for (const n of live.ir.nodes) {
+    if (n.lexicon !== CHOUDOUFU_LEXICON || n.attrs.producer !== undefined) continue;
+    const a = n.attrs as Record<string, unknown>;
+    const status = (a._drift as { status?: string } | undefined)?.status;
+    const observed = status !== undefined && status !== "not-observed";
+    const health = a._status === "good" ? "healthy" : a._status === "warn" ? "degraded" : "unknown";
+    const { _status: _s, _drift: _d, _unobserved: unobserved, _identity: _i, ...rows } = a;
+    const detail =
+      typeof a.marked === "string"
+        ? a.marked
+        : typeof a.bound === "string"
+          ? `bound ${a.bound}${a.marker === "no marker on the object" ? "; no marker on the object" : ""}`
+          : typeof a.omission === "string"
+            ? `${a.omission}: ${String(a.detail ?? "")}`
+            : typeof unobserved === "string"
+              ? unobserved
+              : typeof a.listing === "string"
+                ? a.listing
+                : undefined;
+    const r = rung.get(n.id);
+    out[key(n.id)] = {
+      observed: observed
         ? {
-            type: i.type,
-            ...(v.physicalId ? { physicalId: v.physicalId } : {}),
-            ...(v.ownership ? { ownership: v.ownership } : {}),
-            // #393 item 10: the verdict's own rows first — an UNOWNED
-            // instance leads with the line that adopts it — and the rung, the
-            // one fact that is true of the declaration whatever the account
-            // holds, last.
-            attributes: { ...v.attrs, ...(i.rung ? { rung: i.rung } : {}) },
+            type: n.kind,
+            ...(n.physicalId ? { physicalId: n.physicalId } : {}),
+            ...(n.ownership ? { ownership: n.ownership } : {}),
+            // #393 item 10: the verdict's own rows first (an UNOWNED instance
+            // leads with the line that adopts it), and the rung, the one fact
+            // that is true of the declaration whatever the account holds, last.
+            attributes: { ...rows, ...(r ? { rung: r } : {}) },
           }
         : null,
-      // #404: only for a BOUND instance — the same gate `paintPlanDrift`
+      // #404: only for a BOUND instance, the same gate `paintPlanDrift`
       // applies, so the card's mark and the pane's rows can never disagree.
-      diff: v?._status === "good" && drift?.has(i.address) ? { category: "planned", changes: drift.get(i.address)!.changes } : null,
+      diff: a._status === "good" && drift?.has(n.id) ? { category: "planned", changes: drift.get(n.id)!.changes } : null,
       health,
       ...(detail ? { healthDetail: detail } : {}),
-      fieldDrift: null,
-    };
-  }
-  for (const item of ls.items) {
-    if (!item.address || seen.has(item.address)) continue;
-    out[key(item.address)] = {
-      observed: { type: item.type, physicalId: item.id, ownership: "owned", attributes: { tags: item.tags, ...(item.slot ? { slot: item.slot } : {}) } },
-      diff: null,
-      health: "degraded",
-      healthDetail: "carries this estate's marker, declared nowhere in its configuration",
       fieldDrift: null,
     };
   }

@@ -64,6 +64,41 @@ export function pulumiIconFor(kind: string): PackGlyph | undefined {
   return undefined;
 }
 
+/**
+ * A box per Pulumi component (behold#1227): chant puts on each resource a
+ * component registered the id of that component's node (`component`,
+ * INTENTIUS/chant#5403), and a component inside a component carries its own.
+ * The box is keyed by the outermost component and holds it and every node
+ * whose chain of `component` reaches it, the way a Terraform module call holds
+ * its blocks. A chain that names a node the graph does not draw stops there.
+ * Undefined when no node carries one.
+ */
+export function pulumiComponentBoxes(ir: { nodes: ReadonlyArray<{ id: string; lexicon?: string }> }): Record<string, string[]> | undefined {
+  const parentOf = new Map<string, string>();
+  const ids = new Set(ir.nodes.map((n) => n.id));
+  for (const n of ir.nodes) {
+    const c = (n as { component?: unknown }).component;
+    if (n.lexicon === PULUMI_LEXICON && typeof c === "string" && c !== n.id && ids.has(c)) parentOf.set(n.id, c);
+  }
+  if (parentOf.size === 0) return undefined;
+  const top = (id: string): string => {
+    const seen = new Set<string>([id]);
+    let at = id;
+    for (let up = parentOf.get(at); up !== undefined && !seen.has(up); up = parentOf.get(at)) {
+      seen.add(up);
+      at = up;
+    }
+    return at;
+  };
+  const boxes: Record<string, string[]> = {};
+  for (const id of parentOf.keys()) {
+    const root = top(id);
+    (boxes[root] ??= [root]).push(id);
+  }
+  for (const k of Object.keys(boxes)) boxes[k] = [...new Set(boxes[k])].sort();
+  return boxes;
+}
+
 const str = (v: unknown): string | undefined => (typeof v === "string" && v !== "" ? v : undefined);
 
 /** The rows a Pulumi card shows, or undefined for pinhole's default when there are none. */

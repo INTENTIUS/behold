@@ -1,34 +1,28 @@
 /**
- * A choudoufu member's re-check with plan, through chant (#924).
+ * A choudoufu member's live read, through chant (#924, behold#1227).
  *
- * "Re-check live with plan" (`?plan=1`) asks two questions of a member: who
- * owns each declared instance, and what a plan would change on the ones the
- * estate owns. Both come from ONE chant read here:
+ * Who owns each declared instance, and on a re-check with plan what a plan
+ * would change on the ones the estate owns, come from ONE chant read:
  *
- *     CHANT_TERRAFORM_OBSERVE=plan CHANT_TERRAFORM_LIVE_PLAN_DIR=<tmp> \
+ *     CHANT_TERRAFORM_LIVE_LISTING=1 [CHANT_TERRAFORM_OBSERVE=plan] \
  *       chant graph . --live --overlay --env behold-plan --format ir --detail 3
  *
  * over the member's generated reader project (the `chdf` scratch project of
  * src/terraform-member.ts, `binary: "choudoufu"`, one root that is the member
  * itself, the same project #402's prediction reads). chant's terraform lexicon
- * reads a live root at the plan depth as two reads one after the other
- * (INTENTIUS/chant#4371): `choudoufu live-plan -json` for ownership, then
- * `choudoufu plan -input=false -lock=false -out=<its tmp>` and `show -json` for
- * the attributes, merged on the blocks `live-plan` bound. The plan file lives
- * under the OS temp directory and the root is left as it was
- * (INTENTIUS/chant#4379).
+ * reads a live root with `choudoufu live-plan -json`, `live-graph`, and with
+ * the listing variable `live-ls -json`; at the plan depth it then runs
+ * `choudoufu plan -input=false -lock=false -out=<its tmp>` and `show -json`
+ * and merges the attributes on the blocks `live-plan` bound
+ * (INTENTIUS/chant#4371). The plan file lives under the OS temp directory and
+ * the root is left as it was (INTENTIUS/chant#4379).
  *
- * The ownership paint stays behold's (src/choudoufu-live.ts `verdictFor`),
- * because it reads `live-plan`'s rows themselves: each instance's omission
- * reason and detail, `identity_values`, an adoptable row's matched arguments.
- * chant's overlay keeps one verdict per block and drops those. So chant hands
- * back the document its verdicts came from: `CHANT_TERRAFORM_LIVE_PLAN_DIR`
- * (INTENTIUS/chant#4383) names a directory behold made under the OS temp
- * directory, chant writes `<root>.live-plan.json` there, and behold paints
- * from it and removes the directory. One `live-plan` per re-check per member,
- * and the plan facts sit on the same verdicts the card shows (before #924 a
- * re-check ran behold's own `live-plan` and then a `choudoufu plan` beside it,
- * and ownership could come from a different read than the plan's).
+ * Each instance node then carries `facts.ownership` and the rows behind it,
+ * `facts.ownershipRows` (INTENTIUS/chant#5333, #5402): how the plan bound it,
+ * the omission and its reason, the adoption, the listing's gaps and whether
+ * the listing holds the object. src/choudoufu-ownership.ts paints the
+ * member's roster from them; behold reads no `live-plan` or `live-ls`
+ * document of its own.
  *
  * What a card takes from the plan (`planChanges` and `planActions` on each
  * bound block of chant's IR, sensitive values already `(sensitive)` on both
@@ -42,34 +36,28 @@
  *
  * Which reads answered is the IR's `rootReads` (chant#4452, behold#995), and
  * chant's note only for a chant that puts none on the IR (released up to
- * 0.124.52). If chant's plan read fails, `live-plan` alone answered: ownership is painted
- * from the handed document, no plan facts are cached, and the answer says why.
- * If chant's `live-plan` fails, no document is handed back and the member is
- * not observed, as when behold's own `live-plan` failed.
+ * 0.124.52). If chant's plan read fails, the live read alone answered:
+ * ownership is painted, no plan facts are cached, and the answer says why. If
+ * chant's live read fails, the member is not observed.
  */
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename } from "node:path";
 import type { GraphIR, IRNode } from "@intentius/chant";
 import { stripAnsi } from "./ansi.ts";
-import { CHOUDOUFU_PLAN_CHANT_FLOOR } from "./chant-floors.ts";
+import { CHOUDOUFU_OWNERSHIP_ROWS_CHANT_FLOOR } from "./chant-floors.ts";
 import { meetsFloor } from "./floor.ts";
 import { choudoufuSpawnOverride, ChoudoufuReadError } from "./choudoufu-member.ts";
-import { parseLivePlan, type LivePlanDocument } from "./choudoufu-live.ts";
+import { instanceAddressOf } from "./choudoufu-ownership.ts";
 import { resolvedVersion, TERRAFORM_LEXICON_PKG, terraformReaderState, writeTerraformScratchProject } from "./terraform-member.ts";
 import { hasRootReads, PLAN_READ_ENV, rootReadReasonWords, rootReadsOf, TERRAFORM_OBSERVE_ENV } from "./terraform-plan.ts";
 
 /** The member's source stamp, the key its cached change set is stored under (src/member-ir.ts). */
 export { memberSourceStamp } from "./member-ir.ts";
 
-/** chant's variable for the directory a live root's `live-plan` document is handed to (INTENTIUS/chant#4383). */
-export const LIVE_PLAN_DIR_ENV = "CHANT_TERRAFORM_LIVE_PLAN_DIR";
+/** The terraform lexicon's switch that lists each live root with `live-ls` beside `live-plan` (INTENTIUS/chant#5402). */
+export const LIVE_LISTING_ENV = "CHANT_TERRAFORM_LIVE_LISTING";
 
 /** The argv, pinned so a test can assert it. */
 export const choudoufuChantArgs = (): string[] => ["graph", ".", "--live", "--overlay", "--env", PLAN_READ_ENV, "--format", "ir", "--detail", "3"];
-
-/** The file chant writes for a root: its name made safe for a file name (chant's `livePlanDocumentFile`). */
-export const livePlanDocumentFile = (root: string): string => `${root.replace(/[^A-Za-z0-9._-]/g, "_")}.live-plan.json`;
 
 /** The member's root name in its reader project: its directory's name, as #402's prediction names it. */
 export const choudoufuRootName = (dir: string): string => basename(dir);
@@ -94,8 +82,10 @@ export interface PlanResourceDrift {
 export type ChoudoufuChantAnswer = "live+plan" | "live";
 
 export interface ChoudoufuChantRead {
-  /** The `live-plan -json` document chant's verdicts came from. */
-  plan: LivePlanDocument;
+  /** chant's graph of the member, ids `<root>/<block path>`, each instance node carrying `facts.ownership` and `facts.ownershipRows`. */
+  ir: GraphIR;
+  /** The root the ids are under. */
+  root: string;
   answered: ChoudoufuChantAnswer;
   /** chant's note for the root, verbatim, when it gave one. */
   note?: string;
@@ -113,27 +103,27 @@ export interface ChoudoufuChantDeps {
 }
 
 /** The test seam: `createApp` sets it beside `setChoudoufuRunner`. `null` is a
- * fake choudoufu with no chant to read through (the re-check paints from
- * behold's own `live-plan` and reads no plan); `undefined` is production. */
+ * fake choudoufu with no chant to read through (the member's live read then
+ * says why it was not observed); `undefined` is production. */
 let depsOverride: ChoudoufuChantDeps | null | undefined;
 export function setChoudoufuChantDeps(deps: ChoudoufuChantDeps | null | undefined): void {
   depsOverride = deps;
 }
 
 /**
- * Why this member's re-check cannot go through chant, or undefined when it
+ * Why this member's live read cannot go through chant, or undefined when it
  * can: no chant seam (a test's fake choudoufu), no terraform lexicon, or a
- * chant or lexicon below {@link CHOUDOUFU_PLAN_CHANT_FLOOR}.
+ * chant or lexicon below {@link CHOUDOUFU_OWNERSHIP_ROWS_CHANT_FLOOR}.
  */
 export async function choudoufuChantUnavailable(deps: ChoudoufuChantDeps | null | undefined = depsOverride): Promise<string | undefined> {
-  if (deps === null) return "no chant to read the plan through";
+  if (deps === null) return "no chant to read the member through";
   const d = deps ?? {};
   const absent = d.readerAbsent ? d.readerAbsent() : terraformReaderState().refusal?.error;
   if (absent) return absent;
   const chant = d.chantVersion ? d.chantVersion() : (await import("./chant.ts")).resolveChant().version;
-  if (!meetsFloor(chant, CHOUDOUFU_PLAN_CHANT_FLOOR)) return `the plan read on a choudoufu member needs chant ${CHOUDOUFU_PLAN_CHANT_FLOOR} or newer; behold has ${chant ?? "(unknown version)"}`;
+  if (!meetsFloor(chant, CHOUDOUFU_OWNERSHIP_ROWS_CHANT_FLOOR)) return `the live read of a choudoufu member needs chant ${CHOUDOUFU_OWNERSHIP_ROWS_CHANT_FLOOR} or newer; behold has ${chant ?? "(unknown version)"}`;
   const lexicon = d.lexiconVersion ? d.lexiconVersion() : resolvedVersion(TERRAFORM_LEXICON_PKG);
-  if (!meetsFloor(lexicon, CHOUDOUFU_PLAN_CHANT_FLOOR)) return `the plan read on a choudoufu member needs ${TERRAFORM_LEXICON_PKG} ${CHOUDOUFU_PLAN_CHANT_FLOOR} or newer; behold has ${lexicon ?? "(unknown version)"}`;
+  if (!meetsFloor(lexicon, CHOUDOUFU_OWNERSHIP_ROWS_CHANT_FLOOR)) return `the live read of a choudoufu member needs ${TERRAFORM_LEXICON_PKG} ${CHOUDOUFU_OWNERSHIP_ROWS_CHANT_FLOOR} or newer; behold has ${lexicon ?? "(unknown version)"}`;
   return undefined;
 }
 
@@ -150,11 +140,12 @@ export function rootAnswerOf(ir: unknown, root: string, stderr = ""): { answered
   if (!hasRootReads(ir)) return rootAnswerOfNotes(stderr, root);
   const rr = rootReadsOf(ir)[key];
   if (!rr) return { answered: "live" };
-  if (rr.depth === "live+plan" && rr.fellBackTo === undefined) return { answered: "live+plan", note: `${key}: the plan read answered, beside live-plan, which answered presence and ownership` };
+  if (rr.depth === "live+plan" && rr.fellBackTo === undefined) return { answered: "live+plan", note: `${key}: the plan read answered, beside the live read, which answered presence and ownership` };
+  if (rr.depth === "live" && rr.fellBackTo === undefined) return { answered: "live" };
   const why = rr.reason ? ` (${rootReadReasonWords(rr.reason)})` : "";
   return {
     answered: "live",
-    note: rr.fellBackTo === "declared" ? `${key}: no read answered${why}` : `${key}: the ${rr.depth} read failed${why}, so live-plan alone answered; plan attributes are absent`,
+    note: rr.fellBackTo === "declared" ? `${key}: no read answered${why}` : `${key}: the ${rr.depth} read failed${why}, so the live read alone answered; plan attributes are absent`,
   };
 }
 
@@ -173,16 +164,8 @@ export function rootAnswerOfNotes(stderr: string, root: string): { answered: Cho
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
-/** A node of chant's IR in the member's root, as the instance address choudoufu
- * knows it: `<root>/module.a/aws_x.y` -> `module.a.aws_x.y`. */
-function blockAddressOf(n: Pick<IRNode, "id">, root: string): string | undefined {
-  if (!n.id.startsWith(`${root}/`)) return undefined;
-  return n.id
-    .slice(root.length + 1)
-    .replace(/~\d+$/, "")
-    .split("/")
-    .join(".");
-}
+/** A node of chant's IR in the member's root, as the instance address choudoufu knows it (src/choudoufu-ownership.ts). */
+const blockAddressOf = (n: Pick<IRNode, "id">, root: string): string | undefined => instanceAddressOf(n, root);
 
 /** A change with both sides: an update, or a replace. Not a create, a delete, a read or a no-op. */
 const comparable = (actions: string[]): boolean => actions.includes("update") || (actions.includes("delete") && actions.includes("create"));
@@ -214,47 +197,32 @@ export function planDriftFromIr(ir: Pick<GraphIR, "nodes">, root: string): Map<s
 }
 
 /**
- * Read one member's ownership document and plan through chant. Throws
- * `ChoudoufuReadError` when no `live-plan` answered (the caller paints the
+ * Read one member live through chant, at the plan depth when `plan` is set.
+ * Throws `ChoudoufuReadError` when chant gave no graph (the caller paints the
  * member not observed); a plan read that failed is an answer of `live`.
  */
-export async function readChoudoufuThroughChant(dir: string, deps: ChoudoufuChantDeps | undefined = depsOverride ?? undefined): Promise<ChoudoufuChantRead> {
+export async function readChoudoufuThroughChant(dir: string, opts: { plan?: boolean } = {}, deps: ChoudoufuChantDeps | undefined = depsOverride ?? undefined): Promise<ChoudoufuChantRead> {
   const root = choudoufuRootName(dir);
   const project = writeTerraformScratchProject(dir, { roots: [{ name: root, dir: "." }], skipped: [] }, undefined, "chdf");
-  const handed = mkdtempSync(join(tmpdir(), "behold-choudoufu-live-plan-"));
+  const env = { ...(choudoufuSpawnOverride() ?? {}), [LIVE_LISTING_ENV]: "1", ...(opts.plan ? { [TERRAFORM_OBSERVE_ENV]: "plan" } : {}) };
+  const run = deps?.run ?? (async (args: string[], cwd: string, e: Record<string, string>) => (await import("./chant.ts")).runChantRaw(args, cwd, e));
+  const res = await run(choudoufuChantArgs(), project, env);
+  let ir: GraphIR | undefined;
   try {
-    const env = { ...(choudoufuSpawnOverride() ?? {}), [TERRAFORM_OBSERVE_ENV]: "plan", [LIVE_PLAN_DIR_ENV]: handed };
-    const run = deps?.run ?? (async (args: string[], cwd: string, e: Record<string, string>) => (await import("./chant.ts")).runChantRaw(args, cwd, e));
-    const res = await run(choudoufuChantArgs(), project, env);
-    let ir: GraphIR | undefined;
-    try {
-      ir = res.code === 0 ? (JSON.parse(res.stdout) as GraphIR) : undefined;
-    } catch {
-      ir = undefined;
-    }
-    const answer = rootAnswerOf(ir, root, res.stderr);
-    let text: string;
-    try {
-      text = readFileSync(join(handed, livePlanDocumentFile(root)), "utf8");
-    } catch {
-      const why = answer.note ?? stripAnsi(res.stderr).split("\n").find((l) => /error/i.test(l))?.trim() ?? `chant exited ${res.code} and handed back no live-plan document`;
-      throw new ChoudoufuReadError(
-        { error: `chant could not read ${dir} live: ${why}`, code: "choudoufu-live-check", remedy: "Give behold the ambient read-only AWS credentials the estate's `live-plan` and `plan` need (AWS_PROFILE, or AWS_ENDPOINT_URL for an emulator), then re-check live with plan." },
-        dir,
-      );
-    }
-    const parsed = parseLivePlan({ code: 0, stdout: text, stderr: "" }, dir);
-    if (!parsed.ok) throw new ChoudoufuReadError(parsed.refusal, dir);
-    let drift = new Map<string, PlanResourceDrift>();
-    if (res.code === 0 && !ir) return { plan: parsed.doc, answered: "live", note: `chant printed something that is not a graph for ${dir}; the plan was not read`, drift };
-    if (ir && answer.answered === "live+plan") {
-      drift = planDriftFromIr(ir, root);
-      return { plan: parsed.doc, answered: "live+plan", ...(answer.note ? { note: answer.note } : {}), drift };
-    }
-    return { plan: parsed.doc, answered: "live", ...(answer.note ? { note: answer.note } : {}), drift };
-  } finally {
-    rmSync(handed, { recursive: true, force: true });
+    ir = res.code === 0 ? (JSON.parse(res.stdout) as GraphIR) : undefined;
+  } catch {
+    ir = undefined;
   }
+  const answer = rootAnswerOf(ir, root, res.stderr);
+  if (!ir || answer.note?.includes("no read answered")) {
+    const why = answer.note ?? stripAnsi(res.stderr).split("\n").find((l) => /error/i.test(l))?.trim() ?? `chant exited ${res.code} and printed no graph`;
+    throw new ChoudoufuReadError(
+      { error: `chant could not read ${dir} live: ${why}`, code: "choudoufu-live-check", remedy: "Give behold the ambient read-only AWS credentials the estate's `live-plan` and `live-ls` need (AWS_PROFILE, or AWS_ENDPOINT_URL for an emulator), then reload." },
+      dir,
+    );
+  }
+  if (opts.plan && answer.answered === "live+plan") return { ir, root, answered: "live+plan", ...(answer.note ? { note: answer.note } : {}), drift: planDriftFromIr(ir, root) };
+  return { ir, root, answered: "live", ...(answer.note ? { note: answer.note } : {}), drift: new Map() };
 }
 
 // ---------------------------------------------------------------------------

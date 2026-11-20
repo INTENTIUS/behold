@@ -32,7 +32,7 @@ import { carveCardFields } from "./carve-lens.ts";
 import { cardFaces } from "./card-face.ts";
 import { CHOUDOUFU_LEXICON, choudoufuCardFields, moduleInstanceOf } from "./choudoufu-card.ts";
 import { terraformCardFields } from "./terraform-lens.ts";
-import { PULUMI_LEXICON, pulumiCardFields, pulumiIconFor } from "./pulumi-card.ts";
+import { PULUMI_LEXICON, pulumiCardFields, pulumiComponentBoxes, pulumiIconFor } from "./pulumi-card.ts";
 import { carveProgress, splitCarveState, type CarveState } from "./carve-state.ts";
 import { opCardFields } from "./ops-lens.ts";
 import { ROW_ASPECT, ROW_MIN_CARDS, rowColumns, withRowChains, type RowBand, type RowGrid } from "./edgeless.ts";
@@ -477,7 +477,10 @@ export function renderGraph(
   const boxKey = groupsIn.byWave ? "byWave" : (opts.boxes ?? (pipelines ? "byPipeline" : undefined));
   // The before-passes: the card faces and the edgeless wrap — see `estateFace`,
   // which the logical lens runs too (#396 finding 1).
-  const nested = boxKey === "byStack" ? pipelines : undefined;
+  // behold#1227: a Pulumi component's resources sit in a box of their own
+  // inside the member's, as a pipeline's jobs do (chant#5403's `component`).
+  const components = boxKey === "byStack" ? pulumiComponentBoxes(irIn) : undefined;
+  const nested = boxKey === "byStack" && (pipelines || components) ? { ...(pipelines ?? {}), ...(components ?? {}) } : undefined;
   const face = estateFace(irIn, boxKey ? groupsIn[boxKey] : undefined, nested ? { subgroups: nested } : {});
   const ir = face.ir;
   const boxes = face.boxes;

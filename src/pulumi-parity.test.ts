@@ -7,7 +7,8 @@ import { PULUMI_PREVIEW_CHANT_FLOOR } from "./chant-floors.ts";
 import { linkDemoPins } from "./demo-pins.ts";
 import { meetsFloor } from "./floor.ts";
 import { resetMemberIrCache } from "./member-ir.ts";
-import { pulumiCardFields, pulumiIconFor, terraformSpellings } from "./pulumi-card.ts";
+import { pulumiCardFields, pulumiComponentBoxes, pulumiIconFor, terraformSpellings } from "./pulumi-card.ts";
+import { composeMembers } from "./estate.ts";
 import { paintPulumiPreview, pulumiPreviewArgs, pulumiPreviewReadOf, PULUMI_OBSERVE_ENV, readPulumiPreview } from "./pulumi-preview.ts";
 import { applyReferenceCatalog, referenceCatalogOf } from "./reference-catalog.ts";
 import { createApp } from "./server.ts";
@@ -228,5 +229,29 @@ describe("a Pulumi workspace served through the real chant (behold#1227)", () =>
     const svc = plan.ir.nodes.find((n) => n.id === SERVICE);
     if (chantNew) expect(svc?.attrs._plan).toMatchObject({ action: "update" });
     expect(plan.ir.nodes.some((n) => n.id === "edge/edge/aws:sqs/queue:Queue::events")).toBe(true);
+  });
+});
+
+describe("Pulumi components as boxes (behold#1227, chant#5403)", () => {
+  it("boxes each outermost component with everything registered under it, nested components included", () => {
+    const ir = {
+      nodes: [
+        { id: "app/web", lexicon: "pulumi" },
+        { id: "app/web-inner", lexicon: "pulumi", component: "app/web" },
+        { id: "app/fn", lexicon: "pulumi", component: "app/web-inner" },
+        { id: "app/bucket", lexicon: "pulumi", component: "app/web" },
+        { id: "app/loose", lexicon: "pulumi" },
+        { id: "app/orphan", lexicon: "pulumi", component: "app/not-drawn" },
+      ],
+    };
+    expect(pulumiComponentBoxes(ir)).toEqual({ "app/web": ["app/bucket", "app/fn", "app/web", "app/web-inner"] });
+    expect(pulumiComponentBoxes({ nodes: [{ id: "x", lexicon: "pulumi" }] })).toBeUndefined();
+  });
+
+  it("puts a member's component ids under the member's name when the estate is composed", () => {
+    const ir = composeMembers([
+      { name: "app", ir: { nodes: [{ id: "web", kind: "my:mod:Web", lexicon: "pulumi", attrs: {} }, { id: "fn", kind: "aws:lambda/function:Function", lexicon: "pulumi", attrs: {}, component: "web" } as never], edges: [], groups: {} } as never },
+    ]);
+    expect((ir.nodes.find((n) => n.id === "app/fn") as { component?: string }).component).toBe("app/web");
   });
 });

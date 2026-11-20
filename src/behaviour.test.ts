@@ -48,7 +48,7 @@ import { attachBehaviour, validateBehaviourBlock, validateBehaviourMeta, type Be
  *
  * The live half — the roster, the listing and the plan the cards are drawn and
  * coloured from — is the choudoufu-live fixture set recorded from a real
- * `floci` run; src/choudoufu-live.test.ts's header records that provenance.
+ * `floci` run; src/choudoufu-ownership.test.ts's header records that provenance.
  */
 const HERE = dirname(fileURLToPath(import.meta.url));
 const raw = (name: string): string => readFileSync(join(HERE, "__fixtures__", name), "utf8");
