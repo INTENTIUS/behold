@@ -29,7 +29,8 @@ import { join, resolve } from "node:path";
 import type { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { hasEnvCredentials, S3Object, s3FromEnv } from "./s3-object.ts";
-import { realAws, type AwsRun } from "./terragucci-source.ts";
+import { fileURLToPath } from "node:url";
+import { realAws, terragucciSource, type AwsRun } from "./terragucci-source.ts";
 import { readLifecycle, type LifecycleAnswer, type LifecycleOptions } from "./terragucci-lifecycle.ts";
 
 /** The default tick, the same 30 s the reports read is cached for. */
@@ -100,6 +101,15 @@ export function indexProbe(spec: string, opts: { cwd?: string; aws?: AwsRun; fet
       return verdict(prev, etag);
     };
   }
+  // behold#1228: a gs:// or az:// bucket, read through chant's report store, is compared by the body's digest.
+  if (/^(gs|az):\/\//.test(spec)) {
+    const source = terragucciSource(spec);
+    return async (prev) => {
+      const body = await source.read(name);
+      return verdict(prev, body === undefined ? undefined : `sha256:${createHash("sha256").update(body).digest("hex")}`);
+    };
+  }
+  if (spec.startsWith("file://")) spec = fileURLToPath(spec);
   const file = join(resolve(opts.cwd ?? process.cwd(), spec), name);
   return async (prev) => {
     try {

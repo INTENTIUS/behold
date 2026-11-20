@@ -68,12 +68,46 @@ export function newestRun(answer) {
 
 /** The line under the tab's title: whose reports, how old, how checked. Never "live". `title` carries the long form. */
 export function legend(answer, now = new Date()) {
-  const newest = newestRun(answer);
-  const checked = answer.validation && answer.validation.by === "schema" ? `checked against terragucci ${answer.validation.terragucci}'s schemas` : "checked structurally; install @intentius/terragucci to check against its schemas";
+  // behold#1228: a report store read through chant's estate has no root runs; its newest run is the estate's.
+  const own = newestRun(answer);
+  const store = !own && answer.recent && answer.recent[0] ? answer.recent[0] : null;
+  const newest = own || store;
+  const v = answer.validation;
+  const checked =
+    v && v.by === "chant"
+      ? "checked against chant's report-store schemas"
+      : v && v.by === "schema"
+        ? `checked against terragucci ${v.terragucci}'s schemas`
+        : "checked structurally; install @intentius/terragucci to check against its schemas";
+  const product = answer.product || "terragucci";
   return {
-    text: `terragucci reports of ${answer.project}, not live${newest ? ` · newest run ${ago(newest.finished, now)}` : " · no runs for these roots yet"}`,
-    title: [newest ? `newest run: ${runWords(newest, now)}` : "", `${answer.reports} report${answer.reports === 1 ? "" : "s"} read from ${answer.source}`, checked].filter(Boolean).join("\n"),
+    text: `${product} reports of ${answer.project}, not live${newest ? ` · newest run ${ago(newest.finished, now)}` : " · no runs for these roots yet"}`,
+    title: [newest ? `newest run: ${store ? `${store.stage}${store.wave !== undefined ? ` wave ${store.wave}` : ""}, ${clock(store.finished, now)}` : runWords(newest, now)}` : "", `${answer.reports} report${answer.reports === 1 ? "" : "s"} read from ${answer.source}`, checked].filter(Boolean).join("\n"),
   };
+}
+
+/** behold#1228: a report store's delivery numbers (chant.dora/v1 beside the estate) as one line, or null. */
+export function doraLine(answer) {
+  const d = answer.dora;
+  if (!d) return null;
+  if (d.problem) return { text: `delivery numbers not shown: ${d.problem}` };
+  const days = (s) => (s >= 86400 ? `${(s / 86400).toFixed(1)} d` : s >= 3600 ? `${(s / 3600).toFixed(1)} h` : `${Math.round(s / 60)} min`);
+  const parts = [
+    d.deployments_per_week !== undefined ? `${d.deployments_per_week.toFixed(1)} deploys a week` : null,
+    d.lead_time_seconds !== undefined ? `lead time ${days(d.lead_time_seconds)}` : null,
+    d.change_failure_ratio !== undefined ? `${Math.round(d.change_failure_ratio * 100)}% of changes failed` : null,
+    d.restore_seconds !== undefined ? `restored in ${days(d.restore_seconds)}` : null,
+  ].filter(Boolean);
+  return parts.length ? { text: `delivery: ${parts.join(" · ")}`, href: hrefOf(answer, d.key) } : null;
+}
+
+/** behold#1228: the estate's newest runs of the project, as lines, newest first. */
+export function recentRows(answer, now = new Date()) {
+  return (answer.recent || []).slice(0, 8).map((r) => ({
+    text: `${r.stage}${r.wave !== undefined ? ` wave ${r.wave}` : ""} · ${r.status || r.approval || (r.failed ? "failed" : "ran")} · commit ${String(r.commit).slice(0, 12)}`,
+    title: `${clock(r.finished, now)}, ${ago(r.finished, now)}${r.roots !== undefined ? ` · ${r.roots} root${r.roots === 1 ? "" : "s"}` : ""}${r.changed ? ` · ${r.changed} changed` : ""}${r.refused ? ` · ${r.refused} refused` : ""}`,
+    ...(r.job_url ? { job: r.job_url } : {}),
+  }));
 }
 
 /** A root's cell for one stage: what its newest run of that stage found, or that there is none. Short, with the clock in `title`. */
@@ -110,7 +144,7 @@ export function rootRows(answer, now = new Date()) {
 /** A waiting wave as a gate card: what it holds and destroys, how long it has waited, and the line to run. No button. */
 export function waveCards(answer, now = new Date()) {
   return (answer.waiting || []).map((w) => ({
-    title: `wave ${w.wave} waits for an approval`,
+    title: `${w.project ? `${w.project} ` : ""}wave ${w.wave} waits for an approval`,
     facts: [
       `since ${clock(w.since, now)}, ${ago(w.since, now)}`,
       `${w.roots.length} root${w.roots.length === 1 ? "" : "s"}`,
@@ -120,8 +154,11 @@ export function waveCards(answer, now = new Date()) {
       .filter(Boolean)
       .join(" · "),
     destroys: w.destroys,
-    command: w.command,
-    note: "An approval is a signed git record bound to this plan digest: run the line at your shell. behold does not approve.",
+    ...(w.gate ? { gate: w.gate } : {}),
+    command: w.command || null,
+    note: w.command
+      ? "An approval is a signed git record bound to this plan digest: run the line at your shell. behold does not approve."
+      : `An approval is a signed git record on the gate ledger, made with ${answer.product || "the product"}'s approve command at your shell. behold does not approve.`,
     report: hrefOf(answer, w.report),
     ...(w.job_url ? { job: w.job_url } : {}),
   }));
@@ -133,7 +170,7 @@ export function estateLine(answer, now = new Date()) {
   const e = answer.estate;
   const when = e.behind ? `, written ${ago(e.generated, now)}, before the newest run` : "";
   return {
-    text: `terragucci's estate page${when}: ${e.drifted} root${e.drifted === 1 ? "" : "s"} drifted · ${e.failed} failed · ${e.waiting} wave${e.waiting === 1 ? "" : "s"} waiting`,
+    text: `${answer.product || "terragucci"}'s estate page${when}: ${e.drifted} root${e.drifted === 1 ? "" : "s"} drifted · ${e.failed} failed · ${e.waiting} wave${e.waiting === 1 ? "" : "s"} waiting`,
     href: hrefOf(answer, e.html),
   };
 }

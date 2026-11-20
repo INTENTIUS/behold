@@ -266,6 +266,11 @@ export function terragucciRoutes(app: Hono, opts: TerragucciOptions, dirs: () =>
       // Where a key opens: this server, which reads it from the same source.
       files: "/api/terragucci/file?key=",
       ...(r.estate ? { estate: r.estate } : {}),
+      // behold#1228: a report store read through chant's estate names its product, its newest runs and its delivery numbers.
+      ...(r.product ? { product: r.product } : {}),
+      ...(r.members ? { members: r.members } : {}),
+      ...(r.recent ? { recent: r.recent } : {}),
+      ...(r.dora ? { dora: r.dora } : {}),
       // #568: the pull request stage, read from the newest tf-plan of a pull request.
       ...(r.pull_request ? { pull_request: r.pull_request } : {}),
       // behold#741: the roots the newest apply's waves blocked (report minor 41), absent when none.

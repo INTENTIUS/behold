@@ -37,6 +37,7 @@ import type { Hono } from "hono";
 import { parseYAMLDocument } from "@intentius/chant/yaml";
 import { gatePolicyName, terragucciApproveCommand } from "./terragucci-lifecycle.ts";
 import { servedTerragucciConfig } from "./terragucci-repo.ts";
+import { productView } from "./report-store.ts";
 import { terragucciValidator, TerragucciReadError, type TerragucciRefusal, type Validation, type Validator } from "./terragucci-reports.ts";
 import { deniedWords, TerragucciDenied, terragucciSource, type TerragucciSource } from "./terragucci-source.ts";
 import { checkoutProject, checkoutRoots, repoBase, TERRAGUCCI_READ_TTL_MS, type TerragucciOptions } from "./terragucci-view.ts";
@@ -172,7 +173,11 @@ const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typ
 const str = (v: unknown): v is string => typeof v === "string";
 const int = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v);
 
-export function structuralRun(doc: unknown): string | undefined {
+export function structuralRun(raw: unknown): string | undefined {
+  // behold#1228: a run view under chant's neutral id (chant.run/v1, product terragucci) reads as terragucci's own.
+  const view = productView(raw, RUN_SCHEMA);
+  if (view.problem) return view.problem;
+  const doc = view.doc;
   if (!isRecord(doc)) return "it is not a JSON object";
   if (doc.schema !== RUN_SCHEMA) return `its schema is ${JSON.stringify(doc.schema)}, not ${RUN_SCHEMA}`;
   if (!str(doc.project) || !str(doc.commit) || !str(doc.updated)) return "it lacks project, commit or updated";
@@ -223,7 +228,10 @@ export function runViewValidator(dirs: readonly string[] = []): RunValidator {
       const validate = new Ajv2020({ strict: false, allErrors: false }).compile(JSON.parse(readFileSync(schema, "utf8")) as object);
       v = {
         validation: { by: "schema", terragucci: version },
-        check(doc) {
+        check(raw) {
+          const view = productView(raw, RUN_SCHEMA);
+          if (view.problem) return view.problem;
+          const doc = view.doc;
           const id = isRecord(doc) ? doc.schema : undefined;
           if (id !== RUN_SCHEMA) return `its schema is ${JSON.stringify(id)}, not ${RUN_SCHEMA}`;
           if (validate(doc)) return undefined;

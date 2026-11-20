@@ -29,6 +29,14 @@ const KIND_WORDS = {
   request: "app requested",
   "action-requested": "action requested",
   action: "action",
+  // behold#1228: chant's words (chant.audit/v1), which a product with no words of its own records.
+  approved: "approved",
+  revoked: "approval revoked",
+  "override-recorded": "policy overridden",
+  "override-spent": "override spent",
+  applied: "applied",
+  hook: "hook",
+  recorded: "recorded",
 };
 
 /** behold#1037: an action entry's name, root and address, from its detail, else its gate `<root>:<address>`. */
@@ -57,7 +65,7 @@ export function runUrlOf(entry) {
 export function toneOf(entry) {
   if (entry.kind === "refused" || entry.result === "failed" || entry.result === "denied") return "failed";
   if (entry.result === "waiting" || entry.kind === "approval-requested" || entry.kind === "override-requested" || entry.kind === "action-requested") return "wave";
-  if (entry.kind.endsWith("-revoked")) return "drift";
+  if (entry.kind.endsWith("-revoked") || entry.kind === "revoked") return "drift";
   return "ok";
 }
 

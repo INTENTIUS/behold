@@ -161,7 +161,7 @@ describe("readTimeline (#506)", () => {
     expect(bySchema.remedy).toContain("0.4.7");
 
     const v2 = await refusal(readTimeline(terragucciSource(sourceWith(JSON.stringify({ ...JSON.parse(good), schema: "terragucci.audit/v2" }))), { validator: auditValidator([]) }));
-    expect(v2.error).toContain('its schema is "terragucci.audit/v2", not terragucci.audit/v1');
+    expect(v2.error).toContain('its schema is "terragucci.audit/v2", not an audit id');
   });
 
   it("checks structurally without the package, and with its schema when it resolves", async () => {

@@ -59,7 +59,7 @@ export function environmentLines(e, now = new Date()) {
 /** The panel's head: what was read, how it was checked, and when. */
 export function legend(answer, now = new Date()) {
   const v = answer.validation;
-  const checked = v.from === "package" ? `@intentius/sql-yodeler ${v.sqlYodeler}'s schemas` : `behold's pinned copy of SQL Yodeler's schemas (${v.commit})`;
+  const checked = v.from === "package" ? `@intentius/sql-yodeler ${v.sqlYodeler}'s schemas` : "chant's audit schema, with the fields behold reads checked by type";
   const what = answer.report ? `${answer.report.file}, generated ${clock(answer.report.generatedAt, now)}, ${ago(answer.report.generatedAt, now)}` : "no report";
   return { text: `SQL Yodeler, not live · ${what} · ${answer.drift.length} drift file${answer.drift.length === 1 ? "" : "s"}`, title: `Read from ${answer.source}, checked against ${checked}. behold never runs yodel or reads the database.` };
 }

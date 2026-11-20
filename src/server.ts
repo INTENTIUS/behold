@@ -1339,7 +1339,7 @@ export function createApp(
   shareImageRoute(app, webRoot);
   // behold#571: the kiosk's "Pipeline metrics", from Prometheus; dora.json beside the reports when Prometheus has no DORA gauges.
   const doraSource = cfg.terragucci && cfg.prometheus ? terragucciSource(cfg.terragucci.source, { ...(cfg.terragucci.aws ? { aws: cfg.terragucci.aws } : {}), ...(cfg.terragucci.fetch ? { fetch: cfg.terragucci.fetch } : {}) }) : undefined;
-  metricsRoute(app, { ...(cfg.prometheus ? { prometheus: cfg.prometheus } : {}), ...(doraSource ? { doraFile: () => doraSource.read("dora.json") } : {}) });
+  metricsRoute(app, { ...(cfg.prometheus ? { prometheus: cfg.prometheus } : {}), ...(doraSource ? { doraFile: async () => (await doraSource.read("dora.json")) ?? (await doraSource.read("estate/dora.json")) } : {}) });
   // behold#571: a job's trace for the kiosk's Trace view, from Tempo, by fixed queries only.
   tracesRoute(app, cfg.tempo ? { tempo: cfg.tempo } : {});
   // A page per listed demo (/choudoufu-compose, ...); an old tool's URL redirects to /.

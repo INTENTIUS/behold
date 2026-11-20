@@ -1,0 +1,253 @@
+{
+  "schema": "chant.estate/v1",
+  "product": "plywood",
+  "generated": "2026-10-27T12:00:00.000Z",
+  "source": "ledger",
+  "totals": {
+    "projects": 2,
+    "waiting": 1,
+    "drifted_projects": 1,
+    "drifted_roots": 1,
+    "failed_roots": 0,
+    "unreadable": 0,
+    "overdue": 0,
+    "ephemeral": 1
+  },
+  "projects": [
+    {
+      "project": "network",
+      "status": "ok",
+      "drift": {
+        "project": "network",
+        "commit": "c3",
+        "stage": "tf-drift",
+        "finished": "2026-10-24T06:05:00.000Z",
+        "roots": 0,
+        "changed": 0,
+        "refused": 0,
+        "job_url": "https://forge.example/run/d-2",
+        "status": "ok",
+        "run": "d-2"
+      },
+      "apply": {
+        "commit": "c3",
+        "waves": [
+          {
+            "project": "network",
+            "commit": "c3",
+            "stage": "tf-apply",
+            "wave": 1,
+            "finished": "2026-10-22T12:10:00.000Z",
+            "roots": 1,
+            "changed": 1,
+            "failed": 0,
+            "refused": 0,
+            "applied": "2026-10-22T12:10:00.000Z",
+            "job_url": "https://forge.example/run/r-c",
+            "status": "ok",
+            "run": "r-c"
+          }
+        ]
+      },
+      "waiting": [],
+      "drifted": 0,
+      "failed": 0
+    },
+    {
+      "project": "web",
+      "status": "ok",
+      "drift": {
+        "project": "web",
+        "commit": "p1",
+        "stage": "pulumi-drift",
+        "finished": "2026-10-27T07:05:00.000Z",
+        "roots": 0,
+        "changed": 1,
+        "refused": 0,
+        "job_url": "https://forge.example/run/d-3",
+        "status": "ok",
+        "run": "d-3"
+      },
+      "apply": {
+        "commit": "p2",
+        "waves": [
+          {
+            "project": "web",
+            "commit": "p2",
+            "stage": "pulumi-up",
+            "wave": 1,
+            "finished": "2026-10-27T09:02:00.000Z",
+            "roots": 0,
+            "changed": 0,
+            "failed": 0,
+            "refused": 0,
+            "approval": "waiting",
+            "waiting_since": "2026-10-27T09:02:00.000Z",
+            "job_url": "https://forge.example/run/r-e",
+            "status": "gated",
+            "run": "r-e"
+          }
+        ]
+      },
+      "waiting": [
+        {
+          "project": "web",
+          "wave": 1,
+          "commit": "p2",
+          "since": "2026-10-27T09:02:00.000Z",
+          "age_seconds": 10680,
+          "gate": "wave-1"
+        }
+      ],
+      "drifted": 1,
+      "failed": 0,
+      "ephemeral": [
+        {
+          "pr": 12,
+          "env": "pr-12",
+          "commit": "p12",
+          "applied": "2026-10-26T10:00:00.000Z",
+          "expires": "2026-10-29T10:00:00.000Z",
+          "run_url": "https://forge.example/run/pr12"
+        }
+      ]
+    }
+  ],
+  "recent": [
+    {
+      "project": "web",
+      "commit": "p2",
+      "stage": "pulumi-up",
+      "wave": 1,
+      "finished": "2026-10-27T09:02:00.000Z",
+      "roots": 0,
+      "changed": 0,
+      "failed": 0,
+      "refused": 0,
+      "approval": "waiting",
+      "waiting_since": "2026-10-27T09:02:00.000Z",
+      "job_url": "https://forge.example/run/r-e",
+      "status": "gated",
+      "run": "r-e"
+    },
+    {
+      "project": "web",
+      "commit": "p1",
+      "stage": "pulumi-drift",
+      "finished": "2026-10-27T07:05:00.000Z",
+      "roots": 0,
+      "changed": 1,
+      "refused": 0,
+      "job_url": "https://forge.example/run/d-3",
+      "status": "ok",
+      "run": "d-3"
+    },
+    {
+      "project": "network",
+      "commit": "c3",
+      "stage": "tf-drift",
+      "finished": "2026-10-24T06:05:00.000Z",
+      "roots": 0,
+      "changed": 0,
+      "refused": 0,
+      "job_url": "https://forge.example/run/d-2",
+      "status": "ok",
+      "run": "d-2"
+    },
+    {
+      "project": "network",
+      "commit": "c3",
+      "stage": "tf-drift",
+      "finished": "2026-10-23T06:05:00.000Z",
+      "roots": 1,
+      "changed": 1,
+      "refused": 0,
+      "job_url": "https://forge.example/run/d-1",
+      "status": "ok",
+      "run": "d-1"
+    },
+    {
+      "project": "network",
+      "commit": "c3",
+      "stage": "tf-apply",
+      "wave": 1,
+      "finished": "2026-10-22T12:10:00.000Z",
+      "roots": 1,
+      "changed": 1,
+      "failed": 0,
+      "refused": 0,
+      "applied": "2026-10-22T12:10:00.000Z",
+      "job_url": "https://forge.example/run/r-c",
+      "status": "ok",
+      "run": "r-c"
+    },
+    {
+      "project": "network",
+      "commit": "c2",
+      "stage": "tf-apply",
+      "wave": 1,
+      "finished": "2026-10-22T08:10:00.000Z",
+      "roots": 1,
+      "changed": 0,
+      "failed": 1,
+      "refused": 0,
+      "job_url": "https://forge.example/run/r-b",
+      "status": "fail",
+      "run": "r-b"
+    },
+    {
+      "project": "web",
+      "commit": "p1",
+      "stage": "pulumi-up",
+      "wave": 1,
+      "finished": "2026-10-21T14:20:00.000Z",
+      "roots": 1,
+      "changed": 1,
+      "failed": 0,
+      "refused": 0,
+      "applied": "2026-10-21T14:20:00.000Z",
+      "job_url": "https://forge.example/run/r-d",
+      "status": "ok",
+      "run": "r-d"
+    },
+    {
+      "project": "network",
+      "commit": "c1",
+      "stage": "tf-apply",
+      "wave": 1,
+      "share": 1,
+      "finished": "2026-10-20T10:40:00.000Z",
+      "roots": 1,
+      "changed": 1,
+      "failed": 0,
+      "refused": 0,
+      "approval": "approved",
+      "applied": "2026-10-20T10:40:00.000Z",
+      "job_url": "https://forge.example/run/r-a2",
+      "status": "ok",
+      "run": "r-a2"
+    },
+    {
+      "project": "network",
+      "commit": "c1",
+      "stage": "tf-apply",
+      "wave": 1,
+      "share": 0,
+      "finished": "2026-10-20T10:30:00.000Z",
+      "roots": 1,
+      "changed": 1,
+      "failed": 0,
+      "refused": 0,
+      "approval": "approved",
+      "applied": "2026-10-20T10:30:00.000Z",
+      "job_url": "https://forge.example/run/r-a1",
+      "status": "ok",
+      "run": "r-a1"
+    }
+  ],
+  "dora": {
+    "file": "dora.json",
+    "generated": "2026-10-27T12:00:00.000Z",
+    "deployments": 3
+  }
+}

@@ -113,6 +113,7 @@ export default defineConfig({
 						{ label: 'Serve a chant workspace', slug: 'using/workspace' },
 						{ label: 'Look at a Terraform estate', slug: 'using/terraform' },
 						{ label: 'Look at a terragucci estate', slug: 'using/terragucci' },
+						{ label: 'Look at a plywood estate', slug: 'using/plywood' },
 						{ label: 'Apps from templates', slug: 'using/templates' },
 						{ label: 'Look at a SQL Yodeler project', slug: 'using/sql-yodeler' },
 						{ label: 'Look at a choudoufu estate', slug: 'using/choudoufu' },

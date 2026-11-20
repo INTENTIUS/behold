@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>plywood estate</title><style>body{font:14px/1.45 system-ui,sans-serif;margin:0 auto;padding:16px;max-width:1100px;color:#1d1d1f;background:#fff}
+h1{font-size:22px}h2{font-size:18px;margin-top:28px}h3{font-size:15px}
+table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #ddd;padding:4px 8px;text-align:left;vertical-align:top}
+.scroll{overflow-x:auto}.warn{color:#b42318}.ok{color:#067647}small{color:#555}
+dl.defs dt{font-weight:600;margin-top:6px}dl.defs dd{margin-left:16px}
+section.member{border-top:2px solid #eee;margin-top:20px}
+@media (prefers-color-scheme:dark){body{color:#eee;background:#141414}td,th{border-color:#333}small{color:#aaa}section.member{border-color:#333}.warn{color:#f97066}.ok{color:#47cd89}}</style></head>
+<body><h1>plywood estate</h1>
+<p>2 stacks, 1 waiting, 1 drifted, 0 failed, 0 overdue drift checks. Built 2026-10-27T12:00:00.000Z from the workspace ledger.</p>
+<section class="member" id="member-network"><h2>network</h2>
+<h3>Waves of c3</h3><div class="scroll"><table><tr><th>Wave</th><th>Commit</th><th>Finished</th><th>Applied</th><th>State</th></tr>
+<tr><td>tf-apply wave 1</td><td>c3</td><td>2026-10-22T12:10:00.000Z</td><td>1 of 1</td><td>ok <a href="https://forge.example/run/r-c">job</a></td></tr>
+</table></div>
+<p>Newest drift check: tf-drift at 2026-10-24T06:05:00.000Z, <span class="ok">no drift</span> <a href="https://forge.example/run/d-2">job</a>.</p>
+</section>
+<section class="member" id="member-web"><h2>web</h2>
+<ul><li class="warn">wave 1 waits at wave-1, for 2h 58m</li></ul>
+<h3>Waves of p2</h3><div class="scroll"><table><tr><th>Wave</th><th>Commit</th><th>Finished</th><th>Applied</th><th>State</th></tr>
+<tr><td>pulumi-up wave 1</td><td>p2</td><td>2026-10-27T09:02:00.000Z</td><td>0 of 0</td><td><span class="warn">waiting since 2026-10-27T09:02:00.000Z</span> <a href="https://forge.example/run/r-e">job</a></td></tr>
+</table></div>
+<p>Newest drift check: pulumi-drift at 2026-10-27T07:05:00.000Z, <span class="warn">1 drifted</span> <a href="https://forge.example/run/d-3">job</a>.</p>
+<h3>Pull request environments</h3><ul><li>pr-12 (pull request 12), expires 2026-10-29T10:00:00.000Z</li></ul>
+</section>
+<h2>Newest runs</h2><div class="scroll"><table><tr><th>stack</th><th>Run</th><th>Commit</th><th>Finished</th><th>Applied</th><th>State</th></tr>
+<tr><td><a href="#member-web">web</a></td><td>pulumi-up wave 1</td><td>p2</td><td>2026-10-27T09:02:00.000Z</td><td>0 of 0</td><td><span class="warn">waiting since 2026-10-27T09:02:00.000Z</span> <a href="https://forge.example/run/r-e">job</a></td></tr>
+<tr><td><a href="#member-web">web</a></td><td>pulumi-drift</td><td>p1</td><td>2026-10-27T07:05:00.000Z</td><td>1 of 0</td><td>ok <a href="https://forge.example/run/d-3">job</a></td></tr>
+<tr><td><a href="#member-network">network</a></td><td>tf-drift</td><td>c3</td><td>2026-10-24T06:05:00.000Z</td><td>0 of 0</td><td>ok <a href="https://forge.example/run/d-2">job</a></td></tr>
+<tr><td><a href="#member-network">network</a></td><td>tf-drift</td><td>c3</td><td>2026-10-23T06:05:00.000Z</td><td>1 of 1</td><td>ok <a href="https://forge.example/run/d-1">job</a></td></tr>
+<tr><td><a href="#member-network">network</a></td><td>tf-apply wave 1</td><td>c3</td><td>2026-10-22T12:10:00.000Z</td><td>1 of 1</td><td>ok <a href="https://forge.example/run/r-c">job</a></td></tr>
+<tr><td><a href="#member-network">network</a></td><td>tf-apply wave 1</td><td>c2</td><td>2026-10-22T08:10:00.000Z</td><td>0 of 1</td><td><span class="warn">1 failed</span> <a href="https://forge.example/run/r-b">job</a></td></tr>
+<tr><td><a href="#member-web">web</a></td><td>pulumi-up wave 1</td><td>p1</td><td>2026-10-21T14:20:00.000Z</td><td>1 of 1</td><td>ok <a href="https://forge.example/run/r-d">job</a></td></tr>
+<tr><td><a href="#member-network">network</a></td><td>tf-apply wave 1 share 1</td><td>c1</td><td>2026-10-20T10:40:00.000Z</td><td>1 of 1</td><td>ok <a href="https://forge.example/run/r-a2">job</a></td></tr>
+<tr><td><a href="#member-network">network</a></td><td>tf-apply wave 1 share 0</td><td>c1</td><td>2026-10-20T10:30:00.000Z</td><td>1 of 1</td><td>ok <a href="https://forge.example/run/r-a1">job</a></td></tr>
+</table></div>
+<h2>Delivery</h2>
+<p>The newest 8 weeks, from the workspace ledger</p>
+<dl class="defs">
+<dt>Deployment frequency</dt><dd>Applied waves per week, over the span the history covers: from now back to the oldest apply, or to the window's start when the history is older, and at least a day. Beside each rate is the span it divides by. Infrastructure ships less often than an application, so read it as a trend rather than against a tier.</dd>
+<dt>Lead time</dt><dd>The median time from a change's first plan to its wave applied: before the gate (the plan to the wave reaching its gate, or to the apply when no gate held it), at the gate (until the approval), and after it (until applied).</dd>
+<dt>Change failure rate</dt><dd>Failed applies, plus applied waves whose targets drifted within 7d 0h, over all applies. A refused wave is the gate working and does not count.</dd>
+<dt>Time to restore</dt><dd>The median time from a failed apply to the next apply of those targets, and from drift found to the next drift check that found none.</dd>
+</dl>
+<div class="scroll"><table id="dora"><tr><th>Member</th><th>Deployments per week</th><th>Lead time</th><th>Change failure rate</th><th>Time to restore</th></tr>
+<tr><td><b>Estate</b></td><td>2.98 <small>(3 in 7 days)</small></td><td>20m<br><small>before the gate 10m, at the gate 0s, after it 0s</small></td><td>75% <small>(1 failed, 2 drifted, of 4)</small></td><td>14h 0m <small>(2 restored, <span class="warn">1 open</span>)</small></td></tr>
+<tr><td><a href="#member-network">network</a></td><td>1.98 <small>(2 in 7 days)</small></td><td>55m<br><small>before the gate 7m, at the gate 27m, after it 20m</small></td><td>66.7% <small>(1 failed, 1 drifted, of 3)</small></td><td>14h 0m <small>(2 restored)</small></td></tr>
+<tr><td><a href="#member-web">web</a></td><td>1.19 <small>(1 in 6 days)</small></td><td>20m<br><small>before the gate 20m, at the gate 0s, after it 0s</small></td><td>100% <small>(0 failed, 1 drifted, of 1)</small></td><td>none <small>(0 restored, <span class="warn">1 open</span>)</small></td></tr>
+</table></div>
+<h3>By week</h3>
+<div class="scroll"><table id="dora-weeks"><tr><th>Week of</th><th>Deployments</th><th>Applies</th><th>Failed changes</th><th>Lead time</th><th>Time to restore</th></tr>
+<tr><td>2026-09-07</td><td>0</td><td>0</td><td>0</td><td>none</td><td>none</td></tr>
+<tr><td>2026-09-14</td><td>0</td><td>0</td><td>0</td><td>none</td><td>none</td></tr>
+<tr><td>2026-09-21</td><td>0</td><td>0</td><td>0</td><td>none</td><td>none</td></tr>
+<tr><td>2026-09-28</td><td>0</td><td>0</td><td>0</td><td>none</td><td>none</td></tr>
+<tr><td>2026-10-05</td><td>0</td><td>0</td><td>0</td><td>none</td><td>none</td></tr>
+<tr><td>2026-10-12</td><td>0</td><td>0</td><td>0</td><td>none</td><td>none</td></tr>
+<tr><td>2026-10-19</td><td>3</td><td>4</td><td>3</td><td>20m</td><td>14h 0m</td></tr>
+<tr><td>2026-10-26</td><td>0</td><td>0</td><td>0</td><td>none</td><td>none</td></tr>
+</table></div>
+
+</body></html>

@@ -39,6 +39,11 @@ import { Ajv2020 } from "ajv/dist/2020.js";
 import { waveOfGate } from "./terragucci-lifecycle.ts";
 import { matchProject, TerragucciReadError, type Validation } from "./terragucci-reports.ts";
 import { deniedWords, TerragucciDenied, type TerragucciSource } from "./terragucci-source.ts";
+import { toProductAuditLine } from "@intentius/chant/report-store";
+import { checkAuditLine, readReportSchema, type AuditLine } from "./report-store.ts";
+
+/** chant's product-neutral audit line (behold#1228). */
+export const REPORT_SCHEMAS_AUDIT = "chant.audit/v1";
 
 export const AUDIT_SCHEMA = "terragucci.audit/v1";
 /** The record's key, at the top of the reports prefix. */
@@ -68,6 +73,10 @@ export const AUDIT_KINDS = [
 
 /** Kinds whose `what` is a root rather than a gate. */
 const WHAT_IS_ROOT = new Set(["override-requested", "override", "override-revoked", "unlock", "state-export", "unrecorded-write"]);
+/** behold#1228: those are terragucci's words; a line of chant's from another product names its gate in `what`. */
+const whatIsRoot = (e: AuditEntry): boolean => (e.product ?? "terragucci") === "terragucci" && WHAT_IS_ROOT.has(e.kind);
+/** An approval or its revocation, in terragucci's words or chant's. */
+const APPROVALS = new Set(["approval", "approval-revoked", "approved", "revoked"]);
 
 /** How many entries an answer carries by default, and at most. */
 export const TIMELINE_LIMIT = 200;
@@ -78,6 +87,10 @@ export const TIMELINE_TTL_MS = 30_000;
 /** One line of audit.jsonl, as far as behold reads it. */
 export interface AuditEntry {
   schema: string;
+  /** behold#1228: the product that recorded it. */
+  product?: string;
+  /** behold#1228: the environment, for a product that records one per line (sql-yodeler). */
+  environment?: string;
   id: string;
   kind: string;
   project: string;
@@ -86,13 +99,18 @@ export interface AuditEntry {
   what: string;
   digest: string | null;
   result: string;
-  evidence: { source: string; branch?: string; path?: string; commit?: string; bucket?: string; key?: string; url?: string; job_url?: string };
+  evidence: { source: string; branch?: string; path?: string; commit?: string; bucket?: string; key?: string; url?: string; job_url?: string; [k: string]: unknown };
   detail?: Record<string, unknown>;
 }
 
 /** One entry of the lane. */
 export interface TimelineEntry {
   id: string;
+  /** behold#1228: the product that recorded it. */
+  product?: string;
+  /** behold#1228: the environment, when the product records one per line. */
+  environment?: string;
+  /** The product's own word for it: terragucci's `approval`, plywood's `approved` (chant's), sql-yodeler's `migration`. */
   kind: string;
   /** When it happened, as the record says. */
   at: string;
@@ -203,8 +221,40 @@ const refuse = (error: string, remedy: string): never => {
   throw new TerragucciReadError({ error, code: "terragucci-report", remedy });
 };
 
-/** Every entry of `text`, in the record's order. A line that is not an entry refuses the whole record. */
-export function parseAudit(text: string, location: string, v: AuditValidator): AuditEntry[] {
+/** behold#1228: what a line that is not terragucci's own is read with. */
+export interface AuditReadOptions {
+  /** The project of a line whose format names none (sql-yodeler's): the checkout's. */
+  project?: string;
+}
+
+/** A `chant.audit/v1` line as the lane's entry: the product's own word for the kind when it has one, and the product. */
+function entryOfLine(l: AuditLine): AuditEntry {
+  return {
+    schema: l.schema,
+    product: l.product,
+    id: l.id,
+    kind: l.product_kind ?? l.kind,
+    project: l.project,
+    ...(l.environment !== undefined ? { environment: l.environment } : {}),
+    at: l.at,
+    who: l.who,
+    what: l.what,
+    digest: l.digest,
+    result: l.result,
+    evidence: l.evidence as AuditEntry["evidence"],
+    ...(l.detail ? { detail: l.detail } : {}),
+  };
+}
+
+/**
+ * Every entry of `text`, in the record's order. A line that is not an entry refuses the whole record.
+ *
+ * behold#1228: the record may hold any product's lines, in the formats chant's `readAuditLine` reads. A
+ * `terragucci.audit/v1` line is checked by terragucci's schema as before; a `chant.audit/v1` line from terragucci is
+ * given back in terragucci's words and checked the same way; any other `chant.audit/v1` line, another product's
+ * named line, or a sql-yodeler line is checked against chant's audit schema after chant maps it.
+ */
+export function parseAudit(text: string, location: string, v: AuditValidator, opts: AuditReadOptions = {}): AuditEntry[] {
   const out: AuditEntry[] = [];
   const lines = text.split("\n");
   for (const [i, raw] of lines.entries()) {
@@ -214,18 +264,38 @@ export function parseAudit(text: string, location: string, v: AuditValidator): A
     try {
       doc = JSON.parse(line);
     } catch {
-      refuse(`${AUDIT_KEY} in ${location}, line ${i + 1}, is not JSON.`, "Check that terragucci audit wrote it; its record is one JSON object per line.");
+      refuse(`${AUDIT_KEY} in ${location}, line ${i + 1}, is not JSON.`, "Check that the product's audit job wrote it; its record is one JSON object per line.");
     }
-    const why = v.check(doc);
-    if (why) {
+    const id = isRecord(doc) ? readReportSchema(doc.schema) : undefined;
+    const product = id?.kind === "audit" ? (id.neutral ? (isRecord(doc) && str(doc.product) ? doc.product : undefined) : id.product) : undefined;
+    if (product === "terragucci") {
+      // terragucci's line, under its own id or chant's: checked by terragucci's schema, in terragucci's words.
+      let own: unknown = doc;
+      if (id!.neutral) {
+        const mapped = checkAuditLine(doc);
+        if (mapped.problem) refuse(`${AUDIT_KEY} in ${location}, line ${i + 1}, is not a ${REPORT_SCHEMAS_AUDIT} line: ${mapped.problem}.`, "Check that terragucci wrote it.");
+        own = toProductAuditLine(mapped.line!, "terragucci");
+      }
+      const why = v.check(own);
+      if (why) {
+        refuse(
+          `${AUDIT_KEY} in ${location}, line ${i + 1}, is not a terragucci ${AUDIT_SCHEMA} entry: ${why}.`,
+          v.validation.by === "schema"
+            ? `It was checked against @intentius/terragucci ${v.validation.terragucci}'s ${AUDIT_SCHEMA_FILE}. Check that this terragucci wrote it, or upgrade behold.`
+            : "Install @intentius/terragucci beside behold to check it against terragucci's own JSON Schema, and check that terragucci wrote it.",
+        );
+      }
+      out.push({ ...(own as AuditEntry), product: "terragucci" });
+      continue;
+    }
+    const mapped = checkAuditLine(doc, { ...(opts.project ? { project: opts.project } : {}) });
+    if (mapped.problem) {
       refuse(
-        `${AUDIT_KEY} in ${location}, line ${i + 1}, is not a terragucci ${AUDIT_SCHEMA} entry: ${why}.`,
-        v.validation.by === "schema"
-          ? `It was checked against @intentius/terragucci ${v.validation.terragucci}'s ${AUDIT_SCHEMA_FILE}. Check that this terragucci wrote it, or upgrade behold.`
-          : "Install @intentius/terragucci beside behold to check it against terragucci's own JSON Schema, and check that terragucci wrote it.",
+        `${AUDIT_KEY} in ${location}, line ${i + 1}, is not an audit line chant reads: ${mapped.problem}.`,
+        `behold reads ${REPORT_SCHEMAS_AUDIT}, terragucci's ${AUDIT_SCHEMA} and sql-yodeler's audit lines, each checked against chant's audit schema. Check that the product wrote it.`,
       );
     }
-    out.push(doc as AuditEntry);
+    out.push(entryOfLine(mapped.line!));
   }
   return out;
 }
@@ -242,7 +312,7 @@ function ownRoots(e: AuditEntry): string[] {
       else if (isRecord(r) && str(r.path)) roots.add(r.path);
     }
   }
-  if (WHAT_IS_ROOT.has(e.kind)) roots.add(e.what);
+  if (whatIsRoot(e)) roots.add(e.what);
   return [...roots];
 }
 
@@ -292,7 +362,7 @@ export function timelineEntries(entries: readonly AuditEntry[], project: string,
   const gateRoots = new Map<string, Set<string>>();
   const gateReport = new Map<string, { at: number; key: string }>();
   for (const { e } of mine) {
-    if (WHAT_IS_ROOT.has(e.kind)) continue;
+    if (whatIsRoot(e)) continue;
     const roots = ownRoots(e);
     if (roots.length) {
       const s = gateRoots.get(gate(e)) ?? new Set<string>();
@@ -306,12 +376,14 @@ export function timelineEntries(entries: readonly AuditEntry[], project: string,
   const out = mine.map(({ e, i }) => {
     const d = e.detail ?? {};
     let roots = ownRoots(e);
-    if (!roots.length && (e.kind === "approval" || e.kind === "approval-revoked")) roots = [...(gateRoots.get(gate(e)) ?? [])];
+    if (!roots.length && APPROVALS.has(e.kind)) roots = [...(gateRoots.get(gate(e)) ?? [])];
     const waveNo = typeof d.wave === "number" ? d.wave : waveOfGate(e.what);
-    const report = reportKey(e) ?? (WHAT_IS_ROOT.has(e.kind) ? undefined : gateReport.get(gate(e))?.key);
+    const report = reportKey(e) ?? (whatIsRoot(e) ? undefined : gateReport.get(gate(e))?.key);
     const pr = d.pull_request;
     const entry: TimelineEntry = {
       id: e.id,
+      ...(e.product ? { product: e.product } : {}),
+      ...(e.environment !== undefined ? { environment: e.environment } : {}),
       kind: e.kind,
       at: e.at,
       who: e.who,
@@ -386,7 +458,7 @@ export async function readTimeline(source: TerragucciSource, opts: TimelineOptio
   }
   const base = { source: source.location, kind: source.kind, validation: v.validation, read: (opts.now ?? new Date()).toISOString() };
   if (text === undefined) return { ...base, present: false, project: opts.project ?? opts.checkoutProject ?? null, projects: [], lines: 0, entries: [], ...(unreadable ? { unreadable } : {}) };
-  const all = parseAudit(text, source.location, v);
+  const all = parseAudit(text, source.location, v, { ...((opts.project ?? opts.checkoutProject) ? { project: opts.project ?? opts.checkoutProject } : {}) });
   const projects = [...new Set(all.map((e) => e.project))].sort();
   let project: string | null;
   // behold#749: another checkout's request (serve --repos, ?repo=) reads its own project's lines or none.

@@ -1,0 +1,59 @@
+---
+title: Look at a plywood estate
+description: A plywood repo's estate, the waves waiting at a gate and its audit record, read from the reports bucket in chant's format. Local, read-only, dated.
+prompt: |
+  Read https://intentius.io/behold/using/plywood/.
+  Ask me for the reports bucket, the `reports.bucket` value in plywood.yml.
+  Serve this repository with `npx @intentius/behold serve . --terragucci <bucket>` and tell me the URL.
+  List the waves that wait at a gate, with each stack, wave and gate.
+  Never deploy with the Deploy button, `POST /api/apply` or `POST /api/ci/dispatch`. Gate approvals stay mine as well (`/api/ops/:name/signal/:gate`, `/api/workspace/gates/approve`, `/api/operator/approve/:op/:gate`). Op runs (`/api/ops/:name/run`) and rollbacks (`/api/rollback`) are mine too. Leave `--auto-sync` off, and keep a `behold preview` or `--public` serve read-only.
+---
+
+[plywood](https://intentius.io/plywood/) runs Pulumi stacks through chant's
+gates. `plywood estate` writes its estate and audit record to the bucket
+`reports.bucket` names in `plywood.yml`, in chant's report-store format.
+behold reads that bucket and shows it in the **Reports** tab.
+
+```sh
+npx @intentius/behold serve . --terragucci s3://acme-plywood-reports
+npx @intentius/behold serve . --terragucci gs://acme-plywood-reports
+npx @intentius/behold serve . --terragucci az://acme/plywood-reports
+npx @intentius/behold serve . --terragucci ./reports         # a synced copy, or file://
+```
+
+## What it reads
+
+Each key with one GET, and never with a list:
+
+| Key | What behold takes from it |
+|---|---|
+| `estate/estate.json` | `chant.estate/v1`: each stack's counts, the waves waiting at a gate and the newest runs |
+| `estate/dora.json` | `chant.dora/v1`: the delivery numbers |
+| `audit.jsonl` | `chant.audit/v1` lines for the timeline |
+
+`s3://` is read as for [terragucci](/behold/using/terragucci/#what-it-reads).
+`gs://` and `az://` are read through chant's report store with the
+credentials in the environment, the ones plywood's jobs write with.
+
+Every document is checked against the JSON Schemas chant publishes at
+`@intentius/chant/report-store/<kind>.schema.json`. One that does not match
+is refused by name with `code: "terragucci-report"`.
+
+## The tab
+
+The head names the project and says when the newest run finished. The
+estate's counts come next, linked to `estate/estate.html`, with the newest
+runs under them. Every wave waiting at a gate gets a box naming its stack and
+gate. The timeline from `audit.jsonl` closes the tab with the newest entry on
+top, and each line says who acted.
+
+An approval is a signed record on the gate ledger, made with
+`plywood approve` at your shell. behold does not approve.
+
+Without `--terragucci-project` the tab shows the whole estate, every stack's
+waiting waves together. Naming one stack with `--terragucci-project <stack>`
+reads that stack alone and adds its delivery numbers.
+
+An agent reads the estate with `GET /api/terragucci`, whose answer carries
+`product: "plywood"` beside `waiting` and `recent`. The audit record is at
+`GET /api/terragucci/timeline`.
