@@ -43,8 +43,11 @@ stays viewable.
 |---|---|
 | `chant` and `terraform` | A box of the member's resources, read through `chant workspace graph` |
 | `choudoufu` | A box of the estate's instances. The edges between them and each block's place in the source come from `chant workspace graph`; the instances, their rungs and the references to other estates come from `choudoufu live-check`, since chant's graph has one node per block and no rung or reference |
+| `pulumi` | A box of the resources in the member's checked-in `pulumi stack export` (`stack-export.json` beside its `Pulumi.yaml`), each card named by its Pulumi type token such as `aws:s3/bucket:Bucket`, with the edges from each resource's `parent` and `dependencies`. behold never runs the program or `pulumi`. The member has no live read of its own, so with an environment picked its cards are coloured from `chant workspace drift`, and a card that record does not place stays neutral and says no live read exists |
 | A member chant cannot read | A box with one card that gives chant's reason code and message, such as `dir-missing` or `unknown-kind` |
 | `other`, or a nested `workspace` | Nothing. It is listed when behold starts and in `behold doctor` |
+
+A `pulumi` member needs a declaration in `chant.workspace.json` with kind `pulumi` (a `.behold.json` entry of that kind is not drawn), a stack export checked in beside its `Pulumi.yaml`, and a chant new enough to answer `chant workspace drift`; without that chant the cards stay neutral.
 
 Node ids are `<member>/<id>`, with the member's declared name. That is the id
 chant composes too. The hand layout is kept per user, outside the project, and

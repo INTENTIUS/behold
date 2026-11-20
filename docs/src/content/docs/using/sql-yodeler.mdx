@@ -64,9 +64,21 @@ releases there; the legend names the member.
 Under the tab, the gate ledgers' history lists every request, approval and
 apply in the order they were committed.
 
-The history table that records which migrations ran lives in the database,
-which behold does not connect to; the report files below and the release
-ledger cover that ground.
+The history table that records which migrations ran lives in the database.
+behold reads it through none of its own routes; the report files below and
+the release ledger cover that ground.
+
+## Picking an environment
+
+`behold serve .` draws the schema from source and opens no database
+connection. Picking an environment, with `--env <name>` or the picker's
+`?env=` on `GET /api/overlay`, asks chant for its live read, and the sql
+lexicon's live read connects to the server that environment's profile in
+`chant.config.ts` names (`url`, `user`, `password`). It reads the catalog to
+colour each declared table, schema and index as managed or pending, and writes
+nothing. For a SQL Yodeler project, picking an environment opens a
+connection to the profile's server. Serve without `--env` and leave the
+picker on source to keep behold off the database.
 
 ## Releases
 
@@ -102,8 +114,8 @@ behold serve . --yodel-report out/
 
 `--yodel-report` takes the report file, or the directory holding it. Any
 drift JSON in the same directory is read too. behold never runs `yodel`
-and never connects to the database: it reads the files you or your
-pipeline wrote.
+here: it reads the files you or your pipeline wrote, and this read opens
+no database connection.
 
 - The SQL Yodeler tab lists each environment's applied migrations, the ones
   not applied with their state, and the gaps the report found, dated by the

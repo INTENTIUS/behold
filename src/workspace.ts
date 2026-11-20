@@ -474,10 +474,10 @@ export function workspaceGraphArgs(root: string, member: string, opts: GraphOpti
   return args;
 }
 
-/** Kinds chant reads through `workspace graph`. The kustomize, argo-app, flux-kustomization, helm-chart and cloudformation kinds are the k8s, helm and aws lexicons' (behold#1056): their nodes carry only `apiVersion` and `kind` until a detail tier is passed, and the path edges of src/estate-edges.ts need `spec`, which comes at detail 3. A kustomize member needs `kustomize` or `kubectl` on PATH and a helm-chart member needs `helm`; chant says on the member's meta when it could not render. A choudoufu member's roster, rungs and cross-estate references still come from choudoufu: src/choudoufu-workspace.ts says why (#465). A pulumi member is read through it and nothing else: {@link pulumiWorkspaceVia} (behold#994). */
+/** Kinds chant reads through `workspace graph`. The kustomize, argo-app, flux-kustomization, helm-chart and cloudformation kinds are the k8s, helm and aws lexicons' (behold#1056): their nodes carry only `apiVersion` and `kind` until a detail tier is passed, and the path edges of src/estate-edges.ts need `spec`, which comes at detail 3. A kustomize member needs `kustomize` or `kubectl` on PATH and a helm-chart member needs `helm`; chant says on the member's meta when it could not render. A choudoufu member's roster, rungs and cross-estate references still come from choudoufu: src/choudoufu-workspace.ts says why (#465). A pulumi member is read through it and nothing else, and has no live read of its own; the overlay paints its cards from `chant workspace drift`: {@link pulumiWorkspaceVia} (behold#994). */
 export const CONTRACT_READ_KINDS = new Set(["chant", "terraform", "choudoufu", "pulumi", "kustomize", "argo-app", "flux-kustomization", "helm-chart", "cloudformation"]);
 
-/** Why a pulumi member has no live read, as the overlay's `_unobserved` says it. */
+/** Why a pulumi member has no live read of its own, as the overlay's `_unobserved` says it on a card the drift record does not place. */
 export const PULUMI_NO_LIVE_READ =
   "chant reads a pulumi member from the stack export checked in beside its Pulumi.yaml and has no live read for one, so nothing was observed";
 
@@ -519,11 +519,17 @@ export function workspaceVia(member: WorkspaceMember, root: string, fallback: Me
  * traffic) are dropped rather than sent there to fail: every node is a
  * resource already, and none of them has a lens.
  *
- * Nor is there a live read. chant has none for this kind, so a live or
- * overlay read throws {@link PULUMI_NO_LIVE_READ} and the estate overlay
- * draws the member's source with every card neutral and `_unobserved` saying
- * why, the path any member takes when its live read fails. behold paints no
- * other colour on a pulumi card until chant supplies one.
+ * Nor is there a live read of its own. chant has none for this kind, so a
+ * live or overlay read throws {@link PULUMI_NO_LIVE_READ} and the estate
+ * overlay draws the member's source with every card neutral and
+ * `_unobserved` saying why, the path any member takes when its live read
+ * fails. The colour then comes from the drift record, not from this read:
+ * on every overlay of a declared workspace whose chant answers
+ * `chant workspace drift --member <name>` (DRIFT_RECORD_CHANT_FLOOR),
+ * src/drift-overlay.ts paints each card the record places, through the
+ * (status, read) table. Cards the record does not place, and every card when
+ * the workspace or the chant floor is missing, stay neutral with
+ * {@link PULUMI_NO_LIVE_READ}. behold chooses no colour of its own.
  */
 export function pulumiWorkspaceVia(member: WorkspaceMember, root: string): MemberVia {
   return {
