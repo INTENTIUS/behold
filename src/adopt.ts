@@ -4,6 +4,14 @@
  * by triggering the project's ReconcileOp, which opens a PR. behold never writes
  * source — a human merges the PR.
  *
+ * A foreign node is uncommon. A lexicon's live read observes the entities the
+ * source declares, so an undeclared object reaches the overlay only when the
+ * lexicon sweeps for one. Today that is the k8s lexicon's Pod sweep: a Pod in
+ * a namespace the estate touches whose owner chain reaches no declared entity.
+ * An object a declared resource's controller created is a runtime child, not
+ * foreign, and a declared resource that lacks chant's ownership marker stays
+ * managed with `ownership: "foreign"` on the node.
+ *
  * Two rules live here so the server is the source of truth (the SPA gates purely
  * on data it returns): which substrates can be adopted, and how to pull the PR
  * URL out of the Op's now-line output.

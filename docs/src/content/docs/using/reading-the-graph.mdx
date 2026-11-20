@@ -10,9 +10,11 @@ import { Aside } from '@astrojs/starlight/components';
 | colour | means | reads as |
 |---|---|---|
 | **green** | managed | chant declared it and the estate confirms it |
-| **amber** | foreign | it is there, chant did not put it there |
+| **amber** | foreign | it is live, the source does not declare it, and no declared resource owns it |
 | **blue** | pending | declared, not yet observed as deployed |
 | **grey** | neutral | nothing deployed for this component yet |
+
+Amber is uncommon. A live read observes what the source declares, so an undeclared object reaches the graph only where the lexicon sweeps for one. Today that is a Kubernetes Pod in a namespace the estate touches whose `ownerReferences` reach no declared resource. A Pod that a declared Deployment's controller created reads as a runtime child instead, and a declared resource that carries no chant ownership marker stays green with its ownership shown as foreign in the inspect pane.
 
 A node behold could not read is **unobserved**, reported as a hole and never painted as absent. "I did not look" and "it is gone" are different claims, and conflating them is how a viewer talks someone into deleting something.
 
