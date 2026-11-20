@@ -137,6 +137,16 @@ export const OVERLAP_CHANT_FLOOR = "0.124.29";
  * beside its gate (#472). Below it the gate strip draws no points and says
  * which chant adds them. */
 export const DECISION_POINTS_CHANT_FLOOR = "0.107.0";
+/** The first chant whose `workspace status --json` gives each member with a
+ * pipeline its `pipeline`: every stage with the release it runs, its gate, the
+ * change risk the gate reads, its soak and the time left, the canary soaks
+ * that hold it, a pause and a rollback request (INTENTIUS/chant#5342, chant's
+ * `STAGE_STATUS_FLOOR`). It also carries a stage's hold on `promotionOrder`
+ * (chant#5354) and the stage queues (chant#5353). The Stages tab reads it
+ * (#1236). Below it the tab shows the refusal. Planned release: chant
+ * 0.124.110; this takes the release's own number if the train lands on
+ * another one. */
+export const STAGE_STATE_CHANT_FLOOR = "0.124.110";
 /** The first chant whose `workspace promote --json` carries `adoption`, choudoufu
  * live-import's report with one entry per resource and its status
  * (INTENTIUS/chant integration/choudoufu-engine, merged for behold#999). The
@@ -299,6 +309,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "streamed drift", floor: DRIFT_STREAM_CHANT_FLOOR, adds: "chant workspace drift --member --stream, the drift stream as each read finishes (behold#998, chant#4451)" },
   { read: "adoption report", floor: ADOPTION_REPORT_CHANT_FLOOR, adds: "workspace promote --json carries live-import's adoption report (behold#999)" },
   { read: "local applies per member", floor: LEDGER_ROOT_MEMBER_CHANT_FLOOR, adds: "chant ledger runs --where root_member=<member>, the TerraformApplyOp runs that applied a member's root (chant#4482, chant#4500, behold#1010)", degraded: "a choudoufu or terraform member's run card shows its applies from the CI run index only" },
+  { read: "stage state", floor: STAGE_STATE_CHANT_FLOOR, adds: "workspace status members[].pipeline, each stage's release, gate, risk, soak, canary holds, pause and rollback request (chant#5342)" },
   { read: "decision points", floor: DECISION_POINTS_CHANT_FLOOR, adds: "a gate that asks a decision point, read with chant workspace points --open (chant#3170)", degraded: "the gate strip draws no open decision points, and says which chant adds them" },
 ];
 

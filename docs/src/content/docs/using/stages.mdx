@@ -1,0 +1,50 @@
+---
+title: Pipeline stages
+description: Each pipeline stage of each member, as chant reads it. The release it runs, its gate, risk, soak and time left, canary holds, pause, hold, queue and rollback request.
+---
+
+When behold serves a chant workspace, the panel has a **Stages** tab. For
+each member with a `.chant/pipeline.ts`, it lists every stage in pipeline
+order and says what state the stage is in. Terraform, Pulumi, SQL and chant
+members read the same way: the state comes from the member's pipeline and its
+ledger on `chant/lifecycle`. behold reads it from `chant workspace status
+<env> --json` when you open the tab, and again when you press **Read again**.
+It keeps nothing of its own.
+
+## What a stage shows
+
+Each stage is a card headed by its name, `canary` for a canary stage, the
+stages it follows and what a failed verify does there. Under it, one line for
+each part chant reports:
+
+| Line | What it means |
+|---|---|
+| `runs v1.1.0 · api` | the release of the newest deploy in the stage, and the components on it; `mixed` when the components run more than one release |
+| `gate prod: pending 0/1 for v1.1.0` | the stage's gate, its approvals and the release it binds; the `chant approve` line follows it to copy |
+| `risk 0.40 medium for v1.1.0 · over 0.3` | the change risk the gate reads, and each reason the gate takes more approvals |
+| `soak 2h · soaking · 1h left` | the stage's soak, its state, the time left and when it is due |
+| `held by canary canary: soaking, 1h left` | a canary upstream whose soak holds the promote into this stage |
+| `paused by carol: db upgrade · waiting v1.1.0` | a pause, and the releases waiting behind it |
+| `held until a change to the pipeline lifts it` | a hold or a freeze window, with what to read before it goes on |
+| `queue: waiting v1.2.0` | the release deploying into the stage, and the ones waiting or replaced |
+| `rollback to v1.0.0 requested by ci` | a rollback request, its gate's state, and the two lines that carry it out |
+| `rollback held: ...` | a failure with the reason the stage held its rollback |
+
+A soak's state is chant's word for it: `soaking`, `due`, `failing`,
+`clock-unknown`, `ended` or `unread`. The time left counts from the moment
+behold asked chant; the legend says when that was.
+
+## Copying chant's lines
+
+The approve line under a waiting gate and the rollback lines under a request
+are chant's own, shown here to copy. Click one to copy it, and run it where
+you approve gates. [Approving a gate](/behold/using/approving/) covers the
+gate strip, which approves through behold.
+
+## Which chant
+
+The tab reads `members[].pipeline` from chant 0.124.110 and newer. With an
+older chant the tab says which chant it needs, and the rest of behold works.
+A stage's queue comes from the status read of the environment of that name,
+so behold asks chant once for the served environment and once more for each
+other stage name. `GET /api/workspace/stages` answers the same data as JSON.
