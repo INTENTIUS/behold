@@ -38,7 +38,8 @@ const idOf = (addr: string): string => `${ROOT}/${addr.replace(/(\]|[A-Za-z0-9_-
 function liveIr(planName: string, lsName?: string): Pick<GraphIR, "nodes"> {
   const plan = JSON.parse(raw(planName)) as Rec;
   const ls = lsName ? (JSON.parse(raw(lsName)) as Rec) : undefined;
-  const nodes = new Map<string, IRNode & { facts: Rec & { ownershipRows: Rec } }>();
+  type LiveNode = Omit<IRNode, "facts"> & { facts: Rec & { ownershipRows: Rec } };
+  const nodes = new Map<string, LiveNode>();
   const at = (addr: string) => {
     let n = nodes.get(addr);
     if (!n) nodes.set(addr, (n = { id: idOf(addr), kind: "Terraform::Resource", lexicon: "terraform", attrs: {}, facts: { ownershipRows: {} } } as never));
@@ -167,6 +168,10 @@ describe("the palette, from chant's facts (behold#1227)", () => {
     doc.instances.push({ address: "aws_s3_bucket.ghost", type: "aws_s3_bucket", rung: "tag-governable" });
     doc.references.push({ from: "data.aws_vpc.net", estate: "net", address: "aws_vpc.main", read_by: ["aws_s3_bucket.ghost"] });
     const live = liveIr("choudoufu-live-plan-monolith-clean.json");
+    // The stray node is written by hand in the shape chant gives a declared
+    // instance. chant 0.124.110 gives none for it: choudoufu's live-graph
+    // lists the object as a node with a `not-in-configuration` gap, and
+    // chant's read keeps nodes for declared blocks only.
     (live.nodes as IRNode[]).push({ id: `${ROOT}/aws_cloudwatch_log_group.stray`, kind: "Terraform::Resource", lexicon: "terraform", attrs: { type: "aws_cloudwatch_log_group" }, physicalId: "/stray", facts: { ownership: "bound" } } as IRNode);
     const ir = paintChoudoufuOwnership(liveCheckToIr(doc), live, ROOT, "tlmig-sample-monolith");
     expect(card(ir, "aws_s3_bucket.ghost").attrs).toMatchObject({ _status: "neutral", _unobserved: "chant's live read placed nothing at this address" });

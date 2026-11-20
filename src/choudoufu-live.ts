@@ -253,7 +253,8 @@ export function choudoufuDiffNodes(
     const status = (a._drift as { status?: string } | undefined)?.status;
     const observed = status !== undefined && status !== "not-observed";
     const health = a._status === "good" ? "healthy" : a._status === "warn" ? "degraded" : "unknown";
-    const { _status: _s, _drift: _d, _unobserved: unobserved, _identity: _i, ...rows } = a;
+    // The roster's rung is in the card's attrs from the start; it is taken out here and put back last.
+    const { _status: _s, _drift: _d, _unobserved: unobserved, _identity: _i, rung: _r, ...rows } = a;
     const detail =
       typeof a.marked === "string"
         ? a.marked

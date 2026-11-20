@@ -231,8 +231,10 @@ describe("GET /api/choudoufu/split (#371)", () => {
       // plan ran and found nothing.
       expect(body.meta.drift).toEqual({ read: false });
       expect(body.ir.nodes.every((n) => n.attrs._planDrift === undefined)).toBe(true);
-      // And no plan was paid for: no chant plan read, no choudoufu plan.
-      expect(reads).toEqual([]);
+      // And no plan was paid for: each member's one chant read is at the live
+      // depth, without the plan switch, and no choudoufu plan ran.
+      expect(reads).toHaveLength(2);
+      for (const r of reads) expect(r.env.CHANT_TERRAFORM_OBSERVE).toBeUndefined();
       expect(spawns.map((a) => a[0])).not.toContain("plan");
     });
 

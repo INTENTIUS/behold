@@ -99,7 +99,8 @@ export interface LiveCheckDocument {
  * to do — the shape the SPA's precondition card renders and doctor prints. */
 export interface ChoudoufuRefusal {
   error: string;
-  code: "choudoufu-live-check";
+  /** `chant-too-old`: the member's live read goes through chant, and the chant or terraform lexicon beside behold is below its floor. */
+  code: "choudoufu-live-check" | "chant-too-old";
   remedy: string;
 }
 
