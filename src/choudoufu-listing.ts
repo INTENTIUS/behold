@@ -1,9 +1,11 @@
 /**
  * `choudoufu live-ls -json`, read for a move's evidence (#411,
  * src/choudoufu-moves.ts): which addresses the account lists under an
- * estate's marker after a `live-mv`. Ownership is not read from it: a
- * member's cards are painted from chant's live read (src/choudoufu-ownership.ts,
- * behold#1227).
+ * estate's marker after a `live-mv`. A member's declared cards are painted
+ * from chant's live read (src/choudoufu-ownership.ts, behold#1227). The
+ * listing also draws the card for an object under the estate's marker that
+ * no block declares (`paintUndeclaredFromListing`), the fallback until
+ * chant's read gives such an object a node.
  */
 import { stripAnsiLines, type Captured, type ChoudoufuRefusal } from "./choudoufu-member.ts";
 

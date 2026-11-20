@@ -31,6 +31,7 @@ import { CHOUDOUFU_LEXICON } from "./choudoufu-card.ts";
 import { decomposeAddress } from "./choudoufu-refs.ts";
 import { toneFor } from "./drift-tone.ts";
 import { engineOwnershipOf } from "./engine-ownership.ts";
+import type { LiveLsDocument } from "./choudoufu-listing.ts";
 
 /** chant's `EngineOwnershipRows` (`@intentius/chant/engine-facts`), as behold reads it. */
 export interface OwnershipRows {
@@ -220,6 +221,42 @@ export function paintChoudoufuOwnership(roster: GraphIR, live: Pick<GraphIR, "no
         ...(estate ? { estate } : {}),
         marked: "carries this estate's marker, declared nowhere in its configuration",
         _status: toneFor({ status: "undeclared", read: "ownership" }).tone,
+      },
+    } as IRNode);
+  }
+  return roster;
+}
+
+/** The card's words for an object listed under the estate's marker that no block declares. */
+export const DECLARED_NOWHERE = "carries this estate's marker, declared nowhere in its configuration";
+
+/**
+ * The fallback for an object declared nowhere, until chant's live read gives
+ * such an object a node of its own (chant 0.124.110 keeps facts for declared
+ * blocks only, and drops choudoufu's `live-graph` node with its
+ * `not-in-configuration` gap). Every `live-ls` item at an address the painted
+ * roster has no card for becomes a card, as main drew it: marked for this
+ * estate, declared nowhere, read `undeclared`. A card chant's read already
+ * drew is left as it is. Mutates and returns `roster`.
+ */
+export function paintUndeclaredFromListing(roster: GraphIR, ls: Pick<LiveLsDocument, "items">, estate?: string): GraphIR {
+  const drawn = new Set(roster.nodes.map((n) => n.id));
+  const tone = toneFor({ status: "undeclared", read: "ownership" });
+  for (const item of ls.items) {
+    if (!item.address || drawn.has(item.address)) continue;
+    drawn.add(item.address);
+    roster.nodes.push({
+      id: item.address,
+      kind: item.type,
+      lexicon: CHOUDOUFU_LEXICON,
+      physicalId: item.id,
+      ownership: "owned",
+      attrs: {
+        ...(estate ? { estate } : {}),
+        marked: DECLARED_NOWHERE,
+        ...(item.slot ? { slot: item.slot } : {}),
+        _status: tone.tone,
+        _drift: { status: "undeclared", read: "ownership", label: tone.label },
       },
     } as IRNode);
   }
