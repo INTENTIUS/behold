@@ -7430,9 +7430,9 @@ initTrunkLane();
 // --- #1236: each pipeline stage's state ---------------------------------------
 // /api/workspace/stages: per member with a pipeline, each stage's release,
 // gate, risk, soak, canary holds, pause, hold, queue and rollback request, as
-// chant's workspace status reads them. Read when the tab is opened and on
-// "Read again", since it asks chant once per stage name. chant's lines are
-// shown to copy; behold runs none of them.
+// chant's workspace status reads them, in one read. Read when the tab is
+// opened and on "Read again". chant's lines are shown to copy; behold runs
+// none of them.
 let stagesHost = null;
 let stagesRead = false;
 async function initStages() {

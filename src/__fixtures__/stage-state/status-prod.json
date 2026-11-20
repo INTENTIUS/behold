@@ -6,12 +6,12 @@
   "compareTo": null,
   "lifecycle": {
     "ref": "chant/lifecycle",
-    "commit": "2ef485dda9aa94a793be8e443e840caf9aeef17c"
+    "commit": "0cc831f56a5d6c2e07460b4a6c4b25aade9e4f94"
   },
   "checkout": {
     "branch": "main",
-    "head": "a199d4e6c17c0f90b00c36d7ae49b30d40e3ae9e",
-    "base": "a199d4e6c17c0f90b00c36d7ae49b30d40e3ae9e",
+    "head": "bca9658ab93bb4d6efb60aa088d7b1a482440f2a",
+    "base": "bca9658ab93bb4d6efb60aa088d7b1a482440f2a",
     "baseFrom": "main"
   },
   "workspace": {
@@ -45,15 +45,15 @@
           "releases": [
             {
               "component": "vpc",
-              "digest": "sha256:c689568c9471dd0c9a60fbb6334da9405c41696010bd3cc9697fb7b2c676f9be",
-              "gitSha": "5947a7e66efa737921637693b34dc8309e2b2a24",
+              "digest": "sha256:982fad746423224358dd8c1be90288771108b4febb9b7abd5195ef2b6ddfa1f1",
+              "gitSha": "43a880e08a01ca97d1bf99ba42d4dc4598e20195",
               "inputDigest": null,
               "runId": "run-net-prod",
               "timestamp": "2026-11-18T20:00:00.000Z",
               "actor": "ci",
               "approver": null,
               "admission": null,
-              "releaseDigest": "jcs1-sha256:0de64c0d6a1070964cfd3768576945754d674ce96a30ca5ef8083438087a75c5",
+              "releaseDigest": "jcs1-sha256:f247d9006e3ad5ff5c1def68c086dc5ef849182692ab119d88d19cb3ae3d2b76",
               "releaseLabel": "v1.0.0",
               "flags": [],
               "plan": null
@@ -76,15 +76,15 @@
           "component": "net",
           "name": "prod",
           "env": "prod",
-          "planDigest": "jcs1-sha256:71c369b3aeb3c6df75758deddc60093f0237e11599682608559e93b69b7538ca",
-          "releaseDigest": "jcs1-sha256:71c369b3aeb3c6df75758deddc60093f0237e11599682608559e93b69b7538ca",
+          "planDigest": "jcs1-sha256:8f22b2ddacc3d4a80f3997664822a4b9694ec49fe0add7a7bb2c200a8bf6b5e3",
+          "releaseDigest": "jcs1-sha256:8f22b2ddacc3d4a80f3997664822a4b9694ec49fe0add7a7bb2c200a8bf6b5e3",
           "state": "pending",
           "recordedAt": "2026-11-20T11:42:00.000Z",
           "expiresAt": "2026-11-21T12:00:00.000Z",
           "approvals": [],
           "needed": 1,
           "signed": null,
-          "approve": "chant approve net prod --env prod --plan jcs1-sha256:71c369b3aeb3c6df75758deddc60093f0237e11599682608559e93b69b7538ca",
+          "approve": "chant approve net prod --env prod --plan jcs1-sha256:8f22b2ddacc3d4a80f3997664822a4b9694ec49fe0add7a7bb2c200a8bf6b5e3",
           "decisions": []
         }
       ],
@@ -103,9 +103,9 @@
       ],
       "releaseCuts": [
         {
-          "releaseDigest": "jcs1-sha256:0de64c0d6a1070964cfd3768576945754d674ce96a30ca5ef8083438087a75c5",
+          "releaseDigest": "jcs1-sha256:f247d9006e3ad5ff5c1def68c086dc5ef849182692ab119d88d19cb3ae3d2b76",
           "label": "v1.0.0",
-          "commit": "5947a7e66efa737921637693b34dc8309e2b2a24",
+          "commit": "43a880e08a01ca97d1bf99ba42d4dc4598e20195",
           "actor": "alice",
           "timestamp": "2026-11-18T12:00:00.000Z",
           "signature": null,
@@ -117,9 +117,9 @@
           }
         },
         {
-          "releaseDigest": "jcs1-sha256:71c369b3aeb3c6df75758deddc60093f0237e11599682608559e93b69b7538ca",
+          "releaseDigest": "jcs1-sha256:8f22b2ddacc3d4a80f3997664822a4b9694ec49fe0add7a7bb2c200a8bf6b5e3",
           "label": "v1.1.0",
-          "commit": "6ef6aa7aee20ccd395470db49a5f36a847d8796c",
+          "commit": "637ba3b710aa4c019dd5210d86fa2548a393a6f0",
           "actor": "alice",
           "timestamp": "2026-11-19T12:00:00.000Z",
           "signature": null,
@@ -142,9 +142,9 @@
           }
         },
         {
-          "releaseDigest": "jcs1-sha256:0ea5dfc95f8bb65c779b0fdf34d2ebfea121e7899d686857bf838528b353cc54",
+          "releaseDigest": "jcs1-sha256:757470092330531e6a962a87c18db307973b02f70303636ff83763bd529574b1",
           "label": "v1.2.0",
-          "commit": "a199d4e6c17c0f90b00c36d7ae49b30d40e3ae9e",
+          "commit": "bca9658ab93bb4d6efb60aa088d7b1a482440f2a",
           "actor": "alice",
           "timestamp": "2026-11-20T11:48:00.000Z",
           "signature": null,
@@ -176,9 +176,9 @@
             "canary": false,
             "after": [],
             "release": {
-              "releaseDigest": "jcs1-sha256:71c369b3aeb3c6df75758deddc60093f0237e11599682608559e93b69b7538ca",
+              "releaseDigest": "jcs1-sha256:8f22b2ddacc3d4a80f3997664822a4b9694ec49fe0add7a7bb2c200a8bf6b5e3",
               "label": "v1.1.0",
-              "gitSha": "6ef6aa7aee20ccd395470db49a5f36a847d8796c",
+              "gitSha": "637ba3b710aa4c019dd5210d86fa2548a393a6f0",
               "at": "2026-11-20T07:00:00.000Z",
               "components": [
                 "vpc"
@@ -198,7 +198,7 @@
               "approve": null
             },
             "risk": {
-              "releaseDigest": "jcs1-sha256:71c369b3aeb3c6df75758deddc60093f0237e11599682608559e93b69b7538ca",
+              "releaseDigest": "jcs1-sha256:8f22b2ddacc3d4a80f3997664822a4b9694ec49fe0add7a7bb2c200a8bf6b5e3",
               "label": "v1.1.0",
               "score": 0.55,
               "level": "medium",
@@ -221,9 +221,9 @@
               "dev"
             ],
             "release": {
-              "releaseDigest": "jcs1-sha256:0de64c0d6a1070964cfd3768576945754d674ce96a30ca5ef8083438087a75c5",
+              "releaseDigest": "jcs1-sha256:f247d9006e3ad5ff5c1def68c086dc5ef849182692ab119d88d19cb3ae3d2b76",
               "label": "v1.0.0",
-              "gitSha": "5947a7e66efa737921637693b34dc8309e2b2a24",
+              "gitSha": "43a880e08a01ca97d1bf99ba42d4dc4598e20195",
               "at": "2026-11-18T20:00:00.000Z",
               "components": [
                 "vpc"
@@ -234,16 +234,16 @@
               "name": "prod",
               "policy": "always",
               "state": "pending",
-              "releaseDigest": "jcs1-sha256:71c369b3aeb3c6df75758deddc60093f0237e11599682608559e93b69b7538ca",
+              "releaseDigest": "jcs1-sha256:8f22b2ddacc3d4a80f3997664822a4b9694ec49fe0add7a7bb2c200a8bf6b5e3",
               "label": "v1.1.0",
-              "planDigest": "jcs1-sha256:71c369b3aeb3c6df75758deddc60093f0237e11599682608559e93b69b7538ca",
+              "planDigest": "jcs1-sha256:8f22b2ddacc3d4a80f3997664822a4b9694ec49fe0add7a7bb2c200a8bf6b5e3",
               "recordedAt": "2026-11-20T11:42:00.000Z",
               "approvals": 0,
               "needed": 1,
-              "approve": "chant approve net prod --env prod --plan jcs1-sha256:71c369b3aeb3c6df75758deddc60093f0237e11599682608559e93b69b7538ca"
+              "approve": "chant approve net prod --env prod --plan jcs1-sha256:8f22b2ddacc3d4a80f3997664822a4b9694ec49fe0add7a7bb2c200a8bf6b5e3"
             },
             "risk": {
-              "releaseDigest": "jcs1-sha256:71c369b3aeb3c6df75758deddc60093f0237e11599682608559e93b69b7538ca",
+              "releaseDigest": "jcs1-sha256:8f22b2ddacc3d4a80f3997664822a4b9694ec49fe0add7a7bb2c200a8bf6b5e3",
               "label": "v1.1.0",
               "score": 0.55,
               "level": "medium",
@@ -280,15 +280,15 @@
           "releases": [
             {
               "component": "api",
-              "digest": "sha256:71778eb35fbe70df0c12ab41d17e4516b9d3e853b03b09562295577f619975e1",
-              "gitSha": "6ef6aa7aee20ccd395470db49a5f36a847d8796c",
+              "digest": "sha256:41708169bdd9c1c076c86e914c72cec8691a3c65581225958f1c84c7c6454765",
+              "gitSha": "637ba3b710aa4c019dd5210d86fa2548a393a6f0",
               "inputDigest": null,
               "runId": "run-shop-prod",
               "timestamp": "2026-11-20T11:30:00.000Z",
               "actor": "ci",
               "approver": null,
               "admission": null,
-              "releaseDigest": "jcs1-sha256:9edece657c158153e8f56886e13c736f0d58376bffdcabeb701ce7f22a6cb3ad",
+              "releaseDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
               "releaseLabel": "v1.1.0",
               "flags": [],
               "plan": null
@@ -311,8 +311,8 @@
           "component": "shop",
           "name": "prod",
           "env": "prod",
-          "planDigest": "jcs1-sha256:9edece657c158153e8f56886e13c736f0d58376bffdcabeb701ce7f22a6cb3ad",
-          "releaseDigest": "jcs1-sha256:9edece657c158153e8f56886e13c736f0d58376bffdcabeb701ce7f22a6cb3ad",
+          "planDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
+          "releaseDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
           "state": "approved",
           "recordedAt": "2026-11-20T11:15:00.000Z",
           "expiresAt": "2026-11-21T12:00:00.000Z",
@@ -326,22 +326,22 @@
           ],
           "needed": 1,
           "signed": null,
-          "approve": "chant approve shop prod --env prod --plan jcs1-sha256:9edece657c158153e8f56886e13c736f0d58376bffdcabeb701ce7f22a6cb3ad",
+          "approve": "chant approve shop prod --env prod --plan jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
           "decisions": []
         },
         {
           "component": "shop",
           "name": "prod-rollback",
           "env": "prod",
-          "planDigest": "jcs1-sha256:f8d76d247e33aa64ecf1fc6b9f3e2d56cc425b466df52e4a1da21c810a237059",
-          "releaseDigest": "jcs1-sha256:f8d76d247e33aa64ecf1fc6b9f3e2d56cc425b466df52e4a1da21c810a237059",
+          "planDigest": "jcs1-sha256:63cc7b76d511282da339067bcb0b760809f8a18a6969ebb1c45875d59d59ca9b",
+          "releaseDigest": "jcs1-sha256:63cc7b76d511282da339067bcb0b760809f8a18a6969ebb1c45875d59d59ca9b",
           "state": "pending",
           "recordedAt": "2026-11-20T11:36:00.000Z",
           "expiresAt": "2026-12-19T16:00:00.000Z",
           "approvals": [],
           "needed": 1,
           "signed": null,
-          "approve": "chant approve shop prod-rollback --env prod --plan jcs1-sha256:f8d76d247e33aa64ecf1fc6b9f3e2d56cc425b466df52e4a1da21c810a237059",
+          "approve": "chant approve shop prod-rollback --env prod --plan jcs1-sha256:63cc7b76d511282da339067bcb0b760809f8a18a6969ebb1c45875d59d59ca9b",
           "decisions": []
         }
       ],
@@ -364,9 +364,9 @@
       ],
       "releaseCuts": [
         {
-          "releaseDigest": "jcs1-sha256:f8d76d247e33aa64ecf1fc6b9f3e2d56cc425b466df52e4a1da21c810a237059",
+          "releaseDigest": "jcs1-sha256:63cc7b76d511282da339067bcb0b760809f8a18a6969ebb1c45875d59d59ca9b",
           "label": "v1.0.0",
-          "commit": "5947a7e66efa737921637693b34dc8309e2b2a24",
+          "commit": "43a880e08a01ca97d1bf99ba42d4dc4598e20195",
           "actor": "alice",
           "timestamp": "2026-11-18T12:00:00.000Z",
           "signature": null,
@@ -378,9 +378,9 @@
           }
         },
         {
-          "releaseDigest": "jcs1-sha256:9edece657c158153e8f56886e13c736f0d58376bffdcabeb701ce7f22a6cb3ad",
+          "releaseDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
           "label": "v1.1.0",
-          "commit": "6ef6aa7aee20ccd395470db49a5f36a847d8796c",
+          "commit": "637ba3b710aa4c019dd5210d86fa2548a393a6f0",
           "actor": "alice",
           "timestamp": "2026-11-19T12:00:00.000Z",
           "signature": null,
@@ -408,9 +408,9 @@
           }
         },
         {
-          "releaseDigest": "jcs1-sha256:ea05570d0f58c827bcf383916dacf8f69d9be967be3f4f48537c735ad6c05e65",
+          "releaseDigest": "jcs1-sha256:4e48b08bb8d3e0a6d0ed38a05a290a904bd6a5f3703966931ef01b5b508ef977",
           "label": "v1.2.0",
-          "commit": "a199d4e6c17c0f90b00c36d7ae49b30d40e3ae9e",
+          "commit": "bca9658ab93bb4d6efb60aa088d7b1a482440f2a",
           "actor": "alice",
           "timestamp": "2026-11-20T11:48:00.000Z",
           "signature": null,
@@ -442,11 +442,25 @@
       "stageQueues": [
         {
           "pipeline": "shop",
+          "stage": "dev",
+          "inStage": null,
+          "waiting": [],
+          "replaced": []
+        },
+        {
+          "pipeline": "shop",
+          "stage": "canary",
+          "inStage": null,
+          "waiting": [],
+          "replaced": []
+        },
+        {
+          "pipeline": "shop",
           "stage": "prod",
           "inStage": null,
           "waiting": [
             {
-              "digest": "jcs1-sha256:ea05570d0f58c827bcf383916dacf8f69d9be967be3f4f48537c735ad6c05e65",
+              "digest": "jcs1-sha256:4e48b08bb8d3e0a6d0ed38a05a290a904bd6a5f3703966931ef01b5b508ef977",
               "label": "v1.2.0",
               "at": "2026-11-20T11:54:00.000Z"
             }
@@ -462,9 +476,9 @@
             "canary": false,
             "after": [],
             "release": {
-              "releaseDigest": "jcs1-sha256:9edece657c158153e8f56886e13c736f0d58376bffdcabeb701ce7f22a6cb3ad",
+              "releaseDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
               "label": "v1.1.0",
-              "gitSha": "6ef6aa7aee20ccd395470db49a5f36a847d8796c",
+              "gitSha": "637ba3b710aa4c019dd5210d86fa2548a393a6f0",
               "at": "2026-11-20T06:00:00.000Z",
               "components": [
                 "api"
@@ -484,7 +498,7 @@
               "approve": null
             },
             "risk": {
-              "releaseDigest": "jcs1-sha256:9edece657c158153e8f56886e13c736f0d58376bffdcabeb701ce7f22a6cb3ad",
+              "releaseDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
               "label": "v1.1.0",
               "score": 0.4,
               "level": "medium",
@@ -502,7 +516,7 @@
               "cause": null,
               "waiting": [
                 {
-                  "digest": "jcs1-sha256:9edece657c158153e8f56886e13c736f0d58376bffdcabeb701ce7f22a6cb3ad",
+                  "digest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
                   "label": "v1.1.0"
                 }
               ]
@@ -518,9 +532,9 @@
               "dev"
             ],
             "release": {
-              "releaseDigest": "jcs1-sha256:9edece657c158153e8f56886e13c736f0d58376bffdcabeb701ce7f22a6cb3ad",
+              "releaseDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
               "label": "v1.1.0",
-              "gitSha": "6ef6aa7aee20ccd395470db49a5f36a847d8796c",
+              "gitSha": "637ba3b710aa4c019dd5210d86fa2548a393a6f0",
               "at": "2026-11-20T11:00:00.000Z",
               "components": [
                 "api"
@@ -540,7 +554,7 @@
               "approve": null
             },
             "risk": {
-              "releaseDigest": "jcs1-sha256:9edece657c158153e8f56886e13c736f0d58376bffdcabeb701ce7f22a6cb3ad",
+              "releaseDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
               "label": "v1.1.0",
               "score": 0.4,
               "level": "medium",
@@ -556,7 +570,7 @@
               "duration": "2h",
               "checks": 1,
               "state": "soaking",
-              "releaseDigest": "jcs1-sha256:9edece657c158153e8f56886e13c736f0d58376bffdcabeb701ce7f22a6cb3ad",
+              "releaseDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
               "to": "prod",
               "clockStart": "2026-11-20T11:00:00.000Z",
               "due": "2026-11-20T13:00:00.000Z",
@@ -581,9 +595,9 @@
               "canary"
             ],
             "release": {
-              "releaseDigest": "jcs1-sha256:9edece657c158153e8f56886e13c736f0d58376bffdcabeb701ce7f22a6cb3ad",
+              "releaseDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
               "label": "v1.1.0",
-              "gitSha": "6ef6aa7aee20ccd395470db49a5f36a847d8796c",
+              "gitSha": "637ba3b710aa4c019dd5210d86fa2548a393a6f0",
               "at": "2026-11-20T11:30:00.000Z",
               "components": [
                 "api"
@@ -594,16 +608,16 @@
               "name": "prod",
               "policy": "always",
               "state": "approved",
-              "releaseDigest": "jcs1-sha256:9edece657c158153e8f56886e13c736f0d58376bffdcabeb701ce7f22a6cb3ad",
+              "releaseDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
               "label": "v1.1.0",
-              "planDigest": "jcs1-sha256:9edece657c158153e8f56886e13c736f0d58376bffdcabeb701ce7f22a6cb3ad",
+              "planDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
               "recordedAt": "2026-11-20T11:15:00.000Z",
               "approvals": 1,
               "needed": 1,
-              "approve": "chant approve shop prod --env prod --plan jcs1-sha256:9edece657c158153e8f56886e13c736f0d58376bffdcabeb701ce7f22a6cb3ad"
+              "approve": "chant approve shop prod --env prod --plan jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478"
             },
             "risk": {
-              "releaseDigest": "jcs1-sha256:9edece657c158153e8f56886e13c736f0d58376bffdcabeb701ce7f22a6cb3ad",
+              "releaseDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
               "label": "v1.1.0",
               "score": 0.4,
               "level": "medium",
@@ -630,11 +644,11 @@
               "by": "ci",
               "failure": "verify",
               "failed": {
-                "digest": "jcs1-sha256:9edece657c158153e8f56886e13c736f0d58376bffdcabeb701ce7f22a6cb3ad",
+                "digest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
                 "label": "v1.1.0"
               },
               "to": {
-                "digest": "jcs1-sha256:f8d76d247e33aa64ecf1fc6b9f3e2d56cc425b466df52e4a1da21c810a237059",
+                "digest": "jcs1-sha256:63cc7b76d511282da339067bcb0b760809f8a18a6969ebb1c45875d59d59ca9b",
                 "label": "v1.0.0"
               },
               "members": [
@@ -646,7 +660,7 @@
               ],
               "gate": "prod-rollback",
               "state": "pending",
-              "approve": "chant approve shop prod-rollback --env prod --plan jcs1-sha256:f8d76d247e33aa64ecf1fc6b9f3e2d56cc425b466df52e4a1da21c810a237059",
+              "approve": "chant approve shop prod-rollback --env prod --plan jcs1-sha256:63cc7b76d511282da339067bcb0b760809f8a18a6969ebb1c45875d59d59ca9b",
               "command": "chant components rollback prod --requested"
             },
             "rollbackHeld": null
@@ -670,15 +684,15 @@
           "releases": [
             {
               "component": "orders",
-              "digest": "sha256:757044ae3ed91d10e2e2ba05bd4fcb67f92d7c14814bf8d2780a478b62e47091",
-              "gitSha": "6ef6aa7aee20ccd395470db49a5f36a847d8796c",
+              "digest": "sha256:9ce339cdcc6286e9204e02a87d3315c907d141c268d9e99b066a5afef2628cf8",
+              "gitSha": "637ba3b710aa4c019dd5210d86fa2548a393a6f0",
               "inputDigest": null,
               "runId": "run-db-prod",
               "timestamp": "2026-11-20T11:42:00.000Z",
               "actor": "ci",
               "approver": null,
               "admission": null,
-              "releaseDigest": "jcs1-sha256:e642ee945d10a374ee847c5e73d93462a434db51d545716e0e89508c25b081ac",
+              "releaseDigest": "jcs1-sha256:3c9caf6cd82e1894b5c3e31290bd880d905e6d56d7df2e3ba6b50b98be2a512e",
               "releaseLabel": "v1.1.0",
               "flags": [],
               "plan": null
@@ -721,9 +735,9 @@
       ],
       "releaseCuts": [
         {
-          "releaseDigest": "jcs1-sha256:84df16468442eb3ebbadad4a365517eebbff99fc1bea10805f1d513d7a1d281c",
+          "releaseDigest": "jcs1-sha256:286a404774a5a1a3610ce5a257817b9dedca4aafeea25e5d7968f2cd0915ddd7",
           "label": "v1.0.0",
-          "commit": "5947a7e66efa737921637693b34dc8309e2b2a24",
+          "commit": "43a880e08a01ca97d1bf99ba42d4dc4598e20195",
           "actor": "alice",
           "timestamp": "2026-11-18T12:00:00.000Z",
           "signature": null,
@@ -735,9 +749,9 @@
           }
         },
         {
-          "releaseDigest": "jcs1-sha256:e642ee945d10a374ee847c5e73d93462a434db51d545716e0e89508c25b081ac",
+          "releaseDigest": "jcs1-sha256:3c9caf6cd82e1894b5c3e31290bd880d905e6d56d7df2e3ba6b50b98be2a512e",
           "label": "v1.1.0",
-          "commit": "6ef6aa7aee20ccd395470db49a5f36a847d8796c",
+          "commit": "637ba3b710aa4c019dd5210d86fa2548a393a6f0",
           "actor": "alice",
           "timestamp": "2026-11-19T12:00:00.000Z",
           "signature": null,
@@ -754,9 +768,9 @@
           }
         },
         {
-          "releaseDigest": "jcs1-sha256:dd0b56cc0b633e8afb16a6b7e069aa78343c67d4c864c3b93093d0e909b9aa8d",
+          "releaseDigest": "jcs1-sha256:c83508c2f60a457511e326fe4456500f4c54d9a7473266c49367f6abd69239b4",
           "label": "v1.2.0",
-          "commit": "a199d4e6c17c0f90b00c36d7ae49b30d40e3ae9e",
+          "commit": "bca9658ab93bb4d6efb60aa088d7b1a482440f2a",
           "actor": "alice",
           "timestamp": "2026-11-20T11:48:00.000Z",
           "signature": null,
@@ -782,9 +796,9 @@
             "canary": false,
             "after": [],
             "release": {
-              "releaseDigest": "jcs1-sha256:e642ee945d10a374ee847c5e73d93462a434db51d545716e0e89508c25b081ac",
+              "releaseDigest": "jcs1-sha256:3c9caf6cd82e1894b5c3e31290bd880d905e6d56d7df2e3ba6b50b98be2a512e",
               "label": "v1.1.0",
-              "gitSha": "6ef6aa7aee20ccd395470db49a5f36a847d8796c",
+              "gitSha": "637ba3b710aa4c019dd5210d86fa2548a393a6f0",
               "at": "2026-11-20T04:00:00.000Z",
               "components": [
                 "orders"
@@ -804,7 +818,7 @@
               "approve": null
             },
             "risk": {
-              "releaseDigest": "jcs1-sha256:e642ee945d10a374ee847c5e73d93462a434db51d545716e0e89508c25b081ac",
+              "releaseDigest": "jcs1-sha256:3c9caf6cd82e1894b5c3e31290bd880d905e6d56d7df2e3ba6b50b98be2a512e",
               "label": "v1.1.0",
               "score": 0.1,
               "level": "low",
@@ -827,9 +841,9 @@
               "dev"
             ],
             "release": {
-              "releaseDigest": "jcs1-sha256:e642ee945d10a374ee847c5e73d93462a434db51d545716e0e89508c25b081ac",
+              "releaseDigest": "jcs1-sha256:3c9caf6cd82e1894b5c3e31290bd880d905e6d56d7df2e3ba6b50b98be2a512e",
               "label": "v1.1.0",
-              "gitSha": "6ef6aa7aee20ccd395470db49a5f36a847d8796c",
+              "gitSha": "637ba3b710aa4c019dd5210d86fa2548a393a6f0",
               "at": "2026-11-20T11:42:00.000Z",
               "components": [
                 "orders"
@@ -849,7 +863,7 @@
               "approve": null
             },
             "risk": {
-              "releaseDigest": "jcs1-sha256:e642ee945d10a374ee847c5e73d93462a434db51d545716e0e89508c25b081ac",
+              "releaseDigest": "jcs1-sha256:3c9caf6cd82e1894b5c3e31290bd880d905e6d56d7df2e3ba6b50b98be2a512e",
               "label": "v1.1.0",
               "score": 0.1,
               "level": "low",
@@ -869,7 +883,7 @@
               "reason": "stage prod ran no earlier release of orders-db",
               "failure": "verify",
               "failed": {
-                "digest": "jcs1-sha256:e642ee945d10a374ee847c5e73d93462a434db51d545716e0e89508c25b081ac",
+                "digest": "jcs1-sha256:3c9caf6cd82e1894b5c3e31290bd880d905e6d56d7df2e3ba6b50b98be2a512e",
                 "label": "v1.1.0"
               }
             }

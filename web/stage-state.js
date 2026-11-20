@@ -163,7 +163,6 @@ export function stagesView(a, now = new Date()) {
   const legend = stagesLegend(a, now);
   if (!a || a.error || a.refusal || a.workspace === false) return { legend, notes: [], members: [] };
   const notes = [];
-  for (const u of a.queuesUnread || []) notes.push(`queue for ${u.stage} not read: ${u.refusal.error}`);
   const others = a.others || [];
   if (others.length) notes.push(`${others.map((o) => o.member).join(", ")}: chant lists stages for a member with a .chant/pipeline.ts that folds`);
   const members = (a.members || []).map((m) => ({ member: m.member, kind: m.kind, head: `${m.member}${m.kind ? ` (${m.kind})` : ""} · pipeline ${m.pipeline}`, stages: m.stages.map(stageCard) }));

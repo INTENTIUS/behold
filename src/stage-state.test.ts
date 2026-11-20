@@ -9,7 +9,7 @@ import { FrameBuffer } from "./frames.ts";
 import { OpRunner } from "./op-runner.ts";
 import { setServedWorkspace, type Workspace } from "./workspace.ts";
 import { CHANT_FLOORS, floorFor, STAGE_STATE_CHANT_FLOOR } from "./chant-floors.ts";
-import { queuesOf, readStageState, stageNames, stagesFloorRefusal, stagesFromStatus, type StageStateRead } from "./stage-state.ts";
+import { queuesOf, readStageState, stagesFloorRefusal, stagesFromStatus, type StageStateRead } from "./stage-state.ts";
 import { WorkspaceReadError, type WorkspaceDocument, type WorkspaceReader } from "./workspace-reader.ts";
 import { publicReadRefusal } from "./public-mode.ts";
 import statusSchema from "./__fixtures__/stage-state/status.schema.json" with { type: "json" };
@@ -17,11 +17,14 @@ import statusSchema from "./__fixtures__/stage-state/status.schema.json" with { 
 // #1236. status-prod.json is what chant's `workspaceStatus` printed at
 // 2026-11-20T12:00:00Z for the workspace scripts/record-stage-state.ts builds,
 // read from the delivery integration branch (chant main plus chant#5342's
-// pull request, core stamped 0.124.110). Three members, each with its own
+// and chant#5419's pull requests; the "chant" field carries the 0.124.110
+// stamp of that branch's core pack). Three members, each with its own
 // pipeline and ledger: network (terraform), shop (pulumi) and orders-db (sql).
 // shop's canary soak holds the promote into prod and a rollback of prod waits
 // at its gate; network's prod gate waits on a release whose risk is over the
 // stage's threshold; orders-db's prod is held and its rollback is held.
+// shop's stage log lists a queue for every stage of its pipeline in this one
+// read, with v1.2.0 waiting for prod.
 // status.schema.json beside it is chant's, from the same tree.
 
 const FIX = join(import.meta.dirname, "__fixtures__", "stage-state");
@@ -30,7 +33,7 @@ const state = (read: StageStateRead) => {
   if (!read.ok) throw new Error(read.refusal.error);
   return read.state;
 };
-const V100 = "jcs1-sha256:f8d76d247e33aa64ecf1fc6b9f3e2d56cc425b466df52e4a1da21c810a237059";
+const V100 = "jcs1-sha256:63cc7b76d511282da339067bcb0b760809f8a18a6969ebb1c45875d59d59ca9b";
 
 describe("the recorded document is chant's (#1236)", () => {
   it("status-prod.json validates against chant's status schema", () => {
@@ -88,11 +91,13 @@ describe("stagesFromStatus (#1236)", () => {
     expect(dev!.paused).toMatchObject({ by: "carol", reason: "db upgrade", waiting: [{ label: "v1.1.0" }] });
   });
 
-  it("joins the queue on the member, pipeline and stage name", () => {
+  it("joins the queue on the member, pipeline and stage name, every stage from the one read", () => {
     const s = state(stagesFromStatus(fixture()));
     const queue = (member: string, stage: string) => s.members.find((m) => m.member === member)!.stages.find((x) => x.name === stage)!.queue;
     expect(queue("shop", "prod")).toMatchObject({ inStage: null, waiting: [{ label: "v1.2.0" }], replaced: [] });
-    expect(queue("shop", "dev")).toBeNull();
+    expect(queue("shop", "dev")).toEqual({ inStage: null, waiting: [], replaced: [] });
+    expect(queue("shop", "canary")).toEqual({ inStage: null, waiting: [], replaced: [] });
+    // network's pipeline keeps no stage log, so status lists no queue for it.
     expect(queue("network", "prod")).toBeNull();
   });
 
@@ -124,9 +129,8 @@ describe("stagesFromStatus (#1236)", () => {
     expect(stagesFromStatus({ contract: 1, error: { code: "no-workspace", message: "none" } })).toMatchObject({ ok: false, refusal: { code: "no-workspace" } });
   });
 
-  it("names every stage once, and lists queues by member, pipeline and stage", () => {
-    expect(stageNames(fixture())).toEqual(["dev", "prod", "canary"]);
-    expect([...queuesOf(fixture()).keys()]).toEqual(["shop\u0000shop\u0000prod"]);
+  it("lists queues by member, pipeline and stage, in pipeline order", () => {
+    expect([...queuesOf(fixture()).keys()]).toEqual(["shop\u0000shop\u0000dev", "shop\u0000shop\u0000canary", "shop\u0000shop\u0000prod"]);
   });
 });
 
@@ -147,33 +151,13 @@ describe("readStageState (#1236)", () => {
     return { r, asked };
   };
 
-  it("reads the served env, then each other stage name for that stage's queue", async () => {
-    const { r, asked } = reader((env) => {
-      const doc = fixture() as Record<string, any>;
-      doc.env = env;
-      const shop = doc.members[1];
-      // status lists the queues of the env asked for only.
-      shop.stageQueues = env === "dev" ? [{ pipeline: "shop", stage: "dev", inStage: { digest: "d", label: "v1.1.0", at: "t" }, waiting: [], replaced: [] }] : env === "prod" ? shop.stageQueues : undefined;
-      return doc;
-    });
+  it("reads status once, at the served env, and takes every stage's queue from it", async () => {
+    const { r, asked } = reader((env) => ({ ...fixture(), env }));
     const s = state(await readStageState(ws, { env: "prod", reader: r, now: () => new Date("2026-11-20T12:00:00Z") }));
-    expect(asked.sort()).toEqual(["canary", "dev", "prod"]);
+    expect(asked).toEqual(["prod"]);
     expect(s.readAt).toBe("2026-11-20T12:00:00.000Z");
     const shop = s.members.find((m) => m.member === "shop")!;
-    expect(shop.stages[0]!.queue).toMatchObject({ inStage: { label: "v1.1.0" } });
-    expect(shop.stages[2]!.queue).toMatchObject({ waiting: [{ label: "v1.2.0" }] });
-    expect(s.queuesUnread).toEqual([]);
-  });
-
-  it("keeps the stages when another env's read is refused, and says which queue went unread", async () => {
-    const refusal = { error: "no", code: "workspace-status", remedy: "r" };
-    const { r } = reader((env) => {
-      if (env === "canary") throw new WorkspaceReadError(refusal);
-      return fixture();
-    });
-    const s = state(await readStageState(ws, { env: "prod", reader: r }));
-    expect(s.members).toHaveLength(3);
-    expect(s.queuesUnread).toEqual([{ stage: "canary", refusal }]);
+    expect(shop.stages.map((x) => x.queue && x.queue.waiting.map((w) => w.label))).toEqual([[], [], ["v1.2.0"]]);
   });
 
   it("is refused whole when the served env's read is refused", async () => {
@@ -235,8 +219,9 @@ if (argv[0] === "workspace" && argv[1] === "status" && argv[3] === "--json") {
     expect(body).toMatchObject({ workspace: true, chant: "0.124.110", env: "prod" });
     expect(body.members.map((m: any) => m.member)).toEqual(["network", "shop", "orders-db"]);
     expect(body.members[1].stages[2].rollback.state).toBe("pending");
-    const calls = readFileSync(join(dir, "node_modules", "@intentius", "chant", "bin", "calls"), "utf8").trim().split("\n").sort();
-    expect(calls).toEqual(["workspace status canary --json", "workspace status dev --json", "workspace status prod --json"]);
+    expect(body.queuesUnread).toBeUndefined();
+    const calls = readFileSync(join(dir, "node_modules", "@intentius", "chant", "bin", "calls"), "utf8").trim().split("\n");
+    expect(calls).toEqual(["workspace status prod --json"]);
   });
 
   it("refuses a chant below the floor before spawning it", async () => {

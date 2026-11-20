@@ -309,7 +309,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "streamed drift", floor: DRIFT_STREAM_CHANT_FLOOR, adds: "chant workspace drift --member --stream, the drift stream as each read finishes (behold#998, chant#4451)" },
   { read: "adoption report", floor: ADOPTION_REPORT_CHANT_FLOOR, adds: "workspace promote --json carries live-import's adoption report (behold#999)" },
   { read: "local applies per member", floor: LEDGER_ROOT_MEMBER_CHANT_FLOOR, adds: "chant ledger runs --where root_member=<member>, the TerraformApplyOp runs that applied a member's root (chant#4482, chant#4500, behold#1010)", degraded: "a choudoufu or terraform member's run card shows its applies from the CI run index only" },
-  { read: "stage state", floor: STAGE_STATE_CHANT_FLOOR, adds: "workspace status members[].pipeline, each stage's release, gate, risk, soak, canary holds, pause and rollback request (chant#5342)" },
+  { read: "stage state", floor: STAGE_STATE_CHANT_FLOOR, adds: "workspace status members[].pipeline, each stage's release, gate, risk, soak, canary holds, pause and rollback request (chant#5342), and stageQueues for every stage of a member's own pipeline in the same read (chant#5419)" },
   { read: "decision points", floor: DECISION_POINTS_CHANT_FLOOR, adds: "a gate that asks a decision point, read with chant workspace points --open (chant#3170)", degraded: "the gate strip draws no open decision points, and says which chant adds them" },
 ];
 

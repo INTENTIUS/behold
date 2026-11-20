@@ -12,11 +12,10 @@
  *    was asked for. behold keeps each stage's fields as chant wrote them.
  *  - `members[].promotionOrder[].held` (chant#5354): a stage's hold or
  *    freeze window, joined on the stage name.
- *  - `members[].stageQueues[]` (chant#5353): the release in a stage and the
- *    ones waiting for it, joined on the pipeline and stage name. status lists
- *    the queues of the environments asked for only, so a stage's queue comes
- *    from the read of the env of that name: one read for the served env, and
- *    one more per other stage name.
+ *  - `members[].stageQueues[]` (chant#5353, chant#5419): the release in a
+ *    stage and the ones waiting for it, joined on the pipeline and stage
+ *    name. status lists every stage of a member's own pipeline, whatever env
+ *    was asked for, so one read answers every stage.
  *
  * The kind of member does not matter: a terraform, pulumi or sql member with
  * a pipeline reads the same way as any other. behold computes no state here;
@@ -24,7 +23,6 @@
  */
 import { floorFor, floorMet, floorRefusal } from "./chant-floors.ts";
 import type { Workspace } from "./workspace.ts";
-import { isEnvName } from "./workspace-gates.ts";
 import { contractRefusal, rootReader, WorkspaceReadError, type WorkspaceDocument, type WorkspaceReader, type WorkspaceRefusal } from "./workspace-reader.ts";
 
 /** The read this module makes, by its name in src/chant-floors.ts. */
@@ -173,15 +171,13 @@ export interface MemberStages {
 }
 
 export interface StageState {
-  /** The env the first status read asked for. */
+  /** The env the status read asked for. */
   env: string;
   /** When behold asked chant, which is when chant counted `leftMs` from. Null for a document read from elsewhere. */
   readAt: string | null;
   members: MemberStages[];
   /** Members status gave no pipeline for: none declared, or it does not fold. */
   others: { member: string; kind: string | null }[];
-  /** Stage names whose own status read was refused, so their queue is unread. */
-  queuesUnread: { stage: string; refusal: WorkspaceRefusal }[];
 }
 
 export type StageStateRead = { ok: true; state: StageState } | { ok: false; refusal: WorkspaceRefusal };
@@ -210,16 +206,6 @@ function statusRefusal(doc: WorkspaceDocument): WorkspaceRefusal | undefined {
   return undefined;
 }
 
-/** The stage names of every pipeline in a status document, in first-seen order. */
-export function stageNames(doc: WorkspaceDocument): string[] {
-  const names: string[] = [];
-  for (const m of arr(doc.members)) {
-    if (!isRecord(m) || !isRecord(m.pipeline)) continue;
-    for (const s of arr(m.pipeline.stages)) if (isRecord(s) && typeof s.name === "string" && !names.includes(s.name)) names.push(s.name);
-  }
-  return names;
-}
-
 /** `member/pipeline/stage` for a queue. */
 const queueKey = (member: string, pipeline: string, stage: string) => `${member}\u0000${pipeline}\u0000${stage}`;
 
@@ -240,15 +226,11 @@ export function queuesOf(doc: WorkspaceDocument): Map<string, StageQueue> {
   return out;
 }
 
-/**
- * The stages of a status document. `queues` adds the queues other env reads
- * listed, keyed as {@link queuesOf} keys them; the document's own come first.
- */
-export function stagesFromStatus(doc: WorkspaceDocument, opts: { queues?: Map<string, StageQueue>; queuesUnread?: StageState["queuesUnread"]; readAt?: string } = {}): StageStateRead {
-  const queues = opts.queues ?? new Map<string, StageQueue>();
+/** The stages of a status document, each with its hold and queue. */
+export function stagesFromStatus(doc: WorkspaceDocument, opts: { readAt?: string } = {}): StageStateRead {
   const refusal = statusRefusal(doc);
   if (refusal) return { ok: false, refusal };
-  const own = queuesOf(doc);
+  const queues = queuesOf(doc);
   const members: MemberStages[] = [];
   const others: StageState["others"] = [];
   for (const m of arr(doc.members)) {
@@ -279,52 +261,27 @@ export function stagesFromStatus(doc: WorkspaceDocument, opts: { queues?: Map<st
         rollback: rec<StageRollback>(s.rollback),
         rollbackHeld: rec<StageRollbackHeld>(s.rollbackHeld),
         held: held.get(s.name) ?? null,
-        queue: own.get(key) ?? queues.get(key) ?? null,
+        queue: queues.get(key) ?? null,
       });
     }
     members.push({ member: m.name, kind, pipeline: p.name, stages });
   }
-  return { ok: true, state: { env: String(doc.env ?? ""), readAt: opts.readAt ?? null, members, others, queuesUnread: opts.queuesUnread ?? [] } };
-}
-
-type Attempt = { doc: WorkspaceDocument } | { refusal: WorkspaceRefusal };
-
-/** Run one read, turning a reader's refusal into a value. */
-async function attempt(read: () => Promise<WorkspaceDocument>): Promise<Attempt> {
-  try {
-    return { doc: await read() };
-  } catch (e) {
-    if (e instanceof WorkspaceReadError) return { refusal: e.refusal };
-    throw e;
-  }
+  return { ok: true, state: { env: String(doc.env ?? ""), readAt: opts.readAt ?? null, members, others } };
 }
 
 /**
- * Read the stages of a served workspace: status at `env`, then status at
- * each other stage name for that stage's queue. The caller has checked
- * {@link stagesFloorRefusal}.
+ * Read the stages of a served workspace: one status read at `env`. The
+ * caller has checked {@link stagesFloorRefusal}.
  */
 export async function readStageState(ws: Workspace, opts: { env: string; reader?: WorkspaceReader; now?: () => Date }): Promise<StageStateRead> {
   const reader = opts.reader ?? rootReader(ws.root);
   const readAt = (opts.now ?? (() => new Date()))().toISOString();
-  const first = await attempt(() => reader.read("status", [opts.env]));
-  if ("refusal" in first) return { ok: false, refusal: first.refusal };
-  const doc = first.doc;
-  const early = statusRefusal(doc);
-  if (early) return { ok: false, refusal: early };
-  // A stage name goes to chant as its positional env, so never as a flag.
-  const rest = stageNames(doc).filter((s) => s !== opts.env && isEnvName(s));
-  const queues = new Map<string, StageQueue>();
-  const queuesUnread: StageState["queuesUnread"] = [];
-  const reads = await Promise.all(rest.map(async (stage) => ({ stage, doc: await attempt(() => reader.read("status", [stage])) })));
-  for (const r of reads) {
-    const refusal = "refusal" in r.doc ? r.doc.refusal : statusRefusal(r.doc.doc);
-    if (refusal || !("doc" in r.doc)) {
-      if (refusal) queuesUnread.push({ stage: r.stage, refusal });
-      continue;
-    }
-    // Only the queue of the stage this read was for: the rest come from their own reads.
-    for (const [key, q] of queuesOf(r.doc.doc)) if (key.endsWith(`\u0000${r.stage}`)) queues.set(key, q);
+  let doc: WorkspaceDocument;
+  try {
+    doc = await reader.read("status", [opts.env]);
+  } catch (e) {
+    if (e instanceof WorkspaceReadError) return { ok: false, refusal: e.refusal };
+    throw e;
   }
-  return stagesFromStatus(doc, { queues, queuesUnread, readAt });
+  return stagesFromStatus(doc, { readAt });
 }

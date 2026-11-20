@@ -81,9 +81,9 @@ describe("stagesView", () => {
   it("heads each member with its kind and pipeline", () => {
     expect(stagesView(answer, NOW).members.map((m) => m.head)).toEqual(["network (terraform) · pipeline net", "shop (pulumi) · pipeline shop", "orders-db (sql) · pipeline db"]);
   });
-  it("notes a queue that went unread and members with no pipeline", () => {
-    const v = stagesView({ ...answer, others: [{ member: "web", kind: "chant" }], queuesUnread: [{ stage: "canary", refusal: { error: "refused" } }] }, NOW);
-    expect(v.notes).toEqual(["queue for canary not read: refused", "web: chant lists stages for a member with a .chant/pipeline.ts that folds"]);
+  it("notes members with no pipeline", () => {
+    const v = stagesView({ ...answer, others: [{ member: "web", kind: "chant" }] }, NOW);
+    expect(v.notes).toEqual(["web: chant lists stages for a member with a .chant/pipeline.ts that folds"]);
   });
 });
 

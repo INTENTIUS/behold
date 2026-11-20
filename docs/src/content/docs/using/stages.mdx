@@ -45,6 +45,5 @@ gate strip, which approves through behold.
 
 The tab reads `members[].pipeline` from chant 0.124.110 and newer. With an
 older chant the tab says which chant it needs, and the rest of behold works.
-A stage's queue comes from the status read of the environment of that name,
-so behold asks chant once for the served environment and once more for each
-other stage name. `GET /api/workspace/stages` answers the same data as JSON.
+The same read lists every stage's queue, so the tab asks chant once.
+`GET /api/workspace/stages` answers the same data as JSON.
