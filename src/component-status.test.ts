@@ -715,7 +715,7 @@ describe("pins chant's ReleaseRecord key union (chant#2045)", () => {
     // compared them (`normalizedInputs`). Not read here; behold passes the record through.
     unchangedSince: true,
     normalizedInputs: true,
-    // The 0.124.110 bump (chant#5401): the gate steps that did not apply in the
+    // The ^0.124.110 bump (chant#5401): the gate steps that did not apply in the
     // record's environment. Not read here; behold passes the record through.
     gatesSkipped: true,
   };
