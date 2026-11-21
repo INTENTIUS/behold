@@ -215,7 +215,7 @@ import {
 } from "./layout.ts";
 import { emulatorDirs, emulatorsDown, emulatorsUp, mergedEnv, type EmulatorInfo } from "./emulator.ts";
 import { indexOnlyRefusal, servesNoProject } from "./index-only.ts";
-import { productRefusal, refusedWrite, servedProductRepo, terragucciRefusal } from "./terragucci-repo.ts";
+import { productRefusal, refusedWrite, servedProductRepo, servesSqlYodeler, terragucciRefusal, yodelLiveRefusal } from "./terragucci-repo.ts";
 import { repoBase, servedChoudoufu, terragucciRoutes, type TerragucciOptions } from "./terragucci-view.ts";
 import { terragucciSource } from "./terragucci-source.ts";
 import { metricsRoute } from "./prometheus-metrics.ts";
@@ -309,6 +309,8 @@ export interface ServerOptions {
   projectDirs?: string[];
   /** Environment name — enables the live/overlay path. */
   env?: string;
+  /** `--yodel-live` (#1238): a SQL Yodeler project's environment overlay may open a connection to the database its profile names. Off by default. */
+  yodelLive?: boolean;
   /** Seconds between live-drift polls (#4). Only with `env`; off when unset. */
   pollSecs?: number;
   /** Auto-sync mode (#29): on a polled drift, trigger the ApplyOp ("apply") or
@@ -3976,6 +3978,7 @@ export function createApp(
     if (!env) {
       return c.json({ error: "overlay needs an environment — pick one, or start behold with --env <name>" }, 400);
     }
+    if (!cfg.yodelLive && servesSqlYodeler(cfg.projectDirs ?? [cfg.projectDir])) return c.json(yodelLiveRefusal(env), 409);
     const logical = new URL(c.req.url).searchParams.get("logical") === "1";
     // #261: hoisted so both the estate and single-project branches below share
     // one reading of the flag — the estate branch used to re-derive it inline
@@ -5082,7 +5085,7 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   let stopWatch = carve ? () => {} : watchSources(cfg.projectDirs ?? [cfg.projectDir], onMemberSourceChange);
   let pollScopes = new Map<string, string>();
   let stopPoll =
-    !carve && cfg.env && cfg.pollSecs
+    !carve && cfg.env && cfg.pollSecs && (cfg.yodelLive || !servesSqlYodeler(cfg.projectDirs ?? [cfg.projectDir]))
       ? startDriftPoll({
           intervalMs: cfg.pollSecs * 1000,
           beforeSweep: async () => {
