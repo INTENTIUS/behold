@@ -606,6 +606,16 @@ function deployTargets(
   }));
 }
 
+/** #1238: whether a live read for an environment may run: not on a SQL Yodeler repo served without `--yodel-live`, where it would open a database connection. */
+function yodelLiveBlocked(cfg: Pick<ServerOptions, "yodelLive" | "projectDir" | "projectDirs">): boolean {
+  return !cfg.yodelLive && servesSqlYodeler(cfg.projectDirs ?? [cfg.projectDir]);
+}
+
+/** `env` when its live read may run, else undefined: the source graph, no connection (#1238). */
+function liveEnv(cfg: Pick<ServerOptions, "yodelLive" | "projectDir" | "projectDirs">, env: string | undefined): string | undefined {
+  return env && !yodelLiveBlocked(cfg) ? env : undefined;
+}
+
 /**
  * Query the current estate (the live overlay when `env` is set, else the source
  * graph) and capture a lanes keyframe. Deduped by digest — an unchanged estate
@@ -1087,7 +1097,7 @@ export function createApp(
       new OpRunner({
         projectDir: cfg.projectDir,
         broadcaster,
-        onDone: (opEnv) => captureFrame(cfg.projectDir, opEnv ?? cfg.env, frames, broadcaster),
+        onDone: (opEnv) => captureFrame(cfg.projectDir, liveEnv(cfg, opEnv ?? cfg.env), frames, broadcaster),
       });
   const app = new Hono();
   // behold#631: each checkout's component -> dependencies and wave, from its components graph's last draw, for /api/chant/pr.
@@ -3851,7 +3861,7 @@ export function createApp(
   // are live today, not just wired for a future fix.
   app.get("/api/resources", async (c) => {
     const opts = optsFromQuery(new URL(c.req.url), await tiersFor(), cfg.projectDir);
-    const env = opts.env ?? cfg.env;
+    const env = liveEnv(cfg, opts.env ?? cfg.env);
     // #393 item 3: this facet is a chant-project convention match — it groups
     // the entity graph by the `src/<component>/` directory each node was
     // declared in — and every step of it (`chant graph --live --overlay`,
@@ -3905,6 +3915,7 @@ export function createApp(
     if (!env) {
       return c.json({ error: "reconcile needs an environment — pick one, or start behold with --env <name>" }, 400);
     }
+    if (yodelLiveBlocked(cfg)) return c.json(yodelLiveRefusal(env), 409);
     try {
       const [plan, ir, known] = await Promise.all([
         lifecyclePlan(cfg.projectDir, env, opts),
@@ -3978,7 +3989,7 @@ export function createApp(
     if (!env) {
       return c.json({ error: "overlay needs an environment — pick one, or start behold with --env <name>" }, 400);
     }
-    if (!cfg.yodelLive && servesSqlYodeler(cfg.projectDirs ?? [cfg.projectDir])) return c.json(yodelLiveRefusal(env), 409);
+    if (yodelLiveBlocked(cfg)) return c.json(yodelLiveRefusal(env), 409);
     const logical = new URL(c.req.url).searchParams.get("logical") === "1";
     // #261: hoisted so both the estate and single-project branches below share
     // one reading of the flag — the estate branch used to re-derive it inline
@@ -4501,7 +4512,7 @@ export function createApp(
       return c.json({ notified: true });
     }
     const env = optsFromQuery(url).env ?? cfg.env;
-    const result = await captureFrame(cfg.projectDir, env, frames, broadcaster);
+    const result = await captureFrame(cfg.projectDir, liveEnv(cfg, env), frames, broadcaster);
     if (!result) return c.json({ error: "refresh failed — see server log" }, 500);
     // Same wiring/examples reclassification the /api/overlay view gets, so a
     // manual refresh of the infra graph reads consistently (env → overlay).
@@ -4951,7 +4962,7 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
     : new OpRunner({
         projectDir: cfg.projectDir,
         broadcaster,
-        onDone: (opEnv) => captureFrame(cfg.projectDir, opEnv ?? cfg.env, frames, broadcaster),
+        onDone: (opEnv) => captureFrame(cfg.projectDir, liveEnv(cfg, opEnv ?? cfg.env), frames, broadcaster),
       });
   if (!cfg.host && process.env.BEHOLD_HOST) cfg.host = process.env.BEHOLD_HOST;
   const app = createApp(cfg, broadcaster, frames, runner);
@@ -4974,7 +4985,7 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
 
   // Capture the current graph as a keyframe (overlay when an env is set, else the
   // source graph). Shares the module helper with Refresh + post-op capture.
-  const capture = (): Promise<unknown> => captureFrame(cfg.projectDir, cfg.env, frames, broadcaster);
+  const capture = (): Promise<unknown> => captureFrame(cfg.projectDir, liveEnv(cfg, cfg.env), frames, broadcaster);
   // A change to the estate: re-render the live graph (SPA re-pulls) and capture a
   // keyframe for the lanes timeline. `memberDir` (#297) rides the SSE event's
   // data field so the event says WHICH member moved — the SPA's listener ignores
@@ -5085,7 +5096,7 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   let stopWatch = carve ? () => {} : watchSources(cfg.projectDirs ?? [cfg.projectDir], onMemberSourceChange);
   let pollScopes = new Map<string, string>();
   let stopPoll =
-    !carve && cfg.env && cfg.pollSecs && (cfg.yodelLive || !servesSqlYodeler(cfg.projectDirs ?? [cfg.projectDir]))
+    !carve && cfg.env && cfg.pollSecs && !yodelLiveBlocked(cfg)
       ? startDriftPoll({
           intervalMs: cfg.pollSecs * 1000,
           beforeSweep: async () => {

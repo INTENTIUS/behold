@@ -84,6 +84,10 @@ environment's profile in `chant.config.ts` names (`url`, `user`, `password`).
 It reads the catalog to colour each declared table, schema and index as
 managed or pending, and writes nothing. `--poll` polls it too.
 
+`behold export . --env prod --yodel-live` takes the same flag, so an export
+that captures environments can read the database too. Without it the
+export's overlay captures hold the answer described next.
+
 Without `--yodel-live`, `GET /api/overlay` answers `409` with
 `code: "yodel-live"` and a message naming the flag, and behold opens no
 connection. The graph stays on source, the Pipeline and Releases tabs read

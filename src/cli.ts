@@ -51,7 +51,7 @@ Usage:
   behold preview [project-dir] [--port <n>] [--emulator]
   behold export [project-dir] [--out <dir>] [--env <name>] [--name <worker>] [--emulator]
                 [--terragucci <src> [--terragucci-project <p>] [--reports-base <rel>]] [--no-source]
-                [--yodel-report <file|dir>] [--open-env <env>] [--open-zoom <zoom>] [--note <text>] [--q <query>…]
+                [--yodel-report <file|dir>] [--yodel-live] [--open-env <env>] [--open-zoom <zoom>] [--note <text>] [--q <query>…]
                 [--count-by <kind|module|attr:name>] [--plan] [--graphdb]
                 [--publish s3://<bucket>/<prefix>/views/<name> [--commit <sha>] [--keep <n>]]
   behold serve <project-dir…> [--port <n>] [--host <addr>] [--allow-host <name,…>] [--hud <url>] [--env <name>] [--yodel-live] [--poll <secs>] [--local]
@@ -286,7 +286,7 @@ Options:
                       and drift on the cards it names, dated. Checked against
                       SQL Yodeler's schemas; behold never runs yodel or reads
                       the database.
-  --yodel-live        serve only: let a SQL Yodeler project's --env overlay (and
+  --yodel-live        serve/export: let a SQL Yodeler project's --env overlay (and
                       the picker's ?env=) connect to the database its profile
                       names. Off by default; without it the overlay answers
                       with this flag's name and no connection is opened.
@@ -1238,6 +1238,7 @@ async function runExportCmd(rest: string[]): Promise<void> {
   let keepArg: string | undefined;
   let noSource = false;
   let yodelReport: string | undefined;
+  let yodelLive = false;
   let chantReportUrl: string | undefined;
   let openEnv: string | undefined;
   let openZoom: string | undefined;
@@ -1260,6 +1261,7 @@ async function runExportCmd(rest: string[]): Promise<void> {
     else if (a === "--open-env") openEnv = rest[++i] ?? "";
     else if (a === "--open-zoom") openZoom = rest[++i] ?? "";
     else if (a === "--yodel-report") yodelReport = rest[++i];
+    else if (a === "--yodel-live") yodelLive = true;
     else if (a === "--env") env = rest[++i];
     else if (a === "--name") name = rest[++i];
     else if (a === "--emulator") emulator = true;
@@ -1367,7 +1369,7 @@ async function runExportCmd(rest: string[]): Promise<void> {
   const open = { ...(openEnv !== undefined ? { env: openEnv } : {}), ...(openZoom !== undefined ? { zoom: openZoom } : {}) };
   if (singleFile !== undefined) {
     const done = await runSingleFile(
-      { ...target, port: 0, ...(env ? { env } : {}) },
+      { ...target, port: 0, ...(env ? { env } : {}), ...(yodelLive ? { yodelLive } : {}) },
       resolve(singleFile),
       { ...(noSource ? { noSource } : {}), ...(Object.keys(open).length ? { open } : {}), ...(settledNote.note ? { note: settledNote.note } : {}) },
     ).catch((e: unknown) => {
@@ -1385,6 +1387,7 @@ async function runExportCmd(rest: string[]): Promise<void> {
       ...(env ? { env } : {}),
       ...(terragucci ? { terragucci: { source: terragucci, ...(terragucciProject ? { project: terragucciProject } : {}) } } : {}),
       ...(yodelReport ? { yodelReport: resolve(yodelReport) } : {}),
+      ...(yodelLive ? { yodelLive } : {}),
     },
     outDir,
     {

@@ -1,4 +1,5 @@
 import { describe, it, expect, afterAll, afterEach } from "vitest";
+import { execFile } from "node:child_process";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
@@ -38,12 +39,13 @@ function fixture(): { dir: string; chant: string } {
   made.push(dir);
   writeFileSync(join(dir, ".git"), "");
   writeFileSync(join(dir, "yodel.config.ts"), "export default {};\n");
+  writeFileSync(join(dir, "chant.config.json"), JSON.stringify({ environments: ["prod"] }));
   const chant = join(dir, "fake-chant.cjs");
   writeFileSync(
     chant,
     `#!/usr/bin/env node
 const net = require("node:net");
-const live = process.argv.includes("--live");
+const live = process.argv[2] === "graph" && process.argv.includes("--live");
 const done = () => { process.stdout.write(JSON.stringify({ nodes: [], edges: [], groups: {} })); };
 if (!live) { done(); } else {
   const s = net.connect(Number(process.env.YODEL_FAKE_DB_PORT), "127.0.0.1");
@@ -82,4 +84,30 @@ describe("a SQL Yodeler environment overlay needs --yodel-live (#1238)", () => {
     await app(dir, { yodelLive: true }).request("/api/overlay?env=prod");
     expect(db.attempts()).toBeGreaterThanOrEqual(1);
   });
+});
+
+// behold export takes the same flag: its overlay captures run in-process through createApp.
+describe("behold export --yodel-live (#1238)", () => {
+  const exportWith = async (flag: string[]): Promise<number> => {
+    const db = await listener();
+    const { dir, chant } = fixture();
+    const out = join(dir, "out");
+    await new Promise<void>((resolveRun) => {
+      execFile(
+        process.execPath,
+        ["--import", "tsx", join(process.cwd(), "src/cli.ts"), "export", dir, "--env", "prod", "--out", out, ...flag],
+        { env: { ...process.env, BEHOLD_CHANT_BIN: chant, YODEL_FAKE_DB_PORT: String(db.port) }, timeout: 60_000 },
+        () => resolveRun(),
+      );
+    });
+    return db.attempts();
+  };
+
+  it("opens no connection without the flag", async () => {
+    expect(await exportWith([])).toBe(0);
+  }, 90_000);
+
+  it("opens a connection with the flag", async () => {
+    expect(await exportWith(["--yodel-live"])).toBeGreaterThanOrEqual(1);
+  }, 90_000);
 });
