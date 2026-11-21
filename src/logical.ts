@@ -327,7 +327,7 @@ function strAttr(node: IRNode, key: string): string | undefined {
  * boundaries. Three sources, because in a multi-stack estate a consuming stack's
  * link to the foundation VPC isn't a plain `$ref`:
  *   1. `$ref`s in a node's own attrs (in-stack);
- *   2. the IR's derived edges (value-matched wiring, e.g. RDS→DB subnet group);
+ *   2. the IR's derived edges (chant's catalog wiring, e.g. RDS→DB subnet group);
  *   3. cross-stack bridges — a `Parameter` (import) threaded to the resource that
  *      produces it. Two ways to find the producer: an export whose name matches
  *      the import handle (chant's canonical import↔export tie, tolerating a

@@ -6,7 +6,9 @@
  * browser (#1069).
  */
 
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+import { engineOwnershipRows } from "./engine-ownership.ts";
+
+const isRecord =(v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /** The lexicon every node this member emits carries — the presentation pack
  * (src/render.ts) and the inspect pane key on it. */
@@ -40,7 +42,8 @@ export function choudoufuCardFields(
   if (isRecord(producer) && typeof producer.estate === "string") {
     return [{ label: "reads", value: typeof producer.address === "string" ? `${producer.estate} ${producer.address}` : producer.estate }];
   }
-  const rows: Array<{ label: string; value: string }> = [];
+  // behold#1227: chant's ownership word, when a choudoufu live root's read put it on the node (chant#5333).
+  const rows: Array<{ label: string; value: string }> = [...engineOwnershipRows(node)];
   // The live object at this address belongs to a DIFFERENT estate (#370's
   // `unowned[].tofu_estate`) — the one estate name on a card that is not the
   // box's, and the reason the card is yellow.

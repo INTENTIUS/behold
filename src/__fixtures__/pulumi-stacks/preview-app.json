@@ -1,0 +1,334 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/graph/v1/graph.schema.json",
+  "contract": 1,
+  "chant": "0.124.110",
+  "at": null,
+  "plantable": {
+    "plantable": false,
+    "box": null,
+    "reason": {
+      "code": "box-none",
+      "message": "no member's box block declares services, so there is no box to plant"
+    }
+  },
+  "version": 1,
+  "workspace": {
+    "name": "pulumi-stacks",
+    "root": "e2e/fixtures/pulumi-stacks",
+    "repo": "git@github.com:INTENTIUS/behold.git"
+  },
+  "members": [
+    {
+      "name": "app",
+      "dir": "app",
+      "kind": "pulumi",
+      "status": "composed",
+      "reason": null,
+      "chant": "0.124.110",
+      "irVersion": 1,
+      "live": true,
+      "readAt": "2026-11-20T15:51:04.451Z",
+      "cached": false,
+      "stamp": null,
+      "rootReads": {
+        "pulumi.members.app": {
+          "depth": "preview"
+        }
+      },
+      "box": null
+    }
+  ],
+  "nodes": [
+    {
+      "id": "app/app/aws:ecs/cluster:Cluster::cluster",
+      "kind": "aws:ecs/cluster:Cluster",
+      "lexicon": "pulumi",
+      "attrs": {
+        "name": "website",
+        "outputs": {
+          "name": "website",
+          "arn": "arn:aws:ecs:us-east-1:111122223333:cluster/website",
+          "id": "arn:aws:ecs:us-east-1:111122223333:cluster/website"
+        },
+        "urn": "urn:pulumi:dev::app::aws:ecs/cluster:Cluster::cluster",
+        "planAction": "no-op",
+        "planActions": {
+          "urn:pulumi:dev::app::aws:ecs/cluster:Cluster::cluster": [
+            "same"
+          ]
+        },
+        "_status": "good"
+      },
+      "facts": {
+        "ownership": "bound",
+        "markers": {
+          "owner": "app/dev",
+          "address": "aws:ecs/cluster:Cluster::cluster",
+          "encoding": "plain",
+          "source": "record"
+        },
+        "ownedBy": "marker",
+        "observedAt": "2026-11-20T12:00:00Z"
+      },
+      "physicalId": "website",
+      "member": "app"
+    },
+    {
+      "id": "app/app/aws:ecs/service:Service::web",
+      "kind": "aws:ecs/service:Service",
+      "lexicon": "pulumi",
+      "attrs": {
+        "name": "web",
+        "cluster": "arn:aws:ecs:us-east-1:111122223333:cluster/website",
+        "taskDefinition": "arn:aws:ecs:us-east-1:111122223333:task-definition/website-web:1",
+        "networkConfiguration": {
+          "subnets": [
+            "subnet-0d3e4f"
+          ],
+          "securityGroups": [
+            "sg-05a6b7"
+          ]
+        },
+        "outputs": {
+          "name": "web",
+          "id": "website/web"
+        },
+        "urn": "urn:pulumi:dev::app::aws:ecs/service:Service::web",
+        "planAction": "update",
+        "planActions": {
+          "urn:pulumi:dev::app::aws:ecs/service:Service::web": [
+            "update"
+          ]
+        },
+        "planChanges": [
+          {
+            "path": "desiredCount",
+            "before": null,
+            "after": 3
+          }
+        ],
+        "_status": "good"
+      },
+      "facts": {
+        "ownership": "bound",
+        "markers": {
+          "owner": "app/dev",
+          "address": "aws:ecs/service:Service::web",
+          "encoding": "plain",
+          "source": "record"
+        },
+        "ownedBy": "marker",
+        "observedAt": "2026-11-20T12:00:00Z"
+      },
+      "physicalId": "website/web",
+      "member": "app"
+    },
+    {
+      "id": "app/app/aws:ecs/taskDefinition:TaskDefinition::web",
+      "kind": "aws:ecs/taskDefinition:TaskDefinition",
+      "lexicon": "pulumi",
+      "attrs": {
+        "family": "website-web",
+        "taskRoleArn": "arn:aws:iam::111122223333:role/web-task-role",
+        "outputs": {
+          "family": "website-web",
+          "arn": "arn:aws:ecs:us-east-1:111122223333:task-definition/website-web:1",
+          "id": "arn:aws:ecs:us-east-1:111122223333:task-definition/website-web:1"
+        },
+        "urn": "urn:pulumi:dev::app::aws:ecs/taskDefinition:TaskDefinition::web",
+        "planAction": "no-op",
+        "planActions": {
+          "urn:pulumi:dev::app::aws:ecs/taskDefinition:TaskDefinition::web": [
+            "same"
+          ]
+        },
+        "_status": "good"
+      },
+      "facts": {
+        "ownership": "bound",
+        "markers": {
+          "owner": "app/dev",
+          "address": "aws:ecs/taskDefinition:TaskDefinition::web",
+          "encoding": "plain",
+          "source": "record"
+        },
+        "ownedBy": "marker",
+        "observedAt": "2026-11-20T12:00:00Z"
+      },
+      "physicalId": "website-web:1",
+      "member": "app"
+    },
+    {
+      "id": "app/app/aws:iam/role:Role::web",
+      "kind": "aws:iam/role:Role",
+      "lexicon": "pulumi",
+      "attrs": {
+        "name": "web-task-role",
+        "assumeRolePolicy": "{}",
+        "outputs": {
+          "name": "web-task-role",
+          "arn": "arn:aws:iam::111122223333:role/web-task-role",
+          "id": "web-task-role"
+        },
+        "urn": "urn:pulumi:dev::app::aws:iam/role:Role::web",
+        "planAction": "no-op",
+        "planActions": {
+          "urn:pulumi:dev::app::aws:iam/role:Role::web": [
+            "same"
+          ]
+        },
+        "_status": "good"
+      },
+      "facts": {
+        "ownership": "bound",
+        "markers": {
+          "owner": "app/dev",
+          "address": "aws:iam/role:Role::web",
+          "encoding": "plain",
+          "source": "record"
+        },
+        "ownedBy": "marker",
+        "observedAt": "2026-11-20T12:00:00Z"
+      },
+      "physicalId": "web-task-role",
+      "member": "app"
+    },
+    {
+      "id": "app/app/aws:iam/rolePolicyAttachment:RolePolicyAttachment::web-logs",
+      "kind": "aws:iam/rolePolicyAttachment:RolePolicyAttachment",
+      "lexicon": "pulumi",
+      "attrs": {
+        "role": "web-task-role",
+        "policyArn": "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
+        "outputs": {
+          "role": "web-task-role",
+          "policyArn": "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
+          "id": "web-task-role-20261101"
+        },
+        "urn": "urn:pulumi:dev::app::aws:iam/rolePolicyAttachment:RolePolicyAttachment::web-logs",
+        "planAction": "no-op",
+        "planActions": {
+          "urn:pulumi:dev::app::aws:iam/rolePolicyAttachment:RolePolicyAttachment::web-logs": [
+            "same"
+          ]
+        },
+        "_status": "good"
+      },
+      "facts": {
+        "ownership": "bound",
+        "markers": {
+          "owner": "app/dev",
+          "address": "aws:iam/rolePolicyAttachment:RolePolicyAttachment::web-logs",
+          "encoding": "plain",
+          "source": "record"
+        },
+        "ownedBy": "marker",
+        "observedAt": "2026-11-20T12:00:00Z"
+      },
+      "physicalId": "web-task-role-20261101",
+      "member": "app"
+    },
+    {
+      "id": "app/app/aws:s3/bucketV2:BucketV2::assets",
+      "kind": "aws:s3/bucketV2:BucketV2",
+      "lexicon": "pulumi",
+      "attrs": {
+        "bucket": "three-cloud-assets",
+        "outputs": {
+          "bucket": "three-cloud-assets",
+          "arn": "arn:aws:s3:::three-cloud-assets",
+          "id": "three-cloud-assets"
+        },
+        "urn": "urn:pulumi:dev::app::aws:s3/bucketV2:BucketV2::assets",
+        "planAction": "replace",
+        "planActions": {
+          "urn:pulumi:dev::app::aws:s3/bucketV2:BucketV2::assets": [
+            "create-replacement",
+            "replace",
+            "delete-replaced"
+          ]
+        },
+        "planReplacePaths": [
+          "bucket"
+        ],
+        "planChanges": [
+          {
+            "path": "bucket",
+            "before": "three-cloud-assets",
+            "after": "three-cloud-assets-v2"
+          }
+        ],
+        "_status": "good"
+      },
+      "facts": {
+        "ownership": "pending",
+        "observedAt": "2026-11-20T12:00:00Z"
+      },
+      "physicalId": "three-cloud-assets",
+      "member": "app"
+    },
+    {
+      "id": "app/app/pulumi:pulumi:StackReference::network/dev",
+      "kind": "pulumi:pulumi:StackReference",
+      "lexicon": "pulumi",
+      "attrs": {
+        "name": "network/dev",
+        "outputs": {
+          "name": "network/dev",
+          "id": "network/dev"
+        },
+        "urn": "urn:pulumi:dev::app::pulumi:pulumi:StackReference::network/dev",
+        "planAction": "no-op",
+        "planActions": {
+          "urn:pulumi:dev::app::pulumi:pulumi:StackReference::network/dev": [
+            "same"
+          ]
+        },
+        "_status": "good"
+      },
+      "physicalId": "network/dev",
+      "member": "app"
+    }
+  ],
+  "edges": [],
+  "groups": {
+    "byMember": {
+      "app": [
+        "app/app/aws:ecs/cluster:Cluster::cluster",
+        "app/app/aws:ecs/service:Service::web",
+        "app/app/aws:ecs/taskDefinition:TaskDefinition::web",
+        "app/app/aws:iam/role:Role::web",
+        "app/app/aws:iam/rolePolicyAttachment:RolePolicyAttachment::web-logs",
+        "app/app/aws:s3/bucketV2:BucketV2::assets",
+        "app/app/pulumi:pulumi:StackReference::network/dev"
+      ]
+    },
+    "byLexicon": {
+      "pulumi": [
+        "app/app/aws:ecs/cluster:Cluster::cluster",
+        "app/app/aws:ecs/service:Service::web",
+        "app/app/aws:ecs/taskDefinition:TaskDefinition::web",
+        "app/app/aws:iam/role:Role::web",
+        "app/app/aws:iam/rolePolicyAttachment:RolePolicyAttachment::web-logs",
+        "app/app/aws:s3/bucketV2:BucketV2::assets",
+        "app/app/pulumi:pulumi:StackReference::network/dev"
+      ]
+    },
+    "byStack": {
+      "app/pulumi": [
+        "app/app/aws:ecs/cluster:Cluster::cluster",
+        "app/app/aws:ecs/service:Service::web",
+        "app/app/aws:ecs/taskDefinition:TaskDefinition::web",
+        "app/app/aws:iam/role:Role::web",
+        "app/app/aws:iam/rolePolicyAttachment:RolePolicyAttachment::web-logs",
+        "app/app/aws:s3/bucketV2:BucketV2::assets",
+        "app/app/pulumi:pulumi:StackReference::network/dev"
+      ]
+    }
+  },
+  "exports": [],
+  "imports": [],
+  "links": [],
+  "collectors": [],
+  "records": []
+}

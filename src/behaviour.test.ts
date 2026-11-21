@@ -46,9 +46,12 @@ import { attachBehaviour, validateBehaviourBlock, validateBehaviourMeta, type Be
  *    outside the three words, an empty `headroom`, an `errorRate` of 4, a cost
  *    with no currency), so a drop is per entity and its reason is specific.
  *
- * The live half — the roster, the listing and the plan the cards are drawn and
- * coloured from — is the choudoufu-live fixture set recorded from a real
- * `floci` run; src/choudoufu-live.test.ts's header records that provenance.
+ * The live half is the roster the cards are drawn from, the choudoufu-live
+ * fixture set recorded from a real `floci` run; src/choudoufu-ownership.test.ts's
+ * header records that provenance. Ownership colour comes from chant's live
+ * read of each member (behold#1227), and these servers are given no chant, so
+ * every card is neutral and says why. The behaviour block rides on top of
+ * that picture whatever its colours are.
  */
 const HERE = dirname(fileURLToPath(import.meta.url));
 const raw = (name: string): string => readFileSync(join(HERE, "__fixtures__", name), "utf8");
@@ -70,15 +73,13 @@ function estate(reports: Record<string, string> = {}): { root: string; mono: str
   return { root, mono: join(root, "mono"), teamA: join(root, "team-a") };
 }
 
-/** The spawn seam — live-check/live-ls/live-plan per member, from the recorded
- * documents. Identical to choudoufu-route.test.ts's, minus live-mv: nothing
- * here moves anything. */
+/** The spawn seam: live-check per member, from the recorded rosters. The
+ * overlay spawns nothing else of choudoufu's; its live read goes through
+ * chant (behold#1227), and any other verb is refused here. */
 const fakeChoudoufu = async (args: string[], cwd: string) => {
   const verb = args[0];
   const inMono = cwd.endsWith("mono");
   if (verb === "live-check") return { code: 0, stderr: "", stdout: inMono ? raw("choudoufu-live-check-monolith.json") : raw("choudoufu-live-check-team-a.json") };
-  if (verb === "live-ls") return { code: 0, stderr: "", stdout: inMono ? raw("choudoufu-live-ls-monolith.json") : raw("choudoufu-live-ls-team-a-after-split.json") };
-  if (verb === "live-plan") return { code: 0, stderr: "", stdout: inMono ? raw("choudoufu-live-plan-monolith-clean.json") : raw("choudoufu-live-plan-team-a-after-split.json") };
   return { code: 2, stderr: `unexpected ${verb}`, stdout: "" };
 };
 
@@ -197,11 +198,21 @@ describe("the behaviour block on /api/overlay (#398)", () => {
     expect(drift(without)).toEqual(drift(withFile));
     expect(without.ir.nodes.map((n) => n.id)).toEqual(withFile.ir.nodes.map((n) => n.id));
 
+    // With no chant to read through, every resource card is neutral and says
+    // why, naming its member's directory (behold#1227).
+    const resources = without.ir.nodes.filter((n) => n.attrs?._status !== undefined);
+    expect(resources.length).toBeGreaterThan(0);
+    for (const n of resources) {
+      expect(n.attrs!._status).toBe("neutral");
+      expect(n.attrs!._unobserved).toMatch(/\/(mono|team-a) was not read live: no chant to read the member through$/);
+    }
+
     // Not one node carries a behaviour key, zeroed or otherwise, and the IRs
-    // are identical once the one added attr is taken back off.
+    // are identical once the one added attr is taken back off and each
+    // server's own temp directory is named alike.
     expect(priced(without)).toEqual({});
     const strip = (b: OverlayBody) =>
-      JSON.stringify(b.ir.nodes.map((n) => ({ ...n, attrs: Object.fromEntries(Object.entries(n.attrs ?? {}).filter(([k]) => k !== "_behaviour")) })));
+      JSON.stringify(b.ir.nodes.map((n) => ({ ...n, attrs: Object.fromEntries(Object.entries(n.attrs ?? {}).filter(([k]) => k !== "_behaviour")) }))).replace(/[^"]*behold-behaviour-[^/"]+\//g, "<estate>/");
     expect(strip(without)).toBe(strip(withFile));
 
     // What it gained instead: one line naming both places it looked.
@@ -213,8 +224,9 @@ describe("the behaviour block on /api/overlay (#398)", () => {
     expect(without.meta.behaviour.refusal).toBeUndefined();
 
     // And the rest of the meta is what it always was. (`projectDir` is each
-    // server's own temp copy, so it is the one key that legitimately differs.)
-    const rest = (b: OverlayBody) => JSON.stringify({ ...b.meta, behaviour: undefined, projectDir: undefined });
+    // server's own temp copy, so it differs, and so does the directory the
+    // cover note names for each member it could not read.)
+    const rest = (b: OverlayBody) => JSON.stringify({ ...b.meta, behaviour: undefined, projectDir: undefined }).replace(/[^"]*behold-behaviour-[^/"]+\//g, "<estate>/");
     expect(rest(without)).toBe(rest(withFile));
   });
 

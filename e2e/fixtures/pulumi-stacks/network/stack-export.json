@@ -1,0 +1,63 @@
+{
+  "version": 3,
+  "deployment": {
+    "resources": [
+      {
+        "urn": "urn:pulumi:dev::network::pulumi:pulumi:Stack::network-dev",
+        "custom": false,
+        "type": "pulumi:pulumi:Stack"
+      },
+      {
+        "urn": "urn:pulumi:dev::network::aws:ec2/vpc:Vpc::network-vpc",
+        "custom": true,
+        "id": "vpc-0a1b2c",
+        "type": "aws:ec2/vpc:Vpc",
+        "inputs": {
+          "cidrBlock": "10.20.0.0/16"
+        },
+        "outputs": {
+          "cidrBlock": "10.20.0.0/16",
+          "arn": "arn:aws:ec2:us-east-1:111122223333:vpc/vpc-0a1b2c",
+          "id": "vpc-0a1b2c"
+        },
+        "dependencies": []
+      },
+      {
+        "urn": "urn:pulumi:dev::network::aws:ec2/subnet:Subnet::private-1",
+        "custom": true,
+        "id": "subnet-0d3e4f",
+        "type": "aws:ec2/subnet:Subnet",
+        "inputs": {
+          "vpcId": "vpc-0a1b2c",
+          "cidrBlock": "10.20.10.0/24",
+          "availabilityZone": "us-east-1a"
+        },
+        "outputs": {
+          "vpcId": "vpc-0a1b2c",
+          "cidrBlock": "10.20.10.0/24",
+          "availabilityZone": "us-east-1a"
+        },
+        "dependencies": [
+          "urn:pulumi:dev::network::aws:ec2/vpc:Vpc::network-vpc"
+        ]
+      },
+      {
+        "urn": "urn:pulumi:dev::network::aws:ec2/securityGroup:SecurityGroup::service",
+        "custom": true,
+        "id": "sg-05a6b7",
+        "type": "aws:ec2/securityGroup:SecurityGroup",
+        "inputs": {
+          "vpcId": "vpc-0a1b2c",
+          "name": "service-sg"
+        },
+        "outputs": {
+          "vpcId": "vpc-0a1b2c",
+          "name": "service-sg"
+        },
+        "dependencies": [
+          "urn:pulumi:dev::network::aws:ec2/vpc:Vpc::network-vpc"
+        ]
+      }
+    ]
+  }
+}

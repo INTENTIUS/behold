@@ -1,0 +1,555 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/graph/v1/graph.schema.json",
+  "contract": 1,
+  "chant": "0.124.110",
+  "at": null,
+  "plantable": {
+    "plantable": false,
+    "box": null,
+    "reason": {
+      "code": "box-none",
+      "message": "no member's box block declares services, so there is no box to plant"
+    }
+  },
+  "version": 1,
+  "workspace": {
+    "name": "pulumi-stacks",
+    "root": "e2e/fixtures/pulumi-stacks",
+    "repo": "git@github.com:INTENTIUS/behold.git"
+  },
+  "members": [
+    {
+      "name": "network",
+      "dir": "network",
+      "kind": "pulumi",
+      "status": "composed",
+      "reason": null,
+      "chant": "0.124.110",
+      "irVersion": 1,
+      "live": false,
+      "cached": true,
+      "stamp": "sha256:aa08db9a1b26247d57996385fae3564951d98094fd3314e881e3a45e90290f14",
+      "meta": {
+        "pulumiMember": {
+          "export": "stack-export.json",
+          "exportSource": "file",
+          "objects": 3,
+          "exported": true
+        },
+        "lint": {
+          "errors": 0,
+          "warnings": 0,
+          "findings": []
+        }
+      },
+      "box": null
+    },
+    {
+      "name": "app",
+      "dir": "app",
+      "kind": "pulumi",
+      "status": "composed",
+      "reason": null,
+      "chant": "0.124.110",
+      "irVersion": 1,
+      "live": false,
+      "cached": true,
+      "stamp": "sha256:7c87f4c0e160b992ae5f883c3dff89272e98f4d8d7163a879d6dc18e503c2707",
+      "meta": {
+        "pulumiMember": {
+          "export": "stack-export.json",
+          "exportSource": "file",
+          "objects": 7,
+          "exported": true,
+          "engineGraph": {
+            "file": "engine-graph.json",
+            "read": true,
+            "stack": "dev",
+            "observedAt": "2026-11-20T12:00:00Z",
+            "facts": 6,
+            "propertyEdges": 0
+          }
+        },
+        "lint": {
+          "errors": 0,
+          "warnings": 0,
+          "findings": []
+        }
+      },
+      "box": null
+    },
+    {
+      "name": "edge",
+      "dir": "edge",
+      "kind": "pulumi",
+      "status": "composed",
+      "reason": null,
+      "chant": "0.124.110",
+      "irVersion": 1,
+      "live": false,
+      "cached": false,
+      "stamp": "sha256:528324433ee8783449695bfa289e77cb8aaa6170bd80d53e5bab25c573077dfa",
+      "meta": {
+        "pulumiMember": {
+          "objects": 0,
+          "exported": false,
+          "reason": "no export in the index store and no stack-export.json in the member; an apply through chant's pulumi-up writes the export to the store, or run `pulumi stack export --file stack-export.json` and check it in (the graph read does not run the program)"
+        },
+        "lint": {
+          "errors": 0,
+          "warnings": 1,
+          "findings": [
+            {
+              "ruleId": "PUL001",
+              "severity": "warning",
+              "message": "the pulumi member was read with no nodes: no export in the index store and no stack-export.json in the member; an apply through chant's pulumi-up writes the export to the store, or run `pulumi stack export --file stack-export.json` and check it in (the graph read does not run the program). Its change set and drift still run, but nothing in the graph can link to its resources.",
+              "file": "chant.config.json",
+              "line": 1,
+              "column": 1
+            }
+          ]
+        }
+      },
+      "box": null
+    }
+  ],
+  "nodes": [
+    {
+      "id": "app/app/aws:ecs/cluster:Cluster::cluster",
+      "kind": "aws:ecs/cluster:Cluster",
+      "lexicon": "pulumi",
+      "attrs": {
+        "name": "website"
+      },
+      "facts": {
+        "ownership": "bound",
+        "markers": {
+          "owner": "app/dev",
+          "address": "aws:ecs/cluster:Cluster::cluster",
+          "encoding": "plain",
+          "source": "record"
+        },
+        "ownedBy": "marker",
+        "observedAt": "2026-11-20T12:00:00Z"
+      },
+      "member": "app"
+    },
+    {
+      "id": "app/app/aws:ecs/service:Service::web",
+      "kind": "aws:ecs/service:Service",
+      "lexicon": "pulumi",
+      "attrs": {
+        "name": "web",
+        "cluster": "arn:aws:ecs:us-east-1:111122223333:cluster/website",
+        "taskDefinition": "arn:aws:ecs:us-east-1:111122223333:task-definition/website-web:1"
+      },
+      "facts": {
+        "ownership": "bound",
+        "markers": {
+          "owner": "app/dev",
+          "address": "aws:ecs/service:Service::web",
+          "encoding": "plain",
+          "source": "record"
+        },
+        "ownedBy": "marker",
+        "observedAt": "2026-11-20T12:00:00Z"
+      },
+      "member": "app"
+    },
+    {
+      "id": "app/app/aws:ecs/taskDefinition:TaskDefinition::web",
+      "kind": "aws:ecs/taskDefinition:TaskDefinition",
+      "lexicon": "pulumi",
+      "attrs": {
+        "family": "website-web",
+        "taskRoleArn": "arn:aws:iam::111122223333:role/web-task-role"
+      },
+      "facts": {
+        "ownership": "bound",
+        "markers": {
+          "owner": "app/dev",
+          "address": "aws:ecs/taskDefinition:TaskDefinition::web",
+          "encoding": "plain",
+          "source": "record"
+        },
+        "ownedBy": "marker",
+        "observedAt": "2026-11-20T12:00:00Z"
+      },
+      "member": "app"
+    },
+    {
+      "id": "app/app/aws:iam/role:Role::web",
+      "kind": "aws:iam/role:Role",
+      "lexicon": "pulumi",
+      "attrs": {
+        "name": "web-task-role",
+        "assumeRolePolicy": "{}"
+      },
+      "facts": {
+        "ownership": "bound",
+        "markers": {
+          "owner": "app/dev",
+          "address": "aws:iam/role:Role::web",
+          "encoding": "plain",
+          "source": "record"
+        },
+        "ownedBy": "marker",
+        "observedAt": "2026-11-20T12:00:00Z"
+      },
+      "member": "app"
+    },
+    {
+      "id": "app/app/aws:iam/rolePolicyAttachment:RolePolicyAttachment::web-logs",
+      "kind": "aws:iam/rolePolicyAttachment:RolePolicyAttachment",
+      "lexicon": "pulumi",
+      "attrs": {
+        "role": "web-task-role",
+        "policyArn": "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+      },
+      "facts": {
+        "ownership": "bound",
+        "markers": {
+          "owner": "app/dev",
+          "address": "aws:iam/rolePolicyAttachment:RolePolicyAttachment::web-logs",
+          "encoding": "plain",
+          "source": "record"
+        },
+        "ownedBy": "marker",
+        "observedAt": "2026-11-20T12:00:00Z"
+      },
+      "member": "app"
+    },
+    {
+      "id": "app/app/aws:s3/bucketV2:BucketV2::assets",
+      "kind": "aws:s3/bucketV2:BucketV2",
+      "lexicon": "pulumi",
+      "attrs": {
+        "bucket": "three-cloud-assets"
+      },
+      "facts": {
+        "ownership": "pending",
+        "observedAt": "2026-11-20T12:00:00Z"
+      },
+      "member": "app"
+    },
+    {
+      "id": "app/app/pulumi:pulumi:StackReference::network/dev",
+      "kind": "pulumi:pulumi:StackReference",
+      "lexicon": "pulumi",
+      "attrs": {
+        "name": "network/dev"
+      },
+      "member": "app"
+    },
+    {
+      "id": "app/pulumi:pulumi:Stack",
+      "kind": "pulumi:pulumi:Stack",
+      "lexicon": "pulumi",
+      "attrs": {
+        "stack": "dev"
+      },
+      "member": "app"
+    },
+    {
+      "id": "network/network/aws:ec2/securityGroup:SecurityGroup::service",
+      "kind": "aws:ec2/securityGroup:SecurityGroup",
+      "lexicon": "pulumi",
+      "attrs": {
+        "vpcId": "vpc-0a1b2c",
+        "name": "service-sg"
+      },
+      "member": "network"
+    },
+    {
+      "id": "network/network/aws:ec2/subnet:Subnet::private-1",
+      "kind": "aws:ec2/subnet:Subnet",
+      "lexicon": "pulumi",
+      "attrs": {
+        "vpcId": "vpc-0a1b2c",
+        "cidrBlock": "10.20.10.0/24",
+        "availabilityZone": "us-east-1a"
+      },
+      "member": "network"
+    },
+    {
+      "id": "network/network/aws:ec2/vpc:Vpc::network-vpc",
+      "kind": "aws:ec2/vpc:Vpc",
+      "lexicon": "pulumi",
+      "attrs": {
+        "cidrBlock": "10.20.0.0/16"
+      },
+      "member": "network"
+    },
+    {
+      "id": "network/pulumi:pulumi:Stack",
+      "kind": "pulumi:pulumi:Stack",
+      "lexicon": "pulumi",
+      "attrs": {
+        "stack": "dev"
+      },
+      "member": "network"
+    }
+  ],
+  "edges": [
+    {
+      "from": "app/app/aws:ecs/service:Service::web",
+      "to": "app/app/aws:ecs/cluster:Cluster::cluster",
+      "kind": "ref",
+      "viaAttr": "cluster",
+      "grain": "property",
+      "origin": "derived",
+      "rule": "pulumi:aws:ecs/service:Service:cluster",
+      "relation": "reference",
+      "member": "app"
+    },
+    {
+      "from": "app/app/aws:ecs/service:Service::web",
+      "to": "app/app/aws:ecs/taskDefinition:TaskDefinition::web",
+      "kind": "ref",
+      "viaAttr": "taskDefinition",
+      "grain": "property",
+      "origin": "derived",
+      "rule": "pulumi:aws:ecs/service:Service:taskDefinition",
+      "relation": "reference",
+      "member": "app"
+    },
+    {
+      "from": "app/app/aws:ecs/service:Service::web",
+      "to": "network/network/aws:ec2/securityGroup:SecurityGroup::service",
+      "kind": "ref",
+      "viaAttr": "networkConfiguration",
+      "grain": "property",
+      "origin": "derived",
+      "rule": "pulumi:aws:ecs/service:Service:networkConfiguration.securityGroups[]",
+      "relation": "reference",
+      "member": "app"
+    },
+    {
+      "from": "app/app/aws:ecs/service:Service::web",
+      "to": "network/network/aws:ec2/subnet:Subnet::private-1",
+      "kind": "ref",
+      "viaAttr": "networkConfiguration",
+      "grain": "property",
+      "origin": "derived",
+      "rule": "pulumi:aws:ecs/service:Service:networkConfiguration.subnets[]",
+      "relation": "containment",
+      "member": "app"
+    },
+    {
+      "from": "app/app/aws:ecs/taskDefinition:TaskDefinition::web",
+      "to": "app/app/aws:iam/role:Role::web",
+      "kind": "ref",
+      "viaAttr": "taskRoleArn",
+      "grain": "property",
+      "origin": "derived",
+      "rule": "pulumi:aws:ecs/taskDefinition:TaskDefinition:taskRoleArn",
+      "relation": "reference",
+      "member": "app"
+    },
+    {
+      "from": "app/app/aws:iam/rolePolicyAttachment:RolePolicyAttachment::web-logs",
+      "to": "app/app/aws:iam/role:Role::web",
+      "kind": "ref",
+      "viaAttr": "role",
+      "grain": "property",
+      "origin": "derived",
+      "rule": "pulumi:aws:iam/rolePolicyAttachment:RolePolicyAttachment:role",
+      "relation": "reference",
+      "member": "app"
+    },
+    {
+      "from": "app/pulumi:pulumi:Stack",
+      "to": "network/pulumi:pulumi:Stack",
+      "kind": "ref",
+      "viaAttr": "subnetId",
+      "origin": "declared",
+      "member": "app"
+    },
+    {
+      "from": "app/pulumi:pulumi:Stack",
+      "to": "network/pulumi:pulumi:Stack",
+      "kind": "ref",
+      "viaAttr": "vpcId",
+      "origin": "declared",
+      "member": "app"
+    },
+    {
+      "from": "network/network/aws:ec2/securityGroup:SecurityGroup::service",
+      "to": "network/network/aws:ec2/vpc:Vpc::network-vpc",
+      "kind": "ref",
+      "viaAttr": "dependencies",
+      "grain": "instance",
+      "member": "network"
+    },
+    {
+      "from": "network/network/aws:ec2/subnet:Subnet::private-1",
+      "to": "network/network/aws:ec2/vpc:Vpc::network-vpc",
+      "kind": "ref",
+      "viaAttr": "dependencies",
+      "grain": "instance",
+      "member": "network"
+    }
+  ],
+  "groups": {
+    "byMember": {
+      "network": [
+        "network/network/aws:ec2/securityGroup:SecurityGroup::service",
+        "network/network/aws:ec2/subnet:Subnet::private-1",
+        "network/network/aws:ec2/vpc:Vpc::network-vpc",
+        "network/pulumi:pulumi:Stack"
+      ],
+      "app": [
+        "app/app/aws:ecs/cluster:Cluster::cluster",
+        "app/app/aws:ecs/service:Service::web",
+        "app/app/aws:ecs/taskDefinition:TaskDefinition::web",
+        "app/app/aws:iam/role:Role::web",
+        "app/app/aws:iam/rolePolicyAttachment:RolePolicyAttachment::web-logs",
+        "app/app/aws:s3/bucketV2:BucketV2::assets",
+        "app/app/pulumi:pulumi:StackReference::network/dev",
+        "app/pulumi:pulumi:Stack"
+      ],
+      "edge": []
+    },
+    "byLexicon": {
+      "pulumi": [
+        "app/app/aws:ecs/cluster:Cluster::cluster",
+        "app/app/aws:ecs/service:Service::web",
+        "app/app/aws:ecs/taskDefinition:TaskDefinition::web",
+        "app/app/aws:iam/role:Role::web",
+        "app/app/aws:iam/rolePolicyAttachment:RolePolicyAttachment::web-logs",
+        "app/app/aws:s3/bucketV2:BucketV2::assets",
+        "app/app/pulumi:pulumi:StackReference::network/dev",
+        "app/pulumi:pulumi:Stack",
+        "network/network/aws:ec2/securityGroup:SecurityGroup::service",
+        "network/network/aws:ec2/subnet:Subnet::private-1",
+        "network/network/aws:ec2/vpc:Vpc::network-vpc",
+        "network/pulumi:pulumi:Stack"
+      ]
+    },
+    "byStack": {
+      "app/pulumi": [
+        "app/app/aws:ecs/cluster:Cluster::cluster",
+        "app/app/aws:ecs/service:Service::web",
+        "app/app/aws:ecs/taskDefinition:TaskDefinition::web",
+        "app/app/aws:iam/role:Role::web",
+        "app/app/aws:iam/rolePolicyAttachment:RolePolicyAttachment::web-logs",
+        "app/app/aws:s3/bucketV2:BucketV2::assets",
+        "app/app/pulumi:pulumi:StackReference::network/dev"
+      ],
+      "network/pulumi": [
+        "network/network/aws:ec2/securityGroup:SecurityGroup::service",
+        "network/network/aws:ec2/subnet:Subnet::private-1",
+        "network/network/aws:ec2/vpc:Vpc::network-vpc"
+      ]
+    },
+    "byContainer": {
+      "network/network/aws:ec2/subnet:Subnet::private-1": [
+        "app/app/aws:ecs/service:Service::web"
+      ],
+      "network/network/aws:ec2/vpc:Vpc::network-vpc": [
+        "network/network/aws:ec2/securityGroup:SecurityGroup::service",
+        "network/network/aws:ec2/subnet:Subnet::private-1"
+      ]
+    }
+  },
+  "exports": [],
+  "imports": [],
+  "links": [],
+  "collectors": [],
+  "records": [],
+  "dangling": [
+    {
+      "from": "app/app/aws:iam/rolePolicyAttachment:RolePolicyAttachment::web-logs",
+      "kind": "ref",
+      "path": "policyArn",
+      "value": "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
+      "member": "app",
+      "rule": "pulumi:aws:iam/rolePolicyAttachment:RolePolicyAttachment:policyArn",
+      "targetKind": "aws:iam/policy:Policy"
+    }
+  ],
+  "catalog": {
+    "lexicons": [
+      "pulumi"
+    ],
+    "members": [
+      "app",
+      "edge",
+      "network"
+    ],
+    "rules": {
+      "pulumi:aws:ecs/service:Service:cluster": {
+        "lexicon": "pulumi",
+        "from": "aws:ecs/service:Service",
+        "path": "cluster",
+        "relation": "reference",
+        "label": "in cluster",
+        "targetKinds": [
+          "aws:ecs/cluster:Cluster"
+        ]
+      },
+      "pulumi:aws:ecs/service:Service:networkConfiguration.securityGroups[]": {
+        "lexicon": "pulumi",
+        "from": "aws:ecs/service:Service",
+        "path": "networkConfiguration.securityGroups[]",
+        "relation": "reference",
+        "label": "sg",
+        "targetKinds": [
+          "aws:ec2/securityGroup:SecurityGroup"
+        ]
+      },
+      "pulumi:aws:ecs/service:Service:networkConfiguration.subnets[]": {
+        "lexicon": "pulumi",
+        "from": "aws:ecs/service:Service",
+        "path": "networkConfiguration.subnets[]",
+        "relation": "containment",
+        "label": "in subnet",
+        "targetKinds": [
+          "aws:ec2/subnet:Subnet"
+        ]
+      },
+      "pulumi:aws:ecs/service:Service:taskDefinition": {
+        "lexicon": "pulumi",
+        "from": "aws:ecs/service:Service",
+        "path": "taskDefinition",
+        "relation": "reference",
+        "label": "runs",
+        "targetKinds": [
+          "aws:ecs/taskDefinition:TaskDefinition"
+        ]
+      },
+      "pulumi:aws:ecs/taskDefinition:TaskDefinition:taskRoleArn": {
+        "lexicon": "pulumi",
+        "from": "aws:ecs/taskDefinition:TaskDefinition",
+        "path": "taskRoleArn",
+        "relation": "reference",
+        "label": "as",
+        "targetKinds": [
+          "aws:iam/role:Role",
+          "aws_iam_role"
+        ]
+      },
+      "pulumi:aws:iam/rolePolicyAttachment:RolePolicyAttachment:policyArn": {
+        "lexicon": "pulumi",
+        "from": "aws:iam/rolePolicyAttachment:RolePolicyAttachment",
+        "path": "policyArn",
+        "relation": "reference",
+        "label": "attaches",
+        "targetKinds": [
+          "aws:iam/policy:Policy"
+        ]
+      },
+      "pulumi:aws:iam/rolePolicyAttachment:RolePolicyAttachment:role": {
+        "lexicon": "pulumi",
+        "from": "aws:iam/rolePolicyAttachment:RolePolicyAttachment",
+        "path": "role",
+        "relation": "reference",
+        "label": "on",
+        "targetKinds": [
+          "aws:iam/role:Role",
+          "aws_iam_role"
+        ]
+      }
+    }
+  }
+}

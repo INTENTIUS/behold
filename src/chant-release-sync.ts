@@ -111,6 +111,7 @@ const EDITS: { file: string; edit: Edit }[] = [
   { file: "example-terraform-estate/chant.workspace.json", edit: (d, r) => ({ ...d, pins: pinAt(d.pins as Pin[], TERRAFORM, lexiconVersion(r, TERRAFORM)) }) },
   { file: "example-choudoufu-estate/chant.workspace.json", edit: (d, r) => ({ ...d, pins: pinAt(d.pins as Pin[], TERRAFORM, lexiconVersion(r, TERRAFORM)) }) },
   { file: "e2e/fixtures/pulumi-workspace/chant.workspace.json", edit: (d, r) => ({ ...d, pins: pinAt(d.pins as Pin[], PULUMI, lexiconVersion(r, PULUMI)) }) },
+  { file: "e2e/fixtures/pulumi-stacks/chant.workspace.json", edit: (d, r) => ({ ...d, pins: pinAt(d.pins as Pin[], PULUMI, lexiconVersion(r, PULUMI)) }) },
   { file: "e2e/fixtures/k8s-workspace/chant.workspace.json", edit: (d, r) => ({ ...d, pins: pinAt(d.pins as Pin[], K8S, lexiconVersion(r, K8S)) }) },
   // behold's own chant dependencies.
   {

@@ -1,0 +1,91 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/graph/v1/graph.schema.json",
+  "contract": 1,
+  "chant": "0.124.110",
+  "at": null,
+  "plantable": {
+    "plantable": false,
+    "box": null,
+    "reason": {
+      "code": "box-none",
+      "message": "no member's box block declares services, so there is no box to plant"
+    }
+  },
+  "version": 1,
+  "workspace": {
+    "name": "pulumi-stacks",
+    "root": "e2e/fixtures/pulumi-stacks",
+    "repo": "git@github.com:INTENTIUS/behold.git"
+  },
+  "members": [
+    {
+      "name": "edge",
+      "dir": "edge",
+      "kind": "pulumi",
+      "status": "composed",
+      "reason": null,
+      "chant": "0.124.110",
+      "irVersion": 1,
+      "live": true,
+      "readAt": "2026-11-20T15:51:09.287Z",
+      "cached": false,
+      "stamp": null,
+      "rootReads": {
+        "pulumi.members.edge": {
+          "depth": "preview"
+        }
+      },
+      "box": null
+    }
+  ],
+  "nodes": [
+    {
+      "id": "edge/edge/aws:sns/topic:Topic::alerts",
+      "kind": "aws:sns/topic:Topic",
+      "lexicon": "pulumi",
+      "attrs": {
+        "name": "edge-alerts",
+        "urn": "urn:pulumi:dev::edge::aws:sns/topic:Topic::alerts",
+        "planAction": "create",
+        "planActions": {
+          "urn:pulumi:dev::edge::aws:sns/topic:Topic::alerts": [
+            "create"
+          ]
+        },
+        "_status": "warn"
+      },
+      "member": "edge"
+    },
+    {
+      "id": "edge/edge/aws:sqs/queue:Queue::events",
+      "kind": "aws:sqs/queue:Queue",
+      "lexicon": "pulumi",
+      "attrs": {
+        "name": "edge-events",
+        "urn": "urn:pulumi:dev::edge::aws:sqs/queue:Queue::events",
+        "planAction": "create",
+        "planActions": {
+          "urn:pulumi:dev::edge::aws:sqs/queue:Queue::events": [
+            "create"
+          ]
+        },
+        "_status": "warn"
+      },
+      "member": "edge"
+    }
+  ],
+  "edges": [],
+  "groups": {
+    "byMember": {
+      "edge": [
+        "edge/edge/aws:sns/topic:Topic::alerts",
+        "edge/edge/aws:sqs/queue:Queue::events"
+      ]
+    }
+  },
+  "exports": [],
+  "imports": [],
+  "links": [],
+  "collectors": [],
+  "records": []
+}

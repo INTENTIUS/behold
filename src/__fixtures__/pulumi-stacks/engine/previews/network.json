@@ -1,0 +1,101 @@
+{
+ "steps": [
+  {
+   "op": "same",
+   "urn": "urn:pulumi:dev::network::pulumi:pulumi:Stack::network-dev",
+   "oldState": {
+    "urn": "urn:pulumi:dev::network::pulumi:pulumi:Stack::network-dev",
+    "custom": false,
+    "type": "pulumi:pulumi:Stack"
+   },
+   "newState": {
+    "urn": "urn:pulumi:dev::network::pulumi:pulumi:Stack::network-dev",
+    "custom": false,
+    "type": "pulumi:pulumi:Stack"
+   }
+  },
+  {
+   "op": "same",
+   "urn": "urn:pulumi:dev::network::aws:ec2/vpc:Vpc::network-vpc",
+   "oldState": {
+    "urn": "urn:pulumi:dev::network::aws:ec2/vpc:Vpc::network-vpc",
+    "type": "aws:ec2/vpc:Vpc",
+    "custom": true,
+    "id": "vpc-0a1b2c",
+    "inputs": {
+     "cidrBlock": "10.20.0.0/16"
+    },
+    "outputs": {
+     "cidrBlock": "10.20.0.0/16",
+     "arn": "arn:aws:ec2:us-east-1:111122223333:vpc/vpc-0a1b2c",
+     "id": "vpc-0a1b2c"
+    }
+   },
+   "newState": {
+    "urn": "urn:pulumi:dev::network::aws:ec2/vpc:Vpc::network-vpc",
+    "type": "aws:ec2/vpc:Vpc",
+    "custom": true,
+    "inputs": {
+     "cidrBlock": "10.20.0.0/16"
+    }
+   }
+  },
+  {
+   "op": "same",
+   "urn": "urn:pulumi:dev::network::aws:ec2/subnet:Subnet::private-1",
+   "oldState": {
+    "urn": "urn:pulumi:dev::network::aws:ec2/subnet:Subnet::private-1",
+    "type": "aws:ec2/subnet:Subnet",
+    "custom": true,
+    "id": "subnet-0d3e4f",
+    "inputs": {
+     "vpcId": "vpc-0a1b2c",
+     "cidrBlock": "10.20.10.0/24",
+     "availabilityZone": "us-east-1a"
+    },
+    "outputs": {
+     "vpcId": "vpc-0a1b2c",
+     "cidrBlock": "10.20.10.0/24",
+     "availabilityZone": "us-east-1a"
+    }
+   },
+   "newState": {
+    "urn": "urn:pulumi:dev::network::aws:ec2/subnet:Subnet::private-1",
+    "type": "aws:ec2/subnet:Subnet",
+    "custom": true,
+    "inputs": {
+     "vpcId": "vpc-0a1b2c",
+     "cidrBlock": "10.20.10.0/24",
+     "availabilityZone": "us-east-1a"
+    }
+   }
+  },
+  {
+   "op": "same",
+   "urn": "urn:pulumi:dev::network::aws:ec2/securityGroup:SecurityGroup::service",
+   "oldState": {
+    "urn": "urn:pulumi:dev::network::aws:ec2/securityGroup:SecurityGroup::service",
+    "type": "aws:ec2/securityGroup:SecurityGroup",
+    "custom": true,
+    "id": "sg-05a6b7",
+    "inputs": {
+     "vpcId": "vpc-0a1b2c",
+     "name": "service-sg"
+    },
+    "outputs": {
+     "vpcId": "vpc-0a1b2c",
+     "name": "service-sg"
+    }
+   },
+   "newState": {
+    "urn": "urn:pulumi:dev::network::aws:ec2/securityGroup:SecurityGroup::service",
+    "type": "aws:ec2/securityGroup:SecurityGroup",
+    "custom": true,
+    "inputs": {
+     "vpcId": "vpc-0a1b2c",
+     "name": "service-sg"
+    }
+   }
+  }
+ ]
+}

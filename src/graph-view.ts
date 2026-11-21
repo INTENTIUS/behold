@@ -9,7 +9,8 @@
  * (`@intentius/behold`) and the route answer the same graph:
  *
  * - The plan, when `opts.terraformPlan` is given: each stock Terraform
- *   member's plan read through chant and painted on its cards
+ *   member's plan, and each declared Pulumi member's preview (behold#1227),
+ *   read through chant and painted on its cards
  *   (`attrs._plan`), plus a card per `count`/`for_each` instance. It is the
  *   server's `terraformPlan` setting, passed in, never read from the process. Off by
  *   default, since a plan refreshes every resource in a root.
@@ -37,6 +38,7 @@ import { drawCatalog } from "./catalog-draw.ts";
 import { readGraph, type ReadGraphOptions, type ReadGraphResult } from "./read-graph.ts";
 import { stackAlike, stackNote } from "./stack-lens.ts";
 import { paintTerraformPlan, readTerraformPlan, terraformPlanNote, type MemberPlanAnswer, type PlanReadDeps } from "./terraform-plan.ts";
+import { paintPulumiPreview, pulumiPlanAnswer, readPulumiPreview } from "./pulumi-preview.ts";
 import { danglingNote, unchangedZoomNote, type Zoom } from "./zoom-notes.ts";
 import { componentsOfApps, logicalOfApps, NO_APPS_NOTE, operatorObjects, type ClusterApps, type ClusterViewKind } from "./cluster-apps.ts";
 
@@ -150,8 +152,18 @@ async function paintPlans(ir: GraphIR, read: ReadGraphResult, deps: PlanReadDeps
       return { member: m.name, roots: res.read.roots };
     }),
   );
+  // behold#1227: each declared Pulumi member's preview, the same rows on its cards.
+  const root = read.workspace?.root;
+  const pulumi = root ? read.members.filter((m) => m.kind === "pulumi") : [];
+  const previews = await Promise.all(
+    pulumi.map(async (m) => {
+      const res = await readPulumiPreview({ name: m.name }, root!);
+      if (res.ok) paintPulumiPreview(ir, res.read, m.name);
+      return pulumiPlanAnswer(m.name, res);
+    }),
+  );
   addInstanceCards(ir);
-  return terraformPlanNote(answers);
+  return terraformPlanNote([...answers, ...previews]);
 }
 
 /** Read `dir` and run the source view's lenses over it. The module header says which. */

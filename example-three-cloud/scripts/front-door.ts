@@ -329,6 +329,8 @@ async function lockAzureEnv(): Promise<void> {
 const AWS_DIR = join(ROOT, "aws");
 /** The `plunge stack export` chant reads the aws member's graph from (chant-lexicon-pulumi's PULUMI_EXPORT_FILE). */
 const AWS_EXPORT = "stack-export.json";
+/** What `plunge graph --json` prints for the stack (chant-lexicon-pulumi's PULUMI_ENGINE_GRAPH_FILE): each resource's ownership, read by chant beside the export. */
+const AWS_ENGINE_GRAPH = "engine-graph.json";
 
 /**
  * Variables from the operator's shell that could point plunge at a real
@@ -658,6 +660,9 @@ async function applyAws(): Promise<string> {
   plunge(["up", "--yes", "--non-interactive", "--skip-preview", "--stack", ENV], AWS_DIR, { show: true });
   plunge(["stack", "export", "--stack", ENV, "--file", AWS_EXPORT]);
   say(`aws: ${relative(process.cwd(), join(AWS_DIR, AWS_EXPORT)) || AWS_EXPORT} written, the export chant reads the member's graph from`);
+  // behold#1227: plunge's graph of the stack beside the export, so each card shows chant's ownership word.
+  writeFileSync(join(AWS_DIR, AWS_ENGINE_GRAPH), plunge(["graph", "--json", "--stack", ENV]));
+  say(`aws: ${relative(process.cwd(), join(AWS_DIR, AWS_ENGINE_GRAPH)) || AWS_ENGINE_GRAPH} written, the engine facts chant puts on the member's nodes`);
   const aws = awsEndpoint();
   if ("refused" in aws) throw new Refusal(`aws: ${aws.refused}`);
   return aws.endpoint;

@@ -1,0 +1,147 @@
+{
+  "version": 1,
+  "meta": {
+    "engineGraph": {
+      "format": 1,
+      "engine": {
+        "name": "plunge",
+        "version": "3.272.0-plunge.1"
+      },
+      "scope": {
+        "kind": "stack",
+        "project": "app",
+        "stack": "dev"
+      },
+      "observedAt": "2026-11-20T12:00:00Z",
+      "markerScheme": {
+        "ownerKey": "plunge-stack",
+        "addressKey": "plunge-urn",
+        "continuationKeys": [
+          "plunge-urn-2",
+          "plunge-urn-3",
+          "plunge-urn-4"
+        ],
+        "encoding": {
+          "tags": "plain",
+          "labels": "digest"
+        }
+      }
+    }
+  },
+  "nodes": [
+    {
+      "id": "urn:pulumi:dev::app::aws:ecs/cluster:Cluster::cluster",
+      "kind": "aws:ecs/cluster:Cluster",
+      "lexicon": "pulumi",
+      "attrs": {
+        "address": "urn:pulumi:dev::app::aws:ecs/cluster:Cluster::cluster"
+      },
+      "physicalId": "website",
+      "facts": {
+        "ownership": "bound",
+        "ownedBy": "marker",
+        "observedAt": "2026-11-20T12:00:00Z",
+        "markers": {
+          "owner": "app/dev",
+          "address": "aws:ecs/cluster:Cluster::cluster",
+          "encoding": "plain",
+          "source": "record"
+        }
+      }
+    },
+    {
+      "id": "urn:pulumi:dev::app::aws:iam/role:Role::web",
+      "kind": "aws:iam/role:Role",
+      "lexicon": "pulumi",
+      "attrs": {
+        "address": "urn:pulumi:dev::app::aws:iam/role:Role::web"
+      },
+      "physicalId": "web-task-role",
+      "facts": {
+        "ownership": "bound",
+        "ownedBy": "marker",
+        "observedAt": "2026-11-20T12:00:00Z",
+        "markers": {
+          "owner": "app/dev",
+          "address": "aws:iam/role:Role::web",
+          "encoding": "plain",
+          "source": "record"
+        }
+      }
+    },
+    {
+      "id": "urn:pulumi:dev::app::aws:iam/rolePolicyAttachment:RolePolicyAttachment::web-logs",
+      "kind": "aws:iam/rolePolicyAttachment:RolePolicyAttachment",
+      "lexicon": "pulumi",
+      "attrs": {
+        "address": "urn:pulumi:dev::app::aws:iam/rolePolicyAttachment:RolePolicyAttachment::web-logs"
+      },
+      "physicalId": "web-task-role-20261101",
+      "facts": {
+        "ownership": "bound",
+        "ownedBy": "marker",
+        "observedAt": "2026-11-20T12:00:00Z",
+        "markers": {
+          "owner": "app/dev",
+          "address": "aws:iam/rolePolicyAttachment:RolePolicyAttachment::web-logs",
+          "encoding": "plain",
+          "source": "record"
+        }
+      }
+    },
+    {
+      "id": "urn:pulumi:dev::app::aws:ecs/taskDefinition:TaskDefinition::web",
+      "kind": "aws:ecs/taskDefinition:TaskDefinition",
+      "lexicon": "pulumi",
+      "attrs": {
+        "address": "urn:pulumi:dev::app::aws:ecs/taskDefinition:TaskDefinition::web"
+      },
+      "physicalId": "website-web:1",
+      "facts": {
+        "ownership": "bound",
+        "ownedBy": "marker",
+        "observedAt": "2026-11-20T12:00:00Z",
+        "markers": {
+          "owner": "app/dev",
+          "address": "aws:ecs/taskDefinition:TaskDefinition::web",
+          "encoding": "plain",
+          "source": "record"
+        }
+      }
+    },
+    {
+      "id": "urn:pulumi:dev::app::aws:ecs/service:Service::web",
+      "kind": "aws:ecs/service:Service",
+      "lexicon": "pulumi",
+      "attrs": {
+        "address": "urn:pulumi:dev::app::aws:ecs/service:Service::web"
+      },
+      "physicalId": "website/web",
+      "facts": {
+        "ownership": "bound",
+        "ownedBy": "marker",
+        "observedAt": "2026-11-20T12:00:00Z",
+        "markers": {
+          "owner": "app/dev",
+          "address": "aws:ecs/service:Service::web",
+          "encoding": "plain",
+          "source": "record"
+        }
+      }
+    },
+    {
+      "id": "urn:pulumi:dev::app::aws:s3/bucketV2:BucketV2::assets",
+      "kind": "aws:s3/bucketV2:BucketV2",
+      "lexicon": "pulumi",
+      "attrs": {
+        "address": "urn:pulumi:dev::app::aws:s3/bucketV2:BucketV2::assets"
+      },
+      "facts": {
+        "ownership": "pending",
+        "observedAt": "2026-11-20T12:00:00Z"
+      }
+    }
+  ],
+  "edges": [],
+  "groups": {}
+}

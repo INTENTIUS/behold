@@ -1,0 +1,162 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/graph/v1/graph.schema.json",
+  "contract": 1,
+  "chant": "0.124.110",
+  "at": null,
+  "plantable": {
+    "plantable": false,
+    "box": null,
+    "reason": {
+      "code": "box-none",
+      "message": "no member's box block declares services, so there is no box to plant"
+    }
+  },
+  "version": 1,
+  "workspace": {
+    "name": "pulumi-stacks",
+    "root": "e2e/fixtures/pulumi-stacks",
+    "repo": "git@github.com:INTENTIUS/behold.git"
+  },
+  "members": [
+    {
+      "name": "network",
+      "dir": "network",
+      "kind": "pulumi",
+      "status": "composed",
+      "reason": null,
+      "chant": "0.124.110",
+      "irVersion": 1,
+      "live": true,
+      "readAt": "2026-11-20T15:51:07.102Z",
+      "cached": false,
+      "stamp": null,
+      "rootReads": {
+        "pulumi.members.network": {
+          "depth": "preview"
+        }
+      },
+      "box": null
+    }
+  ],
+  "nodes": [
+    {
+      "id": "network/network/aws:ec2/securityGroup:SecurityGroup::service",
+      "kind": "aws:ec2/securityGroup:SecurityGroup",
+      "lexicon": "pulumi",
+      "attrs": {
+        "vpcId": "vpc-0a1b2c",
+        "name": "service-sg",
+        "outputs": {
+          "vpcId": "vpc-0a1b2c",
+          "name": "service-sg",
+          "id": "sg-05a6b7"
+        },
+        "urn": "urn:pulumi:dev::network::aws:ec2/securityGroup:SecurityGroup::service",
+        "planAction": "no-op",
+        "planActions": {
+          "urn:pulumi:dev::network::aws:ec2/securityGroup:SecurityGroup::service": [
+            "same"
+          ]
+        },
+        "_status": "good"
+      },
+      "physicalId": "sg-05a6b7",
+      "member": "network"
+    },
+    {
+      "id": "network/network/aws:ec2/subnet:Subnet::private-1",
+      "kind": "aws:ec2/subnet:Subnet",
+      "lexicon": "pulumi",
+      "attrs": {
+        "vpcId": "vpc-0a1b2c",
+        "cidrBlock": "10.20.10.0/24",
+        "availabilityZone": "us-east-1a",
+        "outputs": {
+          "vpcId": "vpc-0a1b2c",
+          "cidrBlock": "10.20.10.0/24",
+          "availabilityZone": "us-east-1a",
+          "id": "subnet-0d3e4f"
+        },
+        "urn": "urn:pulumi:dev::network::aws:ec2/subnet:Subnet::private-1",
+        "planAction": "no-op",
+        "planActions": {
+          "urn:pulumi:dev::network::aws:ec2/subnet:Subnet::private-1": [
+            "same"
+          ]
+        },
+        "_status": "good"
+      },
+      "physicalId": "subnet-0d3e4f",
+      "member": "network"
+    },
+    {
+      "id": "network/network/aws:ec2/vpc:Vpc::network-vpc",
+      "kind": "aws:ec2/vpc:Vpc",
+      "lexicon": "pulumi",
+      "attrs": {
+        "cidrBlock": "10.20.0.0/16",
+        "outputs": {
+          "cidrBlock": "10.20.0.0/16",
+          "arn": "arn:aws:ec2:us-east-1:111122223333:vpc/vpc-0a1b2c",
+          "id": "vpc-0a1b2c"
+        },
+        "urn": "urn:pulumi:dev::network::aws:ec2/vpc:Vpc::network-vpc",
+        "planAction": "no-op",
+        "planActions": {
+          "urn:pulumi:dev::network::aws:ec2/vpc:Vpc::network-vpc": [
+            "same"
+          ]
+        },
+        "_status": "good"
+      },
+      "physicalId": "vpc-0a1b2c",
+      "member": "network"
+    }
+  ],
+  "edges": [
+    {
+      "from": "network/network/aws:ec2/securityGroup:SecurityGroup::service",
+      "to": "network/network/aws:ec2/vpc:Vpc::network-vpc",
+      "kind": "ref",
+      "viaAttr": "dependencies",
+      "grain": "instance",
+      "member": "network"
+    },
+    {
+      "from": "network/network/aws:ec2/subnet:Subnet::private-1",
+      "to": "network/network/aws:ec2/vpc:Vpc::network-vpc",
+      "kind": "ref",
+      "viaAttr": "dependencies",
+      "grain": "instance",
+      "member": "network"
+    }
+  ],
+  "groups": {
+    "byMember": {
+      "network": [
+        "network/network/aws:ec2/securityGroup:SecurityGroup::service",
+        "network/network/aws:ec2/subnet:Subnet::private-1",
+        "network/network/aws:ec2/vpc:Vpc::network-vpc"
+      ]
+    },
+    "byLexicon": {
+      "pulumi": [
+        "network/network/aws:ec2/securityGroup:SecurityGroup::service",
+        "network/network/aws:ec2/subnet:Subnet::private-1",
+        "network/network/aws:ec2/vpc:Vpc::network-vpc"
+      ]
+    },
+    "byStack": {
+      "network/pulumi": [
+        "network/network/aws:ec2/securityGroup:SecurityGroup::service",
+        "network/network/aws:ec2/subnet:Subnet::private-1",
+        "network/network/aws:ec2/vpc:Vpc::network-vpc"
+      ]
+    }
+  },
+  "exports": [],
+  "imports": [],
+  "links": [],
+  "collectors": [],
+  "records": []
+}

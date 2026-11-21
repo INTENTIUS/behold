@@ -214,7 +214,7 @@ export async function composeEstate(projectDirs: readonly string[], opts: GraphO
     name: names[i],
     ir: await memberSourceOrBox(dir, opts, lookup),
   }));
-  return composeStacks([...stacks, ...unreadableStacks(projectDirs, lookup)]);
+  return composeMembers([...stacks, ...unreadableStacks(projectDirs, lookup)]);
 }
 
 /** The estate-wide overlay's composition report (#189). */
@@ -259,7 +259,7 @@ export async function composeEstatePending(projectDirs: string[], opts: GraphOpt
     for (const n of ir.nodes) if (n.kind !== "UnreadableMember") n.attrs = { ...n.attrs, _pendingRead: true };
     return { name: names[i], ir };
   });
-  return composeStacks([...stacks, ...unreadableStacks(projectDirs)]);
+  return composeMembers([...stacks, ...unreadableStacks(projectDirs)]);
 }
 
 export interface EstateOverlayResult {
@@ -299,6 +299,26 @@ const firstLine = (e: unknown): string => {
   const m = msg.match(/exited \d+:\s*([\s\S]*)/);
   return (m ? m[1] : msg).split("\n")[0].trim().slice(0, 160);
 };
+
+/**
+ * `composeStacks`, with each node's `component` (chant#5403, the Pulumi
+ * component that registered it) put under its member's name too: pinhole
+ * namespaces ids and `compositeInstance`, and `component` passes through its
+ * spread as the member's own id. Only an id the composed estate has is
+ * rewritten. Composition builds new nodes, so the members' cached IRs are
+ * untouched (behold#1227).
+ */
+export function composeMembers(stacks: Parameters<typeof composeStacks>[0]): GraphIR {
+  const ir = composeStacks(stacks);
+  const ids = new Set(ir.nodes.map((n) => n.id));
+  const names = stacks.map((s) => s.name);
+  for (const n of ir.nodes as Array<{ id: string; component?: string }>) {
+    if (typeof n.component !== "string") continue;
+    const name = names.find((m) => n.id.startsWith(`${m}/`));
+    if (name && ids.has(`${name}/${n.component}`)) n.component = `${name}/${n.component}`;
+  }
+  return ir;
+}
 
 /**
  * pinhole's `composeStacks` namespaces node ids (`<stack>/<id>`) and
@@ -634,7 +654,7 @@ export async function composeEstateOverlay(
   });
   const present = stacks.filter((s): s is { name: string; ir: GraphIR } => !!s);
   return {
-    ir: composeStacks([...present, ...unreadableStacks(projectDirs)]),
+    ir: composeMembers([...present, ...unreadableStacks(projectDirs)]),
     observed: present.length - unobserved.length,
     total: projectDirs.length,
     unobserved,

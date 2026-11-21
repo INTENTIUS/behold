@@ -26,7 +26,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { captureChoudoufu, readLiveCheck, type Captured, type ChoudoufuRefusal } from "./choudoufu-member.ts";
-import { parseLiveLs, type Runner } from "./choudoufu-live.ts";
+import type { Runner } from "./choudoufu-live.ts";
+import { parseLiveLs } from "./choudoufu-listing.ts";
 
 /** `refusal.code`, pinned (choudoufu `internal/live/mv/refusal.go`). A refusal
  * outside these five carries an empty code and prose. */

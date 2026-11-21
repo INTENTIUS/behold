@@ -388,8 +388,8 @@ export function terraformPlanNote(answers: MemberPlanAnswer[]): string | undefin
         r.answered === "plan"
           ? `${who}${r.root} read from the plan`
           : r.answered === "state"
-            ? `${who}${r.root} plan not read, the state read answered (${r.note.replace(/^terraform\.roots\.[^:]+: /, "")})`
-            : `${who}${r.root} plan not read, nothing answered (${r.note.replace(/^terraform\.roots\.[^:]+: /, "")})`,
+            ? `${who}${r.root} plan not read, the state read answered (${r.note.replace(/^(terraform\.roots|pulumi\.members)\.[^:]+: /, "")})`
+            : `${who}${r.root} plan not read, nothing answered (${r.note.replace(/^(terraform\.roots|pulumi\.members)\.[^:]+: /, "")})`,
       );
     }
   }

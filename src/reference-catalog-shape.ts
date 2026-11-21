@@ -64,6 +64,17 @@ export interface ReferenceCatalog {
   ambiguous: CatalogAmbiguous[];
   /** Declared edges that tie a cluster Secret to a cluster resource (`runsOn`, chant#5101). */
   runsOn: Array<{ from: string; to: string }>;
+  /** Declared reads between two members, such as a Pulumi StackReference (chant#5331), ids as the composed estate has them. */
+  reads?: MemberRead[];
+}
+
+/** A declared edge between two members that a read of one member cannot carry (behold#1227). */
+export interface MemberRead {
+  from: string;
+  to: string;
+  kind: string;
+  /** The output read, when the reader's files name it. */
+  viaAttr?: string;
 }
 
 /** The catalog on a composed estate's IR. The rules are what the picture's legend and tooltips name. */

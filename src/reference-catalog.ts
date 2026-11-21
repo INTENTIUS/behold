@@ -37,7 +37,7 @@ const isRecord = (v: unknown): v is Rec => v !== null && typeof v === "object" &
 const str = (v: unknown): string | undefined => (typeof v === "string" && v !== "" ? v : undefined);
 
 export * from "./reference-catalog-shape.ts";
-import type { CatalogAmbiguous, CatalogDangling, CatalogEdge, CatalogIr, CatalogRule, IrCatalog, ReferenceCatalog } from "./reference-catalog-shape.ts";
+import type { CatalogAmbiguous, CatalogDangling, CatalogEdge, CatalogIr, CatalogRule, IrCatalog, MemberRead, ReferenceCatalog } from "./reference-catalog-shape.ts";
 
 /** Rules from the document: the object keyed by id chant prints, or a list of `{ id, ... }`. */
 function rulesOf(raw: unknown): Record<string, CatalogRule> {
@@ -70,6 +70,16 @@ export function referenceCatalogOf(doc: WorkspaceDocument): ReferenceCatalog | u
   const rules = rulesOf(doc.catalog.rules);
   const edges: CatalogEdge[] = [];
   const runsOn: Array<{ from: string; to: string }> = [];
+  const reads: MemberRead[] = [];
+  // behold#1227: each node's member, and its id as the composed estate names it
+  // (a node chant adds to a member without the member's prefix, the external
+  // stack of a StackReference, is `<member>/<id>` there).
+  const memberOf = new Map<string, string>();
+  for (const n of Array.isArray(doc.nodes) ? doc.nodes : []) if (isRecord(n) && str(n.id) && str(n.member)) memberOf.set(n.id as string, n.member as string);
+  const composed = (id: string): string => {
+    const m = memberOf.get(id);
+    return m === undefined || id.startsWith(`${m}/`) ? id : `${m}/${id}`;
+  };
   for (const e of Array.isArray(doc.edges) ? doc.edges : []) {
     if (!isRecord(e) || !str(e.from) || !str(e.to)) continue;
     if (e.origin === "derived" && str(e.rule)) {
@@ -85,6 +95,12 @@ export function referenceCatalogOf(doc: WorkspaceDocument): ReferenceCatalog | u
       });
     } else if (e.origin === "declared" && e.viaAttr === "runsOn") {
       runsOn.push({ from: e.from as string, to: e.to as string });
+    } else if (e.origin === "declared" && memberOf.has(e.from as string) && memberOf.has(e.to as string) && memberOf.get(e.from as string) !== memberOf.get(e.to as string)) {
+      // A read between two members that sits in a member's files (chant#5331: a
+      // Pulumi StackReference, from the reader's stack node to the stack node of
+      // the member that applies the stack, the output as `viaAttr`). A read of one
+      // member cannot carry it (src/workspace.ts).
+      reads.push({ from: composed(e.from as string), to: composed(e.to as string), kind: str(e.kind) ?? "ref", ...(str(e.viaAttr) ? { viaAttr: e.viaAttr as string } : {}) });
     }
   }
   const dangling: CatalogDangling[] = [];
@@ -107,7 +123,7 @@ export function referenceCatalogOf(doc: WorkspaceDocument): ReferenceCatalog | u
     if (candidates.length < 2) continue;
     ambiguous.push({ from: a.from as string, ...(str(a.member) ? { member: a.member as string } : {}), rule: a.rule as string, path: str(a.path) ?? "", value: a.value, candidates });
   }
-  return { ...(str(doc.chant) ? { chant: doc.chant as string } : {}), rules, edges, dangling, ambiguous, runsOn };
+  return { ...(str(doc.chant) ? { chant: doc.chant as string } : {}), rules, edges, dangling, ambiguous, runsOn, ...(reads.length ? { reads } : {}) };
 }
 
 /** The edge that stands for a pair, for the one-edge-per-pair rule. */
@@ -146,6 +162,15 @@ export function applyReferenceCatalog(ir: GraphIR, catalog: ReferenceCatalog): G
     }
     byPair.set(pairKey(e.from, e.to), ir.edges.length);
     ir.edges.push({ from: e.from, to: e.to, kind: e.kind as never, ...(e.viaAttr ? { viaAttr: e.viaAttr } : {}), inferred: true, ...stamp } as never);
+  }
+  // behold#1227: reads between members (a StackReference), one edge per output, as chant draws them.
+  const haveRead = new Set(ir.edges.map((e) => `${e.from}\0${e.to}\0${e.viaAttr ?? ""}`));
+  for (const r of catalog.reads ?? []) {
+    if (!ids.has(r.from) || !ids.has(r.to) || r.from === r.to) continue;
+    const k = `${r.from}\0${r.to}\0${r.viaAttr ?? ""}`;
+    if (haveRead.has(k)) continue;
+    haveRead.add(k);
+    ir.edges.push({ from: r.from, to: r.to, kind: r.kind as never, ...(r.viaAttr ? { viaAttr: r.viaAttr } : {}), origin: "declared" } as never);
   }
   const own = (id: string): boolean => ids.has(id);
   const dangling = catalog.dangling.filter((d) => own(d.from));

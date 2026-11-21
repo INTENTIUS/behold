@@ -25,9 +25,14 @@ npx @intentius/behold serve ./my-estate --env live
 
 This is the one thing worth getting right before reading anything else.
 
-The overlay is composed from `live-ls -json` and `live-plan -json`, and those
-two documents answer one question: is this resource bound, unowned, omitted, or
-invisible to the listing. **Neither of them ever compares an attribute value.**
+The overlay comes from chant's live read of the estate, which reads it with
+`live-plan -json`, `live-graph` and `live-ls -json` and puts the verdict on each
+instance as `facts.ownership`, with choudoufu's rows behind it as
+`facts.ownershipRows`: how the plan bound it, why it was left out, the tags that
+adopt it, and what the listing could not see. Those reads answer one question:
+is this resource bound, unowned, omitted, or invisible to the listing. **None of
+them ever compares an attribute value.** Each card shows the word as an
+`ownership` row.
 
 So a resource whose tag or path was changed out of band still carries its
 markers, is still bound, and is still green. Read a green card as *this is
@@ -38,7 +43,7 @@ ours*, never as *nothing changed*.
 | green | bound | a declared instance matched a live object |
 | amber | unowned | a live object at a declared identity that is not ours |
 | blue | pending | the plan would create it |
-| grey | not observed | the listing could not see it, or neither document mentions it |
+| grey | not observed | the listing could not see it, or the live read placed nothing at its address |
 
 Those are choudoufu's words, not chant's, and the legend says so. A `bound`
 resource is not "managed": a resource bound by derived identity carries no

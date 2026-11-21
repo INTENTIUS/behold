@@ -16,7 +16,9 @@ azure/terraform.tfstate*
 # backend), the stack file `plunge stack select --create local` writes (it
 # holds only that machine's encryption salt), and the `plunge stack export`
 # scripts/front-door.ts writes after each apply, which chant reads the
-# member's graph from. All three are that machine's state, not source.
+# member's graph from, with the `plunge graph --json` it writes beside it for
+# each resource's ownership. All of them are that machine's state, not source.
 aws/.plunge
 aws/Pulumi.local.yaml
 aws/stack-export.json
+aws/engine-graph.json

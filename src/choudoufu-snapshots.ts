@@ -10,10 +10,15 @@
  * beside the roots.
  *
  * `snapshotRunner` answers the reads behold spawns (the `Runner` seam in
- * src/choudoufu-live.ts) with those files, so every choudoufu view behold
- * already draws works from a snapshot unchanged. It answers reads only: a
- * `live-mv` without `-dry-run`, or any other verb, gets exit 2 and says the
- * snapshot holds no answer, exactly as a missing file does.
+ * src/choudoufu-live.ts) with those files: the roster from `live-check`, the
+ * listing the move routes read from `live-ls`, and a `live-mv` dry run. It
+ * answers reads only: a `live-mv` without `-dry-run`, or any other verb, gets
+ * exit 2 and says the snapshot holds no answer, exactly as a missing file does.
+ *
+ * Ownership colour is not among them. A member's live read is one chant read
+ * (behold#1227), and chant runs choudoufu itself, so a server given this
+ * runner and no chant draws each card neutral with the reason it was not
+ * read. `live-plan.json` stays in the layout for that chant read to use.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
