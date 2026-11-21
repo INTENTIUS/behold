@@ -133,7 +133,15 @@ no database connection.
 snapshot of the moment it ran, and fails if the files cannot be read. A
 SQL Yodeler repo's Pipeline lane is captured the same way.
 
-Every file is checked against SQL Yodeler's own JSON Schemas, from
-`@intentius/sql-yodeler` when it is installed and from a copy pinned in
-behold otherwise. A file that does not match is refused by name with
-`code: "yodel-report"`, and nothing from that read is drawn.
+Every file is checked against SQL Yodeler's own JSON Schemas when
+`@intentius/sql-yodeler` is installed. Otherwise each audit entry is checked
+against the audit schema chant publishes, which takes both SQL Yodeler's own
+entries and `chant.audit/v1` lines. The rest of each file is checked for
+the fields behold reads. A file that does not match is refused by name with
+`code: "yodel-report"`, and nothing from that read is drawn. An entry in
+chant's format is listed in SQL Yodeler's own words. Older reports and newer
+ones read the same.
+
+SQL Yodeler's `audit.jsonl` in a reports bucket draws as the timeline of
+[the terragucci page](/behold/using/terragucci/#the-timeline-from-the-audit-record),
+with `--terragucci <bucket>`: each line with its environment, in either format.

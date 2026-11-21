@@ -46,6 +46,7 @@ import { pickProject, TerragucciReadError, type ComposedApply, type ComposedStat
 import { deniedWords, TerragucciDenied, type TerragucciSource } from "./terragucci-source.ts";
 import { terragucciApproveCommand } from "./terragucci-lifecycle.ts";
 import type { Probe, ProgressPoll } from "./terragucci-poll.ts";
+import { productView } from "./report-store.ts";
 
 export const RUN_SCHEMA = "terragucci.run/v1";
 export const RUN_SCHEMA_FILE = "run.schema.json";
@@ -129,7 +130,11 @@ const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typ
 const str = (v: unknown): v is string => typeof v === "string";
 
 /** behold's own check: the schema id and the fields read here, with their types. */
-export function structuralRun(doc: unknown): string | undefined {
+export function structuralRun(raw: unknown): string | undefined {
+  // behold#1228: a run view under chant's neutral id (chant.run/v1, product terragucci) reads as terragucci's own.
+  const view = productView(raw, RUN_SCHEMA);
+  if (view.problem) return view.problem;
+  const doc = view.doc;
   if (!isRecord(doc)) return "it is not a JSON object";
   if (doc.schema !== RUN_SCHEMA) return `its schema is ${JSON.stringify(doc.schema)}, not ${RUN_SCHEMA}`;
   for (const f of ["project", "commit", "updated"] as const) if (!str(doc[f])) return `its ${f} is not a string`;
@@ -153,7 +158,10 @@ export function compileRunSchema(schema: object, version: string): RunValidator 
   const v = new Ajv2020({ strict: false, allErrors: false }).compile(schema);
   return {
     validation: { by: "schema", terragucci: version },
-    check(doc) {
+    check(raw) {
+      const view = productView(raw, RUN_SCHEMA);
+      if (view.problem) return view.problem;
+      const doc = view.doc;
       const id = isRecord(doc) ? doc.schema : undefined;
       if (id !== RUN_SCHEMA) return `its schema is ${JSON.stringify(id)}, not ${RUN_SCHEMA}`;
       if (v(doc)) return undefined;

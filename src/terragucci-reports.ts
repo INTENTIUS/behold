@@ -29,6 +29,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { terragucciApproveCommand } from "./terragucci-lifecycle.ts";
+import { checkStoreDoc, productView, STORE_SCHEMA_FILES, storeProduct } from "./report-store.ts";
+import { deniedWords, TerragucciDenied } from "./terragucci-source.ts";
 import type { TerragucciSource } from "./terragucci-source.ts";
 import { coneView, readConePlans, type PlanConeView, type RootFacts } from "./terragucci-cone.ts";
 
@@ -385,7 +387,11 @@ const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typ
 const str = (v: unknown): v is string => typeof v === "string";
 
 /** behold's own check: the schema id, and the fields this module reads, with their types. */
-function structural(name: DocName, doc: unknown): string | undefined {
+function structural(name: DocName, raw: unknown): string | undefined {
+  // behold#1228: a terragucci document under chant's neutral id reads as terragucci's own.
+  const view = productView(raw, SCHEMA_IDS[name]);
+  if (view.problem) return view.problem;
+  const doc = view.doc;
   if (!isRecord(doc)) return "it is not a JSON object";
   if (doc.schema !== SCHEMA_IDS[name]) return `its schema is ${JSON.stringify(doc.schema)}, not ${SCHEMA_IDS[name]}`;
   if (name === "index") {
@@ -438,7 +444,10 @@ function compileSchemas(dist: string): Validator {
   ) as Record<DocName, ReturnType<Ajv2020["compile"]>>;
   return {
     validation: { by: "schema", terragucci: version },
-    check(name, doc) {
+    check(name, raw) {
+      const view = productView(raw, SCHEMA_IDS[name]);
+      if (view.problem) return view.problem;
+      const doc = view.doc;
       const id = isRecord(doc) ? doc.schema : undefined;
       if (id !== SCHEMA_IDS[name]) return `its schema is ${JSON.stringify(id)}, not ${SCHEMA_IDS[name]}`;
       if (compiled[name](doc)) return undefined;
@@ -513,6 +522,8 @@ export interface RootRun {
 }
 
 export interface WaitingWave {
+  /** behold#1228: the member it belongs to, when the read is a whole estate of several. */
+  project?: string;
   wave: number;
   commit: string;
   since: string;
@@ -523,8 +534,10 @@ export interface WaitingWave {
   destroys: string[];
   report: string;
   job_url?: string;
-  /** The line a person runs at their shell. behold never runs it. */
-  command: string;
+  /** The line a person runs at their shell. behold never runs it. Absent for a product whose approve line behold does not know. */
+  command?: string;
+  /** behold#1228: the gate the wave waits at, as chant's estate names it. */
+  gate?: string;
   /** Where the waves came from: terragucci's estate.json, or the index when there is none. */
   from: "estate" | "index";
 }
@@ -655,11 +668,49 @@ export function waveResult(w: ReportWave | undefined, finished: string): WaveRes
   };
 }
 
+/** behold#1228: a read of a report store with no terragucci index, checked against chant's published schemas. */
+export type StoreValidation = { by: "chant"; schemas: "@intentius/chant/report-store" };
+
+/** behold#1228: one run of chant's estate (`recent[]`, `chant.estate/v1`), as the estate names it. */
+export interface StoreRun {
+  project: string;
+  commit: string;
+  stage: string;
+  finished: string;
+  wave?: number;
+  roots: number;
+  changed?: number;
+  failed?: number;
+  refused?: number;
+  approval?: string;
+  applied?: string;
+  status?: string;
+  job_url?: string;
+}
+
+/** behold#1228: a project's delivery numbers from chant's dora.json beside the estate. */
+export interface StoreDora {
+  key: string;
+  generated: string;
+  deployments_per_week?: number;
+  lead_time_seconds?: number;
+  change_failure_ratio?: number;
+  restore_seconds?: number;
+}
+
 export interface TerragucciRead {
   source: string;
   kind: TerragucciSource["kind"];
   project: string;
-  validation: Validation;
+  validation: Validation | StoreValidation;
+  /** behold#1228: the product whose reports these are, when the source names one (chant's estate `product`). */
+  product?: string;
+  /** behold#1228: the estate's members, when the read is the whole estate rather than one project of it. */
+  members?: string[];
+  /** behold#1228: the newest runs of the project in chant's estate, newest first, when the read is of a report store with no index. */
+  recent?: StoreRun[];
+  /** behold#1228: the project's delivery numbers from dora.json beside chant's estate; `problem` when the file is not one. */
+  dora?: StoreDora | { key: string; problem: string };
   /** When behold read it. Every mark's age is the run's, not this. */
   read: string;
   /** How many report.json files were read. */
@@ -762,7 +813,12 @@ export function matchProject(projects: readonly string[], checkout: string | und
   const path = (p: string): string => p.slice(p.indexOf("/") + 1).toLowerCase();
   if (!checkout.includes("/")) return undefined;
   const same = projects.filter((p) => p.includes("/") && path(p) === path(checkout));
-  return same.length === 1 ? same[0] : undefined;
+  if (same.length === 1) return same[0];
+  if (same.length > 1) return undefined;
+  // behold#1228: plywood names a project by its repository's directory, so a bare name matches the remote's last segment.
+  const name = checkout.slice(checkout.lastIndexOf("/") + 1).toLowerCase();
+  const bare = projects.filter((p) => !p.includes("/") && p.toLowerCase() === name);
+  return bare.length === 1 ? bare[0] : undefined;
 }
 
 export function pickProject(rows: IndexRow[], opts: ReadOptions, source: TerragucciSource): string {
@@ -803,6 +859,9 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
   const v = opts.validator ?? terragucciValidator();
   const index = await readDoc<{ reports: IndexRow[] }>(source, "index.json", "index", v);
   if (!index) {
+    // behold#1228: a CI product's report store with no terragucci index (plywood's): chant's estate, waiting waves and DORA.
+    const store = await readStoreEstate(source, opts);
+    if (store) return store;
     refuse(
       `${source.location} has no index.json.`,
       "Point --terragucci at terragucci's report directory (a run's terragucci-report/ has none; a synced bucket prefix or <prefix>/<project> does).",
@@ -1022,6 +1081,133 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
     ...(blocked ? { blocked } : {}),
     ...(outcomes ? { outcomes } : {}),
     ...(Object.keys(results).length ? { results } : {}),
+  };
+}
+
+/** Where chant's estate is under a reports bucket: the top (terragucci's), or `estate/`, `writeEstate`'s default prefix (plywood's). */
+export const STORE_ESTATE_PREFIXES = ["", "estate/"] as const;
+
+const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+
+/**
+ * behold#1228: a report store read through chant's estate, for a bucket with no terragucci index. The estate is
+ * `estate.json` at the top or under `estate/`, under `chant.estate/v1` or a product's estate id, checked against
+ * chant's published schema; `dora.json` beside it is read the same way. Undefined when neither place holds an
+ * estate, so the caller refuses as before. Each root's marks come from a product's own run reports, so the answer
+ * carries none: the project's counts, its waiting waves, its newest runs and its delivery numbers.
+ */
+export async function readStoreEstate(source: TerragucciSource, opts: ReadOptions = {}): Promise<TerragucciRead | undefined> {
+  let prefix: string | undefined;
+  let doc: unknown;
+  for (const p of STORE_ESTATE_PREFIXES) {
+    const key = `${p}estate.json`;
+    let text: string | undefined;
+    try {
+      text = await source.read(key);
+    } catch (e) {
+      if (e instanceof TerragucciDenied) continue;
+      refuse(`Could not read ${key} from ${source.location}: ${e instanceof Error ? e.message : String(e)}`, readRemedy(source));
+    }
+    if (text === undefined) continue;
+    try {
+      doc = JSON.parse(text);
+    } catch {
+      refuse(`${key} in ${source.location} is not JSON.`, "Point --terragucci at the top of the product's reports bucket.");
+    }
+    prefix = p;
+    break;
+  }
+  if (prefix === undefined) return undefined;
+  const estateKey = `${prefix}estate.json`;
+  const why = checkStoreDoc("estate", doc);
+  if (why) refuse(`${estateKey} in ${source.location} is not a chant estate: ${why}.`, `It was checked against ${STORE_SCHEMA_FILES.estate}. Check that the product's estate job wrote it, or upgrade behold.`);
+  const estate = doc as Estate & { recent?: StoreRun[] };
+  const product = storeProduct(estate);
+
+  // A product's estate names each member (a workspace's stacks) as a project, so with none asked for, and no member
+  // named as the checkout, the read is the whole estate: every member's counts and waiting waves.
+  const projects = [...new Set(estate.projects.map((p) => p.project))].sort();
+  let picked: string | undefined;
+  if (opts.strict || opts.project) {
+    picked = opts.strict ? matchProject(projects, opts.checkoutProject) : projects.includes(opts.project!) ? opts.project : undefined;
+    if (!picked) {
+      refuse(
+        `${source.location}/${estateKey} holds ${projects.length ? `the projects ${projects.join(", ")}` : "no projects"}, and none is ${opts.project ?? `this checkout's${opts.checkoutProject ? ` (${opts.checkoutProject})` : ""}`}.`,
+        projects.length ? `Name one with --terragucci-project: ${projects.join(", ")}, or leave it out to read the whole estate.` : "Run the product's estate job once the project has a run on its ledger.",
+      );
+    }
+  } else picked = projects.length === 1 ? projects[0] : matchProject(projects, opts.checkoutProject);
+  const members = picked ? estate.projects.filter((p) => p.project === picked) : estate.projects;
+  const project = picked ?? (opts.checkoutProject ? opts.checkoutProject.slice(opts.checkoutProject.lastIndexOf("/") + 1) : source.location);
+  const html = `${prefix}estate.html`;
+
+  let dora: TerragucciRead["dora"];
+  const doraKey = `${prefix}dora.json`;
+  let doraText: string | undefined;
+  try {
+    doraText = await source.read(doraKey);
+  } catch (e) {
+    if (e instanceof TerragucciDenied) dora = { key: doraKey, problem: deniedWords(e, "the delivery numbers") };
+    else dora = { key: doraKey, problem: e instanceof Error ? e.message : String(e) };
+  }
+  if (doraText !== undefined) {
+    let d: unknown;
+    try {
+      d = JSON.parse(doraText);
+    } catch {
+      d = undefined;
+    }
+    const bad = d === undefined ? "it is not JSON" : checkStoreDoc("dora", d);
+    if (bad) dora = { key: doraKey, problem: `${doraKey} is not a chant dora document: ${bad}` };
+    else {
+      const doc = d as { generated: string; projects: { project: string; per_week?: unknown; lead_time?: { median_seconds?: unknown }; change_failure?: { rate?: unknown }; restore?: { median_seconds?: unknown } }[] };
+      // One member's numbers, or with the whole estate read, the numbers of its only member that has any.
+      const p = picked ? doc.projects.find((x) => x.project === picked) : doc.projects.length === 1 ? doc.projects[0] : undefined;
+      if (p) {
+        const set = Object.fromEntries(
+          Object.entries({ deployments_per_week: num(p.per_week), lead_time_seconds: num(p.lead_time?.median_seconds), change_failure_ratio: num(p.change_failure?.rate), restore_seconds: num(p.restore?.median_seconds) }).filter(([, x]) => x !== undefined),
+        );
+        dora = { key: doraKey, generated: doc.generated, ...set };
+      }
+    }
+  }
+
+  const waiting: WaitingWave[] = members.flatMap((m) => m.waiting).map((w) => ({
+    ...(picked ? {} : { project: w.project }),
+    wave: w.wave,
+    commit: w.commit,
+    since: w.since,
+    roots: [],
+    set_digest: null,
+    destroys: [],
+    report: html,
+    ...((w as { gate?: unknown }).gate !== undefined ? { gate: String((w as { gate?: unknown }).gate) } : {}),
+    ...(product === "terragucci" ? { command: terragucciApproveCommand(w.wave, null) } : {}),
+    from: "estate" as const,
+  }));
+  const recent = (estate.recent ?? []).filter((r) => !picked || r.project === picked);
+
+  return {
+    source: source.location,
+    kind: source.kind,
+    project,
+    ...(picked ? {} : { members: projects }),
+    validation: { by: "chant", schemas: "@intentius/chant/report-store" },
+    ...(product ? { product } : {}),
+    read: (opts.now ?? new Date()).toISOString(),
+    reports: 0,
+    roots: {},
+    waiting,
+    estate: {
+      generated: estate.generated,
+      html,
+      drifted: members.reduce((n, m) => n + m.drifted, 0),
+      failed: members.reduce((n, m) => n + m.failed, 0),
+      waiting: members.reduce((n, m) => n + m.waiting.length, 0),
+      status: members.every((m) => m.status === "ok") ? "ok" : members.find((m) => m.status !== "ok")!.status,
+    },
+    ...(recent.length ? { recent } : {}),
+    ...(dora ? { dora } : {}),
   };
 }
 

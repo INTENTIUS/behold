@@ -12,11 +12,18 @@
  *   and says so.
  *
  * behold never runs `yodel` and never connects to the database. Each document
- * is checked against SQL Yodeler's own JSON Schema: from `@intentius/sql-yodeler`
- * when it resolves beside the served project or beside behold, otherwise from
- * the copy pinned in src/sql-yodeler-schemas/ (sql-yodeler 19ebbff, unchanged
- * through e00fd61). A file that fails is refused by name with
- * `code: "yodel-report"`, and nothing from the read is drawn.
+ * is checked against SQL Yodeler's own JSON Schema from `@intentius/sql-yodeler`
+ * when it resolves beside the served project or beside behold. Otherwise
+ * (behold#1228) the report's audit entries are read by chant's `readAuditLine`
+ * and checked against chant's published audit schema, which takes SQL Yodeler's
+ * own entries and `chant.audit/v1` lines alike, and the rest of each document
+ * is checked for the fields behold reads, with their types. A file that fails
+ * is refused by name with `code: "yodel-report"`, and nothing from the read is
+ * drawn.
+ *
+ * A report's audit entry in chant's format is drawn in SQL Yodeler's words
+ * (chant's `toProductAuditLine`), so history written before and after SQL
+ * Yodeler moved to chant's format reads the same.
  *
  * What comes out is marks, never a status: nothing here writes `_status`.
  * The page places a drift mark on the card its object names, and lists the
@@ -28,12 +35,8 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Hono } from "hono";
 import { Ajv2020 } from "ajv/dist/2020.js";
-import pinnedCommon from "./sql-yodeler-schemas/common.schema.json" with { type: "json" };
-import pinnedReport from "./sql-yodeler-schemas/report.schema.json" with { type: "json" };
-import pinnedDrift from "./sql-yodeler-schemas/drift.schema.json" with { type: "json" };
-
-/** The sql-yodeler commit the pinned schemas were copied from. */
-export const PINNED_COMMIT = "19ebbffd70726e34fc470486f87e70c0d7370b8c";
+import { toProductAuditLine } from "@intentius/chant/report-store";
+import { checkAuditLine } from "./report-store.ts";
 
 export interface YodelRefusal {
   error: string;
@@ -133,7 +136,7 @@ interface DriftDoc {
 // Validation: SQL Yodeler's schemas, installed or pinned.
 // ---------------------------------------------------------------------------
 
-export type YodelValidation = { by: "schema"; from: "package"; sqlYodeler: string } | { by: "schema"; from: "pinned"; commit: string };
+export type YodelValidation = { by: "schema"; from: "package"; sqlYodeler: string } | { by: "chant"; from: "chant"; schemas: "@intentius/chant/report-store" };
 
 export interface YodelValidator {
   validation: YodelValidation;
@@ -156,7 +159,43 @@ function compile(schemas: { common: object; report: object; drift: object }, val
   };
 }
 
-let pinned: YodelValidator | undefined;
+/**
+ * behold#1228: with no `@intentius/sql-yodeler` to check against, the fields behold reads, with their types, and
+ * each audit entry by chant's audit schema after chant maps it.
+ */
+function structuralYodel(name: "report" | "drift", doc: unknown): string | undefined {
+  if (!isRecord(doc)) return "it is not a JSON object";
+  const strs = (v: unknown): boolean => Array.isArray(v) && v.every((x) => typeof x === "string");
+  const dialect = doc.dialect === "clickhouse" || doc.dialect === "postgres" ? undefined : `its dialect is ${JSON.stringify(doc.dialect)}, not clickhouse or postgres`;
+  if (name === "drift") {
+    if (typeof doc.environment !== "string" || typeof doc.drifted !== "boolean") return "it lacks environment or drifted";
+    if (dialect) return dialect;
+    if (!Array.isArray(doc.changed) || !strs(doc.missing) || !Array.isArray(doc.unobserved)) return "it lacks changed, missing or unobserved";
+    for (const [i, c] of doc.changed.entries()) if (!isRecord(c) || !Array.isArray(c.changes)) return `changed ${i} has no changes`;
+    for (const [i, u] of doc.unobserved.entries()) if (!isRecord(u) || typeof u.name !== "string") return `unobserved ${i} has no name`;
+    return undefined;
+  }
+  if (doc.version !== 1) return `its version is ${JSON.stringify(doc.version)}, not 1`;
+  if (typeof doc.generatedAt !== "string" || Number.isNaN(Date.parse(doc.generatedAt))) return "its generatedAt is not a time";
+  if (typeof doc.project !== "string" || !strs(doc.migrations)) return "it lacks project or migrations";
+  if (dialect) return dialect;
+  if (!Array.isArray(doc.environments) || !Array.isArray(doc.gaps)) return "it lacks environments or gaps";
+  for (const [i, e] of doc.environments.entries()) {
+    if (!isRecord(e) || typeof e.name !== "string" || !strs(e.notes) || !Array.isArray(e.migrations)) return `environment ${i} lacks name, notes or migrations`;
+    for (const m of e.migrations) if (!isRecord(m) || typeof m.id !== "string" || typeof m.state !== "string" || typeof m.inDirectory !== "boolean") return `a migration of ${e.name} lacks id, state or inDirectory`;
+  }
+  for (const [i, g] of doc.gaps.entries()) if (!isRecord(g) || typeof g.environment !== "string" || typeof g.kind !== "string" || typeof g.detail !== "string") return `gap ${i} lacks environment, kind or detail`;
+  if (doc.audit !== undefined) {
+    if (!Array.isArray(doc.audit)) return "its audit is not an array";
+    for (const [i, a] of doc.audit.entries()) {
+      const read = checkAuditLine(a, { product: "sql-yodeler", project: doc.project });
+      if (read.problem) return `audit entry ${i}: ${read.problem}`;
+    }
+  }
+  return undefined;
+}
+
+let structural: YodelValidator | undefined;
 const installed = new Map<string, YodelValidator>();
 
 /** The package's root when `@intentius/sql-yodeler` resolves from `from`. */
@@ -181,8 +220,9 @@ function packageRoot(from: string): string | undefined {
 
 /**
  * SQL Yodeler's schemas from `@intentius/sql-yodeler` when it resolves from one
- * of `dirs` (the served project first, then behold itself), else behold's
- * pinned copy. Looked up per read, so an install during a serve is used.
+ * of `dirs` (the served project first, then behold itself), else chant's audit
+ * schema and behold's check of the fields it reads. Looked up per read, so an
+ * install during a serve is used.
  */
 export function yodelValidator(dirs: readonly string[] = []): YodelValidator {
   for (const from of [...dirs, dirname(fileURLToPath(import.meta.url))]) {
@@ -199,11 +239,11 @@ export function yodelValidator(dirs: readonly string[] = []): YodelValidator {
       }
       return v;
     } catch {
-      // An install without its schemas: fall through to the pinned copy.
+      // An install without its schemas: fall through to chant's audit schema and the field check.
     }
   }
-  pinned ??= compile({ common: pinnedCommon, report: pinnedReport, drift: pinnedDrift }, { by: "schema", from: "pinned", commit: PINNED_COMMIT.slice(0, 7) });
-  return pinned;
+  structural ??= { validation: { by: "chant", from: "chant", schemas: "@intentius/chant/report-store" }, check: structuralYodel };
+  return structural;
 }
 
 // ---------------------------------------------------------------------------
@@ -384,9 +424,19 @@ export function readYodelReport(source: string, validator: YodelValidator): Yode
     environments,
     drift,
     marks,
-    audit: report ? (report.doc.audit ?? []).map((a) => ({ ...a, file: basename(report!.file) })) : [],
+    audit: report ? (report.doc.audit ?? []).map((a) => ({ ...yodelerEntry(a, report!.doc.project), file: basename(report!.file) })) : [],
     ignored,
   };
+}
+
+/**
+ * behold#1228: an audit entry in SQL Yodeler's words. One SQL Yodeler wrote in its own format is kept as it is; a
+ * `chant.audit/v1` line is given back in SQL Yodeler's format by chant's `toProductAuditLine`.
+ */
+function yodelerEntry(a: unknown, project: string): AuditEntry {
+  if (isRecord(a) && a.schema === undefined) return a as unknown as AuditEntry;
+  const read = checkAuditLine(a, { product: "sql-yodeler", project });
+  return (read.line ? toProductAuditLine(read.line, "sql-yodeler") : a) as unknown as AuditEntry;
 }
 
 /** `GET /api/yodel-report`: the read, or the refusal (422). Read per request: the files are local and small. */

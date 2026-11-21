@@ -208,8 +208,12 @@ Options:
   --terragucci <src>  serve/export: paint a terragucci estate from its reports
                       (#490). <src> is a report directory (a synced bucket
                       prefix, or <prefix>/<project>), s3://bucket/prefix (read
-                      with your aws CLI, GetObject only), or an https address
-                      that serves the bucket. Each root's newest tf-plan and
+                      with your aws CLI, GetObject only), gs://bucket/prefix or
+                      az://account/container/prefix (read through chant with
+                      the environment's credentials), file://<dir>, or an
+                      https address that serves the bucket. A plywood bucket
+                      in chant's format shows its estate, waiting waves and
+                      audit record. Each root's newest tf-plan and
                       tf-drift verdict is marked on its cards with the run's
                       age and a link to its report; nothing is read from a
                       cloud, and a waiting wave offers only the line to run.
@@ -556,7 +560,7 @@ export async function run(argv: string[]): Promise<void> {
   }
 
   if (terragucci !== undefined && !terragucci) {
-    process.stderr.write("behold serve: --terragucci needs a report directory, s3://bucket/prefix or an https address\n");
+    process.stderr.write("behold serve: --terragucci needs a report directory, s3://, gs://, az:// or file:// bucket, or an https address\n");
     process.exit(2);
   }
   if (terragucciProject && terragucci === undefined) {

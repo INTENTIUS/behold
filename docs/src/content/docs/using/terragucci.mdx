@@ -89,6 +89,23 @@ as "this card is fine".
 Report pages open through behold, which reads them from the same source, so a
 link works for a private bucket too. They are served sandboxed.
 
+### Reports in chant's format
+
+terragucci's documents may also be written under chant's product-neutral ids:
+`chant.estate/v1`, `chant.dora/v1`, `chant.run/v1` for a report or a run view,
+and `chant.audit/v1` lines, each with `product: "terragucci"`. behold checks
+such a document against chant's published schema
+(`@intentius/chant/report-store/<kind>.schema.json`), then reads it as
+terragucci's own, with the checks above. A bucket that holds both formats
+reads the same as one in either, so history written before a switch stays
+readable. A document of another product under terragucci's key is refused.
+
+`--terragucci` also takes `gs://bucket/prefix` and `az://account/container/prefix`,
+read one GET at a time through chant's report store with the credentials in
+the environment, and `file://<dir>`. A bucket with no `index.json` but chant's
+estate at `estate.json` or `estate/estate.json` (a [plywood](/behold/using/plywood/)
+bucket) is read through that estate instead.
+
 ## The timeline, from the audit record
 
 When terragucci's estate job runs `terragucci audit`, the top of the reports
@@ -110,7 +127,10 @@ names one project's directory rather than the prefix) shows the sentence
 "has no audit.jsonl", which is not the same as "nothing happened". Every line is
 checked against `dist/audit.schema.json` when `@intentius/terragucci` 0.4.7 or
 newer is installed, and structurally otherwise; one bad line refuses the
-record with `code: "terragucci-report"` and its line number.
+record with `code: "terragucci-report"` and its line number. The record may
+also hold `chant.audit/v1` lines from any product, and SQL Yodeler's own
+lines. chant maps each onto its audit line, which behold checks against
+chant's audit schema. An entry keeps its product's own word for what happened.
 
 The read-only identity needs `GetObject` on `<prefix>/audit.jsonl` too. For an
 agent: `GET /api/terragucci/timeline?root=<path>&limit=<n>` (200 by default,

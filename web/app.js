@@ -19,7 +19,7 @@ import { waveListKey, waveListOf } from "./kiosk-wave-list.js";
 import { shiftInto } from "./float-place.js"; // behold#764
 import { cssString, hoverCss, hoverFromMessage, hoverLinks, hoverMessage, isLightBg, rootPaint, rootText } from "./kiosk-roots.js";
 import { gateCards } from "./workspace-gates.js";
-import { cornerOf, estateLine, hrefOf as tgHref, legend as tgLegend, markLine, rootRows as tgRootRows, waveCards } from "./terragucci.js";
+import { cornerOf, doraLine, estateLine, hrefOf as tgHref, legend as tgLegend, markLine, recentRows as tgRecentRows, rootRows as tgRootRows, waveCards } from "./terragucci.js";
 import { laneElement as tgLane, rootOfCard as tgRootOfCard, historyElement as tgHistoryLane } from "./terragucci-timeline.js";
 import { gateCardElement, renderLane } from "./terragucci-lifecycle.js";
 import { renderReleases } from "./releases.js";
@@ -7228,7 +7228,11 @@ function tgLink(text, href) {
 }
 function renderTerragucciPanel() {
   if (!tgHost) {
-    tgHost = addPanelTab("terragucci", "Terragucci", "What terragucci's reports found: each root's newest drift check, plan and apply wave, dated. Not live.");
+    // behold#1228: another product's report store (plywood's) gets a tab named for what it holds.
+    const other = tgAnswer && tgAnswer.product && tgAnswer.product !== "terragucci" ? tgAnswer.product : null;
+    tgHost = other
+      ? addPanelTab("terragucci", "Reports", `What ${other}'s reports bucket holds: its estate, the waves waiting at a gate, its newest runs and its audit record, dated. Not live.`)
+      : addPanelTab("terragucci", "Terragucci", "What terragucci's reports found: each root's newest drift check, plan and apply wave, dated. Not live.");
     if (!tgHost) return;
     tgHost.id = "tab-terragucci";
   }
@@ -7261,6 +7265,23 @@ function renderTerragucciPanel() {
     line.appendChild(tgLink(est.text, est.href));
     host.appendChild(line);
   }
+  // behold#1228: a report store's delivery numbers and newest runs, from chant's dora.json and estate.
+  const dl = doraLine(a);
+  if (dl) {
+    const line = document.createElement("div");
+    line.className = "tg-estate";
+    if (dl.href) line.appendChild(tgLink(dl.text, dl.href));
+    else line.textContent = dl.text;
+    host.appendChild(line);
+  }
+  for (const r of tgRecentRows(a, now)) {
+    const row = document.createElement("div");
+    row.className = "ws-gate-note";
+    row.textContent = r.text;
+    row.title = r.title;
+    if (r.job) row.append(" · ", tgLink("job", r.job));
+    host.appendChild(row);
+  }
   renderTerragucciLane(host, now);
   if (tgProgress) host.appendChild(tgProgressSection(tgProgress, now, tgLink)); // #511
   host.appendChild(tgChangeSection(a, tgProgress, now, { link: tgLink, button, copy: copyToClipboard })); // #568
@@ -7280,11 +7301,20 @@ function renderTerragucciPanel() {
       row.textContent = `destroys ${d}`;
       box.appendChild(row);
     }
-    const cmd = document.createElement("code");
-    cmd.className = "tg-command";
-    cmd.textContent = w.command;
-    const copy = button("Copy", "", () => copyToClipboard(w.command, copy));
-    copy.title = "Copy the line. Run it at your shell: the approval is yours, signed, in git.";
+    // behold#1228: a product whose approve line behold does not know shows the gate, and no line to copy.
+    if (w.command) {
+      const cmd = document.createElement("code");
+      cmd.className = "tg-command";
+      cmd.textContent = w.command;
+      const copy = button("Copy", "", () => copyToClipboard(w.command, copy));
+      copy.title = "Copy the line. Run it at your shell: the approval is yours, signed, in git.";
+      box.append(cmd, copy);
+    } else if (w.gate) {
+      const gate = document.createElement("code");
+      gate.className = "tg-command";
+      gate.textContent = `gate ${w.gate}`;
+      box.append(gate);
+    }
     const note = document.createElement("div");
     note.className = "ws-gate-note";
     note.textContent = w.note;
@@ -7292,7 +7322,7 @@ function renderTerragucciPanel() {
     links.className = "ws-gate-note";
     links.appendChild(tgLink("report", w.report));
     if (w.job) links.append(" · ", tgLink("job", w.job));
-    box.append(cmd, copy, note, links);
+    box.append(note, links);
     host.appendChild(box);
   }
   for (const r of tgRootRows(a, now)) {

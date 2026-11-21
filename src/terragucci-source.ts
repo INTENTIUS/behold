@@ -19,9 +19,10 @@
 import { spawn } from "node:child_process";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { hasEnvCredentials, S3Error, S3Object, s3FromEnv } from "./s3-object.ts";
 
-export type TerragucciSourceKind = "dir" | "s3" | "http";
+export type TerragucciSourceKind = "dir" | "s3" | "http" | "gs" | "az";
 
 export interface TerragucciSource {
   kind: TerragucciSourceKind;
@@ -100,8 +101,43 @@ export const realAws: AwsRun = (args) =>
 const trim = (s: string): string => s.replace(/^\/+|\/+$/g, "");
 const joinKey = (...p: string[]): string => p.map(trim).filter(Boolean).join("/");
 
-/** The source a `--terragucci` value names. A relative path is resolved against `cwd`. */
-export function terragucciSource(spec: string, opts: { cwd?: string; aws?: AwsRun; fetch?: typeof fetch; env?: NodeJS.ProcessEnv } = {}): TerragucciSource {
+/** behold#1228: reads one object of a `gs://` or `az://` bucket. Injectable so a test needs no cloud. */
+export type CloudGet = (url: string) => (key: string) => Promise<string | null>;
+
+/** chant's report-store read (`reportGet`), with the credentials the environment holds, as a product's jobs write the bucket. */
+export const chantCloudGet: CloudGet = (url) => {
+  let get: Promise<(key: string) => Promise<string | null>> | undefined;
+  return async (key) => {
+    get ??= import("@intentius/chant/pr-report-url").then((m) => {
+      const target = m.parseReportUrl(url, "--terragucci");
+      if ("error" in target) throw new Error(target.error);
+      return m.reportGet(target);
+    });
+    return (await get)(key);
+  };
+};
+
+/**
+ * The source a `--terragucci` value names. A relative path is resolved against `cwd`.
+ *
+ * behold#1228: a CI product's reports bucket may also be `gs://bucket/prefix` or `az://account/container/prefix`,
+ * read one GET at a time through chant's report store with the environment's credentials, or `file://<dir>`, the
+ * same as a directory. Those two clouds list nothing, as an http(s) source does.
+ */
+export function terragucciSource(spec: string, opts: { cwd?: string; aws?: AwsRun; fetch?: typeof fetch; env?: NodeJS.ProcessEnv; cloud?: CloudGet } = {}): TerragucciSource {
+  const cloud = /^(gs|az):\/\//.exec(spec);
+  if (cloud) {
+    const location = spec.replace(/\/+$/, "");
+    const get = (opts.cloud ?? chantCloudGet)(location);
+    return {
+      kind: cloud[1] as "gs" | "az",
+      location,
+      async read(key) {
+        return (await get(trim(key))) ?? undefined;
+      },
+    };
+  }
+  if (spec.startsWith("file://")) spec = fileURLToPath(spec);
   const s3 = /^s3:\/\/([^/]+)\/?(.*)$/.exec(spec);
   if (s3) {
     const bucket = s3[1]!;

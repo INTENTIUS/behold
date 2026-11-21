@@ -28,19 +28,20 @@
  */
 // Each train publishes only the members that changed. 0.124.105 is core with chant's `templateCatalog(dir)` (behold#1142); the k8s and aws
 // lexicons that need it are 0.124.104, and the others stay where their last train left them, each with a peer range on chant that takes 0.124.105.
-// 0.124.107 is the chant behold releases its products with as one train (behold#1211).
+// 0.124.107 is the chant behold releases its products with as one train (behold#1211). 0.124.110 is the chant the delivery epic's
+// reads land on (behold#1227, behold#1228, behold#1236).
 export const CHANT_RELEASE = {
-  version: "0.124.107",
+  version: "0.124.110",
   released: true,
   lexicons: {
     "@intentius/chant-lexicon-k8s": "0.124.104",
-    "@intentius/chant-lexicon-aws": "0.124.104",
-    "@intentius/chant-lexicon-gcp": "0.124.102",
+    "@intentius/chant-lexicon-aws": "0.124.105",
+    "@intentius/chant-lexicon-gcp": "0.124.103",
     "@intentius/chant-lexicon-otel": "0.124.102",
     "@intentius/chant-lexicon-prometheus": "0.124.101",
-    "@intentius/chant-lexicon-pulumi": "0.124.102",
+    "@intentius/chant-lexicon-pulumi": "0.124.103",
     "@intentius/chant-lexicon-sql": "0.124.102",
-    "@intentius/chant-lexicon-terraform": "0.124.102",
+    "@intentius/chant-lexicon-terraform": "0.124.103",
     "@intentius/chant-k8s-client": "0.124.101",
   },
 } as const;

@@ -1,0 +1,290 @@
+{
+  "schema": "chant.dora/v1",
+  "product": "plywood",
+  "generated": "2026-10-27T12:00:00.000Z",
+  "weeks": 8,
+  "window": {
+    "from": "2026-09-07T00:00:00.000Z",
+    "to": "2026-10-27T12:00:00.000Z"
+  },
+  "drift_window_seconds": 604800,
+  "audit": true,
+  "source": "ledger",
+  "estate": {
+    "deployments": 3,
+    "per_week": 2.98,
+    "span_seconds": 609600,
+    "lead_time": {
+      "changes": 3,
+      "median_seconds": 1200,
+      "before_gate_seconds": 600,
+      "at_gate_seconds": 0,
+      "after_gate_seconds": 0
+    },
+    "change_failure": {
+      "applies": 4,
+      "failed": 1,
+      "drifted": 2,
+      "rate": 0.75
+    },
+    "restore": {
+      "restored": 2,
+      "open": 1,
+      "median_seconds": 50400,
+      "apply_restored": 1,
+      "drift_restored": 1
+    },
+    "trend": [
+      {
+        "week": "2026-09-07",
+        "deployments": 0,
+        "applies": 0,
+        "failures": 0,
+        "lead_time_seconds": null,
+        "restore_seconds": null
+      },
+      {
+        "week": "2026-09-14",
+        "deployments": 0,
+        "applies": 0,
+        "failures": 0,
+        "lead_time_seconds": null,
+        "restore_seconds": null
+      },
+      {
+        "week": "2026-09-21",
+        "deployments": 0,
+        "applies": 0,
+        "failures": 0,
+        "lead_time_seconds": null,
+        "restore_seconds": null
+      },
+      {
+        "week": "2026-09-28",
+        "deployments": 0,
+        "applies": 0,
+        "failures": 0,
+        "lead_time_seconds": null,
+        "restore_seconds": null
+      },
+      {
+        "week": "2026-10-05",
+        "deployments": 0,
+        "applies": 0,
+        "failures": 0,
+        "lead_time_seconds": null,
+        "restore_seconds": null
+      },
+      {
+        "week": "2026-10-12",
+        "deployments": 0,
+        "applies": 0,
+        "failures": 0,
+        "lead_time_seconds": null,
+        "restore_seconds": null
+      },
+      {
+        "week": "2026-10-19",
+        "deployments": 3,
+        "applies": 4,
+        "failures": 3,
+        "lead_time_seconds": 1200,
+        "restore_seconds": 50400
+      },
+      {
+        "week": "2026-10-26",
+        "deployments": 0,
+        "applies": 0,
+        "failures": 0,
+        "lead_time_seconds": null,
+        "restore_seconds": null
+      }
+    ]
+  },
+  "projects": [
+    {
+      "project": "network",
+      "deployments": 2,
+      "per_week": 1.98,
+      "span_seconds": 609600,
+      "lead_time": {
+        "changes": 2,
+        "median_seconds": 3300,
+        "before_gate_seconds": 450,
+        "at_gate_seconds": 1650,
+        "after_gate_seconds": 1200
+      },
+      "change_failure": {
+        "applies": 3,
+        "failed": 1,
+        "drifted": 1,
+        "rate": 0.666667
+      },
+      "restore": {
+        "restored": 2,
+        "open": 0,
+        "median_seconds": 50400,
+        "apply_restored": 1,
+        "drift_restored": 1
+      },
+      "trend": [
+        {
+          "week": "2026-09-07",
+          "deployments": 0,
+          "applies": 0,
+          "failures": 0,
+          "lead_time_seconds": null,
+          "restore_seconds": null
+        },
+        {
+          "week": "2026-09-14",
+          "deployments": 0,
+          "applies": 0,
+          "failures": 0,
+          "lead_time_seconds": null,
+          "restore_seconds": null
+        },
+        {
+          "week": "2026-09-21",
+          "deployments": 0,
+          "applies": 0,
+          "failures": 0,
+          "lead_time_seconds": null,
+          "restore_seconds": null
+        },
+        {
+          "week": "2026-09-28",
+          "deployments": 0,
+          "applies": 0,
+          "failures": 0,
+          "lead_time_seconds": null,
+          "restore_seconds": null
+        },
+        {
+          "week": "2026-10-05",
+          "deployments": 0,
+          "applies": 0,
+          "failures": 0,
+          "lead_time_seconds": null,
+          "restore_seconds": null
+        },
+        {
+          "week": "2026-10-12",
+          "deployments": 0,
+          "applies": 0,
+          "failures": 0,
+          "lead_time_seconds": null,
+          "restore_seconds": null
+        },
+        {
+          "week": "2026-10-19",
+          "deployments": 2,
+          "applies": 3,
+          "failures": 2,
+          "lead_time_seconds": 3300,
+          "restore_seconds": 50400
+        },
+        {
+          "week": "2026-10-26",
+          "deployments": 0,
+          "applies": 0,
+          "failures": 0,
+          "lead_time_seconds": null,
+          "restore_seconds": null
+        }
+      ]
+    },
+    {
+      "project": "web",
+      "deployments": 1,
+      "per_week": 1.19,
+      "span_seconds": 510000,
+      "lead_time": {
+        "changes": 1,
+        "median_seconds": 1200,
+        "before_gate_seconds": 1200,
+        "at_gate_seconds": 0,
+        "after_gate_seconds": 0
+      },
+      "change_failure": {
+        "applies": 1,
+        "failed": 0,
+        "drifted": 1,
+        "rate": 1
+      },
+      "restore": {
+        "restored": 0,
+        "open": 1,
+        "median_seconds": null,
+        "apply_restored": 0,
+        "drift_restored": 0
+      },
+      "trend": [
+        {
+          "week": "2026-09-07",
+          "deployments": 0,
+          "applies": 0,
+          "failures": 0,
+          "lead_time_seconds": null,
+          "restore_seconds": null
+        },
+        {
+          "week": "2026-09-14",
+          "deployments": 0,
+          "applies": 0,
+          "failures": 0,
+          "lead_time_seconds": null,
+          "restore_seconds": null
+        },
+        {
+          "week": "2026-09-21",
+          "deployments": 0,
+          "applies": 0,
+          "failures": 0,
+          "lead_time_seconds": null,
+          "restore_seconds": null
+        },
+        {
+          "week": "2026-09-28",
+          "deployments": 0,
+          "applies": 0,
+          "failures": 0,
+          "lead_time_seconds": null,
+          "restore_seconds": null
+        },
+        {
+          "week": "2026-10-05",
+          "deployments": 0,
+          "applies": 0,
+          "failures": 0,
+          "lead_time_seconds": null,
+          "restore_seconds": null
+        },
+        {
+          "week": "2026-10-12",
+          "deployments": 0,
+          "applies": 0,
+          "failures": 0,
+          "lead_time_seconds": null,
+          "restore_seconds": null
+        },
+        {
+          "week": "2026-10-19",
+          "deployments": 1,
+          "applies": 1,
+          "failures": 1,
+          "lead_time_seconds": 1200,
+          "restore_seconds": null
+        },
+        {
+          "week": "2026-10-26",
+          "deployments": 0,
+          "applies": 0,
+          "failures": 0,
+          "lead_time_seconds": null,
+          "restore_seconds": null
+        }
+      ]
+    }
+  ]
+}

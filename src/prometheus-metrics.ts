@@ -34,6 +34,7 @@
  *
  * Nothing here writes, and the route is a GET, so `--public` keeps it.
  */
+import { readReportSchema } from "./report-store.ts";
 import type { Hono } from "hono";
 
 /** How long one read of Prometheus is shared between kiosks. */
@@ -250,7 +251,7 @@ export function doraOf(a: Answers, repo: string): DoraMetrics | null {
   return Object.keys(set).length ? { from: "prometheus", ...set } : null;
 }
 
-/** The repo's DORA numbers from terragucci estate's dora.json (terragucci.dora/v1), or null. */
+/** The repo's DORA numbers from a dora.json (terragucci.dora/v1, or chant.dora/v1 from any product, behold#1228), or null. */
 export function doraFromFile(text: string | undefined, repo: string): { dora: DoraMetrics; project: string } | null {
   if (!text) return null;
   let doc: unknown;
@@ -259,6 +260,9 @@ export function doraFromFile(text: string | undefined, repo: string): { dora: Do
   } catch {
     return null;
   }
+  // behold#1228: a document that names its schema names a dora one, product-named or chant's.
+  const schema = (doc as { schema?: unknown } | null)?.schema;
+  if (schema !== undefined && readReportSchema(schema)?.kind !== "dora") return null;
   const projects = (doc as { projects?: unknown }).projects;
   if (!Array.isArray(projects)) return null;
   const p = projects.find((x) => x && typeof x === "object" && projectIs((x as { project?: string }).project, repo)) as
