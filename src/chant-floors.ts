@@ -143,9 +143,7 @@ export const DECISION_POINTS_CHANT_FLOOR = "0.107.0";
  * that hold it, a pause and a rollback request (INTENTIUS/chant#5342, chant's
  * `STAGE_STATUS_FLOOR`). It also carries a stage's hold on `promotionOrder`
  * (chant#5354) and the stage queues (chant#5353). The Stages tab reads it
- * (#1236). Below it the tab shows the refusal. Planned release: chant
- * 0.124.110; this takes the release's own number if the train lands on
- * another one. */
+ * (#1236). Below it the tab shows the refusal. */
 export const STAGE_STATE_CHANT_FLOOR = "0.124.110";
 /** The first chant whose `workspace promote --json` carries `adoption`, choudoufu
  * live-import's report with one entry per resource and its status
