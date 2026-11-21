@@ -93,7 +93,7 @@ naming both packages, the ranges behold declares, where it looked, and the line
 that puts them back:
 
 ```sh
-npm install @intentius/chant-lexicon-terraform@^0.124.102 @cdktn/hcl2json@^0.24.0
+npm install @intentius/chant-lexicon-terraform@^0.124.103 @cdktn/hcl2json@^0.24.0
 ```
 
 The estate is a declared chant workspace, and chant reads a member's kind from
@@ -105,7 +105,7 @@ copy and sets the copy's pin to that version (#484). It says so as it loads:
 your own declared workspace is different: install the pinned lexicon in its
 root, the way `chant workspace check` asks.
 
-The pin in `chant.workspace.json` names chant 0.124.100, the release behold
+The pin in `chant.workspace.json` names terraform lexicon 0.124.103, the release behold
 depends on (`CHANT_RELEASE` in src/chant-release.ts, behold#1005), so a plain
 `npm ci` beside behold installs what it pins. That release also carries what
 promote's dry run on a real root with a `terraform.tfstate` and the drift

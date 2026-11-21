@@ -715,6 +715,9 @@ describe("pins chant's ReleaseRecord key union (chant#2045)", () => {
     // compared them (`normalizedInputs`). Not read here; behold passes the record through.
     unchangedSince: true,
     normalizedInputs: true,
+    // The ^0.124.110 bump (chant#5401): the gate steps that did not apply in the
+    // record's environment. Not read here; behold passes the record through.
+    gatesSkipped: true,
   };
 
   // Every key chant's ReleaseRecord declares must appear in KEYS: the day the
@@ -727,7 +730,7 @@ describe("pins chant's ReleaseRecord key union (chant#2045)", () => {
 
   it("the pinned key list is the one this test expects — runOrigin is read as chant's own type", () => {
     expect(Object.keys(KEYS).sort()).toEqual([
-      "actor", "admission", "approver", "component", "digest", "digestKind", "env", "flags", "gitSha", "inputDigest", "manifestDigest", "normalizedInputs", "profileOverride", "promotedFrom", "redeploys", "releaseDigest", "releaseVersion", "restores", "runId", "runOrigin", "timestamp", "unchangedSince", "version",
+      "actor", "admission", "approver", "component", "digest", "digestKind", "env", "flags", "gatesSkipped", "gitSha", "inputDigest", "manifestDigest", "normalizedInputs", "profileOverride", "promotedFrom", "redeploys", "releaseDigest", "releaseVersion", "restores", "runId", "runOrigin", "timestamp", "unchangedSince", "version",
     ]);
   });
 });
