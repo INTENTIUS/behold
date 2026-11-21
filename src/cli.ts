@@ -54,7 +54,7 @@ Usage:
                 [--yodel-report <file|dir>] [--open-env <env>] [--open-zoom <zoom>] [--note <text>] [--q <query>…]
                 [--count-by <kind|module|attr:name>] [--plan] [--graphdb]
                 [--publish s3://<bucket>/<prefix>/views/<name> [--commit <sha>] [--keep <n>]]
-  behold serve <project-dir…> [--port <n>] [--host <addr>] [--allow-host <name,…>] [--hud <url>] [--env <name>] [--poll <secs>] [--local]
+  behold serve <project-dir…> [--port <n>] [--host <addr>] [--allow-host <name,…>] [--hud <url>] [--env <name>] [--yodel-live] [--poll <secs>] [--local]
                 [--public] [--terragucci <src> [--terragucci-project <p>] [--terragucci-poll <secs>] [--terragucci-runs <src>]]
                 [--repos <parent>] [--yodel-report <file|dir>] [--chant-report-url <url>] [--chant-demo <src>]
                 [--ci-report-url <url>] [--adopt-recorded <dir>]
@@ -286,6 +286,10 @@ Options:
                       and drift on the cards it names, dated. Checked against
                       SQL Yodeler's schemas; behold never runs yodel or reads
                       the database.
+  --yodel-live        serve only: let a SQL Yodeler project's --env overlay (and
+                      the picker's ?env=) connect to the database its profile
+                      names. Off by default; without it the overlay answers
+                      with this flag's name and no connection is opened.
   --env <name>        Environment name — turns on the live drift overlay.
                       export/serve.
   --poll <secs>       Re-query live drift every <secs> and push updates (needs --env).
@@ -471,6 +475,7 @@ export async function run(argv: string[]): Promise<void> {
   let terragucciPoll: number | undefined;
   let terragucciRuns: string | undefined;
   let yodelReport: string | undefined;
+  let yodelLive = false;
   let chantReportUrl: string | undefined;
   let chantDemo: string | undefined;
   let adoptRecorded: string | undefined;
@@ -502,6 +507,7 @@ export async function run(argv: string[]): Promise<void> {
     else if (a === "--ci-report-url") ciReportUrl = rest[++i];
     else if (a === "--adopt-recorded") adoptRecorded = rest[++i];
     else if (a === "--yodel-report") yodelReport = rest[++i];
+    else if (a === "--yodel-live") yodelLive = true;
     else if (a === "--env") env = rest[++i];
     else if (a === "--poll") pollSecs = Number(rest[++i]);
     else if (a === "--local") local = true;
@@ -659,6 +665,7 @@ export async function run(argv: string[]): Promise<void> {
     ...(prometheus ? { prometheus } : {}),
     ...(tempo ? { tempo } : {}),
     ...(yodelReport ? { yodelReport: resolve(yodelReport) } : {}),
+    ...(yodelLive ? { yodelLive } : {}),
     ...(chantReportUrl ? { chantReportUrl } : {}),
     ...(chantDemo ? { chantDemo } : {}),
     ...(ciReportUrl ? { ciReportUrl } : {}),

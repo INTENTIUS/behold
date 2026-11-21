@@ -175,3 +175,20 @@ export function refusedWrite(method: string, path: string): string | undefined {
   if (READ_METHODS.has(m) || allowedWrite(m, path)) return undefined;
   return (m === "POST" ? TERRAGUCCI_REFUSED_WRITES.find((w) => w.pattern.test(path))?.what : undefined) ?? `${m} ${path}`;
 }
+
+/** The flag that lets a SQL Yodeler repo's environment overlay open a database connection (#1238). */
+export const YODEL_LIVE_FLAG = "--yodel-live";
+
+/** Whether any of the served directories is a SQL Yodeler repo whose overlay read would connect to a database. */
+export function servesSqlYodeler(dirs: readonly string[]): boolean {
+  return dirs.some((d) => productRepo(d)?.product === "sql-yodeler" && !terragucciConfig(d));
+}
+
+/** The answer to an environment overlay read on a SQL Yodeler repo served without `--yodel-live` (#1238). */
+export function yodelLiveRefusal(env: string): { error: string; code: "yodel-live"; remedy: string } {
+  return {
+    error: `the live overlay for environment ${env} reads the database its profile in chant.config.ts names, and behold opens that connection only when served with ${YODEL_LIVE_FLAG}`,
+    code: "yodel-live",
+    remedy: `Serve with ${YODEL_LIVE_FLAG} to colour the schema from the database, or leave the picker on source.`,
+  };
+}
