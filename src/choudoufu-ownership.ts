@@ -31,7 +31,6 @@ import { CHOUDOUFU_LEXICON } from "./choudoufu-card.ts";
 import { decomposeAddress } from "./choudoufu-refs.ts";
 import { toneFor } from "./drift-tone.ts";
 import { engineOwnershipOf } from "./engine-ownership.ts";
-import type { LiveLsDocument } from "./choudoufu-listing.ts";
 
 /** chant's `EngineOwnershipRows` (`@intentius/chant/engine-facts`), as behold reads it. */
 export interface OwnershipRows {
@@ -176,7 +175,10 @@ export function ownershipVerdictOf(node: unknown): OwnershipVerdict {
  * read) stays uncoloured. An instance chant's read did not place is not
  * observed. A bound object chant places at an address the roster does not
  * declare, under no block the roster has, becomes a card of its own: marked
- * for this estate, declared nowhere.
+ * for this estate, declared nowhere, read `undeclared`. chant's live read
+ * gives each such object a node from `UNDECLARED_LIVE_NODES_FLOOR` on
+ * (INTENTIUS/chant#5432): `facts.ownership: "bound"`, the bound row, and a
+ * `not-in-configuration` gap.
  */
 export function paintChoudoufuOwnership(roster: GraphIR, live: Pick<GraphIR, "nodes">, root: string, estate?: string): GraphIR {
   const byAddress = new Map<string, IRNode>();
@@ -205,60 +207,31 @@ export function paintChoudoufuOwnership(roster: GraphIR, live: Pick<GraphIR, "no
     if (v.ownership) n.ownership = v.ownership;
     if (node?.facts) (n as IRNode & { facts?: unknown }).facts = node.facts;
   }
+  const undeclared = toneFor({ status: "undeclared", read: "ownership" });
   for (const [address, node] of byAddress) {
     if (declared.has(address) || engineOwnershipOf(node) !== "bound") continue;
     const block = decomposeAddress(address).blockPath;
     if (blocks.has(block)) continue;
     declared.add(address);
+    const type = [node.attrs?.type, node.attrs?.resourceType].find((t): t is string => typeof t === "string" && t !== "");
     roster.nodes.push({
       id: address,
-      kind: typeof node.attrs?.type === "string" ? (node.attrs.type as string) : node.kind,
+      kind: type ?? node.kind,
       lexicon: CHOUDOUFU_LEXICON,
       ...(node.physicalId ? { physicalId: node.physicalId } : {}),
       ownership: "owned",
       facts: node.facts,
       attrs: {
         ...(estate ? { estate } : {}),
-        marked: "carries this estate's marker, declared nowhere in its configuration",
-        _status: toneFor({ status: "undeclared", read: "ownership" }).tone,
-      },
-    } as IRNode);
-  }
-  return roster;
-}
-
-/** The card's words for an object listed under the estate's marker that no block declares. */
-export const DECLARED_NOWHERE = "carries this estate's marker, declared nowhere in its configuration";
-
-/**
- * The fallback for an object declared nowhere, until chant's live read gives
- * such an object a node of its own (chant 0.124.110 keeps facts for declared
- * blocks only, and drops choudoufu's `live-graph` node with its
- * `not-in-configuration` gap). Every `live-ls` item at an address the painted
- * roster has no card for becomes a card, as main drew it: marked for this
- * estate, declared nowhere, read `undeclared`. A card chant's read already
- * drew is left as it is. Mutates and returns `roster`.
- */
-export function paintUndeclaredFromListing(roster: GraphIR, ls: Pick<LiveLsDocument, "items">, estate?: string): GraphIR {
-  const drawn = new Set(roster.nodes.map((n) => n.id));
-  const tone = toneFor({ status: "undeclared", read: "ownership" });
-  for (const item of ls.items) {
-    if (!item.address || drawn.has(item.address)) continue;
-    drawn.add(item.address);
-    roster.nodes.push({
-      id: item.address,
-      kind: item.type,
-      lexicon: CHOUDOUFU_LEXICON,
-      physicalId: item.id,
-      ownership: "owned",
-      attrs: {
-        ...(estate ? { estate } : {}),
         marked: DECLARED_NOWHERE,
-        ...(item.slot ? { slot: item.slot } : {}),
-        _status: tone.tone,
-        _drift: { status: "undeclared", read: "ownership", label: tone.label },
+        ...ownershipVerdictOf(node).attrs,
+        _status: undeclared.tone,
+        _drift: { status: "undeclared", read: "ownership", label: undeclared.label },
       },
     } as IRNode);
   }
   return roster;
 }
+
+/** The card's words for an object under the estate's marker that no block declares. */
+export const DECLARED_NOWHERE = "carries this estate's marker, declared nowhere in its configuration";

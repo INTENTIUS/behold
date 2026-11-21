@@ -37,8 +37,7 @@ import {
   type Captured,
   type LiveCheckDocument,
 } from "./choudoufu-member.ts";
-import { paintChoudoufuOwnership, paintUndeclaredFromListing } from "./choudoufu-ownership.ts";
-import { parseLiveLs } from "./choudoufu-listing.ts";
+import { paintChoudoufuOwnership } from "./choudoufu-ownership.ts";
 import { addIntraEstateEdges, lexiconStamp } from "./choudoufu-refs.ts";
 import type { MemberVia } from "./member-ir.ts";
 // Imported when a read needs it: the chant read reaches the member-kind
@@ -156,22 +155,14 @@ export async function readChoudoufuLive(dir: string, opts: GraphOptions, run: Ru
     throw new ChoudoufuReadError({ error: `${dir} was not read live: ${unavailable}`, code: "chant-too-old", remedy: "Upgrade the chant and terraform lexicon beside behold; `behold doctor` lists the floor." }, dir);
   }
   const stamp = chantRead.memberSourceStamp(dir);
-  // The fallback for objects declared nowhere: chant's read gives them no
-  // node yet, so the listing under the estate's marker draws their cards, as
-  // main did. It runs beside chant's read; a listing that fails adds nothing.
-  const estate = check.doc.estate;
-  const listing = estate ? run(["live-ls", `-estate=${estate}`, "-json", ...(opts.consistent ? ["-consistent"] : []), "."], dir).then((c) => parseLiveLs(c, dir)) : undefined;
   const r = await chantRead.readChoudoufuThroughChant(dir, { plan: !!opts.plan });
-  const ls = listing ? await listing.catch(() => undefined) : undefined;
   if (opts.plan) {
     planAnswers.set(resolve(dir), { answered: r.answered, ...(r.note ? { note: r.note } : {}) });
     if (r.answered === "live+plan") chantRead.cacheChoudoufuPlan(resolve(dir), stamp, r.drift);
     // A re-check whose plan was not read must not leave an older change set standing as if it were this one.
     else chantRead.resetChoudoufuPlanCache(resolve(dir));
   }
-  const ir = paintChoudoufuOwnership(liveCheckToIr(check.doc), r.ir, r.root, estate);
-  if (ls?.ok) paintUndeclaredFromListing(ir, ls.doc, estate);
-  return { check: check.doc, ir, drift: r.drift };
+  return { check: check.doc, ir: paintChoudoufuOwnership(liveCheckToIr(check.doc), r.ir, r.root, check.doc.estate), drift: r.drift };
 }
 
 /** What the last re-check with plan said for a member, by resolved directory:

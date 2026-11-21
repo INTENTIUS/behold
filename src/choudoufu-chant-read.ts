@@ -43,7 +43,7 @@
 import { basename } from "node:path";
 import type { GraphIR, IRNode } from "@intentius/chant";
 import { stripAnsi } from "./ansi.ts";
-import { CHOUDOUFU_OWNERSHIP_ROWS_CHANT_FLOOR } from "./chant-floors.ts";
+import { CHOUDOUFU_OWNERSHIP_ROWS_CHANT_FLOOR, CHOUDOUFU_OWNERSHIP_ROWS_TERRAFORM_LEXICON_FLOOR } from "./chant-floors.ts";
 import { meetsFloor } from "./floor.ts";
 import { choudoufuSpawnOverride, ChoudoufuReadError } from "./choudoufu-member.ts";
 import { instanceAddressOf } from "./choudoufu-ownership.ts";
@@ -113,7 +113,8 @@ export function setChoudoufuChantDeps(deps: ChoudoufuChantDeps | null | undefine
 /**
  * Why this member's live read cannot go through chant, or undefined when it
  * can: no chant seam (a test's fake choudoufu), no terraform lexicon, or a
- * chant or lexicon below {@link CHOUDOUFU_OWNERSHIP_ROWS_CHANT_FLOOR}.
+ * chant below {@link CHOUDOUFU_OWNERSHIP_ROWS_CHANT_FLOOR}, or a lexicon below
+ * {@link CHOUDOUFU_OWNERSHIP_ROWS_TERRAFORM_LEXICON_FLOOR}.
  */
 export async function choudoufuChantUnavailable(deps: ChoudoufuChantDeps | null | undefined = depsOverride): Promise<string | undefined> {
   if (deps === null) return "no chant to read the member through";
@@ -123,7 +124,7 @@ export async function choudoufuChantUnavailable(deps: ChoudoufuChantDeps | null 
   const chant = d.chantVersion ? d.chantVersion() : (await import("./chant.ts")).resolveChant().version;
   if (!meetsFloor(chant, CHOUDOUFU_OWNERSHIP_ROWS_CHANT_FLOOR)) return `the live read of a choudoufu member needs chant ${CHOUDOUFU_OWNERSHIP_ROWS_CHANT_FLOOR} or newer; behold has ${chant ?? "(unknown version)"}`;
   const lexicon = d.lexiconVersion ? d.lexiconVersion() : resolvedVersion(TERRAFORM_LEXICON_PKG);
-  if (!meetsFloor(lexicon, CHOUDOUFU_OWNERSHIP_ROWS_CHANT_FLOOR)) return `the live read of a choudoufu member needs ${TERRAFORM_LEXICON_PKG} ${CHOUDOUFU_OWNERSHIP_ROWS_CHANT_FLOOR} or newer; behold has ${lexicon ?? "(unknown version)"}`;
+  if (!meetsFloor(lexicon, CHOUDOUFU_OWNERSHIP_ROWS_TERRAFORM_LEXICON_FLOOR)) return `the live read of a choudoufu member needs ${TERRAFORM_LEXICON_PKG} ${CHOUDOUFU_OWNERSHIP_ROWS_TERRAFORM_LEXICON_FLOOR} or newer; behold has ${lexicon ?? "(unknown version)"}`;
   return undefined;
 }
 

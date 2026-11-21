@@ -90,7 +90,7 @@ function liveNodes(root: string, plan: Record<string, unknown>): Array<Record<st
 function fakeChant(reads: Array<{ args: string[]; project: string; env: Record<string, string> }>) {
   return {
     chantVersion: () => "0.124.110",
-    lexiconVersion: () => "0.124.110",
+    lexiconVersion: () => "0.124.103",
     readerAbsent: () => undefined,
     run: async (args: string[], project: string, env: Record<string, string>) => {
       reads.push({ args, project, env });
@@ -407,8 +407,7 @@ describe("what does not exist (#371)", () => {
 // `live-ls` and `live-plan` per member — four seconds on `terralith-4`, with
 // the graph frozen, to draw the same document a different way.
 describe("collapse and expand are re-renders, not second live reads (#396 finding 6)", () => {
-  // behold#1227: a member's live read is one chant read and, for the cards of
-  // objects declared nowhere, one `live-ls`; behold spawns no `live-plan`.
+  // behold#1227: a member's live read is one chant read; behold spawns no `live-ls` or `live-plan` of its own.
   let chantReads: Parameters<typeof fakeChant>[0] = [];
   const observes = (spawns: string[][]): number => spawns.filter((a) => a[0] === "live-ls" || a[0] === "live-plan").length + chantReads.length;
 
@@ -420,7 +419,7 @@ describe("collapse and expand are re-renders, not second live reads (#396 findin
 
     await app.request("/api/overlay?alike=0&env=live");
     const once = observes(spawns);
-    expect(once).toBe(4); // two choudoufu members, one chant read and one listing each
+    expect(once).toBe(2); // two choudoufu members, one chant read each
 
     await app.request("/api/overlay?alike=0&env=live&collapse=1"); // "Collapse large boxes"
     await app.request("/api/overlay?alike=0&env=live"); // "Expand all"
@@ -454,6 +453,6 @@ describe("collapse and expand are re-renders, not second live reads (#396 findin
     await app.request("/api/overlay?alike=0&env=live");
 
     // The moved member is read again; the one that did not move is not.
-    expect(observes(spawns)).toBe(once + 2);
+    expect(observes(spawns)).toBe(once + 1);
   });
 });

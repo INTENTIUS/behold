@@ -218,8 +218,8 @@ export const CHOUDOUFU_PLAN_CHANT_FLOOR = "0.124.46";
  * `facts.ownership` on a choudoufu live root (chant#5333) and the lexicon
  * alias the terraform catalog reads roster nodes through (chant#5340). The
  * cards' plan facts on a Pulumi member (behold#1227). Below it `?plan=1`
- * reads no preview for a pulumi member. Planned release: the lexicon at
- * 0.124.103 with chant 0.124.110. */
+ * reads no preview for a pulumi member. The pulumi lexicon that answers it is
+ * 0.124.103. */
 export const PULUMI_PREVIEW_CHANT_FLOOR = "0.124.110";
 /** The first chant whose live read of a choudoufu root puts the rows behind
  * `facts.ownership` on each instance node, `facts.ownershipRows`: how the
@@ -227,9 +227,13 @@ export const PULUMI_PREVIEW_CHANT_FLOOR = "0.124.110";
  * the listing holds the object, with `CHANT_TERRAFORM_LIVE_LISTING=1`
  * (INTENTIUS/chant#5402). A choudoufu member's cards are painted from them
  * (behold#1227); below it a choudoufu member's live read is not observed and
- * says which chant reads it. Planned release: chant 0.124.110 with the
- * terraform lexicon at 0.124.103. */
+ * says which chant reads it. The same release draws a node for each bound
+ * object no block declares (INTENTIUS/chant#5432, `UNDECLARED_LIVE_NODES_FLOOR`). */
 export const CHOUDOUFU_OWNERSHIP_ROWS_CHANT_FLOOR = "0.124.110";
+/** The terraform lexicon that answers {@link CHOUDOUFU_OWNERSHIP_ROWS_CHANT_FLOOR}'s
+ * reads: its `TERRAFORM_OWNERSHIP_ROWS_FLOOR` and `TERRAFORM_UNDECLARED_NODES_FLOOR`.
+ * Lexicons carry their own version, so this is not the chant floor. */
+export const CHOUDOUFU_OWNERSHIP_ROWS_TERRAFORM_LEXICON_FLOOR = "0.124.103";
 /** The first chant whose `graph` honours `graph.lint: "report"` in a project's
  * config: it draws source that lint finds errors in and carries the findings
  * on `meta.lint`, each with the `entity` it is about (INTENTIUS/chant commit

@@ -83,7 +83,7 @@ const withRootRead = (text: string, rootRead: Record<string, unknown> | null): s
 function recorded(c: Case, seen: Array<{ args: string[]; project: string; env: Record<string, string> }> = [], over: Partial<{ code: number; stderr: string; rootRead: Record<string, unknown> | null }> = {}): ChoudoufuChantDeps {
   return {
     chantVersion: () => "0.124.110",
-    lexiconVersion: () => "0.124.110",
+    lexiconVersion: () => "0.124.103",
     readerAbsent: () => undefined,
     run: async (args, project, env) => {
       seen.push({ args, project, env });
@@ -240,10 +240,10 @@ describe("the read (#924)", () => {
 
 describe("the floor (#924, behold#1227)", () => {
   it("reads through chant only at or above the ownership rows floor, and says which piece is short", async () => {
-    const at = { readerAbsent: () => undefined, chantVersion: () => "0.124.110", lexiconVersion: () => "0.124.110" };
+    const at = { readerAbsent: () => undefined, chantVersion: () => "0.124.110", lexiconVersion: () => "0.124.103" };
     expect(await choudoufuChantUnavailable(at)).toBeUndefined();
     expect(await choudoufuChantUnavailable({ ...at, chantVersion: () => "0.124.109" })).toMatch(/needs chant 0\.124\.110 or newer; behold has 0\.124\.109/);
-    expect(await choudoufuChantUnavailable({ ...at, lexiconVersion: () => "0.124.38" })).toMatch(/chant-lexicon-terraform 0\.124\.110 or newer; behold has 0\.124\.38/);
+    expect(await choudoufuChantUnavailable({ ...at, lexiconVersion: () => "0.124.38" })).toMatch(/chant-lexicon-terraform 0\.124\.103 or newer; behold has 0\.124\.38/);
     expect(await choudoufuChantUnavailable({ ...at, readerAbsent: () => "the terraform lexicon is not installed" })).toMatch(/not installed/);
     expect(await choudoufuChantUnavailable(null)).toMatch(/no chant/);
   });

@@ -11,8 +11,7 @@
  *
  * `snapshotRunner` answers the reads behold spawns (the `Runner` seam in
  * src/choudoufu-live.ts) with those files: the roster from `live-check`, the
- * listing from `live-ls` (the move routes' evidence, and the cards of objects
- * declared nowhere), and a `live-mv` dry run. It
+ * listing the move routes read from `live-ls`, and a `live-mv` dry run. It
  * answers reads only: a `live-mv` without `-dry-run`, or any other verb, gets
  * exit 2 and says the snapshot holds no answer, exactly as a missing file does.
  *

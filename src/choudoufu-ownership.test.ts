@@ -8,8 +8,7 @@ import type { GraphIR, IRNode } from "@intentius/chant";
 import { addChoudoufuReferenceEdges, liveCheckToIr, parseLiveCheck, type LiveCheckDocument } from "./choudoufu-member.ts";
 import { choudoufuDiffNodes, readChoudoufuLive } from "./choudoufu-live.ts";
 import { setChoudoufuChantDeps } from "./choudoufu-chant-read.ts";
-import type { LiveLsDocument } from "./choudoufu-listing.ts";
-import { adoptLine, DECLARED_NOWHERE, instanceAddressOf, MARKER_NONE, MARKER_ON, ownershipVerdictOf, paintChoudoufuOwnership, paintUndeclaredFromListing } from "./choudoufu-ownership.ts";
+import { adoptLine, DECLARED_NOWHERE, instanceAddressOf, MARKER_NONE, MARKER_ON, ownershipVerdictOf, paintChoudoufuOwnership } from "./choudoufu-ownership.ts";
 import { choudoufuCardFields } from "./choudoufu-card.ts";
 import { estateBoxTitle, projectChoudoufuLogical } from "./logical-choudoufu.ts";
 
@@ -171,65 +170,50 @@ describe("the palette, from chant's facts (behold#1227)", () => {
     doc.instances.push({ address: "aws_s3_bucket.ghost", type: "aws_s3_bucket", rung: "tag-governable" });
     doc.references.push({ from: "data.aws_vpc.net", estate: "net", address: "aws_vpc.main", read_by: ["aws_s3_bucket.ghost"] });
     const live = liveIr("choudoufu-live-plan-monolith-clean.json");
-    // The stray node is written by hand in the shape chant gives a declared
-    // instance. chant 0.124.110 gives none for it: choudoufu's live-graph
-    // lists the object as a node with a `not-in-configuration` gap, and
-    // chant's read keeps nodes for declared blocks only. Until it does, the
-    // listing draws the card (the fallback tests below).
-    (live.nodes as IRNode[]).push({ id: `${ROOT}/aws_cloudwatch_log_group.stray`, kind: "Terraform::Resource", lexicon: "terraform", attrs: { type: "aws_cloudwatch_log_group" }, physicalId: "/stray", facts: { ownership: "bound" } } as IRNode);
+    (live.nodes as IRNode[]).push(strayNode());
     const ir = paintChoudoufuOwnership(liveCheckToIr(doc), live, ROOT, "tlmig-sample-monolith");
     expect(card(ir, "aws_s3_bucket.ghost").attrs).toMatchObject({ _status: "neutral", _unobserved: "chant's live read placed nothing at this address" });
     expect("_status" in card(ir, "data.aws_vpc.net").attrs).toBe(false);
-    const stray = card(ir, "aws_cloudwatch_log_group.stray");
-    expect(stray).toMatchObject({ kind: "aws_cloudwatch_log_group", lexicon: "choudoufu", physicalId: "/stray", ownership: "owned", attrs: { _status: "warn", estate: "tlmig-sample-monolith" } });
-    expect(stray.attrs.marked).toContain("declared nowhere");
-  });
-});
-
-// The fallback until chant's live read gives an object declared nowhere a node
-// of its own: the recorded `live-ls` of the monolith, with one object listed
-// under the estate's marker at an address no block declares, as main's test
-// listed it.
-describe("an object declared nowhere, from the listing (behold#1227 fallback)", () => {
-  const STRAY = { id: "arn:aws:logs:us-east-1:000000000000:log-group:/stray", type: "aws_cloudwatch_log_group", address: "aws_cloudwatch_log_group.stray", declared: false, source: "tagging", tags: { "tofu-estate": "tlmig-sample-monolith", "tofu-address": "aws_cloudwatch_log_group.stray" } };
-  const listing = (): LiveLsDocument => {
-    const doc = JSON.parse(raw("choudoufu-live-ls-monolith.json")) as LiveLsDocument;
-    doc.items.push(STRAY);
-    return doc;
-  };
-
-  it("draws a warn card for it, and no second card for a declared address", () => {
-    const doc = check("choudoufu-live-check-monolith.json");
-    const ir = paintChoudoufuOwnership(liveCheckToIr(doc), liveIr("choudoufu-live-plan-monolith-clean.json"), ROOT, "tlmig-sample-monolith");
-    const before = ir.nodes.length;
-    paintUndeclaredFromListing(ir, listing(), "tlmig-sample-monolith");
-    expect(ir.nodes).toHaveLength(before + 1);
     expect(card(ir, "aws_cloudwatch_log_group.stray")).toMatchObject({
       kind: "aws_cloudwatch_log_group",
       lexicon: "choudoufu",
-      physicalId: STRAY.id,
+      physicalId: "/tlmig-sample/stray",
       ownership: "owned",
-      attrs: { estate: "tlmig-sample-monolith", marked: DECLARED_NOWHERE, _status: "warn", _drift: { status: "undeclared", read: "ownership" } },
+      attrs: { estate: "tlmig-sample-monolith", marked: DECLARED_NOWHERE, marker: MARKER_ON, _status: "warn", _drift: { status: "undeclared", read: "ownership" } },
     });
-    // The declared cards keep chant's verdict.
     expect(status(ir, "aws_iam_role.team_a")).toBe("good");
   });
+});
 
-  it("leaves a card chant's read already drew as it is", () => {
-    const ir = paintChoudoufuOwnership(liveCheckToIr(check("choudoufu-live-check-monolith.json")), liveIr("choudoufu-live-plan-monolith-clean.json"), ROOT);
-    ir.nodes.push({ id: STRAY.address, kind: STRAY.type, lexicon: "choudoufu", attrs: { marked: "from chant" } } as IRNode);
-    paintUndeclaredFromListing(ir, listing());
-    expect(ir.nodes.filter((n) => n.id === STRAY.address)).toHaveLength(1);
-    expect(card(ir, STRAY.address).attrs.marked).toBe("from chant");
-  });
+// chant's node for a bound object no block declares (INTENTIUS/chant#5432,
+// `UNDECLARED_LIVE_NODES_FLOOR`), in the shape its PR records for the
+// monolith with one undeclared log group, under this file's root.
+function strayNode(): IRNode {
+  return {
+    id: `${ROOT}/aws_cloudwatch_log_group.stray`,
+    kind: "aws_cloudwatch_log_group",
+    lexicon: "terraform",
+    physicalId: "/tlmig-sample/stray",
+    ownership: "owned",
+    attrs: { address: "aws_cloudwatch_log_group.stray", root: ROOT, estate: "tlmig-sample-monolith", resourceType: "aws_cloudwatch_log_group", status: "orphan", boundBy: "marker", listedBy: "tagging", _status: "warn", _ownership: "owned" },
+    facts: {
+      ownership: "bound",
+      ownedBy: "marker",
+      markers: { owner: "tlmig-sample-monolith", address: "aws_cloudwatch_log_group.stray", encoding: "escaped", source: "live" },
+      cloudIds: [{ kind: "import-id", value: "/tlmig-sample/stray" }],
+      ownershipRows: { boundBy: "marker", listed: true, gaps: [{ read: "graph", reason: "not-in-configuration", detail: "the live plan names an address no block of this configuration declares" }] },
+    },
+  } as unknown as IRNode;
+}
 
+describe("an object declared nowhere, from chant's node (behold#1227, chant#5432)", () => {
   const made: string[] = [];
   afterAll(() => {
     setChoudoufuChantDeps(undefined);
     for (const d of made) rmSync(d, { recursive: true, force: true });
   });
 
-  it("is drawn by the member's live read beside chant's, and the pane lists it", async () => {
+  it("is drawn by the member's live read from chant's graph alone, and the pane lists it", async () => {
     const dir = join(mkdtempSync(join(tmpdir(), "behold-1227-stray-")), ROOT);
     made.push(dirname(dir));
     mkdirSync(dir);
@@ -238,21 +222,21 @@ describe("an object declared nowhere, from the listing (behold#1227 fallback)", 
     const run = async (args: string[]) => {
       spawned.push(args);
       if (args[0] === "live-check") return { code: 0, stderr: "", stdout: raw("choudoufu-live-check-monolith.json") };
-      if (args[0] === "live-ls") return { code: 0, stderr: "", stdout: JSON.stringify(listing()) };
       return { code: 2, stderr: `unexpected ${args[0]}`, stdout: "" };
     };
     setChoudoufuChantDeps({
       chantVersion: () => "0.124.110",
-      lexiconVersion: () => "0.124.110",
+      lexiconVersion: () => "0.124.103",
       readerAbsent: () => undefined,
-      run: async () => ({ code: 0, stderr: "", stdout: JSON.stringify({ nodes: liveIr("choudoufu-live-plan-monolith-clean.json").nodes, edges: [], rootReads: { [`terraform.roots.${ROOT}`]: { depth: "live" } } }) }),
+      run: async () => ({ code: 0, stderr: "", stdout: JSON.stringify({ nodes: [...liveIr("choudoufu-live-plan-monolith-clean.json").nodes, strayNode()], edges: [], rootReads: { [`terraform.roots.${ROOT}`]: { depth: "live" } } }) }),
     });
     const r = await readChoudoufuLive(dir, {} as never, run);
-    expect(spawned.find((a) => a[0] === "live-ls")).toEqual(["live-ls", "-estate=tlmig-sample-monolith", "-json", "."]);
-    expect(card(r.ir, STRAY.address)).toMatchObject({ kind: "aws_cloudwatch_log_group", attrs: { _status: "warn", marked: DECLARED_NOWHERE } });
+    // behold lists nothing itself: the card comes from chant's node.
+    expect(spawned.map((a) => a[0])).toEqual(["live-check"]);
+    expect(card(r.ir, "aws_cloudwatch_log_group.stray")).toMatchObject({ kind: "aws_cloudwatch_log_group", attrs: { _status: "warn", marked: DECLARED_NOWHERE } });
     expect(status(r.ir, "aws_iam_role.team_a")).toBe("good");
     const pane = choudoufuDiffNodes(r, "mono");
-    expect(pane[`mono/${STRAY.address}`]).toMatchObject({ health: "degraded", healthDetail: DECLARED_NOWHERE, observed: { type: "aws_cloudwatch_log_group", physicalId: STRAY.id, ownership: "owned" } });
+    expect(pane["mono/aws_cloudwatch_log_group.stray"]).toMatchObject({ health: "degraded", healthDetail: DECLARED_NOWHERE, observed: { type: "aws_cloudwatch_log_group", physicalId: "/tlmig-sample/stray", ownership: "owned" } });
   });
 });
 
