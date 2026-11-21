@@ -1,0 +1,905 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/status/v1/status.schema.json",
+  "contract": 1,
+  "chant": "0.124.110",
+  "env": "prod",
+  "compareTo": null,
+  "lifecycle": {
+    "ref": "chant/lifecycle",
+    "commit": "0cc831f56a5d6c2e07460b4a6c4b25aade9e4f94"
+  },
+  "checkout": {
+    "branch": "main",
+    "head": "bca9658ab93bb4d6efb60aa088d7b1a482440f2a",
+    "base": "bca9658ab93bb4d6efb60aa088d7b1a482440f2a",
+    "baseFrom": "main"
+  },
+  "workspace": {
+    "name": "acme",
+    "root": ".",
+    "file": "chant.workspace.json",
+    "repo": null
+  },
+  "plantable": {
+    "plantable": false,
+    "box": null,
+    "reason": {
+      "code": "box-none",
+      "message": "no member's box block declares services, so there is no box to plant"
+    }
+  },
+  "members": [
+    {
+      "name": "network",
+      "dir": "network",
+      "kind": "terraform",
+      "fields": null,
+      "environments": [
+        {
+          "env": "prod",
+          "ledger": {
+            "layout": "members",
+            "path": "_members/network/prod/releases.jsonl",
+            "shared": false
+          },
+          "releases": [
+            {
+              "component": "vpc",
+              "digest": "sha256:982fad746423224358dd8c1be90288771108b4febb9b7abd5195ef2b6ddfa1f1",
+              "gitSha": "43a880e08a01ca97d1bf99ba42d4dc4598e20195",
+              "inputDigest": null,
+              "runId": "run-net-prod",
+              "timestamp": "2026-11-18T20:00:00.000Z",
+              "actor": "ci",
+              "approver": null,
+              "admission": null,
+              "releaseDigest": "jcs1-sha256:f247d9006e3ad5ff5c1def68c086dc5ef849182692ab119d88d19cb3ae3d2b76",
+              "releaseLabel": "v1.0.0",
+              "flags": [],
+              "plan": null
+            }
+          ],
+          "reason": null
+        }
+      ],
+      "compare": null,
+      "readable": true,
+      "gateLedger": {
+        "layout": "members",
+        "path": "_members/network/_gates",
+        "shared": false,
+        "malformed": 0,
+        "reason": null
+      },
+      "gates": [
+        {
+          "component": "net",
+          "name": "prod",
+          "env": "prod",
+          "planDigest": "jcs1-sha256:8f22b2ddacc3d4a80f3997664822a4b9694ec49fe0add7a7bb2c200a8bf6b5e3",
+          "releaseDigest": "jcs1-sha256:8f22b2ddacc3d4a80f3997664822a4b9694ec49fe0add7a7bb2c200a8bf6b5e3",
+          "state": "pending",
+          "recordedAt": "2026-11-20T11:42:00.000Z",
+          "expiresAt": "2026-11-21T12:00:00.000Z",
+          "approvals": [],
+          "needed": 1,
+          "signed": null,
+          "approve": "chant approve net prod --env prod --plan jcs1-sha256:8f22b2ddacc3d4a80f3997664822a4b9694ec49fe0add7a7bb2c200a8bf6b5e3",
+          "decisions": []
+        }
+      ],
+      "box": null,
+      "stewards": [],
+      "stewardReasons": [],
+      "promotionOrder": [
+        {
+          "name": "dev",
+          "canary": false
+        },
+        {
+          "name": "prod",
+          "canary": false
+        }
+      ],
+      "releaseCuts": [
+        {
+          "releaseDigest": "jcs1-sha256:f247d9006e3ad5ff5c1def68c086dc5ef849182692ab119d88d19cb3ae3d2b76",
+          "label": "v1.0.0",
+          "commit": "43a880e08a01ca97d1bf99ba42d4dc4598e20195",
+          "actor": "alice",
+          "timestamp": "2026-11-18T12:00:00.000Z",
+          "signature": null,
+          "signatureCheck": {
+            "status": "unsigned",
+            "key": null,
+            "reason": "the cut carries no signature",
+            "gate": "unsigned"
+          }
+        },
+        {
+          "releaseDigest": "jcs1-sha256:8f22b2ddacc3d4a80f3997664822a4b9694ec49fe0add7a7bb2c200a8bf6b5e3",
+          "label": "v1.1.0",
+          "commit": "637ba3b710aa4c019dd5210d86fa2548a393a6f0",
+          "actor": "alice",
+          "timestamp": "2026-11-19T12:00:00.000Z",
+          "signature": null,
+          "signatureCheck": {
+            "status": "unsigned",
+            "key": null,
+            "reason": "the cut carries no signature",
+            "gate": "unsigned"
+          },
+          "risk": {
+            "score": 0.55,
+            "level": "medium",
+            "stages": [
+              {
+                "stage": "prod",
+                "approveAbove": 0.3,
+                "over": true
+              }
+            ]
+          }
+        },
+        {
+          "releaseDigest": "jcs1-sha256:757470092330531e6a962a87c18db307973b02f70303636ff83763bd529574b1",
+          "label": "v1.2.0",
+          "commit": "bca9658ab93bb4d6efb60aa088d7b1a482440f2a",
+          "actor": "alice",
+          "timestamp": "2026-11-20T11:48:00.000Z",
+          "signature": null,
+          "signatureCheck": {
+            "status": "unsigned",
+            "key": null,
+            "reason": "the cut carries no signature",
+            "gate": "unsigned"
+          },
+          "risk": {
+            "score": 0.2,
+            "level": "low",
+            "stages": [
+              {
+                "stage": "prod",
+                "approveAbove": 0.3,
+                "over": false
+              }
+            ]
+          }
+        }
+      ],
+      "featureFlags": [],
+      "pipeline": {
+        "name": "net",
+        "stages": [
+          {
+            "name": "dev",
+            "canary": false,
+            "after": [],
+            "release": {
+              "releaseDigest": "jcs1-sha256:8f22b2ddacc3d4a80f3997664822a4b9694ec49fe0add7a7bb2c200a8bf6b5e3",
+              "label": "v1.1.0",
+              "gitSha": "637ba3b710aa4c019dd5210d86fa2548a393a6f0",
+              "at": "2026-11-20T07:00:00.000Z",
+              "components": [
+                "vpc"
+              ],
+              "mixed": false
+            },
+            "gate": {
+              "name": "dev",
+              "policy": "never",
+              "state": null,
+              "releaseDigest": null,
+              "label": null,
+              "planDigest": null,
+              "recordedAt": null,
+              "approvals": 0,
+              "needed": 1,
+              "approve": null
+            },
+            "risk": {
+              "releaseDigest": "jcs1-sha256:8f22b2ddacc3d4a80f3997664822a4b9694ec49fe0add7a7bb2c200a8bf6b5e3",
+              "label": "v1.1.0",
+              "score": 0.55,
+              "level": "medium",
+              "reads": true,
+              "approveAbove": 0.9,
+              "over": false,
+              "overBy": []
+            },
+            "soak": null,
+            "canaryHolds": [],
+            "paused": null,
+            "onVerifyFail": "hold",
+            "rollback": null,
+            "rollbackHeld": null
+          },
+          {
+            "name": "prod",
+            "canary": false,
+            "after": [
+              "dev"
+            ],
+            "release": {
+              "releaseDigest": "jcs1-sha256:f247d9006e3ad5ff5c1def68c086dc5ef849182692ab119d88d19cb3ae3d2b76",
+              "label": "v1.0.0",
+              "gitSha": "43a880e08a01ca97d1bf99ba42d4dc4598e20195",
+              "at": "2026-11-18T20:00:00.000Z",
+              "components": [
+                "vpc"
+              ],
+              "mixed": false
+            },
+            "gate": {
+              "name": "prod",
+              "policy": "always",
+              "state": "pending",
+              "releaseDigest": "jcs1-sha256:8f22b2ddacc3d4a80f3997664822a4b9694ec49fe0add7a7bb2c200a8bf6b5e3",
+              "label": "v1.1.0",
+              "planDigest": "jcs1-sha256:8f22b2ddacc3d4a80f3997664822a4b9694ec49fe0add7a7bb2c200a8bf6b5e3",
+              "recordedAt": "2026-11-20T11:42:00.000Z",
+              "approvals": 0,
+              "needed": 1,
+              "approve": "chant approve net prod --env prod --plan jcs1-sha256:8f22b2ddacc3d4a80f3997664822a4b9694ec49fe0add7a7bb2c200a8bf6b5e3"
+            },
+            "risk": {
+              "releaseDigest": "jcs1-sha256:8f22b2ddacc3d4a80f3997664822a4b9694ec49fe0add7a7bb2c200a8bf6b5e3",
+              "label": "v1.1.0",
+              "score": 0.55,
+              "level": "medium",
+              "reads": true,
+              "approveAbove": 0.3,
+              "over": true,
+              "overBy": [
+                "the score 0.55 is above 0.3"
+              ]
+            },
+            "soak": null,
+            "canaryHolds": [],
+            "paused": null,
+            "onVerifyFail": "hold",
+            "rollback": null,
+            "rollbackHeld": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "shop",
+      "dir": "shop",
+      "kind": "pulumi",
+      "fields": null,
+      "environments": [
+        {
+          "env": "prod",
+          "ledger": {
+            "layout": "members",
+            "path": "_members/shop/prod/releases.jsonl",
+            "shared": false
+          },
+          "releases": [
+            {
+              "component": "api",
+              "digest": "sha256:41708169bdd9c1c076c86e914c72cec8691a3c65581225958f1c84c7c6454765",
+              "gitSha": "637ba3b710aa4c019dd5210d86fa2548a393a6f0",
+              "inputDigest": null,
+              "runId": "run-shop-prod",
+              "timestamp": "2026-11-20T11:30:00.000Z",
+              "actor": "ci",
+              "approver": null,
+              "admission": null,
+              "releaseDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
+              "releaseLabel": "v1.1.0",
+              "flags": [],
+              "plan": null
+            }
+          ],
+          "reason": null
+        }
+      ],
+      "compare": null,
+      "readable": true,
+      "gateLedger": {
+        "layout": "members",
+        "path": "_members/shop/_gates",
+        "shared": false,
+        "malformed": 0,
+        "reason": null
+      },
+      "gates": [
+        {
+          "component": "shop",
+          "name": "prod",
+          "env": "prod",
+          "planDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
+          "releaseDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
+          "state": "approved",
+          "recordedAt": "2026-11-20T11:15:00.000Z",
+          "expiresAt": "2026-11-21T12:00:00.000Z",
+          "approvals": [
+            {
+              "principal": "bob",
+              "channel": null,
+              "relayedBy": null,
+              "at": "2026-11-20T11:18:00.000Z"
+            }
+          ],
+          "needed": 1,
+          "signed": null,
+          "approve": "chant approve shop prod --env prod --plan jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
+          "decisions": []
+        },
+        {
+          "component": "shop",
+          "name": "prod-rollback",
+          "env": "prod",
+          "planDigest": "jcs1-sha256:63cc7b76d511282da339067bcb0b760809f8a18a6969ebb1c45875d59d59ca9b",
+          "releaseDigest": "jcs1-sha256:63cc7b76d511282da339067bcb0b760809f8a18a6969ebb1c45875d59d59ca9b",
+          "state": "pending",
+          "recordedAt": "2026-11-20T11:36:00.000Z",
+          "expiresAt": "2026-12-19T16:00:00.000Z",
+          "approvals": [],
+          "needed": 1,
+          "signed": null,
+          "approve": "chant approve shop prod-rollback --env prod --plan jcs1-sha256:63cc7b76d511282da339067bcb0b760809f8a18a6969ebb1c45875d59d59ca9b",
+          "decisions": []
+        }
+      ],
+      "box": null,
+      "stewards": [],
+      "stewardReasons": [],
+      "promotionOrder": [
+        {
+          "name": "dev",
+          "canary": false
+        },
+        {
+          "name": "canary",
+          "canary": true
+        },
+        {
+          "name": "prod",
+          "canary": false
+        }
+      ],
+      "releaseCuts": [
+        {
+          "releaseDigest": "jcs1-sha256:63cc7b76d511282da339067bcb0b760809f8a18a6969ebb1c45875d59d59ca9b",
+          "label": "v1.0.0",
+          "commit": "43a880e08a01ca97d1bf99ba42d4dc4598e20195",
+          "actor": "alice",
+          "timestamp": "2026-11-18T12:00:00.000Z",
+          "signature": null,
+          "signatureCheck": {
+            "status": "unsigned",
+            "key": null,
+            "reason": "the cut carries no signature",
+            "gate": "unsigned"
+          }
+        },
+        {
+          "releaseDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
+          "label": "v1.1.0",
+          "commit": "637ba3b710aa4c019dd5210d86fa2548a393a6f0",
+          "actor": "alice",
+          "timestamp": "2026-11-19T12:00:00.000Z",
+          "signature": null,
+          "signatureCheck": {
+            "status": "unsigned",
+            "key": null,
+            "reason": "the cut carries no signature",
+            "gate": "unsigned"
+          },
+          "risk": {
+            "score": 0.4,
+            "level": "medium",
+            "stages": [
+              {
+                "stage": "canary",
+                "approveAbove": 0.3,
+                "over": true
+              },
+              {
+                "stage": "prod",
+                "approveAbove": 0.5,
+                "over": false
+              }
+            ]
+          }
+        },
+        {
+          "releaseDigest": "jcs1-sha256:4e48b08bb8d3e0a6d0ed38a05a290a904bd6a5f3703966931ef01b5b508ef977",
+          "label": "v1.2.0",
+          "commit": "bca9658ab93bb4d6efb60aa088d7b1a482440f2a",
+          "actor": "alice",
+          "timestamp": "2026-11-20T11:48:00.000Z",
+          "signature": null,
+          "signatureCheck": {
+            "status": "unsigned",
+            "key": null,
+            "reason": "the cut carries no signature",
+            "gate": "unsigned"
+          },
+          "risk": {
+            "score": 0.2,
+            "level": "low",
+            "stages": [
+              {
+                "stage": "canary",
+                "approveAbove": 0.3,
+                "over": false
+              },
+              {
+                "stage": "prod",
+                "approveAbove": 0.5,
+                "over": false
+              }
+            ]
+          }
+        }
+      ],
+      "featureFlags": [],
+      "stageQueues": [
+        {
+          "pipeline": "shop",
+          "stage": "dev",
+          "inStage": null,
+          "waiting": [],
+          "replaced": []
+        },
+        {
+          "pipeline": "shop",
+          "stage": "canary",
+          "inStage": null,
+          "waiting": [],
+          "replaced": []
+        },
+        {
+          "pipeline": "shop",
+          "stage": "prod",
+          "inStage": null,
+          "waiting": [
+            {
+              "digest": "jcs1-sha256:4e48b08bb8d3e0a6d0ed38a05a290a904bd6a5f3703966931ef01b5b508ef977",
+              "label": "v1.2.0",
+              "at": "2026-11-20T11:54:00.000Z"
+            }
+          ],
+          "replaced": []
+        }
+      ],
+      "pipeline": {
+        "name": "shop",
+        "stages": [
+          {
+            "name": "dev",
+            "canary": false,
+            "after": [],
+            "release": {
+              "releaseDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
+              "label": "v1.1.0",
+              "gitSha": "637ba3b710aa4c019dd5210d86fa2548a393a6f0",
+              "at": "2026-11-20T06:00:00.000Z",
+              "components": [
+                "api"
+              ],
+              "mixed": false
+            },
+            "gate": {
+              "name": "dev",
+              "policy": "never",
+              "state": null,
+              "releaseDigest": null,
+              "label": null,
+              "planDigest": null,
+              "recordedAt": null,
+              "approvals": 0,
+              "needed": 1,
+              "approve": null
+            },
+            "risk": {
+              "releaseDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
+              "label": "v1.1.0",
+              "score": 0.4,
+              "level": "medium",
+              "reads": true,
+              "approveAbove": 0.9,
+              "over": false,
+              "overBy": []
+            },
+            "soak": null,
+            "canaryHolds": [],
+            "paused": {
+              "by": "carol",
+              "at": "2026-11-20T10:00:00.000Z",
+              "reason": "db upgrade",
+              "cause": null,
+              "waiting": [
+                {
+                  "digest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
+                  "label": "v1.1.0"
+                }
+              ]
+            },
+            "onVerifyFail": "hold",
+            "rollback": null,
+            "rollbackHeld": null
+          },
+          {
+            "name": "canary",
+            "canary": true,
+            "after": [
+              "dev"
+            ],
+            "release": {
+              "releaseDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
+              "label": "v1.1.0",
+              "gitSha": "637ba3b710aa4c019dd5210d86fa2548a393a6f0",
+              "at": "2026-11-20T11:00:00.000Z",
+              "components": [
+                "api"
+              ],
+              "mixed": false
+            },
+            "gate": {
+              "name": "canary",
+              "policy": "always",
+              "state": null,
+              "releaseDigest": null,
+              "label": null,
+              "planDigest": null,
+              "recordedAt": null,
+              "approvals": 0,
+              "needed": 1,
+              "approve": null
+            },
+            "risk": {
+              "releaseDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
+              "label": "v1.1.0",
+              "score": 0.4,
+              "level": "medium",
+              "reads": true,
+              "approveAbove": 0.3,
+              "over": true,
+              "overBy": [
+                "the score 0.4 is above 0.3"
+              ]
+            },
+            "soak": {
+              "gate": "canary-soak",
+              "duration": "2h",
+              "checks": 1,
+              "state": "soaking",
+              "releaseDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
+              "to": "prod",
+              "clockStart": "2026-11-20T11:00:00.000Z",
+              "due": "2026-11-20T13:00:00.000Z",
+              "leftMs": 3600000,
+              "holds": [
+                "1h 15m left, until 2026-11-20T13:00:00.000Z"
+              ],
+              "failing": [],
+              "recordedAt": "2026-11-20T11:45:00.000Z",
+              "endedBy": null
+            },
+            "canaryHolds": [],
+            "paused": null,
+            "onVerifyFail": "hold",
+            "rollback": null,
+            "rollbackHeld": null
+          },
+          {
+            "name": "prod",
+            "canary": false,
+            "after": [
+              "canary"
+            ],
+            "release": {
+              "releaseDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
+              "label": "v1.1.0",
+              "gitSha": "637ba3b710aa4c019dd5210d86fa2548a393a6f0",
+              "at": "2026-11-20T11:30:00.000Z",
+              "components": [
+                "api"
+              ],
+              "mixed": false
+            },
+            "gate": {
+              "name": "prod",
+              "policy": "always",
+              "state": "approved",
+              "releaseDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
+              "label": "v1.1.0",
+              "planDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
+              "recordedAt": "2026-11-20T11:15:00.000Z",
+              "approvals": 1,
+              "needed": 1,
+              "approve": "chant approve shop prod --env prod --plan jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478"
+            },
+            "risk": {
+              "releaseDigest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
+              "label": "v1.1.0",
+              "score": 0.4,
+              "level": "medium",
+              "reads": true,
+              "approveAbove": 0.5,
+              "over": false,
+              "overBy": []
+            },
+            "soak": null,
+            "canaryHolds": [
+              {
+                "stage": "canary",
+                "state": "soaking",
+                "due": "2026-11-20T13:00:00.000Z",
+                "leftMs": 3600000,
+                "holding": true
+              }
+            ],
+            "paused": null,
+            "onVerifyFail": "rollback",
+            "rollback": {
+              "id": "r1",
+              "requestedAt": "2026-11-20T11:36:00.000Z",
+              "by": "ci",
+              "failure": "verify",
+              "failed": {
+                "digest": "jcs1-sha256:8ab52971d957cd5c192f9808a23b480c1ae06a0bba632293c3789b7895d71478",
+                "label": "v1.1.0"
+              },
+              "to": {
+                "digest": "jcs1-sha256:63cc7b76d511282da339067bcb0b760809f8a18a6969ebb1c45875d59d59ca9b",
+                "label": "v1.0.0"
+              },
+              "members": [
+                {
+                  "member": "api",
+                  "state": "applied",
+                  "rollback": "requested"
+                }
+              ],
+              "gate": "prod-rollback",
+              "state": "pending",
+              "approve": "chant approve shop prod-rollback --env prod --plan jcs1-sha256:63cc7b76d511282da339067bcb0b760809f8a18a6969ebb1c45875d59d59ca9b",
+              "command": "chant components rollback prod --requested"
+            },
+            "rollbackHeld": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "orders-db",
+      "dir": "db",
+      "kind": "sql",
+      "fields": null,
+      "environments": [
+        {
+          "env": "prod",
+          "ledger": {
+            "layout": "members",
+            "path": "_members/orders-db/prod/releases.jsonl",
+            "shared": false
+          },
+          "releases": [
+            {
+              "component": "orders",
+              "digest": "sha256:9ce339cdcc6286e9204e02a87d3315c907d141c268d9e99b066a5afef2628cf8",
+              "gitSha": "637ba3b710aa4c019dd5210d86fa2548a393a6f0",
+              "inputDigest": null,
+              "runId": "run-db-prod",
+              "timestamp": "2026-11-20T11:42:00.000Z",
+              "actor": "ci",
+              "approver": null,
+              "admission": null,
+              "releaseDigest": "jcs1-sha256:3c9caf6cd82e1894b5c3e31290bd880d905e6d56d7df2e3ba6b50b98be2a512e",
+              "releaseLabel": "v1.1.0",
+              "flags": [],
+              "plan": null
+            }
+          ],
+          "reason": null
+        }
+      ],
+      "compare": null,
+      "readable": true,
+      "gateLedger": {
+        "layout": "members",
+        "path": "_members/orders-db/_gates",
+        "shared": false,
+        "malformed": 0,
+        "reason": {
+          "code": "gates-no-gate-ledger",
+          "message": "_members/orders-db/_gates does not exist on chant/lifecycle: no run has reached a gate"
+        }
+      },
+      "gates": [],
+      "box": null,
+      "stewards": [],
+      "stewardReasons": [],
+      "promotionOrder": [
+        {
+          "name": "dev",
+          "canary": false
+        },
+        {
+          "name": "prod",
+          "canary": false,
+          "held": {
+            "kind": "hold",
+            "until": null,
+            "reason": "schema review",
+            "description": "Read the orders migration plan before lifting the hold."
+          }
+        }
+      ],
+      "releaseCuts": [
+        {
+          "releaseDigest": "jcs1-sha256:286a404774a5a1a3610ce5a257817b9dedca4aafeea25e5d7968f2cd0915ddd7",
+          "label": "v1.0.0",
+          "commit": "43a880e08a01ca97d1bf99ba42d4dc4598e20195",
+          "actor": "alice",
+          "timestamp": "2026-11-18T12:00:00.000Z",
+          "signature": null,
+          "signatureCheck": {
+            "status": "unsigned",
+            "key": null,
+            "reason": "the cut carries no signature",
+            "gate": "unsigned"
+          }
+        },
+        {
+          "releaseDigest": "jcs1-sha256:3c9caf6cd82e1894b5c3e31290bd880d905e6d56d7df2e3ba6b50b98be2a512e",
+          "label": "v1.1.0",
+          "commit": "637ba3b710aa4c019dd5210d86fa2548a393a6f0",
+          "actor": "alice",
+          "timestamp": "2026-11-19T12:00:00.000Z",
+          "signature": null,
+          "signatureCheck": {
+            "status": "unsigned",
+            "key": null,
+            "reason": "the cut carries no signature",
+            "gate": "unsigned"
+          },
+          "risk": {
+            "score": 0.1,
+            "level": "low",
+            "stages": []
+          }
+        },
+        {
+          "releaseDigest": "jcs1-sha256:c83508c2f60a457511e326fe4456500f4c54d9a7473266c49367f6abd69239b4",
+          "label": "v1.2.0",
+          "commit": "bca9658ab93bb4d6efb60aa088d7b1a482440f2a",
+          "actor": "alice",
+          "timestamp": "2026-11-20T11:48:00.000Z",
+          "signature": null,
+          "signatureCheck": {
+            "status": "unsigned",
+            "key": null,
+            "reason": "the cut carries no signature",
+            "gate": "unsigned"
+          },
+          "risk": {
+            "score": 0.2,
+            "level": "low",
+            "stages": []
+          }
+        }
+      ],
+      "featureFlags": [],
+      "pipeline": {
+        "name": "db",
+        "stages": [
+          {
+            "name": "dev",
+            "canary": false,
+            "after": [],
+            "release": {
+              "releaseDigest": "jcs1-sha256:3c9caf6cd82e1894b5c3e31290bd880d905e6d56d7df2e3ba6b50b98be2a512e",
+              "label": "v1.1.0",
+              "gitSha": "637ba3b710aa4c019dd5210d86fa2548a393a6f0",
+              "at": "2026-11-20T04:00:00.000Z",
+              "components": [
+                "orders"
+              ],
+              "mixed": false
+            },
+            "gate": {
+              "name": "dev",
+              "policy": "never",
+              "state": null,
+              "releaseDigest": null,
+              "label": null,
+              "planDigest": null,
+              "recordedAt": null,
+              "approvals": 0,
+              "needed": 1,
+              "approve": null
+            },
+            "risk": {
+              "releaseDigest": "jcs1-sha256:3c9caf6cd82e1894b5c3e31290bd880d905e6d56d7df2e3ba6b50b98be2a512e",
+              "label": "v1.1.0",
+              "score": 0.1,
+              "level": "low",
+              "reads": false,
+              "approveAbove": null,
+              "over": false,
+              "overBy": []
+            },
+            "soak": null,
+            "canaryHolds": [],
+            "paused": null,
+            "onVerifyFail": "hold",
+            "rollback": null,
+            "rollbackHeld": null
+          },
+          {
+            "name": "prod",
+            "canary": false,
+            "after": [
+              "dev"
+            ],
+            "release": {
+              "releaseDigest": "jcs1-sha256:3c9caf6cd82e1894b5c3e31290bd880d905e6d56d7df2e3ba6b50b98be2a512e",
+              "label": "v1.1.0",
+              "gitSha": "637ba3b710aa4c019dd5210d86fa2548a393a6f0",
+              "at": "2026-11-20T11:42:00.000Z",
+              "components": [
+                "orders"
+              ],
+              "mixed": false
+            },
+            "gate": {
+              "name": "prod",
+              "policy": "always",
+              "state": null,
+              "releaseDigest": null,
+              "label": null,
+              "planDigest": null,
+              "recordedAt": null,
+              "approvals": 0,
+              "needed": 1,
+              "approve": null
+            },
+            "risk": {
+              "releaseDigest": "jcs1-sha256:3c9caf6cd82e1894b5c3e31290bd880d905e6d56d7df2e3ba6b50b98be2a512e",
+              "label": "v1.1.0",
+              "score": 0.1,
+              "level": "low",
+              "reads": false,
+              "approveAbove": null,
+              "over": false,
+              "overBy": []
+            },
+            "soak": null,
+            "canaryHolds": [],
+            "paused": null,
+            "onVerifyFail": "rollback",
+            "rollback": null,
+            "rollbackHeld": {
+              "failureId": "f2",
+              "at": "2026-11-20T11:48:00.000Z",
+              "reason": "stage prod ran no earlier release of orders-db",
+              "failure": "verify",
+              "failed": {
+                "digest": "jcs1-sha256:3c9caf6cd82e1894b5c3e31290bd880d905e6d56d7df2e3ba6b50b98be2a512e",
+                "label": "v1.1.0"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "leases": [],
+  "acceptance": [],
+  "replication": null,
+  "overlap": null,
+  "summary": {
+    "members": 3,
+    "released": 3,
+    "unreadable": 0,
+    "differing": null
+  }
+}

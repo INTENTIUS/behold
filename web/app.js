@@ -24,6 +24,7 @@ import { laneElement as tgLane, rootOfCard as tgRootOfCard, historyElement as tg
 import { gateCardElement, renderLane } from "./terragucci-lifecycle.js";
 import { renderReleases } from "./releases.js";
 import { renderTrunkLane } from "./trunk-lane.js";
+import { renderStages } from "./stage-state.js";
 import { startLocalRuns } from "./local-run.js";
 import { startAdopt } from "./adopt.js";
 import { entriesFor as csEntriesFor, gapLines as csGapLines, inspectHeading as csInspectHeading, nodeMarks as csNodeMarks, offGraph as csOffGraph, overlayHeader as csHeader, overlayLegend as csLegend, PREVIEW_NOTE as CS_PREVIEW_NOTE } from "./change-set-overlay.js";
@@ -7455,6 +7456,42 @@ function approveFromLane(key, env, btn) {
     });
 }
 initTrunkLane();
+
+// --- #1236: each pipeline stage's state ---------------------------------------
+// /api/workspace/stages: per member with a pipeline, each stage's release,
+// gate, risk, soak, canary holds, pause, hold, queue and rollback request, as
+// chant's workspace status reads them, in one read. Read when the tab is
+// opened and on "Read again". chant's lines are shown to copy; behold runs
+// none of them.
+let stagesHost = null;
+let stagesRead = false;
+async function initStages() {
+  if (staticMode || publicMode) return; // #569: /api/workspace/* is refused in a public view
+  const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
+  if (!project.workspace) return;
+  stagesHost = addPanelTab("stages", "Stages", "Each pipeline stage: the release it runs, its gate, risk, soak, canary holds, pause, hold, queue and rollback request. Read from chant when you open the tab.");
+  if (!stagesHost) return;
+  stagesHost.id = "tab-stages";
+  const tab = document.querySelector('#panel-tabs button[data-tab="stages"]');
+  if (tab) tab.addEventListener("click", () => stagesRead || loadStages());
+  if (stagesHost.classList.contains("active")) loadStages();
+}
+async function loadStages() {
+  stagesRead = true;
+  const reading = document.createElement("div");
+  reading.className = "tg-legend";
+  reading.textContent = "reading the stages from chant";
+  stagesHost.replaceChildren(reading);
+  const env = view.env || "";
+  const a = await apiFetch(`/api/workspace/stages${env ? `?env=${encodeURIComponent(env)}` : ""}`)
+    .then((r) => r.json())
+    .catch((e) => ({ error: String(e) }));
+  renderStages(stagesHost, a, new Date(), { copy: copyToClipboard });
+  const again = button("Read again", "", () => loadStages());
+  again.title = "Read every stage again.";
+  stagesHost.appendChild(again);
+}
+initStages();
 
 // --- behold#685: run a plan job locally ---------------------------------------
 // chant ci run plan --local at a commit, drawn in the runs pane's run view

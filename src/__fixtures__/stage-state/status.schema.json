@@ -1,0 +1,1565 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intentius.io/chant/schemas/workspace/status/v1/status.schema.json",
+  "title": "chant workspace status output",
+  "description": "What `chant workspace status <env> --json` prints, version 1 of the read contract for releases across members (#2524 D15, D19, #2544). Readers ignore fields they do not know; a field is only ever added within a version. The reason and error codes are closed lists: a new code is a new contract version. Contract version 1 is written by chant 0.81.0 and newer; a reader that needs it refuses output whose `contract` it doesn't know. Every code is in the one closed list of `reason-codes.ts`. Each member's gates, read from its gate ledger on the same branch, are in the JSON only (#2674), and so is each member's box block, from the declaration (#2726), with its isolation resolved (#2727). So are its stewards, their Ops and each Op's last run (#2731), the work lease each Op's turn holds (#2748), and the open decision points a steward waits on (#2749).",
+  "oneOf": [{ "$ref": "#/$defs/result" }, { "$ref": "#/$defs/failure" }],
+  "$defs": {
+    "boxShip": {
+      "type": "object",
+      "patternProperties": { "^x-": { "description": "Added in contract 1 by #3595. An x- key the declaration holds on this object, with its value as written." } },
+      "additionalProperties": false,
+      "required": ["op", "gate", "env", "bookkeeping", "serving", "pending"],
+      "properties": {
+        "op": { "type": "string", "description": "The Op in the box member that commits the staged tree and releases it." },
+        "gate": { "type": "string", "description": "The gate the Op stops at for a person's approval." },
+        "env": { "type": "string", "description": "The environment whose release ledger, under the box member, the Op records each release in." },
+        "bookkeeping": { "type": "array", "items": { "type": "string" }, "description": "Path prefixes from the workspace root whose changes never count as waiting to ship." },
+        "serving": {
+          "description": "The latest release in env's ledger, the commit the box's site serves, or null when nothing has shipped or the ledger can't be read.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["commit", "digest", "component", "at", "actor"],
+              "properties": {
+                "commit": { "type": "string" },
+                "digest": { "type": "string" },
+                "component": { "type": "string" },
+                "at": { "type": "string" },
+                "actor": { "type": ["string", "null"] }
+              }
+            }
+          ]
+        },
+        "pending": {
+          "description": "What is waiting to ship: the files that differ between serving.commit and the working tree, tracked or untracked and not ignored, bookkeeping left out. paths is sorted and lists at most 200. Null when nothing has shipped or the serving commit isn't in this checkout.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["files", "paths"],
+              "properties": {
+                "files": { "type": "integer", "minimum": 0 },
+                "paths": { "type": "array", "items": { "type": "string" }, "maxItems": 200 }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "result": {
+      "description": "The declaration was read. Exit code 0, even when some ledgers can't be read or members differ.",
+      "type": "object",
+      "required": ["$schema", "contract", "chant", "env", "compareTo", "lifecycle", "workspace", "members", "summary"],
+      "properties": {
+        "$schema": { "const": "https://intentius.io/chant/schemas/workspace/status/v1/status.schema.json" },
+        "contract": { "const": 1 },
+        "chant": { "type": "string", "description": "The version of the chant that read the ledgers." },
+        "env": { "$ref": "#/$defs/env" },
+        "compareTo": {
+          "description": "The environment given to --compare-to, or null.",
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/env" }]
+        },
+        "error": false,
+        "lifecycle": {
+          "type": "object",
+          "required": ["ref", "commit"],
+          "properties": {
+            "ref": { "const": "chant/lifecycle" },
+            "commit": {
+              "description": "The local branch tip the ledgers were read at, or null when the checkout has no such branch. The command never fetches it.",
+              "type": ["string", "null"],
+              "pattern": "^[0-9a-f]{40,64}$"
+            }
+          }
+        },
+        "checkout": {
+          "description": "Added in contract 1 by #3160. The branch, head and base of the checkout status ran in. records --uncommitted --json lists the records that working tree holds modified or new against head.",
+          "type": "object",
+          "required": ["branch", "head", "base", "baseFrom"],
+          "properties": {
+            "branch": { "type": ["string", "null"], "description": "The checked-out branch's short name, such as chant/work/w-12, or null when HEAD is detached." },
+            "head": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40,64}$", "description": "The full commit id HEAD names, or null before the first commit." },
+            "base": {
+              "type": ["string", "null"],
+              "pattern": "^[0-9a-f]{40,64}$",
+              "description": "The merge base of head and the target branch tip (origin/HEAD, else main, else master), the commit the branch forked from. Null without a head, a target, or common history."
+            },
+            "baseFrom": { "enum": ["origin/HEAD", "main", "master", null], "description": "Where the target branch was found; null when there is none." }
+          }
+        },
+        "replication": {
+          "description": "Added in contract 1 by #3172. When a box block declares replicate (ws-085), where each ref it names (work branches, kept attempts, work-in-progress snapshots, the ledger branch) stands against the remote: replicated, or how many commits ahead. Read from the local refs and what chant recorded at its last push or fetch under refs/chant/replica/<remote>/; the command never fetches. chant workspace wip --json prints the same, with each branch's snapshots. null when no box declares replicate.",
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/replication" }]
+        },
+        "plantable": {
+          "description": "Added in contract 1 by #3146. Whether a host such as a studio's planter can plant the workspace as one box: exactly one member's box block declares services. Not a check: a records-only or infra workspace is valid and simply not plantable.",
+          "$ref": "#/$defs/plantable"
+        },
+        "workspace": {
+          "type": "object",
+          "required": ["name", "root", "file"],
+          "properties": {
+            "name": { "type": "string" },
+            "repo": { "type": ["string", "null"], "description": "Added in contract 1 by #3168. The repository the document came from: the URL of the remote origin of the git repository that holds the workspace, with any user name or password removed, or null when there is no origin or the workspace is outside git. With name, root and the revision, it says which repository's workspace a document describes, so a reader that gathers several repositories' documents, such as an org workspace's repo members, tells them apart." },
+            "root": { "type": "string", "description": "The workspace root relative to the git root, with / separators, \".\" for the git root itself." },
+            "file": { "enum": ["chant.workspace.json", "chant.workspace.jsonc"] }
+          }
+        },
+        "members": {
+          "description": "Every member, in declaration order. Example groups have no ledger and are not listed.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/member" }
+        },
+        "leases": {
+          "description": "Added in contract 1 by #2732. Every work lease (chant workspace work claim) in the flat ledger and each member's, active and expired, by member (flat first) and then item. Read from the local lease refs, refs/chant/lease/[_members/<member>/]work/<id> and the remote's as last fetched; the command never fetches. A released lease has no ref and is not listed; its history is _leases/<id>.jsonl on chant/lifecycle.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/lease" }
+        },
+        "acceptance": {
+          "description": "Added in contract 1 by #2772. Each current work item of a declared work kind whose work block names acceptance criteria, when the item lists some, by declared kind and then item, read in the working tree: how many of its criteria passing evidence meets. Empty when no declared work kind has criteria. A done item with a criterion unmet is what chant workspace check fails on (WSP117).",
+          "type": "array",
+          "items": { "$ref": "#/$defs/acceptance" }
+        },
+        "overlap": {
+          "description": "Added in contract 1 by #4025, written by chant 0.124.29 and newer; absent from older output, so a reader treats a missing field as unknown. Overlap between in-flight work items: a work item (a current record of a declared work kind) is in flight unless it implements at least one decision and every one is confirmed (in one of its kind's closed states and superseded by nothing, as featureFlags reads it). Its commits are the ones linked to it as #4029 defines linked (a Chant-Record: <work kind>:<id> trailer, or a Chant-Lease trailer that resolves to it), read from every local and remote-tracking branch and HEAD, the chant/ ledger branches left out, merges skipped, and never fetched. Two items overlap when their commits touch the same file, or when one entry of a change set a pending or approved gate binds is attributed to both: an entry is attributed to an item when a commit linked to the item changed the entry's source file (recorded on the stored change set) and that commit is in the history the change set was planned from. A report only: nothing is locked or refused. Null when the workspace declares no work kind, or the work records or history can't be read.",
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/overlap" }]
+        },
+        "summary": {
+          "type": "object",
+          "required": ["members", "released", "unreadable", "differing"],
+          "properties": {
+            "members": { "type": "integer", "minimum": 0 },
+            "released": { "type": "integer", "minimum": 0, "description": "Members with at least one release in env." },
+            "unreadable": { "type": "integer", "minimum": 0, "description": "Members with a reason in any environment." },
+            "differing": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "description": "Members whose compare differs, or null without --compare-to."
+            }
+          }
+        }
+      }
+    },
+    "acceptance": {
+      "type": "object",
+      "required": ["member", "kind", "item", "state", "met", "total"],
+      "properties": {
+        "member": { "type": ["string", "null"], "description": "The member that declares the work kind, or null for the workspace's own." },
+        "kind": { "type": "string", "description": "The work kind file, from the workspace root." },
+        "item": { "type": "string", "description": "The work item's id." },
+        "state": { "type": ["string", "null"], "description": "The item's state." },
+        "met": { "type": "integer", "minimum": 0, "description": "Criteria met by evidence naming them, with result pass and the criterion's verification; a manual verdict counts only from someone other than the implementer." },
+        "total": { "type": "integer", "minimum": 0, "description": "Criteria the item lists." }
+      }
+    },
+    "lease": {
+      "type": "object",
+      "required": ["item", "member", "ref", "holder", "token", "acquiredAt", "expiresAt", "state"],
+      "properties": {
+        "item": { "type": "string", "description": "The work item's id." },
+        "member": { "type": ["string", "null"], "description": "The member whose ledger holds the lease: the one owning the work kind file, or null for the flat ledger." },
+        "ref": { "type": "string", "description": "The lease ref, refs/chant/lease/work/<id> or refs/chant/lease/_members/<member>/work/<id>." },
+        "holder": { "type": "string" },
+        "token": { "type": "string", "description": "The fencing token: new on every claim, kept by every renew." },
+        "acquiredAt": { "type": "string" },
+        "expiresAt": { "type": "string" },
+        "state": { "enum": ["active", "expired"], "description": "expired once expiresAt has passed: the item can be claimed again, with a new token." }
+      }
+    },
+    "env": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"
+    },
+    "member": {
+      "type": "object",
+      "patternProperties": { "^x-": { "description": "Added in contract 1 by #3595. An x- key the declaration holds on this object, with its value as written." } },
+      "required": ["name", "dir", "kind", "fields", "environments", "compare", "readable", "gateLedger", "gates", "box", "stewards", "stewardReasons"],
+      "properties": {
+        "name": { "type": "string" },
+        "dir": { "type": "string", "description": "Relative to the workspace root, with / separators; \".\" is the root member." },
+        "kind": { "type": "string" },
+        "fields": {
+          "description": "The fields the member's kind declares (#3151), each set from the entry or its default, null when it has neither. Null when the kind declares no fields or no pinned package supplies it. A value of the wrong type reads as the default, and chant workspace check reports it (WSP005). Added in contract 1 by chant 0.103.0.",
+          "type": ["object", "null"],
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "integer" },
+              { "type": "boolean" },
+              { "type": "null" },
+              { "type": "object", "additionalProperties": { "oneOf": [{ "type": "string" }, { "type": "integer" }, { "type": "boolean" }, { "type": "null" }] } }
+            ]
+          }
+        },
+        "environments": {
+          "description": "env first, then compareTo when it is given and differs from env.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/environment" }
+        },
+        "compare": {
+          "description": "Null without --compare-to.",
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/compare" }]
+        },
+        "readable": { "type": "boolean", "description": "True exactly when no environment has a reason. A gate ledger reason doesn't change it." },
+        "gateLedger": { "$ref": "#/$defs/gateLedger" },
+        "box": {
+          "description": "The member's box block from the declaration (#2726), or null when it declares none. A broker reads the scopes it enforces here, and chant workspace check fails on a capability with a null broker (WSP122).",
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/box" }]
+        },
+        "gates": {
+          "description": "Each gate the member's gate ledger records, one per gate and environment, for env and compareTo. A gate that records no environment (an Op gate) is listed whatever the environment. Sorted by component, then gate. Empty when gateLedger has a reason.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/gate" }
+        },
+        "stewards": {
+          "description": "The stewards the member declares in its *.op.ts files (#2731), sorted by name. Empty for a member that is not of kind chant, or has no chant.config.ts or .json in its own directory.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/steward" }
+        },
+        "stewardReasons": {
+          "description": "Why a steward or an Op's last run may be missing from stewards. Empty when every one was read.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": { "enum": ["stewards-unreadable", "stewards-conflict", "steward-runs-unreadable"] },
+              "message": { "type": "string" }
+            }
+          }
+        },
+        "promotionOrder": {
+          "description": "The member's promotion order (#4030): the literal entries of the environments array in its chant.config.ts, in order, with a pattern entry such as pr-* left out. A release moves from each step to the next, and components promote --to defaults --from to the step before. Empty when the config declares no environments, and null when it could not be read. canary marks the canary step: in a pipeline its soak holds every stage after it, and an environments entry has no soak, so chant lint warns on one. Optional: written from chant 0.124.28, absent from older output.",
+          "type": ["array", "null"],
+          "items": {
+            "type": "object",
+            "required": ["name", "canary"],
+            "properties": {
+              "name": { "type": "string" },
+              "canary": { "type": "boolean", "description": "True when the entry sets canary: true." },
+              "held": {
+                "type": "object",
+                "description": "Added in contract 1 by #5354. A pipeline stage's hold or freeze window now: until when (null when only a change to the pipeline lifts it), why, and what the person who lifts it reads first. Absent when the stage is open.",
+                "required": ["kind", "until"],
+                "properties": {
+                  "kind": { "enum": ["hold", "freeze"] },
+                  "until": { "type": ["string", "null"] },
+                  "reason": { "type": "string" },
+                  "description": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "releaseCuts": {
+          "description": "The member's release cuts (#4026, ws-104), oldest first, from _releases/cuts.jsonl on the local chant/lifecycle, each with whether its signature verifies (#4031). Empty when none is cut, null when the cuts could not be read. Optional: written from chant 0.124.28, absent from older output.",
+          "type": ["array", "null"],
+          "items": {
+            "type": "object",
+            "required": ["releaseDigest", "label", "commit", "actor", "timestamp", "signature", "signatureCheck"],
+            "properties": {
+              "releaseDigest": { "type": "string", "pattern": "^(jcs1-)?sha256:[0-9a-f]{64}$" },
+              "label": { "type": ["string", "null"] },
+              "commit": { "type": ["string", "null"], "description": "The release's commit, or null when its release file can't be read." },
+              "actor": { "type": "string", "description": "Who cut it." },
+              "timestamp": { "type": "string", "description": "ISO 8601." },
+              "signature": { "type": ["string", "null"], "description": "The cut's armored ssh signature in the chant-release namespace over the release digest, the label (empty for none), the actor and the timestamp, joined by LF. Null for an unsigned cut." },
+              "signatureCheck": {
+                "type": "object",
+                "description": "Whether signature verifies for actor against the signers file at base and, when the declaration at base names a release gate in identity.gates with a class, whether .chant/trust.json at base puts actor in it. Judged on every read.",
+                "required": ["status", "key", "reason"],
+                "properties": {
+                  "status": { "enum": ["verified", "unsigned", "unverified"] },
+                  "key": { "type": ["string", "null"], "description": "The fingerprint of the key in the signature. Reported, never trusted." },
+                  "reason": { "type": "string" }
+                }
+              },
+              "risk": {
+                "type": "object",
+                "description": "Added in contract 1 by #5387. The change risk the cut carries: the score the waves that applied its commit recorded under holds.risk, combined, and how each stage after the first whose gate sets holds.risk in the member's pipeline reads it. Absent when the cut carries none.",
+                "required": ["score", "level", "stages"],
+                "properties": {
+                  "score": { "type": "number", "minimum": 0, "maximum": 1 },
+                  "level": { "enum": ["low", "medium", "high"] },
+                  "stages": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": ["stage", "approveAbove", "over"],
+                      "properties": {
+                        "stage": { "type": "string" },
+                        "approveAbove": { "type": ["number", "null"], "description": "The stage's threshold, or null when its holds.risk sets none." },
+                        "over": { "type": "boolean", "description": "True when the stage's gate takes more approvals for this release." }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "featureFlags": {
+          "description": "The member's feature flags (#4024): each record of a declared flag kind whose member field names this member, sorted by id. A flag is a workspace record the member's build reads as one build-time parameter, with chant build --env <env>; its value in an environment is recorded on the build, and on a release's target, as a param whose source is flag:<id>. Named featureFlags because a release record's flags already holds legacy-digest. Empty when no flag names the member, and null when the flag records could not be read. Optional: written from chant 0.124.29, absent from older output.",
+          "type": ["array", "null"],
+          "items": { "$ref": "#/$defs/featureFlag" }
+        },
+        "stageQueues": {
+          "description": "Added in contract 1 by #5353. The stage queues of the member's pipeline (_gates/<pipeline>/stages.jsonl on chant/lifecycle): the release in each stage, the releases waiting for it, and the waiting releases a newer one replaced. From the chant that exports STATUS_STAGE_QUEUES_FLOOR (#5419) one entry per stage of the pipeline, in pipeline order, whatever environment was asked for, and only from the member's own pipeline's log, also when several members share one ledger. A member with no pipeline lists the stages of its own ledger's logs for the environments asked for. A pipeline keeps the log when a stage declares after or queue. Absent when no stage log applies.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/stageQueue" }
+        },
+        "pipeline": {
+          "description": "Added in contract 1 by #5342. The member's pipeline (.chant/pipeline.ts, read from the working tree), one entry per stage in pipeline order, whatever environment was asked for: the release each stage runs, its gate, the change risk the gate reads, its soak and the time left, the canary soaks that hold it, a pause, and a rollback request. Read from chant/lifecycle at lifecycle.commit; nothing is written, and no soak check is run. Absent when the member has no pipeline, or it does not fold.",
+          "$ref": "#/$defs/pipeline"
+        }
+      }
+    },
+    "overlap": {
+      "type": "object",
+      "required": ["items", "pairs", "changeSets", "unattributed"],
+      "properties": {
+        "items": {
+          "type": "array",
+          "description": "Each in-flight work item with at least one linked commit, sorted by item.",
+          "items": {
+            "type": "object",
+            "required": ["item", "path", "state", "commits"],
+            "properties": {
+              "item": { "type": "string", "description": "<work kind>:<id>, as a Chant-Record trailer names it." },
+              "path": { "type": "string", "description": "The work record file, from the repository root." },
+              "state": { "type": ["string", "null"] },
+              "commits": { "type": "array", "items": { "type": "string" }, "description": "The commits linked to the item, newest first." }
+            }
+          }
+        },
+        "pairs": {
+          "type": "array",
+          "description": "Each pair of items that share a file or a change-set entry, sorted by the first item and then the second. Empty when nothing overlaps.",
+          "items": {
+            "type": "object",
+            "required": ["items", "files", "addresses"],
+            "properties": {
+              "items": { "type": "array", "items": { "type": "string" }, "minItems": 2, "maxItems": 2, "description": "The two items, in sorted order." },
+              "files": { "type": "array", "items": { "type": "string" }, "description": "The paths, from the repository root, that both items' linked commits add, change or delete, sorted. A rename counts as a delete and an add." },
+              "addresses": {
+                "type": "array",
+                "description": "The change-set entries attributed to both items, by change set, member and address.",
+                "items": {
+                  "type": "object",
+                  "required": ["changeSet", "ledgerMember", "member", "address", "node", "source"],
+                  "properties": {
+                    "changeSet": { "type": "string", "description": "The change set's digest, for chant change-set show." },
+                    "ledgerMember": { "type": ["string", "null"], "description": "The workspace member whose ledger stores the change set, or null for the flat ledger." },
+                    "member": { "type": "string", "description": "The entry's change-set member." },
+                    "address": { "type": "string", "description": "The entry's planner address." },
+                    "node": { "type": ["string", "null"], "description": "The entry's graph node." },
+                    "source": { "type": "string", "description": "The entry's source file, from the repository root, that both items' commits changed." }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "changeSets": { "type": "array", "items": { "type": "string" }, "description": "The digests of the stored change sets read: those a pending or approved gate binds, sorted." },
+        "unattributed": { "type": "integer", "minimum": 0, "description": "Entries of those change sets with no source (stored by a chant before 0.124.29, or mapped onto no node with a source location), so attributed to no item." }
+      }
+    },
+    "featureFlag": {
+      "type": "object",
+      "required": ["id", "param", "owner", "values", "work", "implements", "stale", "kind", "path"],
+      "properties": {
+        "id": { "type": "string", "description": "The flag's name, its record's id." },
+        "param": { "type": "string", "description": "The build parameter of the member the flag sets: a key of buildParams in its chant.config.ts." },
+        "owner": { "type": "string", "description": "Who owns the flag, and removes it when its work is settled." },
+        "values": {
+          "type": "object",
+          "description": "The flag's value per environment, as the record writes it. An environment it leaves out builds with the parameter's declared default.",
+          "additionalProperties": { "oneOf": [{ "type": "string" }, { "type": "number" }, { "type": "boolean" }] }
+        },
+        "work": {
+          "description": "The work item the flag hides, with that item's state, which is null when no record of the flag kind's work kind has the id. Null when the record names none.",
+          "oneOf": [
+            { "type": "null" },
+            { "type": "object", "required": ["id", "state"], "properties": { "id": { "type": "string" }, "state": { "type": ["string", "null"] } } }
+          ]
+        },
+        "implements": {
+          "type": "array",
+          "description": "Each decision the work item implements, with its state, and confirmed: true when the decision is in one of its kind's closed states and nothing supersedes it.",
+          "items": {
+            "type": "object",
+            "required": ["id", "state", "confirmed"],
+            "properties": { "id": { "type": "string" }, "state": { "type": ["string", "null"] }, "confirmed": { "type": "boolean" } }
+          }
+        },
+        "stale": { "type": "boolean", "description": "True when the work item implements at least one decision and every one is confirmed: the flag is due for removal, and chant workspace check reports it (WSP118)." },
+        "kind": { "type": "string", "description": "The flag kind file, from the workspace root." },
+        "path": { "type": "string", "description": "The flag record file, from the workspace root." }
+      }
+    },
+    "stewardForm": { "enum": ["local", "fountain"] },
+    "steward": {
+      "type": "object",
+      "required": ["name", "file", "form", "forms", "vault", "capabilities", "lease", "ops", "waiting"],
+      "properties": {
+        "name": { "type": "string", "description": "The steward's name; on Fountain, its Agent's and Teammate's." },
+        "file": { "type": "string", "description": "The *.op.ts file that declares it, relative to the member's directory." },
+        "form": { "$ref": "#/$defs/stewardForm", "description": "Its form in env: fountain (the fountain lexicon's Agent and Teammate) or local (chant operator --steward in the box)." },
+        "forms": {
+          "type": "object",
+          "required": ["default", "environments"],
+          "properties": {
+            "default": { "$ref": "#/$defs/stewardForm" },
+            "environments": {
+              "description": "The environments whose form differs from default.",
+              "type": "object",
+              "additionalProperties": { "$ref": "#/$defs/stewardForm" }
+            }
+          }
+        },
+        "vault": { "type": ["string", "null"], "description": "The vault the steward holds on Fountain, by name, or null. Never set when capabilities is non-empty." },
+        "capabilities": {
+          "description": "The box capabilities the steward reaches through a broker (#2726), in declaration order, joined with the member's box block. broker is the block's; declared is false when the block doesn't list the capability or the member has no block.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "broker", "declared"],
+            "properties": {
+              "name": { "type": "string" },
+              "broker": { "type": ["string", "null"] },
+              "declared": { "type": "boolean" }
+            }
+          }
+        },
+        "lease": {
+          "description": "The local steward's own lease ref, read locally and never fetched, or null when no local operator has held it. live is false once expiresAt has passed.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["holder", "acquiredAt", "expiresAt", "live"],
+              "properties": {
+                "holder": { "type": "string" },
+                "acquiredAt": { "type": "string" },
+                "expiresAt": { "type": "string" },
+                "live": { "type": "boolean" }
+              }
+            }
+          ]
+        },
+        "ops": {
+          "description": "The Ops it runs, in declaration order: its turns' Ops, then those it runs beside its turns (#2861).",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "schedule", "env", "lastRun", "inFlight", "lastTick", "changesCheckout", "workLease", "beside"],
+            "properties": {
+              "name": { "type": "string" },
+              "schedule": {
+                "description": "The Op's cadence, or null for an Op the steward runs only when asked.",
+                "oneOf": [
+                  { "type": "null" },
+                  {
+                    "type": "object",
+                    "required": ["cron", "overlap"],
+                    "properties": { "cron": { "type": "string" }, "overlap": { "const": "skip" } }
+                  }
+                ]
+              },
+              "env": { "type": "string", "description": "The environment its runs are recorded under: its labels.Env, or local." },
+              "lastRun": {
+                "description": "The newest record in the Op's run ledger on chant/lifecycle, or null when it has none.",
+                "oneOf": [
+                  { "type": "null" },
+                  {
+                    "type": "object",
+                    "required": ["id", "status", "started", "ended", "gate", "point", "phases"],
+                    "properties": {
+                      "id": { "type": "string" },
+                      "status": { "enum": ["ok", "fail", "gated", "waiting"], "description": "waiting: an activity asked a decision point that is still open (#2749), and the run stopped there." },
+                      "started": { "type": "string" },
+                      "ended": { "type": "string" },
+                      "gitSha": { "type": "string", "description": "Added in contract 1 by #4020, written by chant 0.124.28 and newer. The commit the run built from. Absent on a record written by an older chant, and when the run knew no commit." },
+                      "runOrigin": {
+                        "type": "object",
+                        "required": ["forge"],
+                        "description": "Added in contract 1 by #4020, written by chant 0.124.28 and newer. The CI run the Op ran in, the shape a release's runOrigin has: the forge (github for GitHub and Forgejo, gitlab), the repo or project, and a link to the run. Absent outside CI.",
+                        "properties": {
+                          "forge": { "enum": ["github", "gitlab", "op", "local", "chant"], "description": "chant: a pull-request job the chant runner ran (chant ci run, #4094), added within contract 1 and written by chant 0.124.30 and newer." },
+                          "repo": { "type": "string" },
+                          "url": { "type": "string" },
+                          "jobId": { "type": "string", "description": "The forge's job id within the run. Added within contract 1 by #4156 and written by chant 0.124.32 and newer, only by chant ci run in a forge job." },
+                          "attempt": { "type": "integer", "minimum": 1, "description": "The run's attempt on GitHub and Forgejo. Added within contract 1 by #4156 and written by chant 0.124.32 and newer, only by chant ci run in a forge job." }
+                        }
+                      },
+                      "failure": {
+                        "type": "object",
+                        "required": ["code", "reason"],
+                        "description": "Added in contract 1 by #4094, written by chant 0.124.30 and newer. Why a failed run failed: code is a pull-request report's refusal or status (not-approved, plan-changed, not-a-reviewer, no-pull-request, plan-failed, failed, refused) or command-failed, setup-failed or build-failed, and a reader keeps a case for a code it does not know. reason is one line for a person, phase the phase that failed, exitCode the failed command's exit code. chant ci run writes it on every failed job; absent otherwise.",
+                        "properties": {
+                          "code": { "type": "string", "minLength": 1 },
+                          "reason": { "type": "string" },
+                          "phase": { "type": "string" },
+                          "exitCode": { "type": "integer" }
+                        }
+                      },
+                      "gate": {
+                        "oneOf": [
+                          { "type": "null" },
+                          {
+                            "type": "object",
+                            "required": ["name", "since"],
+                            "properties": {
+                              "name": { "type": "string" },
+                              "since": { "type": "string" },
+                              "op": { "type": "string", "description": "The op the gate is recorded under: the Op's own, or the command's when a step's command stopped at a gate of its own (#2779), such as workspace-upgrade." },
+                              "approve": { "type": "string", "description": "The command that approves the gate, run in the member's directory." }
+                            }
+                          }
+                        ]
+                      },
+                      "point": {
+                        "description": "The decision point a waiting run stopped on (#2749), or null. Its state is the question's now, as `points` reads it: `answered` once a person has answered it. When the questions can't be read, or the answer record is gone, it is the state the run ledger recorded.",
+                        "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/stewardWait" }]
+                      },
+                      "phases": {
+                        "description": "Each phase of the run in execution order, with its verdict and its wall-clock time in milliseconds. For a record written before chant kept phase times, durationMs is the sum of its steps' times. A phase skipped whole has 0. Added by chant 0.96.0.",
+                        "type": "array",
+                        "items": { "$ref": "#/$defs/runPhase" }
+                      }
+                    }
+                  }
+                ]
+              },
+              "inFlight": {
+                "description": "The run of the Op in flight now, or null when none is. A run that writes to the run ledger keeps a record beside the checkout's git directory while it runs and removes it once its ledger record is written; a record whose process on this host is gone is not in flight. phase and step are what it is doing now (step is the newest step still running, named by its id, or its activity when it has none), phases the phases it has finished, and activity the newest lines its steps reported (a shell step appends them to the file in CHANT_RUN_ACTIVITY), with seq counting from 1 over the run and total the count so far. item is the work item its lease holds, once claimed. Added by chant 0.96.0.",
+                "oneOf": [
+                  { "type": "null" },
+                  {
+                    "type": "object",
+                    "required": ["id", "started", "updated", "steward", "item", "phase", "step", "phases", "activity"],
+                    "properties": {
+                      "id": { "type": "string", "description": "The run's id: the id its ledger record will have." },
+                      "started": { "type": "string" },
+                      "updated": { "type": "string", "description": "When the run last changed its record." },
+                      "steward": { "type": ["string", "null"] },
+                      "item": { "type": ["string", "null"] },
+                      "phase": {
+                        "oneOf": [
+                          { "type": "null" },
+                          { "type": "object", "required": ["name", "started"], "properties": { "name": { "type": "string" }, "started": { "type": "string" } } }
+                        ]
+                      },
+                      "step": {
+                        "oneOf": [
+                          { "type": "null" },
+                          {
+                            "type": "object",
+                            "required": ["name", "fn", "started"],
+                            "properties": { "name": { "type": "string" }, "fn": { "type": "string" }, "started": { "type": "string" } }
+                          }
+                        ]
+                      },
+                      "phases": { "type": "array", "items": { "$ref": "#/$defs/runPhase" } },
+                      "activity": {
+                        "type": "object",
+                        "required": ["total", "lines"],
+                        "properties": {
+                          "total": { "type": "integer" },
+                          "lines": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": ["seq", "at", "text"],
+                              "properties": { "seq": { "type": "integer" }, "at": { "type": ["string", "null"] }, "text": { "type": "string" } }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "lastTick": {
+                "description": "For a ConvergeOp, its newest tick on the converge ledger (#2778): the rules that fired, what each did and for which resource, and what its observer step reported. null for any other Op, or before its first tick.",
+                "oneOf": [
+                  { "type": "null" },
+                  {
+                    "type": "object",
+                    "required": ["id", "timestamp", "log", "firedRuleIds", "outcomes", "resources"],
+                    "properties": {
+                      "id": { "type": ["string", "null"] },
+                      "timestamp": { "type": "string" },
+                      "log": { "type": "string" },
+                      "firedRuleIds": { "type": "array", "items": { "type": "string" } },
+                      "outcomes": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": ["ruleId", "action", "op", "resource", "reason"],
+                          "properties": {
+                            "ruleId": { "type": "string" },
+                            "action": { "enum": ["ran", "reported", "skipped-budget", "skipped-flap", "gated"] },
+                            "op": { "type": ["string", "null"] },
+                            "resource": { "type": ["string", "null"], "description": "The resource the rule fired for, on a ConvergeOp with an observer step." },
+                            "reason": { "type": ["string", "null"] }
+                          }
+                        }
+                      },
+                      "resources": {
+                        "description": "What the observer step reported, or null for a ConvergeOp that observes a lexicon environment.",
+                        "oneOf": [
+                          { "type": "null" },
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": ["name", "status", "detail"],
+                              "properties": {
+                                "name": { "type": "string" },
+                                "status": { "enum": ["in-sync", "drifted", "unknown"] },
+                                "detail": { "type": ["string", "null"] }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                ]
+              },
+              "changesCheckout": { "type": "boolean", "description": "Whether the Op changes the checkout, and so runs under a work lease on a branch of its own, chant/work/<item> (#2748)." },
+              "workLease": {
+                "description": "The Op's work lease (#2748), or null when it declares none. kind is the work kind file whose ledger holds it, relative to the member, or null for the member's own ledger. held is the work leases the steward's turns of this Op hold (holder <steward>/<op>@<process>), read locally and never fetched: an active one while a turn runs, an expired one left by a turn that stopped renewing.",
+                "oneOf": [
+                  { "type": "null" },
+                  {
+                    "type": "object",
+                    "required": ["kind", "held"],
+                    "properties": {
+                      "kind": { "type": ["string", "null"] },
+                      "held": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": ["item", "holder", "token", "acquiredAt", "expiresAt", "state"],
+                          "properties": {
+                            "item": { "type": "string" },
+                            "holder": { "type": "string" },
+                            "token": { "type": "string" },
+                            "acquiredAt": { "type": "string" },
+                            "expiresAt": { "type": "string" },
+                            "state": { "enum": ["active", "expired"] }
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "beside": {
+                "description": "For an Op the steward runs beside its turns (#2861), in a process of its own under the Op's own lease: ready is whether a ready step says when the operator starts it, and lease is the Op's lease ref (refs/chant/lease/<op>), held by a run of it while it runs (holder <steward>/<op>@<operator> for a run the operator started), read locally and never fetched, or null when none has held it. live is false once expiresAt has passed. Null for an Op the steward runs as one of its turns.",
+                "oneOf": [
+                  { "type": "null" },
+                  {
+                    "type": "object",
+                    "required": ["ready", "lease"],
+                    "properties": {
+                      "ready": { "type": "boolean" },
+                      "lease": {
+                        "oneOf": [
+                          { "type": "null" },
+                          {
+                            "type": "object",
+                            "required": ["holder", "acquiredAt", "expiresAt", "live"],
+                            "properties": {
+                              "holder": { "type": "string" },
+                              "acquiredAt": { "type": "string" },
+                              "expiresAt": { "type": "string" },
+                              "live": { "type": "boolean" }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "waiting": {
+          "description": "The open decision points the steward waits on (#2749): one for each Op whose newest run is the steward's own (its ledger record names the steward) and stopped on a question that is still open: the steward's own Ops in ops order, then any other Op of the member, such as one the steward's process starts itself (studio#137), by name. The state is the question's now, as `chant workspace points --open` reads it, where hud asks a person. A question answered since, or whose answer record is gone, is not listed, and nor is one whose Op has a newer run in flight: the Op's lease or one of its work leases was taken after the waiting run ended and is still held. When the questions can't be read, the run ledger's state stands. The steward never answers one, and runs an Op it lists again on the first round after it is answered (an Op beside its turns, in a process of its own, #2861).",
+          "type": "array",
+          "items": {
+            "allOf": [
+              { "$ref": "#/$defs/stewardWait" },
+              {
+                "type": "object",
+                "required": ["op", "run"],
+                "properties": { "op": { "type": "string" }, "run": { "type": "string", "description": "The waiting run's id." }, "state": { "enum": ["escalated", "proposed"] } }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "runPhase": {
+      "type": "object",
+      "required": ["name", "status", "durationMs"],
+      "properties": {
+        "name": { "type": "string" },
+        "status": { "enum": ["ok", "fail", "skipped"] },
+        "durationMs": { "type": "number" }
+      }
+    },
+    "stewardWait": {
+      "type": "object",
+      "required": ["id", "point", "state", "path", "subject", "since"],
+      "properties": {
+        "id": { "type": "string", "description": "The answer record's id, as `points` lists the question and `points answer` names it." },
+        "point": { "type": "string" },
+        "state": { "enum": ["escalated", "proposed", "answered"], "description": "The question's state now, as `points` reads it, or the state the run ledger recorded when the questions can't be read or the record is gone. Never `answered` in a steward's `waiting`." },
+        "path": { "type": "string", "description": "The answer record, from the repository root." },
+        "subject": { "type": ["string", "null"] },
+        "since": { "type": "string", "description": "When the run stopped on it." }
+      }
+    },
+    "intent": {
+      "type": "object",
+      "required": ["id", "state", "question", "choice", "answer", "decided_by", "decided_on"],
+      "properties": {
+        "id": { "type": "string", "description": "The record's id, as the box block names it." },
+        "state": { "type": ["string", "null"], "description": "The record's state as written, such as proposed or decided, or null when no decision record has the id." },
+        "question": { "type": ["string", "null"], "description": "The question the record answers." },
+        "choice": { "description": "The record's choice as written, such as { option, reason }, or null while the record is proposed." },
+        "answer": { "type": ["string", "null"], "description": "The chosen option's label, from options[]'s entry whose id is choice.option, or null while no option is chosen (#2855). Added by chant 0.94.0." },
+        "decided_by": { "type": ["string", "null"], "description": "Who decided it, or null while it is proposed." },
+        "decided_on": { "type": ["string", "null"], "description": "The day it was decided, or null while it is proposed." },
+        "approved": {
+          "type": "boolean",
+          "description": "Added in contract 1 by #3609. Whether the record's state counts as approved: the decision kind's approval rank for that state is above 0, the rule the factory's pick holds dispatch with. With chant's decision kind, decided, ratified and superseded are approved, and proposed and withdrawn are not. False when no decision record has the id, and for a kind that declares no approval ranks."
+        }
+      }
+    },
+    "replication": {
+      "type": "object",
+      "required": ["policy", "remoteConfigured", "replicated", "refs"],
+      "properties": {
+        "policy": {
+          "type": "object",
+          "required": ["box", "remote", "refs", "on", "every"],
+          "properties": {
+            "box": { "type": "string", "description": "The member whose box block declares the policy." },
+            "remote": { "type": "string" },
+            "refs": { "type": "array", "items": { "enum": ["work", "kept", "wip", "ledger"] } },
+            "on": { "type": "array", "items": { "enum": ["save", "release"] } },
+            "every": { "type": ["string", "null"] }
+          }
+        },
+        "remoteConfigured": { "type": "boolean", "description": "Whether the checkout has a git remote of the policy's name." },
+        "replicated": { "type": "boolean", "description": "True when every ref listed is on the remote as it is locally." },
+        "refs": {
+          "type": "array",
+          "description": "Every local ref the policy names, sorted by ref.",
+          "items": {
+            "type": "object",
+            "required": ["ref", "class", "commit", "replica", "replicated", "ahead"],
+            "properties": {
+              "ref": { "type": "string", "description": "Such as refs/heads/chant/work/W-001, refs/chant/kept/W-001/<token>, refs/chant/wip/chant/work/W-001 or refs/heads/chant/lifecycle." },
+              "class": { "enum": ["work", "kept", "wip", "ledger"] },
+              "commit": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
+              "replica": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40,64}$", "description": "What the remote held of the ref as chant last saw it (or, for a branch, git's remote-tracking ref), or null when unknown." },
+              "replicated": { "type": "boolean" },
+              "ahead": { "type": "integer", "minimum": 0, "description": "Commits reachable from commit that nothing known to be on the remote reaches; 0 when replicated." }
+            }
+          }
+        }
+      }
+    },
+    "box": {
+      "type": "object",
+      "patternProperties": { "^x-": { "description": "Added in contract 1 by #3595. An x- key the declaration holds on this object, with its value as written." } },
+      "required": ["capabilities", "isolation", "intent", "services"],
+      "properties": {
+        "factory": {
+          "description": "Added in contract 1 by #3146. What the box builds and how (ws-077), with every default filled in, or null when the block declares no factory. At most one member's box has one.",
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/factory" }]
+        },
+        "listing": {
+          "description": "Added in contract 1 by #3146. What the box shows of itself on a home site, or null when the block declares no listing.",
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/listing" }]
+        },
+        "publisher": {
+          "description": "Added in contract 1 by #3165. The command that publishes the box's work, as the box block declares it (ws-088), or null when it names none. A surface offers a publish only when it is set, and asks for one with chant workspace box publish rather than running it.",
+          "type": ["string", "null"]
+        },
+        "ship": {
+          "description": "Added in contract 1 by ws-100. How the box ships its staged work to its own site, with defaults filled in, the release its site serves and what is waiting to ship, or null when the box block declares no ship. A surface offers Ship only when it is set: it runs chant run <op> in the member's directory with the person in CHANT_SHIP_BY and approves <gate> as for any Op.",
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/boxShip" }]
+        },
+        "replicate": {
+          "description": "Added in contract 1 by #3172. Where the box's work in progress is replicated (ws-085), with every default filled in, or null when the block declares no policy. At most one member's box has one; the top-level replication says how far each ref is from the remote.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["remote", "refs", "on", "every"],
+              "properties": {
+                "remote": { "type": "string", "description": "The git remote, by name; origin when the block names none." },
+                "refs": { "type": "array", "items": { "enum": ["work", "kept", "wip", "ledger"] }, "description": "What is replicated, in this order; all four when the block names none." },
+                "on": { "type": "array", "items": { "enum": ["save", "release"] }, "description": "When chant pushes on its own; both when the block names none." },
+                "every": { "type": ["string", "null"], "description": "The interval at which the host runs chant workspace wip push, or null." }
+              }
+            }
+          ]
+        },
+        "services": {
+          "description": "The services the box block declares (#2880), in declaration order, or empty when it declares none. A reader has them before any converge tick; a steward's ConvergeOp's lastTick carries each one's verdict. cmd is as declared: its ${VAR} references are left for the process that applies it to expand. Added by chant 0.95.0.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "cmd", "needs", "httpPort", "duration", "health", "optional"],
+            "properties": {
+              "name": { "type": "string" },
+              "cmd": { "type": "string", "description": "The command the supervisor runs, as declared." },
+              "needs": { "type": "array", "items": { "type": "string" }, "description": "Services of the same box that start first. Empty when none." },
+              "httpPort": { "type": ["integer", "null"], "description": "The port the supervisor routes the sprite's URL to, or null." },
+              "duration": { "type": ["string", "null"], "description": "How long the service must stay up after a create or start, such as 3s, or null for the supervisor's default." },
+              "health": { "type": ["string", "null"], "description": "A URL that answers 200 while the service works, or null when the supervisor's state decides." },
+              "optional": { "type": "boolean", "description": "True for a service something else creates by name, such as a site a release makes." }
+            }
+          }
+        },
+        "intent": {
+          "description": "The decision record the box block names as the box's intent (#2850), or null when it names none. A box starts as a question: the record is proposed with a null choice, and decided when the person who answered it amends it. Read from the working tree, from the declared record kinds named decision. When no decision record has the id, every field but id is null and chant workspace check fails (WSP126). Added by chant 0.94.0.",
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/intent" }]
+        },
+        "isolation": {
+          "description": "The box's isolation resolved from its identity, its host, the member's name and its slot (#2727), or null when the block declares no host. A runtime that plants or starts the box sets these values instead of choosing its own. The same for every environment.",
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/isolation" }]
+        },
+        "capabilities": {
+          "description": "Each capability the box reaches through a broker, in declaration order.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "broker", "scope"],
+            "properties": {
+              "name": { "type": "string", "description": "The capability, such as inference or fountain." },
+              "broker": { "type": ["string", "null"], "description": "What brokers it, such as lobby, or null when the declaration names none." },
+              "scope": { "type": "array", "items": { "type": "string" }, "description": "What of the box's own the broker lets it reach, such as agent, vault, conversations and sandboxes. Empty when none is declared." }
+            }
+          }
+        }
+      }
+    },
+    "plantable": {
+      "type": "object",
+      "required": ["plantable", "box", "reason"],
+      "properties": {
+        "plantable": { "type": "boolean" },
+        "box": { "type": ["string", "null"], "description": "The member whose box block declares services, or null when the workspace isn't plantable." },
+        "reason": {
+          "description": "Why the workspace isn't plantable, or null when it is.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["code", "message"],
+              "properties": {
+                "code": { "enum": ["box-none", "box-several"] },
+                "message": { "type": "string" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "factory": {
+      "type": "object",
+      "patternProperties": { "^x-": { "description": "Added in contract 1 by #3595. An x- key the declaration holds on this object, with its value as written." } },
+      "required": ["builds", "check", "checks", "builders", "tiers", "builderFor", "publish"],
+      "properties": {
+        "builds": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "The members the factory builds, in declaration order. A work item a person asks for constrains member:<the first>." },
+        "check": {
+          "description": "The verdict command, run from the workspace root, and what it is; null when none is declared.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["run", "kind"],
+              "properties": {
+                "run": { "type": "string" },
+                "kind": { "enum": ["test", "build", "lint", "plan", "conformance"] }
+              }
+            }
+          ]
+        },
+        "checks": { "type": ["string", "null"], "description": "Where a work item's builder writes its check, from the workspace root, or null for the orchestrator's choice." },
+        "builders": { "type": ["string", "null"], "description": "The member that declares the builder agents, or null." },
+        "tiers": {"type": "array", "items": {"type": "object", "required": ["tier", "agent", "kinds", "session"], "properties": {"tier": {"type": "string"}, "agent": {"type": "string"}, "kinds": {"oneOf": [{"type": "null"}, {"type": "array", "items": {"type": "string"}}]}, "session": {"type": ["string", "null"]}}}, "description": "Which builder agent builds at which tier, as declared (#3152, ws-094), each { tier, agent, kinds, session } with kinds and session null when not declared; empty when none is. Added in contract 1 by chant 0.103.0."},
+        "builderFor": {"type": "object", "additionalProperties": {"type": "object", "additionalProperties": {"type": "object", "required": ["agent", "session"], "properties": {"agent": {"type": "string"}, "session": {"type": ["string", "null"]}}}}, "description": "The builder for each member the factory builds, by tier (#3152): member name, then tier, then { agent, session }. For a member the entry naming its kind is used, else the tier's entry with no kinds; a tier with neither is left out. Added in contract 1 by chant 0.103.0."},
+        "publish": {
+          "description": "Where a finished build is published, or null when the factory doesn't publish past the box.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["forge", "repo", "base", "branchPrefix", "head"],
+              "properties": {
+                "forge": { "const": "github" },
+                "repo": { "type": "string", "description": "owner/name: where the pull request is opened." },
+                "base": { "type": ["string", "null"], "description": "The branch the pull request targets, or null for the repository's default branch." },
+                "branchPrefix": { "type": "string", "description": "What the published branch's name starts with, before the work item's id. chant/work/ unless declared." },
+                "head": { "type": ["string", "null"], "description": "owner/name of the fork the branch is pushed to, or null to push to repo." }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "listing": {
+      "type": "object",
+      "patternProperties": { "^x-": { "description": "Added in contract 1 by #3595. An x- key the declaration holds on this object, with its value as written." } },
+      "required": ["published", "title", "line", "cover"],
+      "properties": {
+        "published": { "type": "boolean", "description": "Whether the box is listed; true unless declared otherwise." },
+        "title": { "type": "string", "description": "Empty when not declared: a reader shows a name of its own." },
+        "line": { "type": "string", "description": "Empty when not declared." },
+        "cover": {
+          "description": "The cover image, or null when none is declared.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["path", "sha256"],
+              "properties": {
+                "path": { "type": "string", "description": "From the workspace root." },
+                "sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$", "description": "The sha256 of the file's bytes in the working tree, or null when it can't be read." }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "isolation": {
+      "type": "object",
+      "required": ["host", "slot", "portRange", "ports", "stateDir", "state", "cookies"],
+      "properties": {
+        "host": { "type": "string", "description": "The host the box runs on. Boxes on different hosts share nothing." },
+        "slot": { "type": "integer", "minimum": 0 },
+        "portRange": {
+          "type": "object",
+          "description": "The box's block of its host's range, inclusive: from + slot * perBox to from + (slot + 1) * perBox - 1.",
+          "required": ["from", "to"],
+          "properties": {
+            "from": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "to": { "type": "integer", "minimum": 1, "maximum": 65535 }
+          }
+        },
+        "ports": {
+          "type": "object",
+          "description": "Each declared port's number: the block's first port plus the port's offset.",
+          "additionalProperties": { "type": "integer", "minimum": 1, "maximum": 65535 }
+        },
+        "stateDir": { "type": "string", "description": "<stateRoot>/<member name>. Its environment reference, such as ${XDG_STATE_HOME}, is left for the runtime to expand." },
+        "state": {
+          "type": "object",
+          "description": "Each declared state entry's path under stateDir, keyed as declared, such as HUD_IDENTITY_PATH.",
+          "additionalProperties": { "type": "string" }
+        },
+        "cookies": {
+          "type": "object",
+          "description": "Each declared cookie's name for this box: <cookie>_<member name>.",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "gateLedger": {
+      "type": "object",
+      "required": ["layout", "path", "shared", "malformed", "reason"],
+      "properties": {
+        "layout": {
+          "enum": ["members", "flat"],
+          "description": "members: _members/<member>/_gates. flat: _gates. Chosen as for the member's release ledger."
+        },
+        "path": { "type": "string", "description": "The gate ledger directory on chant/lifecycle. Each file in it is <component>.jsonl, or <op>.jsonl for a gate an Op run reached." },
+        "shared": { "type": "boolean", "description": "True when more than one member in this output reads the flat _gates directory, so they list the same gates." },
+        "malformed": { "type": "integer", "minimum": 0, "description": "Lines that are neither a pending fact nor an approval. They are skipped." },
+        "reason": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["code", "message"],
+              "properties": {
+                "code": { "enum": ["gates-no-ledger", "gates-no-gate-ledger", "gates-ledger-unreadable"] },
+                "message": { "type": "string" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "pipeline": {
+      "type": "object",
+      "required": ["name", "stages"],
+      "properties": {
+        "name": { "type": "string", "description": "The pipeline's name, the op its stage gates are recorded under." },
+        "stages": { "type": "array", "description": "Every stage, in pipeline order.", "items": { "$ref": "#/$defs/stage" } }
+      }
+    },
+    "stageRef": {
+      "type": "object",
+      "required": ["digest", "label"],
+      "properties": {
+        "digest": { "type": "string" },
+        "label": { "type": ["string", "null"], "description": "The release's label, or null when it has none." }
+      }
+    },
+    "soakState": {
+      "enum": ["unread", "soaking", "due", "failing", "clock-unknown", "ended"],
+      "description": "A soak's state as the last run that read it recorded it. unread: no standing fact on the soak's gate for the release the stage runs. soaking: the last run held it and time is left. due: the last run held it for time only and the time is up; the next promote reads the checks. failing: the last run held it on a check that failed or could not be read. clock-unknown: the last run found no apply time. ended: a person ended it early through its gate."
+    },
+    "stage": {
+      "type": "object",
+      "required": ["name", "canary", "after", "release", "gate", "risk", "soak", "canaryHolds", "paused", "onVerifyFail", "rollback", "rollbackHeld"],
+      "properties": {
+        "name": { "type": "string", "description": "The stage, which is its environment's name." },
+        "canary": { "type": "boolean", "description": "True for the canary stage, whose soak holds every stage after it (#5327)." },
+        "after": { "type": "array", "items": { "type": "string" }, "description": "The stages a release succeeds in before this one opens: its after, else the stage before it. Empty for the first stage." },
+        "release": {
+          "description": "The release the stage runs, from <stage>/releases.jsonl under the member's prefix. Null when the ledger records no deploy or can't be read.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["releaseDigest", "label", "gitSha", "at", "components", "mixed"],
+              "properties": {
+                "releaseDigest": { "type": ["string", "null"], "description": "The release the newest deploy was made from, or null when it named none." },
+                "label": { "type": ["string", "null"] },
+                "gitSha": { "type": "string", "description": "The newest deploy's commit." },
+                "at": { "type": "string", "description": "When the newest deploy was recorded." },
+                "components": { "type": "array", "items": { "type": "string" }, "description": "The components whose newest deploy is of that release (or commit, when it named none), sorted." },
+                "mixed": { "type": "boolean", "description": "True when the stage's components run more than one release." }
+              }
+            }
+          ]
+        },
+        "gate": {
+          "type": "object",
+          "description": "The stage's gate: <stage> under the pipeline's op, read from its newest pending fact as gates are.",
+          "required": ["name", "policy", "state", "releaseDigest", "label", "planDigest", "recordedAt", "approvals", "needed", "approve"],
+          "properties": {
+            "name": { "type": "string" },
+            "policy": { "enum": ["always", "never", "on-destructive"], "description": "The stage's gate policy, always when it declares none." },
+            "state": { "description": "The state of the newest pending fact, or null when no promote has reached the gate.", "oneOf": [{ "type": "null" }, { "enum": ["pending", "approved", "expired", "superseded"] }] },
+            "releaseDigest": { "type": ["string", "null"], "description": "The release the fact binds." },
+            "label": { "type": ["string", "null"] },
+            "planDigest": { "type": ["string", "null"], "description": "The digest the fact binds: the release's, or the promoted digests'." },
+            "recordedAt": { "type": ["string", "null"] },
+            "approvals": { "type": "integer", "minimum": 0, "description": "The approvals that count toward the fact." },
+            "needed": { "type": "integer", "minimum": 1 },
+            "approve": { "type": ["string", "null"], "description": "The chant approve line for the fact, or null when there is none." }
+          }
+        },
+        "risk": {
+          "description": "The change risk the stage's gate reads (#5387), for the release at its gate while its fact is pending, else for the release the stage runs. Null when that release carries no risk record.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["releaseDigest", "label", "score", "level", "reads", "approveAbove", "over", "overBy"],
+              "properties": {
+                "releaseDigest": { "type": "string" },
+                "label": { "type": ["string", "null"] },
+                "score": { "type": "number", "minimum": 0, "maximum": 1 },
+                "level": { "enum": ["low", "medium", "high"] },
+                "reads": { "type": "boolean", "description": "True when the stage sets holds.risk, so its gate reads the score." },
+                "approveAbove": { "type": ["number", "null"] },
+                "over": { "type": "boolean", "description": "True when the gate takes more approvals for this release. Risk only ever adds approvals." },
+                "overBy": { "type": "array", "items": { "type": "string" }, "description": "Why it is over, one line each." }
+              }
+            }
+          ]
+        },
+        "soak": {
+          "description": "The stage's soak (#5326), with its state from the newest pending fact on its gate. Null when the stage declares no soak.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["gate", "duration", "checks", "state", "releaseDigest", "to", "clockStart", "due", "leftMs", "holds", "failing", "recordedAt", "endedBy"],
+              "properties": {
+                "gate": { "type": "string", "description": "<stage>-soak under the pipeline's op; approving it ends the soak early." },
+                "duration": { "type": "string" },
+                "checks": { "type": "integer", "minimum": 0, "description": "How many checks the soak reads, its own and its overrides'." },
+                "state": { "$ref": "#/$defs/soakState" },
+                "releaseDigest": { "type": ["string", "null"] },
+                "to": { "type": ["string", "null"], "description": "The stage the promotion the soak held waits to go into." },
+                "clockStart": { "type": ["string", "null"] },
+                "due": { "type": ["string", "null"] },
+                "leftMs": { "type": ["integer", "null"], "minimum": 0, "description": "Milliseconds from the read to due, at least 0; null without a due time." },
+                "holds": { "type": "array", "items": { "type": "string" }, "description": "Why the last run held it, one line each." },
+                "failing": { "type": "array", "items": { "type": "string" }, "description": "The checks that failed on the last run, as <check> or <check>@<member>." },
+                "recordedAt": { "type": ["string", "null"] },
+                "endedBy": { "type": ["string", "null"], "description": "On ended: who ended it." }
+              }
+            }
+          ]
+        },
+        "canaryHolds": {
+          "type": "array",
+          "description": "Each canary stage upstream of this one, in pipeline order (#5327), with its soak's state. Empty when there is none.",
+          "items": {
+            "type": "object",
+            "required": ["stage", "state", "due", "leftMs", "holding"],
+            "properties": {
+              "stage": { "type": "string" },
+              "state": { "$ref": "#/$defs/soakState" },
+              "due": { "type": ["string", "null"] },
+              "leftMs": { "type": ["integer", "null"], "minimum": 0 },
+              "holding": { "type": "boolean", "description": "True when the canary's soak holds a promote into this stage now: soaking, failing or clock-unknown." }
+            }
+          }
+        },
+        "paused": {
+          "description": "The standing pause from the stage's ledger, <stage>/stage.jsonl (#5355), or null.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["by", "at", "reason", "cause", "waiting"],
+              "properties": {
+                "by": { "type": "string" },
+                "at": { "type": "string" },
+                "reason": { "type": ["string", "null"] },
+                "cause": { "oneOf": [{ "type": "null" }, { "const": "rollback" }], "description": "rollback when a rollback of a stage with pauseAfterRollback paused it." },
+                "waiting": { "type": "array", "items": { "$ref": "#/$defs/stageRef" }, "description": "The releases that waited while it is paused, oldest first; the newest enters on resume." }
+              }
+            }
+          ]
+        },
+        "onVerifyFail": { "enum": ["hold", "rollback"], "description": "What a failed verify or soak check does in the stage (#5328)." },
+        "rollback": {
+          "description": "The rollback request on the stage's ledger that no rollback has carried out (#5328), or null.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["id", "requestedAt", "by", "failure", "failed", "to", "members", "gate", "state", "approve", "command"],
+              "properties": {
+                "id": { "type": "string" },
+                "requestedAt": { "type": "string" },
+                "by": { "type": "string" },
+                "failure": { "oneOf": [{ "type": "null" }, { "enum": ["verify", "soak"] }] },
+                "failed": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/stageRef" }], "description": "The release that failed in the stage." },
+                "to": { "$ref": "#/$defs/stageRef", "description": "The release the rollback goes back to." },
+                "members": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["member", "state"],
+                    "properties": {
+                      "member": { "type": "string" },
+                      "state": { "type": "string", "description": "applied, left-applied, rolled-back or not-applied." },
+                      "rollback": { "type": "string", "description": "requested when the rollback restores it, else why not." }
+                    }
+                  }
+                },
+                "gate": { "type": "string", "description": "<stage>-rollback under the pipeline's op." },
+                "state": { "description": "The gate's state, or null when its pending fact is not on the ledger.", "oneOf": [{ "type": "null" }, { "enum": ["pending", "approved", "expired", "superseded"] }] },
+                "approve": { "type": "string", "description": "The chant approve line for the gate." },
+                "command": { "type": "string", "description": "chant components rollback <stage> --requested, which carries it out once the gate passes." }
+              }
+            }
+          ]
+        },
+        "rollbackHeld": {
+          "description": "The newest failure on the stage's ledger when no rollback could be requested for it and none has been requested or run since (#5328), or null.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["failureId", "at", "reason", "failure", "failed"],
+              "properties": {
+                "failureId": { "type": "string" },
+                "at": { "type": "string" },
+                "reason": { "type": "string" },
+                "failure": { "oneOf": [{ "type": "null" }, { "enum": ["verify", "soak"] }] },
+                "failed": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/stageRef" }] }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "stageRelease": {
+      "type": "object",
+      "required": ["digest", "label", "at"],
+      "properties": {
+        "digest": { "type": "string", "description": "The digest the stage gate binds: the release's, or the promoted digests'." },
+        "label": { "type": ["string", "null"], "description": "The release's label, or null when it has none." },
+        "at": { "type": "string", "description": "When the line was written: the release reached, entered, or was replaced at the stage." }
+      }
+    },
+    "stageQueue": {
+      "type": "object",
+      "required": ["pipeline", "stage", "inStage", "waiting", "replaced"],
+      "properties": {
+        "pipeline": { "type": "string", "description": "The pipeline, the op its stage gates are recorded under." },
+        "stage": { "type": "string", "description": "The stage, which is its environment's name." },
+        "inStage": { "description": "The release whose deploy into the stage started and has not finished, or null.", "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/stageRelease" }] },
+        "waiting": { "type": "array", "description": "The releases waiting for the stage, oldest first.", "items": { "$ref": "#/$defs/stageRelease" } },
+        "replaced": {
+          "type": "array",
+          "description": "The waiting releases a newer one replaced, oldest first. A replaced release never enters the stage.",
+          "items": {
+            "allOf": [
+              { "$ref": "#/$defs/stageRelease" },
+              { "type": "object", "required": ["by", "byLabel"], "properties": { "by": { "type": "string", "description": "The digest of the release that replaced it." }, "byLabel": { "type": ["string", "null"] } } }
+            ]
+          }
+        }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "required": ["component", "name", "env", "planDigest", "state", "recordedAt", "expiresAt", "approvals", "needed", "signed", "approve"],
+      "properties": {
+        "component": { "type": "string", "description": "The ledger file's key: the component, or the op for a gate an Op run reached." },
+        "name": { "type": "string", "description": "The gate's name." },
+        "env": {
+          "description": "The environment the run reached the gate in, or null for a gate that records none.",
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/env" }]
+        },
+        "planDigest": { "type": ["string", "null"], "description": "The plan the run reached the gate with (#2300), or null for a gate that binds no plan. An approval counts only for this plan." },
+        "state": {
+          "enum": ["pending", "approved", "expired", "superseded"],
+          "description": "Read from the newest pending fact for the gate in env, as a run reads it. approved: the approvals recorded since it, for its plan, pass the gate (its quorum, or a policy permit in enforce mode). expired: not approved, and the pending fact is past expiresAt, so the next run records a fresh one. superseded: not approved, and an approval recorded since it names a different plan, so it doesn't count; or, on a release gate that is not expired, its release was cut from a revoked commit (#4033, ws-105), so chant approve refuses it with release-revoked and revoked is set. pending: none of these."
+        },
+        "recordedAt": { "type": "string", "description": "When the run recorded the pending fact." },
+        "gitSha": { "type": "string", "description": "Added in contract 1 by #4020, written by chant 0.124.28 and newer. The commit the run reached the gate at, from the pending fact. Absent on a fact recorded by an older chant, and when the run knew no commit. It joins the gate to a release's gitSha and to a run's." },
+        "runId": { "type": "string", "description": "Added in contract 1 by #4020, written by chant 0.124.28 and newer. The run that reached the gate: an Op run id, or the CI run id for a component gate that ran in CI. Absent when the run had none." },
+        "changeSet": { "type": "string", "pattern": "^(?:jcs1-)?sha256:[0-9a-f]{64}$", "description": "Added in contract 1 by #4022, written by chant 0.124.28 and newer. The change set the gate binds: planDigest, when a change-set document is stored under it in the member's _change-sets/ on chant/lifecycle, as a pull-request gate's apply and a release gate (#4045) store it. chant change-set show <changeSet> --json prints it, each entry with its graph node. Absent when none is stored, as for a component gate, which binds a lifecycle-plan digest." },
+        "releaseDigest": { "type": "string", "pattern": "^(?:jcs1-)?sha256:[0-9a-f]{64}$", "description": "Added in contract 1 by #4045, written by chant 0.124.28 and newer. The release the gate binds, from the pending fact: set on a release gate, the gate chant components promote --release passes for an environment, whose component is the op release. An approval counts toward it only when it was recorded for this release, environment and planDigest. Absent on every other gate." },
+        "revoked": { "$ref": "#/$defs/revocation", "description": "Added in contract 1 by #4033 (ws-105), written by chant 0.124.29 and newer. Set on a release gate whose release was cut from a commit with a ci/revoked/<sha> tag, judged as release cut judges it: the tag. The gate's state is then superseded, or expired when its pending fact has expired. Absent otherwise." },
+        "decisions": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[^/]+/.+$" },
+          "description": "Added in contract 1 by #3616, written by chant 0.124.47 and newer. The current decisions covering the gate's member, as <kind>/<id>, most relevant first, so a reader names the decision a gate enforces without a graph --intent walk. A decision covers the member by a path: constraint that is the member's directory or a directory above it, by member:<name>, or by a path: inside the directory that the member holds; a superseded covering decision stands for the current one at the end of its chain. Ranked as the intent graph's why.decisions ranks them (path, then member, then the rest; then closed, longer path, newest decided, id), without carried, issue or contract, which need history. Read from every declared record kind but work kinds, in the working tree; a kind that can't be read is left out. The same list on every gate of a member, and empty when nothing covers it. Absent from an older chant."
+        },
+        "expiresAt": { "type": "string" },
+        "approvals": {
+          "description": "The approvals that count toward the gate for its plan, oldest first.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["principal", "channel", "relayedBy", "at"],
+            "properties": {
+              "principal": { "type": "string", "description": "Who recorded it." },
+              "channel": { "type": ["string", "null"], "description": "The channel it was recorded on, such as cli or mcp, or null for a record older than chant#2384." },
+              "relayedBy": { "type": ["string", "null"], "description": "Added in contract 1 by #3402. Who carried the approval to chant for principal (chant approve --relayed-by), such as a follower relaying a person's approval; a seal covers it. Null when nobody relayed it." },
+              "at": { "type": "string" }
+            }
+          }
+        },
+        "needed": { "type": "integer", "minimum": 1, "description": "The human approvals the gate needs: its quorum's count, 1 without one." },
+        "rules": { "type": "array", "items": { "type": "string" }, "description": "Added in contract 1 by #5354. Where each approval rule of the gate stands, one line each: named rules by their name, then each all/any group's line. Present when the gate's rules are named or grouped." },
+        "signed": {
+          "description": "Added in contract 1 by #3163. The declaration's rule for the gate, read at base (identity.gates, ws-080): only an approval sealed with chant approve --sign by a key the signers file at base lists for its approver counts, and when class is not null, only one whose approver the role grants at base put in that class. Approvals that don't meet it are left out of approvals and state. Null when any approval counts.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["class"],
+              "properties": {
+                "class": { "type": ["string", "null"], "description": "The principal class the signer must be in, or null for any listed signer." }
+              }
+            }
+          ]
+        },
+        "approve": { "type": "string", "description": "The chant approve line for the gate, run in the member's directory: chant approve <component> <gate>, with --env <env> when env is not null and --plan <planDigest> when planDigest is not null (#2832), so the line approves the plan this read showed, and --sign when signed is not null (#3163). The caller adds --actor <principal>. For a gate that asks a decision point (#3170), the chant workspace points answer line for the question in answer." },
+        "soak": {
+          "type": "object",
+          "description": "Added in contract 1 by #5342. On a soak's gate (<stage>-soak, <gate>-wave-<k>-soak), the soak's state as the pending fact records it (#5326). Absent on every other gate.",
+          "required": ["stage", "clockStart", "due", "holds"],
+          "properties": {
+            "stage": { "type": "string" },
+            "wave": { "type": "integer", "minimum": 1 },
+            "to": { "type": "string" },
+            "clockStart": { "type": ["string", "null"] },
+            "due": { "type": ["string", "null"] },
+            "leftMs": { "type": "number", "description": "The time left when the run recorded the fact." },
+            "holds": { "type": "array", "items": { "type": "string" } },
+            "restartedAt": { "type": "string" },
+            "failing": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "answer": {
+          "type": "object",
+          "description": "The open question the gate waits on, when it asks a decision point (#3170): absent on a gate chant approve passes. Answered with chant workspace points answer <id>; the run that passes the gate then cites the answer record on the ledger.",
+          "required": ["point", "id", "path"],
+          "properties": {
+            "point": { "type": "string" },
+            "id": { "type": "string", "description": "The answer record's id." },
+            "path": { "type": "string", "description": "The answer record, from the repository root." }
+          }
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "required": ["env", "ledger", "releases", "reason"],
+      "properties": {
+        "env": { "$ref": "#/$defs/env" },
+        "ledger": {
+          "type": "object",
+          "required": ["layout", "path", "shared"],
+          "properties": {
+            "layout": {
+              "enum": ["members", "flat"],
+              "description": "members: _members/<member>/<env>/releases.jsonl (#2538). flat: <env>/releases.jsonl, for the root member and for a member with no _members/<member>/ directory yet."
+            },
+            "path": { "type": "string", "description": "The ledger's path on chant/lifecycle." },
+            "shared": { "type": "boolean", "description": "True when more than one member in this output reads the same flat ledger, so they list the same records." }
+          }
+        },
+        "releases": {
+          "description": "The latest release of each component in the ledger, sorted by component. Empty when the ledger has none.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/release" }
+        },
+        "reason": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["code", "message"],
+              "properties": {
+                "code": { "enum": ["ledger-unreadable", "ledger-malformed"] },
+                "message": { "type": "string" }
+              }
+            }
+          ]
+        },
+        "mixed": { "$ref": "#/$defs/mixed" }
+      }
+    },
+    "mixed": {
+      "type": "object",
+      "description": "Added in contract 1 by #4035, written by chant 0.124.29 and newer. Set when the environment runs a mix: a components promote, rollback or redeploy left a component failed or gated (its <env>/outcomes.jsonl on chant/lifecycle says so) and the release ledger has recorded nothing for it since, or the latest records of its components name more than one release, a record of no release counting as one, with at least one naming a release. Derived when read. Absent otherwise.",
+      "required": ["components", "redeploy", "rollback"],
+      "properties": {
+        "components": {
+          "description": "Every component the ledger records in the environment or a run left unsettled, sorted by name.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["component", "digest", "releaseDigest", "releaseLabel", "state", "attempt"],
+            "properties": {
+              "component": { "type": "string" },
+              "digest": { "type": ["string", "null"], "description": "The digest the release ledger records the component running, or null when it has no record in the environment." },
+              "releaseDigest": { "type": ["string", "null"], "description": "The release that record names, or null." },
+              "releaseLabel": { "type": ["string", "null"], "description": "That release's label, or null." },
+              "state": {
+                "enum": ["settled", "failed", "gated"],
+                "description": "settled: the record is what the component runs. failed or gated: the newest run that named it failed on it or stopped at its gate after the steps before the gate ran, and nothing has been recorded for it since, so what it runs is not known."
+              },
+              "attempt": {
+                "description": "For an unsettled component, the run that left it so and what it was deploying. Null when settled.",
+                "oneOf": [
+                  { "type": "null" },
+                  {
+                    "type": "object",
+                    "required": ["verb", "runId", "timestamp", "digest", "releaseDigest", "releaseLabel"],
+                    "properties": {
+                      "verb": { "enum": ["promote", "rollback", "redeploy"] },
+                      "runId": { "type": "string" },
+                      "timestamp": { "type": "string" },
+                      "digest": { "type": "string" },
+                      "releaseDigest": { "type": ["string", "null"] },
+                      "releaseLabel": { "type": ["string", "null"] }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "redeploy": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "chant components redeploy <env> --component <component> for each unsettled component the ledger records, run in the member's directory: it puts the component's recorded release back. Empty when no component is unsettled."
+        },
+        "rollback": {
+          "type": ["string", "null"],
+          "description": "chant components rollback <env> --release <label|digest>, run in the member's directory: it restores every component of the newest release the environment ran, other than the one it was moving to, that is still kept and not revoked. Null when there is none."
+        }
+      }
+    },
+    "release": {
+      "type": "object",
+      "required": ["component", "digest", "gitSha", "inputDigest", "runId", "timestamp", "actor", "flags", "plan"],
+      "properties": {
+        "component": { "type": "string" },
+        "digest": { "type": "string", "description": "What the deploy record names, as its producer writes it: an artifact digest, a release-plan digest for a runner that records plans (_plans/<digest>.json, ws-055), or a product's own digest such as a schema digest (ws-104 question 3)." },
+        "gitSha": { "type": "string", "description": "The commit the artifact was built from." },
+        "inputDigest": { "type": ["string", "null"], "description": "The input-side digest when digest is a rendered one. Compare joins on it when present." },
+        "runId": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "actor": { "type": "string" },
+        "approver": { "type": ["string", "null"], "description": "Added in contract 1 by #4020, written by chant 0.124.28 and newer; the ledger has carried it since #1035. Who approved the change at its gate, or null for an ungated release." },
+        "admission": {
+          "description": "Added in contract 1 by #4020, written by chant 0.124.28 and newer. The gate resolution that admitted the release, or null for an ungated release and for one recorded by an older chant. With approver it names the line in the gate ledger.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["op", "gate", "resolvedAt"],
+              "properties": {
+                "op": { "type": "string", "description": "The op, or for a component gate the component, whose gate ledger (_gates/<op>.jsonl) holds the resolution." },
+                "gate": { "type": "string", "description": "The gate's name." },
+                "resolvedAt": { "type": "string", "description": "When the resolution was recorded. The newest one, when several approvals counted." }
+              }
+            }
+          ]
+        },
+        "gatesSkipped": { "type": "array", "items": { "type": "string" }, "description": "Added in contract 1 by #5401, written by chant 0.124.103 and newer. The component's gate steps that did not apply in this environment, since their environments name others, sorted. Absent when every gate applied." },
+        "releaseDigest": { "type": ["string", "null"], "pattern": "^(?:jcs1-)?sha256:[0-9a-f]{64}$", "description": "Added in contract 1 by #4043, written by chant 0.124.29 and newer. The release this deploy was made from: the releaseDigest of _releases/<releaseDigest>.json. A promote with --release writes it, a run --components with --release writes it, and a rollback or redeploy copies it from the record it restores. Null for a deploy that named no release. With the item's environment it names the release target." },
+        "releaseLabel": { "type": ["string", "null"], "description": "Added in contract 1 by #4043, written by chant 0.124.29 and newer. The label that release was cut with, from _releases/cuts.jsonl. Null when releaseDigest is null, when the release has no label, and when the cuts can't be read." },
+        "flags": { "type": "array", "items": { "enum": ["legacy-digest"] } },
+        "digestKind": { "enum": ["plan", "deploy-input", "templates"], "description": "Added in contract 1 by #4274, written by chant 0.124.35 and newer. What digest names when it is not an artifact digest: plan, the plan digest a pr-apply of a component that published nothing applied under its approval; deploy-input, that component's deploy-input digest when nothing planned; templates, the digest of the templates a release records for the component (#4222). Absent for an artifact digest. Compare joins a plan or deploy-input record on gitSha." },
+        "plan": {
+          "type": ["object", "null"],
+          "description": "The release plan digest names, read from _plans/<digest>.json on chant/lifecycle (ws-055, #2733): the work items and evidence this release shipped. Null when this checkout has no plan stored under that digest — most releases carry no plan, and a plan not yet fetched also reads null."
+        },
+        "revoked": {
+          "description": "Added in contract 1 by #4033 (ws-105), written by chant 0.124.29 and newer. Set when the deploy record names a release in releaseDigest and that release was cut from a commit with a ci/revoked/<sha> tag: the environment runs a revoked release. Read from local tags at read time and judged as release cut judges them, so with ci.green.signedSince an unsigned revoked tag is ignored. Absent when the release is not revoked, when the record names no release, and when the ci tags can't be judged.",
+          "allOf": [
+            { "$ref": "#/$defs/revocation" },
+            {
+              "type": "object",
+              "required": ["releaseDigest", "label", "rollback"],
+              "properties": {
+                "releaseDigest": { "type": "string", "pattern": "^(?:jcs1-)?sha256:[0-9a-f]{64}$", "description": "The revoked release the environment runs." },
+                "label": { "type": ["string", "null"], "description": "The release's label, or null when its cuts gave it none." },
+                "rollback": { "type": "string", "description": "The line that rolls the environment back, run in the member's directory. Since #4035 (chant 0.124.29): chant components rollback <env> --release <label|digest>, naming the newest release the environment ran before this one that is still kept and not revoked. When there is none, and from chant 0.124.28: chant components rollback <env> --component <component>." }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "revocation": {
+      "type": "object",
+      "description": "The ci/revoked/<sha> tag on a release's commit (#4033, ws-105), as chant ci list --json shows a commit's revoked tag, with the commit.",
+      "required": ["commit", "tag", "tagged", "phase", "run", "signer"],
+      "properties": {
+        "commit": { "type": "string", "description": "The release's commit, which the tag names." },
+        "tag": { "type": "string", "description": "ci/revoked/<sha>." },
+        "tagged": { "type": ["string", "null"], "description": "When the tag was made, ISO 8601, or null for a lightweight tag." },
+        "phase": { "type": ["string", "null"], "description": "The phase the annotation names as failed, or null when the annotation can't be read." },
+        "run": {
+          "description": "The run the annotation names as failed, or null.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["name", "id", "conclusion", "url"],
+              "properties": {
+                "name": { "type": "string" },
+                "id": { "type": ["integer", "null"], "description": "The check run's id, or null for a chant Op run." },
+                "conclusion": { "type": ["string", "null"] },
+                "url": { "type": ["string", "null"] },
+                "opRun": {
+                  "type": "object",
+                  "required": ["id", "env", "signer"],
+                  "properties": { "id": { "type": "string" }, "env": { "type": "string" }, "signer": { "type": "string" } },
+                  "description": "Present only when the run is a chant Op run (ci.green.source runs, #4044): its id, the env it is recorded under and the runner whose statement it carries. id is then null."
+                }
+              }
+            }
+          ]
+        },
+        "signer": { "type": ["string", "null"], "description": "The runner principal whose statement the tag carries, or null when it counts unsigned." }
+      }
+    },
+    "compare": {
+      "type": "object",
+      "required": ["differs", "components"],
+      "properties": {
+        "differs": { "type": "boolean", "description": "True when any component is not same." },
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["component", "state", "digest", "compareDigest"],
+            "properties": {
+              "component": { "type": "string" },
+              "state": {
+                "enum": ["same", "differs", "only-env", "only-compare"],
+                "description": "same: both environments have the same digest (the input digest when there is one). only-env and only-compare: the component has a release in one of them."
+              },
+              "digest": { "type": ["string", "null"] },
+              "compareDigest": { "type": ["string", "null"] }
+            }
+          }
+        }
+      }
+    },
+    "failure": {
+      "description": "The declaration could not be read, or an environment name can't be one. Exit code 1.",
+      "type": "object",
+      "required": ["$schema", "contract", "chant", "error"],
+      "properties": {
+        "$schema": { "const": "https://intentius.io/chant/schemas/workspace/status/v1/status.schema.json" },
+        "contract": { "const": 1 },
+        "chant": { "type": "string" },
+        "error": {
+          "type": "object",
+          "required": ["code", "message", "location"],
+          "properties": {
+            "code": {
+              "enum": [
+                "declaration-missing",
+                "declaration-ambiguous",
+                "declaration-unparseable",
+                "declaration-invalid",
+                "placement-invalid",
+                "reader-too-old",
+                "root-chant-required",
+                "not-a-git-repository",
+                "environment-invalid"
+              ]
+            },
+            "message": { "type": "string" },
+            "location": {
+              "oneOf": [
+                { "type": "null" },
+                {
+                  "type": "object",
+                  "required": ["file", "line", "column"],
+                  "properties": {
+                    "file": { "type": "string" },
+                    "line": { "type": "integer", "minimum": 1 },
+                    "column": { "type": "integer", "minimum": 1 }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "members": false,
+        "workspace": false
+      }
+    }
+  }
+}

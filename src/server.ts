@@ -225,6 +225,7 @@ import { checkoutCommit, readsOtherRepo, scopeServedDirs, viewRepoFacts, viewRep
 import { lifecycleHistoryRoute } from "./lifecycle-history.ts";
 import { hasReleaseLedgerHint, releasesRoutes } from "./lifecycle-releases.ts";
 import { laneFloorRefusal, readTrunkLane } from "./trunk-lane.ts";
+import { readStageState, stagesFloorRefusal } from "./stage-state.ts";
 import { overlayFloorRefusal, readChangeSetOverlay } from "./change-set-overlay.ts";
 import { flagsFloorRefusal, readFeatureFlags } from "./feature-flags.ts";
 import { COLLISION_READ, collisionsFloorRefusal, readCollisions } from "./collision-marks.ts";
@@ -1762,6 +1763,26 @@ export function createApp(
     return c.json({ workspace: true, chant: version ?? null, ...read.lane, ...approver });
   });
 
+  // #1236: each pipeline stage's state, for the Stages tab. Per member with a
+  // pipeline, from `chant workspace status <env> --json` (chant#5342): the
+  // release each stage runs, its gate, its risk and why, its soak and the time
+  // left, the canary soaks that hold it, a pause, a rollback request, and the
+  // hold and queue joined on the stage name. Read on each request; behold keeps
+  // none of it and runs none of the lines chant gives. A chant below the floor
+  // is refused before anything is spawned.
+  app.get("/api/workspace/stages", async (c) => {
+    const ws = servedWorkspace();
+    if (!ws) return c.json({ workspace: false });
+    const env = c.req.query("env") || cfg.env || "local";
+    if (!isEnvName(env)) return c.json({ error: `${JSON.stringify(env)} isn't an env name`, code: "env" }, 400);
+    const version = resolveChant(ws.root).version;
+    const tooOld = stagesFloorRefusal(version);
+    if (tooOld) return c.json({ workspace: true, chant: version ?? null, refusal: tooOld });
+    const read = await readStageState(ws, { env });
+    if (!read.ok) return c.json({ workspace: true, chant: version ?? null, refusal: read.refusal });
+    return c.json({ workspace: true, chant: version ?? null, ...read.state });
+  });
+
   // #681: a waiting gate's change set, as a preview on the graph. The gate
   // (by key, in ?env=) and the digest it binds come from a fresh status read,
   // never from the page; the change set from `chant change-set show <digest>
@@ -2827,6 +2848,7 @@ export function createApp(
         { method: "POST", path: "/api/ops/:name/signal/:gate", desc: "approve an Op's gate (releases the waiting run)" },
         { method: "GET", path: "/api/workspace/gates", desc: "a declared workspace's waiting gates from chant workspace status <env> --json (?env=), keyed member/op/gate, with the approver behold would record (#477) as approver and approverIdentity {principal, source, forge, signs}, or approver null and approverRefusal (#690); a policy-override gate carries override {subject, rules, plan, digest, state, spentAt, product, command, source} and no approve path (#519)" },
         { method: "GET", path: "/api/workspace/lane", desc: "the trunk lane (#680): per environment in the members' promotion order, the trunk's commits from chant ci list --json (green, revoked or undecided, with phases, runs and work items), the gates waiting on one, and the releases and deploy records each environment runs, from chant workspace status <env> --json and chant release list --json; the release column (#692): releases newest first, each with its cut, config-only mark, where it runs and waits and the environment it promotes to next, and from chant 0.124.29 its revoked mark with the rollback line and the release gates chant reads as superseded (releaseColumn.full false below it); approver fields as /api/workspace/gates; a chant below 0.124.28 is refused with refusal code chant-too-old" },
+        { method: "GET", path: "/api/workspace/stages", desc: "each pipeline stage's state (#1236), from chant workspace status <env> --json (?env=, default the served env) members[].pipeline (chant#5342): env, readAt (when behold asked chant, which leftMs counts from), members [{member, kind, pipeline, stages [{name, canary, after, release, gate, risk, soak, canaryHolds, paused, onVerifyFail, rollback, rollbackHeld, held, queue}]}] with each field as chant wrote it, held from promotionOrder[].held and queue from stageQueues[], others [{member, kind}] for members with no pipeline, all from one status read; behold runs none of the lines; a chant below 0.124.110 is refused with refusal code chant-too-old" },
         { method: "GET", path: "/api/workspace/change-set", desc: "a waiting gate's stored change set for the graph overlay (#681): ?gate=<member>/<op>/<gate>&env=<env>; the gate and its digest from chant workspace status <env> --json, the change set from chant change-set show <digest> --member <member> --json; gate {key, gitSha, runId, releaseDigest}, digest, planned {releaseDigest, environment} for a release gate, graph {member, at}, entries [{address, action, bucket create|change|delete, node or null, attributes}], nodes {<id>: {bucket, actions}}, counts, gaps; a chant below 0.124.28 is refused with refusal code chant-too-old" },
         { method: "GET", path: "/api/workspace/flags", desc: "the workspace's feature flags (#683), from chant workspace status <env> --json featureFlags (chant#4024): environments in promotion order, flags [{key, member, id, param, owner, work, implements, stale, kind, path, values, envs {<env>: {value, state on|off|default|set}}, waiting [{env, gate, changeSet, before, after, entries}], turnOn [{env, lines}]}], nodes member (every card of the flag's member), unreadable, refusals; a waiting flip comes from the gate's stored change set (chant change-set show); behold writes no flag record; a chant below 0.124.29 is refused with refusal code chant-too-old and degraded" },
         { method: "GET", path: "/api/workspace/collisions", desc: "the graph nodes two or more in-flight work items touch (#684), from chant workspace status <env> --json overlap (chant#4025): nodes [{node, items, entries [{changeSet, member, address, source, items}]}], files [{items, files}] for files two items changed (no node), unplaced for shared entries chant mapped to no node, items [{item, path, state, commits, with}] (every in-flight item, with empty when it collides with none), changeSets, unattributed; overlap absent (an older chant) or null (no work kind declared, or the read failed) is a refusal with code no-overlap or overlap-unavailable; behold records and locks nothing; a chant below 0.124.29 is refused with refusal code chant-too-old and degraded" },

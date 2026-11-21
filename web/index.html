@@ -443,6 +443,20 @@
       #tab-flags a { color: inherit; }
       #tab-flags .lane-change-set { color: var(--pending); }
       #tab-flags .fl-lines { margin: 0; padding: var(--s1) var(--s2); font-family: var(--font-mono); font-size: var(--t-caption); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--panel); border-radius: 4px; }
+      /* #1236: each pipeline stage's state. */
+      #panel-body #tab-stages.active { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--t-caption); }
+      #tab-stages h3 { margin: var(--s3) 0 0; font-size: var(--t-caption); }
+      #tab-stages .tg-legend { color: var(--muted); overflow-wrap: anywhere; }
+      #tab-stages .tg-refusal { color: var(--degraded); font-weight: 600; overflow-wrap: anywhere; }
+      #tab-stages .stage-card { border-top: 1px solid var(--rule); padding-top: 3px; display: flex; flex-direction: column; gap: 2px; }
+      #tab-stages .stage-head { font-weight: 600; }
+      #tab-stages .stage-row { overflow-wrap: anywhere; }
+      #tab-stages .stage-wait { color: var(--pending); }
+      #tab-stages .stage-fail { color: var(--degraded); font-weight: 600; }
+      #tab-stages .stage-ok { color: var(--managed); }
+      #tab-stages .stage-quiet { color: var(--muted); }
+      #tab-stages .stage-reason { color: var(--muted); padding-left: var(--s3); overflow-wrap: anywhere; }
+      #tab-stages .stage-command { font-family: var(--font-mono); color: var(--muted); padding-left: var(--s3); overflow-wrap: anywhere; user-select: all; cursor: copy; }
       /* #684: collision marks. The tab reuses the Flags tab's rows. */
       #panel-body #tab-collisions.active { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--t-caption); }
       #tab-collisions .fl-title { font-weight: 600; }
