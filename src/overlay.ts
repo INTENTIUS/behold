@@ -176,11 +176,16 @@ export function reclassifyOverlay<T extends { nodes: OverlayNode[] }>(ir: T): T 
  * what "descend below the declaration boundary" implies: you have to be able to
  * not descend. Edges touching a dropped node go with it, since an edge to a node
  * that is not in the graph renders as a dangling stub.
+ *
+ * `only` narrows the drop to some runtime children: the runtime view drops the
+ * AWS ones when the project's chant is below `AWS_RUNTIME_TASKS_CHANT_FLOOR`
+ * (src/server.ts `runtimeTier`).
  */
 export function pruneRuntimeChildren<T extends { nodes: OverlayNode[]; edges: Array<{ from: string; to: string }> }>(
   ir: T,
+  only: (n: OverlayNode) => boolean = () => true,
 ): T {
-  const runtime = new Set(ir.nodes.filter((n) => n.runtimeOwner).map((n) => n.id));
+  const runtime = new Set(ir.nodes.filter((n) => n.runtimeOwner && only(n)).map((n) => n.id));
   if (runtime.size === 0) return ir;
   ir.nodes = ir.nodes.filter((n) => !runtime.has(n.id));
   ir.edges = ir.edges.filter((e) => !runtime.has(e.from) && !runtime.has(e.to));

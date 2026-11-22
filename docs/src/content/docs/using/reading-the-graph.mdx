@@ -46,12 +46,14 @@ From widest to narrowest:
 4. **Resources.** Individual resources at their real provider names.
 5. **Attributes.** The properties on one resource.
 
-On Kubernetes there is one tier further down, below anything you declared:
+On Kubernetes and on AWS there is one tier further down, below anything you declared:
 
-**Runtime.** The Pods, ReplicaSets and EndpointSlices the cluster created and maintains through `ownerReferences`. They are runtime children rather than drift: nothing declared them and nothing should. This tier is why a healthy-looking Deployment in front of a dead Service is visible rather than green.
+**Runtime.** On Kubernetes, the Pods, ReplicaSets and EndpointSlices the cluster created and maintains through `ownerReferences`. On AWS, the tasks an ECS service is running, each drawn inside its service's box with its last status and task definition revision; a task still on an older revision than its service carries `staleRevision: true`. These are runtime children rather than drift: nothing declared them and nothing should. This tier is why a healthy-looking Deployment in front of a dead Service is visible rather than green, and why a service at its desired count can still be seen running the wrong revision.
 
-<Aside type="tip" title="Only Kubernetes gets this">
-The cluster maintains an owner chain and per-field ownership records that no other substrate has. behold uses them where they exist and does not pretend they exist elsewhere. An AWS stack at `CREATE_COMPLETE` genuinely is the end of what is knowable there.
+The runtime stop is offered when an environment is picked and a member declares the `k8s` or `aws` lexicon. The AWS tasks need the project's chant at 0.124.118 or newer. With an older chant the stop is not offered for an AWS member, `GET /api/project` carries `runtimeRefusal` with the version needed, and `?runtime=1` leaves the tasks out rather than placing them under an owner it cannot confirm. Other zooms never show runtime children.
+
+<Aside type="tip" title="Where this tier exists">
+Kubernetes keeps an owner chain for the objects its controllers create, and ECS records which service started each task. behold uses those records where they exist and does not invent them elsewhere. An Azure or GCP deployment, a Terraform root or a choudoufu estate has no such record, so their graphs stop at what was declared.
 </Aside>
 
 ## Field ownership, on Kubernetes
