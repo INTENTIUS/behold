@@ -64,6 +64,19 @@
       }
     },
     {
+      "name": "estate-merge",
+      "description": "Two estates side by side, declared only: shop and analytics, two chant projects served together, each with a recorded engine document under .behold/graph/. Both declare the exports bucket acme-shared-exports-91c2, which the graph pane's estate merge shows as a shared claim, and analytics holds a policy naming the shop's assets bucket by ARN, drawn as a derived reference from one side into the other. Each side lists its substrates. No cloud, no Docker, no engine binary.",
+      "source": "bundled",
+      "dir": "example-estate-merge",
+      "requires": [],
+      "serve": {
+        "dirs": [
+          "shop",
+          "analytics"
+        ]
+      }
+    },
+    {
       "name": "terraform-estate",
       "description": "A multi-root Terraform estate, declared only: two roots applied separately (envs/prod and platform) plus the shared module both are built on — 37 cards boxed by root, module calls expanded into their own contents, and the two look-alike versions.tf files told apart. Shows what behold does NOT infer as clearly as what it draws: platform declares the KMS key and prod reads it back by alias, and no edge is drawn between them, because both ends carry the same unresolved interpolation (#381). Reads through chant's terraform lexicon (@intentius/chant-lexicon-terraform) and @cdktn/hcl2json, both installed with behold since #909 (an install that pruned them refuses with the line that puts them back); the copy is linked to the lexicon behold resolved, since chant reads a workspace's pinned kinds from beside the workspace. No cloud, no Docker, no terraform binary. The Adopt tab offers each root adoption into choudoufu with chant workspace promote, from a recorded report per root (every resource, claimed or left out and why); nothing is started.",
       "source": "bundled",

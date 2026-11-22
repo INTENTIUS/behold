@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "meta": {
+    "engineGraph": {
+      "format": 1,
+      "engine": {
+        "name": "choudoufu",
+        "version": "0.33.0"
+      },
+      "scope": {
+        "kind": "estate",
+        "estate": "analytics"
+      },
+      "observedAt": "2026-11-20T09:00:00Z",
+      "markerScheme": {
+        "ownerKey": "tofu-estate",
+        "addressKey": "tofu-address",
+        "continuationKeys": [
+          "tofu-slot"
+        ],
+        "encoding": {
+          "tags": "escaped",
+          "labels": "escaped"
+        }
+      }
+    }
+  },
+  "nodes": [
+    {
+      "id": "aws_s3_bucket.warehouse",
+      "kind": "aws_s3_bucket",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_s3_bucket.warehouse"
+      },
+      "physicalId": "acme-analytics-warehouse-44d0",
+      "facts": {
+        "ownership": "bound",
+        "ownedBy": "record",
+        "observedAt": "2026-11-20T09:00:00Z",
+        "cloudIds": [
+          {
+            "kind": "import-id",
+            "value": "acme-analytics-warehouse-44d0"
+          },
+          {
+            "kind": "arn",
+            "value": "arn:aws:s3:::acme-analytics-warehouse-44d0"
+          }
+        ]
+      }
+    },
+    {
+      "id": "aws_s3_bucket.exports",
+      "kind": "aws_s3_bucket",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_s3_bucket.exports"
+      },
+      "physicalId": "acme-shared-exports-91c2",
+      "facts": {
+        "ownership": "bound",
+        "ownedBy": "record",
+        "observedAt": "2026-11-20T09:00:00Z",
+        "cloudIds": [
+          {
+            "kind": "import-id",
+            "value": "acme-shared-exports-91c2"
+          },
+          {
+            "kind": "arn",
+            "value": "arn:aws:s3:::acme-shared-exports-91c2"
+          }
+        ]
+      }
+    },
+    {
+      "id": "aws_iam_policy.read_shop_assets",
+      "kind": "aws_iam_policy",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_iam_policy.read_shop_assets",
+        "policy_resource": "arn:aws:s3:::acme-shop-assets-7f3a"
+      },
+      "facts": {
+        "ownership": "bound",
+        "ownedBy": "record",
+        "observedAt": "2026-11-20T09:00:00Z"
+      }
+    }
+  ],
+  "edges": [],
+  "groups": {}
+}

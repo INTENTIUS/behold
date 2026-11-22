@@ -1,0 +1,10 @@
+{
+  "name": "behold-example-estate-merge-shop",
+  "private": true,
+  "type": "module",
+  "description": "The shop estate: S3 buckets for behold's estate-merge demo.",
+  "dependencies": {
+    "@intentius/chant": "^0.95.0",
+    "@intentius/chant-lexicon-aws": "^0.95.0"
+  }
+}
