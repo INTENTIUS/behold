@@ -1,0 +1,9 @@
+{
+  "name": "behold-example-estate-merge",
+  "private": true,
+  "description": "Two estates for behold's estate-merge demo: shop and analytics, served together and compared, with one bucket both claim.",
+  "workspaces": [
+    "shop",
+    "analytics"
+  ]
+}

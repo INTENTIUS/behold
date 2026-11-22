@@ -25,6 +25,7 @@
  *   GET /graph                    the pane's page (web/graph.html)
  *   GET /api/graphdb/index-versions, /api/graphdb/index-diff
  *                                 behold#1028: two reads of one index scope diffed, drawn as an overlay (./index-diff-routes.ts)
+ *   GET /api/graphdb/estate-merge behold#1246: two sets of members side by side with the cloud ids they share (./estate-merge-routes.ts)
  *
  * Every answer carries `sources`: each source's `observedAt` (when it read
  * the world, null for a declared source) and `readAt` (when behold read it),
@@ -43,6 +44,7 @@ import { GraphDb, graphDbDir } from "./db.ts";
 import { countsOf, listedCatalog, queryAnswer, resolveAnswer, stamps, templateAnswer, type Answer, type PaneReads, type PeerState } from "./answers.ts";
 import { loadLadybug, type PeerImport, type PeerRefusal } from "./peer.ts";
 import { emptyRows, finishRows, rowsFromChantIr, rowsFromEngineGraph, rowsFromIndex, rowsFromListing, type LoadedRows } from "./rows.ts";
+import { ESTATE_MERGE_ROUTES, mountEstateMerge } from "./estate-merge-routes.ts";
 import { INDEX_DIFF_ROUTES, mountIndexDiff } from "./index-diff-routes.ts";
 import { activeLayout, type ActiveLayout } from "./layout.ts";
 import { findDocuments, type EngineRunner, type Git, type MemberRef } from "./sources.ts";
@@ -230,6 +232,7 @@ export const GRAPH_ROUTES = [
   { method: "GET", path: "/api/graphdb/template", desc: "behold#1027: one template filled for one node: ?name=&node=&in.<input>=; a Cypher one runs" },
   { method: "GET", path: "/graph", desc: "behold#1027: the graph pane (a Cypher box and resolve-from-resource)" },
   ...INDEX_DIFF_ROUTES,
+  ...ESTATE_MERGE_ROUTES,
 ] as const;
 
 /** Mount the pane's routes on `app`. Every one is a GET. */
@@ -255,6 +258,15 @@ export function mountGraphPane(app: Hono, deps: GraphPaneDeps): GraphSession {
     ...(deps.git ? { git: deps.git } : {}),
     ...(deps.env ? { env: deps.env } : {}),
     ...(deps.home ? { home: deps.home } : {}),
+    ...(deps.public ? { public: true } : {}),
+  });
+
+  mountEstateMerge(app, {
+    rows: async () => {
+      const built = await session.rows();
+      return { rows: built.rows, builtAt: built.builtAt };
+    },
+    members: deps.members,
     ...(deps.public ? { public: true } : {}),
   });
 

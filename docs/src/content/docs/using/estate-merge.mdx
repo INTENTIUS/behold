@@ -1,0 +1,51 @@
+---
+title: Two estates side by side
+description: The graph pane's estate merge puts two sets of served members next to each other and shows the cloud ids both claim, the references from one side into the other, and each side's substrates.
+---
+
+The estate merge answers one question: if these two estates were brought together, what do they have in common? It reads the rows the [graph database](/behold/using/graph-database/) already holds, so it needs no new read of chant and runs nothing.
+
+## What it shows
+
+A side is one or more members of the served estate. For two sides the view lists:
+
+- the shared claims: each cloud id that resources on both sides are known by, with the resources on each side that hold it;
+- the references across: every edge whose two ends sit on different sides, with its origin (`declared` by chant, `observed` by an engine, or `derived` from identity) and, for a derived one, the rule and whether it is ambiguous;
+- for each side, its members, how many resources and cloud ids it holds, and its substrates, which are the lexicons of its resources (`aws`, `terraform`, `k8s`, `pulumi`) with a count each.
+
+The match is the one the graph database already makes. A shared claim is a cloud id in the `KNOWN_AS` rows of resources on both sides, and an id shorter than eight characters never counts, so a name such as `web` joins nothing. An Azure id is compared without regard to case. behold adds no other matching, and it does not say what one side lacks a counterpart for: that comparison is chant's.
+
+A shared claim is not a collision. A [collision](/behold/using/collisions/) is two in-flight work items touching one node; a shared claim is two estates declaring or observing one cloud object.
+
+Cloud ids come from the sources behold loads: an engine document, an index version, a cloud listing, or a chant node that carries a physical id. A read of chant's source alone has none, so a side loaded only from source can share no claim, and the view says so in its notes. Resources from an index version or a cloud listing belong to no member, so they are on neither side and are counted as such.
+
+## Open it on the demo
+
+The bundled demo serves two estates, `shop` and `analytics`:
+
+```sh
+npx @intentius/behold demo estate-merge
+```
+
+Each is a small chant project with a recorded engine document under `.behold/graph/`. Both declare the bucket `acme-shared-exports-91c2`. Open `/graph` and the section "Two estates side by side" lists that bucket as a shared claim, once by its bucket name and once by its ARN. It also lists a policy in `analytics` that names the shop's assets bucket by ARN, as a derived reference from the right side into the left. The demo needs no cloud, no Docker and no engine binary.
+
+With exactly two members served, the view compares them. With more, pick the members for each side in the page. Several members can stand on one side.
+
+## Ask it over HTTP
+
+```sh
+curl 'http://127.0.0.1:4600/api/graphdb/estate-merge?left=shop&right=analytics'
+```
+
+`left` and `right` are comma-separated lists of served member names, never paths. Leave both out when the estate has two members. The answer has:
+
+| Field | Holds |
+|---|---|
+| `left`, `right` | `members` (name, kind, resource count), `resources`, `cloudIds` and `substrates` |
+| `shared` | `value`, `kind`, and the `left` and `right` resources that hold the id |
+| `references` | `from` (the side the edge starts on), `fromKey`, `toKey`, `viaAttr`, `origin`, `rule`, `relation`, `ambiguous` |
+| `unassigned` | resources that belong to neither side |
+| `notes` | what a reader should know about the answer, such as a side with no cloud ids |
+| `sources` | each loaded source with when it read the world and when behold read it, as in the other graph answers |
+
+A request with missing, unknown or overlapping sides answers 400 with a `code` (`sides-needed`, `empty-side`, `unknown-member` or `overlapping-sides`) and the served `members`. Like the rest of the pane, the route is a GET that changes nothing, and a `--public` serve refuses it with 403 because engine documents and index versions hold cloud ids.

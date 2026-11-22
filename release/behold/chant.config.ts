@@ -24,6 +24,7 @@ export default {
       "../../example-k8s",
       "../../example-flux-estate",
       "../../example-argo-estate",
+      "../../example-estate-merge",
       "../../example-carve",
       "../../example-terraform-estate",
       "../../example-choudoufu-estate",

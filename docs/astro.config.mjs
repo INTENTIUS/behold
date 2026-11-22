@@ -97,6 +97,7 @@ export default defineConfig({
 						{ label: 'Export a snapshot', slug: 'using/export' },
 						{ label: 'The graph document', slug: 'using/graph-document' },
 						{ label: 'The graph database', slug: 'using/graph-database' },
+						{ label: 'Two estates side by side', slug: 'using/estate-merge' },
 						{ label: 'Publish to GitHub Pages', slug: 'using/pages' },
 						{ label: 'A graph in TechDocs', slug: 'using/techdocs' },
 						{ label: 'Open in behold from Argo CD', slug: 'using/argocd-link' },

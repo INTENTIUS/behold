@@ -29,7 +29,9 @@
       button { background: var(--surface-box); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; margin: 6px 6px 0 0; font: inherit; cursor: pointer; }
       button:disabled { opacity: 0.5; cursor: not-allowed; }
       pre { white-space: pre-wrap; font: 12px/1.4 var(--font-mono); margin: 6px 0 0; color: var(--muted); }
-      #g-error { color: var(--degraded); }
+      #g-error, #m-error { color: var(--degraded); }
+      .m-sides { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+      .m-side h3, #m-answer h3 { font-size: 13px; margin: 10px 0 4px; }
       .g-muted { color: var(--muted); }
       table { border-collapse: collapse; width: 100%; font: 12px/1.35 var(--font-mono); display: block; overflow-x: auto; }
       th, td { border-bottom: 1px solid var(--line); padding: 4px 6px; text-align: left; vertical-align: top; }
@@ -111,6 +113,16 @@
         <pre id="g-sources"></pre>
         <pre id="g-notes"></pre>
       </section>
+      <section id="m-section" hidden>
+        <h2>Two estates side by side</h2>
+        <form id="m-form">
+          <label>Left <select id="m-left" multiple size="4" aria-label="Members on the left"></select></label>
+          <label>Right <select id="m-right" multiple size="4" aria-label="Members on the right"></select></label>
+          <button type="submit">Compare</button>
+        </form>
+        <pre id="m-error"></pre>
+        <div id="m-answer"></div>
+      </section>
       <section>
         <h2>Answer <a id="g-link" hidden>open in the estate view</a></h2>
         <div id="g-draw"></div>
@@ -120,8 +132,10 @@
     <script type="module">
       import { initGraphPane } from "./graph-query.js";
       import { initIndexDiff } from "./index-diff.js";
+      import { initEstateMerge } from "./estate-merge.js";
       initGraphPane();
       initIndexDiff();
+      initEstateMerge();
     </script>
   </body>
 </html>

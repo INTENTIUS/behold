@@ -20,6 +20,8 @@ Every answer carries `sources`: for each source, where behold found it, how many
 
 A public serve (`--public`) refuses the pane, because engine documents and index versions hold cloud ids.
 
+Two sets of members can be compared side by side, with the cloud ids they share: see [Two estates side by side](/behold/using/estate-merge/).
+
 ## Install the engine
 
 Cypher needs the optional peer `@ladybugdb/core`, version 0.22.1 or newer. It is a native addon, so behold does not depend on it. Install it beside behold, or globally:
@@ -113,6 +115,7 @@ Every route is a GET, and none acts.
 | `GET /api/graphdb/template?name=&node=&in.<input>=` | One template filled for one node by its key. A Cypher template runs; a search template answers the search to run. |
 | `GET /api/graphdb/index-versions` | Every indexed scope with its versions, oldest first, and the store each is in. |
 | `GET /api/graphdb/index-diff?scope=&from=&to=` | What changed between two versions of one scope, and the overlay to draw. Versions of two different scopes are refused. |
+| `GET /api/graphdb/estate-merge?left=&right=` | Two sets of served members side by side: the cloud ids both claim, the references across, and each side's substrates. See [Two estates side by side](/behold/using/estate-merge/). |
 
 A query answers `columns`, `rows`, `keys` (every `Resource` key in the answer), `truncated`, `draw` (the nodes and edges the pane draws), `link` and `sources`. A refused query answers 400 with `{error, code, remedy}`.
 
