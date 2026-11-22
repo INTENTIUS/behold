@@ -35,7 +35,7 @@ import { WORKSPACE_CHANT_FLOOR } from "./chant-floors.ts";
 export { WORKSPACE_CHANT_FLOOR };
 
 /** The read-contract commands behold reads, named the way chant's conformance suite names them. */
-export const BEHOLD_READS = ["ls", "graph", "status", "graph --intent", "search", "drift"] as const;
+export const BEHOLD_READS = ["ls", "graph", "status", "graph --intent", "search", "drift", "state"] as const;
 export type WorkspaceReadCommand = (typeof BEHOLD_READS)[number];
 
 /**
@@ -52,6 +52,8 @@ export const JSON_FLAGS: Record<WorkspaceReadCommand, readonly string[]> = {
   search: ["--json"],
   // behold#995: `workspace drift --member <name>` prints its drift document whatever it is given, as graph does.
   drift: [],
+  // behold#1247: `workspace state` prints where each member's state lives (INTENTIUS/chant#5456).
+  state: ["--json"],
 };
 
 /**

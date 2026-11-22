@@ -457,6 +457,17 @@
       #tab-stages .stage-quiet { color: var(--muted); }
       #tab-stages .stage-reason { color: var(--muted); padding-left: var(--s3); overflow-wrap: anywhere; }
       #tab-stages .stage-command { font-family: var(--font-mono); color: var(--muted); padding-left: var(--s3); overflow-wrap: anywhere; user-select: all; cursor: copy; }
+      /* behold#1247: where each member's state lives. */
+      #panel-body #tab-state.active { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--t-caption); }
+      #tab-state .tg-legend { color: var(--muted); overflow-wrap: anywhere; }
+      #tab-state .tg-refusal { color: var(--degraded); font-weight: 600; overflow-wrap: anywhere; }
+      #tab-state .state-table { border-collapse: collapse; width: 100%; }
+      #tab-state .state-table th { text-align: left; font-weight: 600; color: var(--muted); padding: 2px var(--s2) 2px 0; }
+      #tab-state .state-table td { border-top: 1px solid var(--rule); padding: 3px var(--s2) 3px 0; vertical-align: top; overflow-wrap: anywhere; }
+      #tab-state .state-note td { color: var(--muted); }
+      #tab-state .state-ok { color: var(--managed); }
+      #tab-state .state-fail { color: var(--degraded); font-weight: 600; }
+      #tab-state .state-quiet { color: var(--muted); }
       /* #684: collision marks. The tab reuses the Flags tab's rows. */
       #panel-body #tab-collisions.active { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--t-caption); }
       #tab-collisions .fl-title { font-weight: 600; }

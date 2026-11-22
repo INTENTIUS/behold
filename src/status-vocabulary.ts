@@ -82,3 +82,31 @@ export function statusVocabulary(kinds: readonly string[]): StatusVocabulary {
   }
   return CHANT;
 }
+
+/**
+ * behold#1247: the words the State tab puts on chant's answers about a
+ * member's state (`chant workspace state`, chant#5456). They are chant's
+ * statuses spelt for a reader; none is a verdict behold reached.
+ *
+ * `reach` says whether chant's read, with the caller's credentials, could get
+ * to the state. `unchecked` is what chant says when finding the location read
+ * configuration only (a Terraform backend), and it is drawn neutral with this
+ * label, never as reachable and never as unreachable.
+ */
+export const STATE_REACH_LABELS: Record<string, string> = {
+  reachable: "reachable",
+  unreachable: "unreachable",
+  unchecked: "not checked",
+};
+
+/** A member's own row when it has no state location to list: its status and `published`, in words. */
+export const STATE_MEMBER_LABELS: Record<string, string> = {
+  unpublished: "its lexicon publishes no state location",
+  skipped: "skipped",
+  failed: "not read",
+};
+
+/** The label for chant's reach status; a status this behold has no word for is shown as chant wrote it. */
+export function stateReachLabel(status: string): string {
+  return STATE_REACH_LABELS[status] ?? status;
+}

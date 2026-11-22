@@ -25,6 +25,7 @@ import { gateCardElement, renderLane } from "./terragucci-lifecycle.js";
 import { renderReleases } from "./releases.js";
 import { renderTrunkLane } from "./trunk-lane.js";
 import { renderStages } from "./stage-state.js";
+import { renderState } from "./state-locations.js";
 import { startLocalRuns } from "./local-run.js";
 import { startAdopt } from "./adopt.js";
 import { entriesFor as csEntriesFor, gapLines as csGapLines, inspectHeading as csInspectHeading, nodeMarks as csNodeMarks, offGraph as csOffGraph, overlayHeader as csHeader, overlayLegend as csLegend, PREVIEW_NOTE as CS_PREVIEW_NOTE } from "./change-set-overlay.js";
@@ -7500,6 +7501,40 @@ async function loadStages() {
   stagesHost.appendChild(again);
 }
 initStages();
+
+// --- behold#1247: where each member's state lives -----------------------------
+// /api/workspace/state: per member and environment, the substrate, backend,
+// location, lock and reach of its state, as chant's workspace state reads it.
+// Read when the tab is opened and on "Read again". behold probes no backend.
+let stateHost = null;
+let stateRead = false;
+async function initState() {
+  if (staticMode || publicMode) return; // /api/workspace/* is refused in a public view
+  const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
+  if (!project.workspace) return;
+  stateHost = addPanelTab("state", "State", "Where each member's state lives, per environment: the backend, its location, its lock and whether chant could reach it. Read from chant when you open the tab.");
+  if (!stateHost) return;
+  stateHost.id = "tab-state";
+  const tab = document.querySelector('#panel-tabs button[data-tab="state"]');
+  if (tab) tab.addEventListener("click", () => stateRead || loadState());
+  if (stateHost.classList.contains("active")) loadState();
+}
+async function loadState() {
+  stateRead = true;
+  const reading = document.createElement("div");
+  reading.className = "tg-legend";
+  reading.textContent = "reading the state locations from chant";
+  stateHost.replaceChildren(reading);
+  const env = view.env || "";
+  const a = await apiFetch(`/api/workspace/state${env ? `?env=${encodeURIComponent(env)}` : ""}`)
+    .then((r) => r.json())
+    .catch((e) => ({ error: String(e) }));
+  renderState(stateHost, a);
+  const again = button("Read again", "", () => loadState());
+  again.title = "Read every state location again.";
+  stateHost.appendChild(again);
+}
+initState();
 
 // --- behold#685: run a plan job locally ---------------------------------------
 // chant ci run plan --local at a commit, drawn in the runs pane's run view
