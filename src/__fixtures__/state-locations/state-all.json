@@ -1,7 +1,7 @@
 {
   "$schema": "https://intentius.io/chant/schemas/workspace/state/v1/state.schema.json",
   "contract": 1,
-  "chant": "0.124.113",
+  "chant": "0.124.114",
   "at": null,
   "workspace": {
     "name": "mixed",

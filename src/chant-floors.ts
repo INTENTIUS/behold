@@ -284,14 +284,14 @@ export const CAPABILITIES_CHANT_FLOOR = "0.124.46";
 /** The first chant release that carries the aws lexicon release which reads deployed CloudFormation stacks: a `cloudformation` member with a
  * `cloudformation-stacks.json` (`{ "stacks": ["<name>"], "region": "<region>" }`) draws each named stack's processed template as nodes and
  * edges, and `meta.awsMember.stacks` carries each stack's status, outputs and resources with their physical ids, a stack that could not be
- * read with the reason (INTENTIUS/chant#5455, behold#1245). chant's own floor is the aws lexicon's `AWS_STACK_MEMBER_FLOOR`; it names the
- * next lexicon release, which the train that carries it labels with core's next number, 0.124.113 (core 0.124.112 is the newest on npm).
+ * read with the reason (INTENTIUS/chant#5455, behold#1245). chant's own floor is the aws lexicon's `AWS_STACK_MEMBER_FLOOR`; it is 0.124.106, the aws
+ * lexicon release whose peer range on core is ^0.124.114. behold compares the project's core chant version, so the floor is core's 0.124.114.
  * Below it chant ignores the file and draws the member as it did, so behold says the stacks were not read. */
-export const AWS_STACK_MEMBER_CHANT_FLOOR = "0.124.113";
+export const AWS_STACK_MEMBER_CHANT_FLOOR = "0.124.114";
 /** The first chant with `chant workspace state`: for each member and environment, the substrate, backend, location, lock and reach of its
- * state (INTENTIUS/chant#5456, behold#1247). chant's own floor is `WORKSPACE_STATE_LOCATIONS_FLOOR`, which a packed core carries as
- * 0.124.113. Below it the State tab shows the refusal, and no `state` is sent. */
-export const WORKSPACE_STATE_LOCATIONS_CHANT_FLOOR = "0.124.113";
+ * state (INTENTIUS/chant#5456, behold#1247). chant's own floor is `WORKSPACE_STATE_LOCATIONS_FLOOR`, which core 0.124.114 carries as
+ * 0.124.114. Below it the State tab shows the refusal, and no `state` is sent. */
+export const WORKSPACE_STATE_LOCATIONS_CHANT_FLOOR = "0.124.114";
 
 export interface ChantFloor {
   /** The read, in words: `the why of a member or a card`. */

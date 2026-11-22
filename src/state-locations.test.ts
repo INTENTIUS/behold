@@ -88,7 +88,7 @@ describe("stateLocationsFromDocument", () => {
   });
 
   it("refuses a failure document with chant's code, and another contract", () => {
-    const failure = { $schema: fixture().$schema, contract: 1, chant: "0.124.113", error: { code: "workspace-undeclared", message: "no workspace here" } };
+    const failure = { $schema: fixture().$schema, contract: 1, chant: "0.124.114", error: { code: "workspace-undeclared", message: "no workspace here" } };
     const read = stateLocationsFromDocument(failure);
     expect(read).toMatchObject({ ok: false, refusal: { code: "workspace-undeclared" } });
     expect(stateLocationsFromDocument({ ...fixture(), contract: 2 })).toMatchObject({ ok: false, refusal: { code: "workspace-contract" } });
@@ -96,7 +96,7 @@ describe("stateLocationsFromDocument", () => {
 });
 
 describe("the read", () => {
-  const ws = { name: "mixed", root: "/work/mixed", file: "chant.workspace.json", chant: "0.124.113", members: [] } as unknown as Workspace;
+  const ws = { name: "mixed", root: "/work/mixed", file: "chant.workspace.json", chant: "0.124.114", members: [] } as unknown as Workspace;
   const stub = (answer: () => WorkspaceDocument) => {
     const asked: string[][] = [];
     const reader = {
@@ -164,7 +164,7 @@ if (argv[0] === "workspace" && argv[1] === "state" && argv[argv.length - 1] === 
       name: "mixed",
       root: dir,
       file: "chant.workspace.json",
-      chant: "0.124.113",
+      chant: "0.124.114",
       members: [{ name: "platform", dir: "platform", kind: "terraform" }, { name: "legacy", dir: "legacy", kind: "cloudformation" }] as unknown as Workspace["members"],
     };
     setServedWorkspace(w);
@@ -174,24 +174,24 @@ if (argv[0] === "workspace" && argv[1] === "state" && argv[argv.length - 1] === 
   const calls = (dir: string) => readFileSync(join(dir, "node_modules", "@intentius", "chant", "bin", "calls"), "utf8").trim().split("\n");
 
   it("answers a row per member and environment, from one read of every environment", async () => {
-    const dir = root("0.124.113");
+    const dir = root("0.124.114");
     const res = await serve(dir).request("/api/workspace/state");
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, any>;
-    expect(body).toMatchObject({ workspace: true, chant: "0.124.113", summary: { members: 5, unreachable: 1 } });
+    expect(body).toMatchObject({ workspace: true, chant: "0.124.114", summary: { members: 5, unreachable: 1 } });
     expect(body.rows).toHaveLength(8);
     expect(calls(dir)).toEqual(["workspace state --json"]);
   });
 
   it("passes ?member and ?env through to chant", async () => {
-    const dir = root("0.124.113");
+    const dir = root("0.124.114");
     const res = await serve(dir).request("/api/workspace/state?member=platform&env=prod");
     expect(res.status).toBe(200);
     expect(calls(dir)).toEqual(["workspace state --member platform --env prod --json"]);
   });
 
   it("is listed in GET /api, and is a GET only", async () => {
-    const api = (await (await serve(root("0.124.113")).request("/api")).json()) as { routes: { method: string; path: string }[] };
+    const api = (await (await serve(root("0.124.114")).request("/api")).json()) as { routes: { method: string; path: string }[] };
     expect(api.routes.filter((r) => r.path === "/api/workspace/state")).toEqual([expect.objectContaining({ method: "GET" })]);
   });
 
@@ -204,7 +204,7 @@ if (argv[0] === "workspace" && argv[1] === "state" && argv[argv.length - 1] === 
   });
 
   it("refuses an env that is not a name and a member the workspace does not list, and is refused in a public view", async () => {
-    const app = serve(root("0.124.113"));
+    const app = serve(root("0.124.114"));
     expect((await app.request("/api/workspace/state?env=--help")).status).toBe(400);
     const res = await app.request("/api/workspace/state?member=nope");
     expect(res.status).toBe(400);
