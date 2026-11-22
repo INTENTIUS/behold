@@ -1239,6 +1239,14 @@ function inspect(node) {
   // `_status: "neutral"` (never the component-status join's own, unrelated
   // `neutral` = "not deployed"), so it's safe to show unconditionally here.
   if (node.attrs && node.attrs._unobserved) id("unobserved reason", node.attrs._unobserved);
+  // behold#1245: a resource of a CloudFormation stack chant read by name (chant#5455), as CloudFormation reported it; an unread stack is the one neutral card whose reason is the row above.
+  if (node.attrs && node.attrs._stack) {
+    const k = node.attrs._stack;
+    id("deployed stack", k.region ? `${k.name} (${k.region})` : k.name);
+    if (k.status) id("stack status", k.status);
+    if (k.physicalId) id("physical id", k.physicalId);
+    if (k.resourceStatus) id("resource status", k.resourceStatus);
+  }
   // #234's free rider: an OperatorStack's Namespace/CronJob, named. The server
   // reads this off chant's own `app.kubernetes.io/*` labels (src/operator.ts) —
   // it is a declared fact, not a naming convention behold inferred.

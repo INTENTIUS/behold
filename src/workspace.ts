@@ -34,6 +34,7 @@ import { CI_REPORT_URL_CHANT_FLOOR, WORKSPACE_DETAIL_CHANT_FLOOR } from "./chant
 import type { MemberVia } from "./member-ir.ts";
 import { meetsFloor } from "./floor.ts";
 import { attachLintFindings } from "./terraform-lint.ts";
+import { attachDeployedStacks } from "./aws-stacks.ts";
 import { setStampExclusions } from "./member-source.ts";
 import {
   contractRefusal,
@@ -471,6 +472,8 @@ export function memberIrFromGraphDocument(doc: WorkspaceDocument, member: string
   // the cards now, while the ids are the member's own: estate composition
   // keeps the nodes and drops meta, and the bare-folder read does the same.
   attachLintFindings(ir as unknown as GraphIR);
+  // behold#1245: a cloudformation member that names deployed stacks (chant#5455) says on its meta what each stack read; keep that on the cards for the same reason.
+  attachDeployedStacks(ir as unknown as GraphIR, member);
   return ir as unknown as GraphIR;
 }
 

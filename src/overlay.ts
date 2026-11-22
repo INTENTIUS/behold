@@ -159,8 +159,8 @@ export function reclassifyOverlay<T extends { nodes: OverlayNode[] }>(ir: T): T 
  * Merges into whatever `byContainer` the IR already carries (chant's own live
  * containment, when present) rather than replacing it — the two are
  * independent containment facts about the same graph. A no-op when no node
- * carries `runtimeOwner`: a substrate with no owner chain (AWS, GCP's Config
- * Connector today) or a declared-only (non-live) graph — #86's acceptance
+ * carries `runtimeOwner`: a substrate with no owner chain (GCP's Config
+ * Connector today; an AWS ECS service's tasks carry one, chant#5448) or a declared-only (non-live) graph — #86's acceptance
  * criterion that the tier is gracefully unavailable, never broken or blank.
  * Mutates + returns `ir`. Pure w.r.t. I/O.
  */

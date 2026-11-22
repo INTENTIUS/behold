@@ -281,6 +281,13 @@ export const SEARCH_COUNT_BY_IDS_CHANT_FLOOR = "0.124.46";
  * refused: an older chant has no `--capabilities` and no `cap:` terms. */
 export const CAPABILITIES_CHANT_FLOOR = "0.124.46";
 
+/** The first chant release that carries the aws lexicon release which reads deployed CloudFormation stacks: a `cloudformation` member with a
+ * `cloudformation-stacks.json` (`{ "stacks": ["<name>"], "region": "<region>" }`) draws each named stack's processed template as nodes and
+ * edges, and `meta.awsMember.stacks` carries each stack's status, outputs and resources with their physical ids, a stack that could not be
+ * read with the reason (INTENTIUS/chant#5455, behold#1245). chant's own floor is the aws lexicon's `AWS_STACK_MEMBER_FLOOR`; it names the
+ * next lexicon release, which the train that carries it labels with core's next number, 0.124.113 (core 0.124.112 is the newest on npm).
+ * Below it chant ignores the file and draws the member as it did, so behold says the stacks were not read. */
+export const AWS_STACK_MEMBER_CHANT_FLOOR = "0.124.113";
 export interface ChantFloor {
   /** The read, in words: `the why of a member or a card`. */
   read: string;
@@ -335,6 +342,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "adoption report", floor: ADOPTION_REPORT_CHANT_FLOOR, adds: "workspace promote --json carries live-import's adoption report (behold#999)" },
   { read: "local applies per member", floor: LEDGER_ROOT_MEMBER_CHANT_FLOOR, adds: "chant ledger runs --where root_member=<member>, the TerraformApplyOp runs that applied a member's root (chant#4482, chant#4500, behold#1010)", degraded: "a choudoufu or terraform member's run card shows its applies from the CI run index only" },
   { read: "stage state", floor: STAGE_STATE_CHANT_FLOOR, adds: "workspace status members[].pipeline, each stage's release, gate, risk, soak, canary holds, pause and rollback request (chant#5342), and stageQueues for every stage of a member's own pipeline in the same read (chant#5419)" },
+  { read: "deployed CloudFormation stacks", floor: AWS_STACK_MEMBER_CHANT_FLOOR, adds: "a cloudformation member's cloudformation-stacks.json draws each named deployed stack, with its status, outputs and physical ids on meta.awsMember.stacks (chant#5455)", degraded: "a stack the member names is not drawn and the member shows its template files only" },
   { read: "decision points", floor: DECISION_POINTS_CHANT_FLOOR, adds: "a gate that asks a decision point, read with chant workspace points --open (chant#3170)", degraded: "the gate strip draws no open decision points, and says which chant adds them" },
 ];
 

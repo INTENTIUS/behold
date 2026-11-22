@@ -1,0 +1,57 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/graph/v1/graph.schema.json",
+  "contract": 1,
+  "chant": "0.124.113",
+  "workspace": { "name": "mixed", "root": "/work/mixed" },
+  "members": [
+    { "name": "platform", "kind": "terraform", "status": "composed", "reason": null },
+    {
+      "name": "legacy",
+      "kind": "cloudformation",
+      "status": "composed",
+      "reason": null,
+      "meta": {
+        "awsMember": {
+          "templates": [],
+          "objects": 3,
+          "stacks": [
+            {
+              "name": "orders",
+              "region": "us-east-1",
+              "read": true,
+              "status": "UPDATE_COMPLETE",
+              "resources": [
+                { "node": "legacy/orders/DeployFn", "logicalId": "DeployFn", "type": "AWS::Lambda::Function", "physicalId": "orders-DeployFn-1A2B3C", "status": "UPDATE_COMPLETE" },
+                { "node": "legacy/orders/Queue", "logicalId": "Queue", "type": "AWS::SQS::Queue", "physicalId": "https://sqs.us-east-1.amazonaws.com/111122223333/orders-Queue", "status": "CREATE_COMPLETE" }
+              ],
+              "outputs": { "QueueUrl": "https://sqs.us-east-1.amazonaws.com/111122223333/orders-Queue" }
+            },
+            {
+              "name": "billing",
+              "region": "us-east-1",
+              "read": false,
+              "reason": "ExpiredToken: the security token included in the request is expired; the read needs AWS credentials that allow cloudformation:DescribeStacks, cloudformation:DescribeStackResources and cloudformation:GetTemplate (set AWS_PROFILE, or AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY) and the stack's region",
+              "resources": [],
+              "outputs": {}
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "nodes": [
+    { "id": "platform/aws_iam_role.deploy", "member": "platform", "kind": "aws_iam_role", "lexicon": "terraform", "attrs": {} },
+    { "id": "legacy/orders/DeployFn", "member": "legacy", "kind": "AWS::Lambda::Function", "lexicon": "aws", "attrs": {} },
+    { "id": "legacy/orders/Queue", "member": "legacy", "kind": "AWS::SQS::Queue", "lexicon": "aws", "attrs": {} }
+  ],
+  "edges": [
+    { "from": "legacy/orders/DeployFn", "to": "legacy/orders/Queue", "member": "legacy", "kind": "ref", "origin": "declared", "viaAttr": "Environment" },
+    { "from": "legacy/orders/DeployFn", "to": "platform/aws_iam_role.deploy", "kind": "ref", "origin": "derived", "rule": "aws:AWS::Lambda::Function:Role", "relation": "runs as", "grain": "resource" }
+  ],
+  "groups": {},
+  "catalog": {
+    "rules": {
+      "aws:AWS::Lambda::Function:Role": { "id": "aws:AWS::Lambda::Function:Role", "lexicon": "aws", "holderKind": "AWS::Lambda::Function", "path": "Role", "relation": "runs as", "targetKinds": ["aws_iam_role"], "label": "runs as" }
+    }
+  }
+}
