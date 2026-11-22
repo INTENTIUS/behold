@@ -118,6 +118,46 @@ describe("composeEstateOverlay — runtime owners survive composition (#224)", (
   });
 });
 
+// behold#1245's neighbour, chant#5448: an ECS service's tasks come back from chant's live read as
+// `Task/<cluster>/<id>` nodes of type AWS::ECS::Task. chant maps the task's `ownerChain: { root:
+// "declared", entity: <service> }` to the IR's `runtimeOwner` and `_status: "runtime"` (graph-ir.ts),
+// the same fields a Kubernetes pod carries, so behold needs no ECS code: this holds the fixture.
+describe("composeEstateOverlay — ECS tasks are runtime children of their service (chant#5448)", () => {
+  const ecs = () => ({
+    nodes: [
+      { id: "Service", kind: "AWS::ECS::Service", lexicon: "aws", attrs: { _status: "good" } },
+      {
+        id: "Task/prod/0a1b2c",
+        kind: "AWS::ECS::Task",
+        lexicon: "aws",
+        attrs: { _status: "runtime", cluster: "prod", service: "web", lastStatus: "RUNNING", taskDefinitionRevision: 7, serviceTaskDefinitionRevision: 8, staleRevision: true },
+        runtimeOwner: "Service",
+      },
+      {
+        id: "Task/prod/3d4e5f",
+        kind: "AWS::ECS::Task",
+        lexicon: "aws",
+        attrs: { _status: "runtime", cluster: "prod", service: "web", lastStatus: "RUNNING", taskDefinitionRevision: 8, serviceTaskDefinitionRevision: 8, staleRevision: false },
+        runtimeOwner: "Service",
+      },
+    ],
+    edges: [],
+    groups: {},
+  });
+
+  it("namespaces each task's owner with its member and nests both tasks in the service's box, stale or not", async () => {
+    vi.mocked(graphIr).mockImplementation(async () => ecs() as never);
+    const est = await composeEstateOverlay(["/work/web"], { env: "prod" }, (ir) => ir);
+    const tasks = est.ir.nodes.filter((n) => n.kind === "AWS::ECS::Task");
+    expect(tasks.map((t) => (t as { runtimeOwner?: string }).runtimeOwner)).toEqual(["web/Service", "web/Service"]);
+    expect(tasks.map((t) => t.attrs._status)).toEqual(["runtime", "runtime"]);
+    // chant's attributes arrive as chant wrote them; behold adds no verdict of its own on a stale revision.
+    expect(tasks[0]!.attrs.staleRevision).toBe(true);
+    const boxed = attachRuntimeContainment(est.ir as ChantGraphIR);
+    expect(boxed.groups.byContainer?.["web/Service"]).toEqual(["web/Service", "web/Task/prod/0a1b2c", "web/Task/prod/3d4e5f"]);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // #221 — the GitOps namespace join. The control plane declares
 // `Kustomization.spec.targetNamespace`; the app project declares bare objects

@@ -1,0 +1,60 @@
+---
+title: Where each member's state lives
+description: A table of every member's state, per environment. The backend, its location, its lock and whether chant could reach it.
+prompt: |
+  Read https://intentius.io/behold/using/state-locations/.
+  Serve this workspace with `npx @intentius/behold serve <dir>` and read `GET /api/workspace/state` (add `?env=<env>` for one environment, `?member=<name>` for one member).
+  For each row give the member, environment, backend and location, the lock, and chant's reach status with its reason. List the members whose state locations chant does not publish, and each member it could not read with its reason.
+  Never deploy with the Deploy button, `POST /api/apply` or `POST /api/ci/dispatch`. Gate approvals stay mine as well (`/api/ops/:name/signal/:gate`, `/api/workspace/gates/approve`, `/api/operator/approve/:op/:gate`). Op runs (`/api/ops/:name/run`) and rollbacks (`/api/rollback`) are mine too. Leave `--auto-sync` off, and keep a `behold preview` or `--public` serve read-only.
+---
+
+An estate with Terraform, CloudFormation and Kubernetes members keeps state in
+several places. The first question in an audit or a migration is where the
+state for prod is, and who can write it. When behold serves a chant workspace,
+the panel has a **State** tab that answers it with one table.
+
+## What a row says
+
+There is one row for each member and environment. A member with several roots
+or stacks has one row for each, named in the `unit` column.
+
+| Column | What it holds |
+|---|---|
+| `member`, `kind` | the workspace member and its kind |
+| `environment` | the environment the row is for, or `(none)` when the member declares none |
+| `unit` | the root or stack the row is about, when the member has several |
+| `backend` | the substrate that read it and what holds the state: `terraform s3`, `terraform local`, `aws cloudformation-stack` |
+| `location` | where, as the backend names it: bucket, key and region, or stack and region |
+| `lock` | the lock mechanism and where it is, or `not locked` |
+| `reach` | `reachable`, `unreachable` with chant's reason on hover, or `not checked` |
+
+A value that carries a secret is `***`, and a URL has no user or password:
+chant masks them before behold sees them.
+
+## What reach means
+
+chant tries to reach a state with the credentials of the machine it runs on,
+for the members whose lexicon can. A CloudFormation stack is `reachable` when
+the stack was read and `unreachable` when it was not, with the reason. A
+Terraform backend is found by reading its configuration, so it is `not
+checked`: that is a different statement from `reachable`, and the tab never
+paints it as either.
+
+## Members with no row of locations
+
+A Kubernetes context and a Pulumi backend publish no state location, so their
+member gets one grey row that says its lexicon publishes none. A member chant
+skipped or could not read gets one row with chant's reason. behold lists no
+location it was not given.
+
+## Reading it
+
+The tab reads when you open it, and again with **Read again**. It asks for the
+environment the page is on. The same answer is `GET /api/workspace/state`,
+with `?env=<env>` for one environment and `?member=<name>` for one member:
+the rows as the tab draws them, and each member as chant listed it, with a
+summary of members, published members, locations and unreachable states.
+
+behold probes no backend and writes nothing. The read needs a chant with
+`chant workspace state`; with an older one the tab says which release adds it.
+`behold doctor` lists the requirement with the other reads under `floor`.

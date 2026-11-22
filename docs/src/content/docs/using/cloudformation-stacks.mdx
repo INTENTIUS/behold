@@ -1,0 +1,73 @@
+---
+title: Look at a deployed CloudFormation stack
+description: Draw CloudFormation stacks that chant did not write, by name, beside the rest of a workspace. What a card carries, what an unread stack says, and what doctor checks.
+prompt: |
+  Read https://intentius.io/behold/using/cloudformation-stacks/.
+  Run `npx @intentius/behold doctor <dir> --json` and report the `stacks` checks and their `fix` lines.
+  Serve the workspace with `npx @intentius/behold serve <dir>` and tell me the URL, which stacks were read, and the reason chant gave for each stack it could not read.
+  Never deploy with the Deploy button, `POST /api/apply` or `POST /api/ci/dispatch`. Gate approvals stay mine as well (`/api/ops/:name/signal/:gate`, `/api/workspace/gates/approve`, `/api/operator/approve/:op/:gate`). Op runs (`/api/ops/:name/run`) and rollbacks (`/api/rollback`) are mine too. Leave `--auto-sync` off, and keep a `behold preview` or `--public` serve read-only.
+---
+
+A stack that another pipeline deployed has no template in your repository, so
+a cloud listing shows its resources as foreign objects with nothing between
+them. A `cloudformation` member of a chant workspace can name the stack
+instead. behold then draws it as it draws any member: the stack's resources,
+the edges between them, and the edges chant finds to the other members of the
+workspace.
+
+## Name the stacks
+
+Beside the member, write `cloudformation-stacks.json`:
+
+```json
+{ "stacks": ["orders", "billing"], "region": "us-east-1" }
+```
+
+`region` may be left out when `AWS_REGION` or `AWS_DEFAULT_REGION` is set. The
+member is declared in `chant.workspace.json` as any `cloudformation` member is:
+
+```json
+{ "name": "legacy", "dir": "legacy", "kind": "cloudformation" }
+```
+
+chant's aws lexicon reads each stack with three CloudFormation calls,
+`DescribeStacks`, `DescribeStackResources` and `GetTemplate`. They only read.
+behold parses no template and adds no edge of its own.
+
+## What a card carries
+
+Each resource of a stack that was read is a card. Its inspect pane gains rows
+for what CloudFormation reported:
+
+| Row | What it says |
+|---|---|
+| `deployed stack` | the stack, and its region |
+| `stack status` | the stack's `StackStatus`, such as `UPDATE_COMPLETE` |
+| `physical id` | the resource's physical id |
+| `resource status` | the resource's own status |
+
+The stack's outputs stay with chant, on the member's `meta.awsMember.stacks`.
+The same member graph, with each stack's answer, is at `GET /api/graph`.
+
+## A stack chant could not read
+
+A stack that could not be read is drawn as one neutral card of kind
+`UnreadStack`, named for the stack, with chant's reason in the `unobserved
+reason` row. It is not left out, which would say the stack does not exist, and
+it takes no colour, because nothing about it was observed. The reasons chant
+gives include no region, expired or missing credentials, and no stack of that
+name in the region. The rest of the member is still drawn.
+
+## doctor
+
+```sh
+npx @intentius/behold doctor <dir>
+```
+
+For each `cloudformation` member that has a `cloudformation-stacks.json`,
+doctor prints a `stacks` line. It warns, with the step that fixes it, when no
+region is named, when no AWS credentials are found (a profile, an access key
+pair, a web identity token, a container role or the shared credentials file),
+and when the project's chant is older than the one that reads stacks. It
+fails when the file is not `{ "stacks": [...], "region": "..." }`. The floor
+is listed with the others under `floor`.

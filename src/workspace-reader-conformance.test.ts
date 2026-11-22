@@ -17,6 +17,7 @@ import { describe, expect, it } from "vitest";
 import { describeWorkspaceReaderConformance, type ChantTransport, type ReadContractCommand } from "@intentius/chant/workspace/conformance/vitest";
 import { READ_CONTRACT_COMMANDS } from "@intentius/chant/workspace/conformance";
 import { driftDocumentOf } from "./drift-overlay.ts";
+import { stateLocationsFromDocument } from "./state-locations.ts";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { workspaceFromLs, memberIrFromGraphDocument } from "./workspace.ts";
@@ -54,6 +55,10 @@ function use(command: WorkspaceReadCommand, doc: WorkspaceDocument): void {
     // behold#995: the suite reads a member with no drift read, so the document is the error one, and behold must read it as that.
     const read = driftDocumentOf(doc);
     if (read.records.length && read.error) throw new Error("a drift document with an error carries no records");
+  } else if (command === "state") {
+    // behold#1247: what the State tab draws from it. A failure document is a refusal behold cannot draw.
+    const read = stateLocationsFromDocument(doc);
+    if (!read.ok) throw new Error(`behold could not use the state document: ${read.refusal.error}`);
   }
 }
 
@@ -62,10 +67,12 @@ function use(command: WorkspaceReadCommand, doc: WorkspaceDocument): void {
 const SUITE_HAS_SEARCH = meetsFloor(resolvedVersion("@intentius/chant"), SEARCH_CONTRACT_CHANT_FLOOR);
 // behold#995: `drift` joined the suite with chant's `workspace drift`. A chant whose suite does not list it has no drift read to run.
 const SUITE_HAS_DRIFT = (READ_CONTRACT_COMMANDS as readonly string[]).includes("drift");
+// behold#1247: `state` joined the suite with chant#5456 (WORKSPACE_STATE_LOCATIONS_FLOOR). A chant whose suite does not list it has no state read to run.
+const SUITE_HAS_STATE = (READ_CONTRACT_COMMANDS as readonly string[]).includes("state");
 
 describeWorkspaceReaderConformance({
   name: "behold",
-  commands: BEHOLD_READS.filter((c) => (c !== "search" || SUITE_HAS_SEARCH) && (c !== "drift" || SUITE_HAS_DRIFT)) as ReadContractCommand[],
+  commands: BEHOLD_READS.filter((c) => (c !== "search" || SUITE_HAS_SEARCH) && (c !== "drift" || SUITE_HAS_DRIFT) && (c !== "state" || SUITE_HAS_STATE)) as ReadContractCommand[],
   reader: (chant: ChantTransport) => {
     const reader = workspaceReader({ run: (argv) => chant.run(argv) });
     return {

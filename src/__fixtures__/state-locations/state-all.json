@@ -1,0 +1,160 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/state/v1/state.schema.json",
+  "contract": 1,
+  "chant": "0.124.114",
+  "at": null,
+  "workspace": {
+    "name": "mixed",
+    "root": "/work/mixed",
+    "repo": null
+  },
+  "environment": null,
+  "members": [
+    {
+      "member": "cluster",
+      "kind": "chant",
+      "status": "read",
+      "reason": null,
+      "published": false,
+      "states": []
+    },
+    {
+      "member": "legacy",
+      "kind": "cloudformation",
+      "status": "read",
+      "reason": null,
+      "published": true,
+      "states": [
+        {
+          "environment": null,
+          "unit": "billing",
+          "substrate": "aws",
+          "backend": {
+            "kind": "cloudformation-stack",
+            "location": {
+              "stack": "billing",
+              "region": "us-east-1"
+            }
+          },
+          "lock": null,
+          "reach": {
+            "status": "unreachable",
+            "reason": "ExpiredToken: the security token included in the request is expired"
+          }
+        },
+        {
+          "environment": null,
+          "unit": "orders",
+          "substrate": "aws",
+          "backend": {
+            "kind": "cloudformation-stack",
+            "location": {
+              "stack": "orders",
+              "region": "us-east-1"
+            }
+          },
+          "lock": null,
+          "reach": {
+            "status": "reachable"
+          }
+        }
+      ]
+    },
+    {
+      "member": "platform",
+      "kind": "terraform",
+      "status": "read",
+      "reason": null,
+      "published": true,
+      "states": [
+        {
+          "environment": "dev",
+          "unit": "network",
+          "substrate": "terraform",
+          "backend": {
+            "kind": "s3",
+            "location": {
+              "bucket": "acme-tfstate",
+              "key": "dev/network.tfstate",
+              "region": "us-east-1",
+              "access_key": "***"
+            }
+          },
+          "lock": {
+            "mechanism": "dynamodb",
+            "location": {
+              "table": "acme-tflock"
+            }
+          },
+          "reach": {
+            "status": "unchecked",
+            "reason": "finding the location reads configuration only"
+          }
+        },
+        {
+          "environment": "prod",
+          "unit": "network",
+          "substrate": "terraform",
+          "backend": {
+            "kind": "s3",
+            "location": {
+              "bucket": "acme-tfstate",
+              "key": "prod/network.tfstate",
+              "region": "us-east-1"
+            }
+          },
+          "lock": {
+            "mechanism": "dynamodb",
+            "location": {
+              "table": "acme-tflock"
+            }
+          },
+          "reach": {
+            "status": "unchecked",
+            "reason": "finding the location reads configuration only"
+          }
+        },
+        {
+          "environment": "prod",
+          "unit": "scratch",
+          "substrate": "terraform",
+          "backend": {
+            "kind": "local",
+            "location": {
+              "path": "terraform.tfstate"
+            }
+          },
+          "lock": null,
+          "reach": {
+            "status": "unchecked"
+          }
+        }
+      ]
+    },
+    {
+      "member": "stacks",
+      "kind": "pulumi",
+      "status": "read",
+      "reason": null,
+      "published": false,
+      "states": []
+    },
+    {
+      "member": "broken",
+      "kind": "terraform",
+      "status": "failed",
+      "reason": {
+        "code": "lexicon-read-failed",
+        "message": "terraform init was not run in the root"
+      },
+      "published": false,
+      "states": []
+    }
+  ],
+  "summary": {
+    "members": 5,
+    "published": 2,
+    "locations": 5,
+    "unreachable": 1
+  }
+}

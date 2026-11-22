@@ -52,6 +52,7 @@ import { loadKubeconfig, resolveK8sTarget, type K8sProfiles, type Kubeconfig } f
 import { detectSubstrates, type Substrate } from "./substrates.ts";
 import { discoverEstateOps, type OpInfo } from "./ops.ts";
 import { beholdVersion } from "./server.ts";
+import { stackChecks } from "./doctor-stacks.ts";
 import { NO_AMBIENT_TARGET, SUBSTRATE_TARGET_VARS } from "./targets.ts";
 
 export type CheckStatus = "pass" | "warn" | "fail";
@@ -60,7 +61,7 @@ export type CheckStatus = "pass" | "warn" | "fail";
  * on it); `detail` is what behold found; `fix` is the single next step, set
  * whenever the status isn't a pass. */
 export interface DoctorCheck {
-  name: "project" | "chant" | "lexicons" | "targets" | "envs" | "kube" | "substrates" | "floor" | "ops" | "choudoufu" | "terraform" | "tiers" | "executor";
+  name: "project" | "chant" | "lexicons" | "targets" | "envs" | "kube" | "substrates" | "floor" | "ops" | "choudoufu" | "terraform" | "tiers" | "executor" | "stacks";
   status: CheckStatus;
   detail: string;
   fix?: string;
@@ -622,6 +623,11 @@ export async function diagnose(dir: string, probes: DoctorProbes = {}): Promise<
   const terraformMembers = members.filter((m) => m.kind === "terraform");
   if (terraformMembers.length) {
     checks.push(terraformCheck(terraformMembers, probes.terraform ?? { reader: () => terraformReaderState(), roots: (d) => discoverTerraformRoots(d) }));
+  }
+
+  // behold#1245: a cloudformation member that names deployed stacks needs a region and credentials on this machine.
+  if (workspace) {
+    checks.push(...stackChecks(workspace.members.filter((m) => m.kind === "cloudformation").map((m) => ({ name: m.name, dir: m.dir, abs: m.abs })), { root, chantVersion: resolveChant(root).version }));
   }
 
   const retired = tiersRetiredCheck(root, chantTargets);
