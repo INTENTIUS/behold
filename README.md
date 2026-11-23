@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: INTENTIUS/behold@behold-v0.34.1
+      - uses: INTENTIUS/behold@behold-v0.34.5
 ```
 
 [action/README.md](action/README.md) lists the inputs and shows the GitLab and Forgejo forms.
