@@ -1,7 +1,7 @@
 ---
 // The home page's parts. `part="top"` (the default) is the pixel face, which
 // opens the docs, then ProductHome (the name, one-liner, starting points and
-// first command); then the picker (Picker.astro), the live
+// first command); then the picker (Picker.astro), the ask
 // demo (data/live.mjs) beside the setup prompt for a coding agent (its one
 // source is src/prompts.ts), and the feature tiles, each one link. `part="next"` is the read-next table under its
 // section heading in index.mdx. One import keeps index.mdx's prose free of
@@ -11,7 +11,7 @@ import LinkRows from './LinkRows.astro';
 import Picker from './Picker.astro';
 import ProductHome from './ProductHome.astro';
 import { setupPrompt } from '../prompts';
-import { ASK_DEMO, LIVE, LIVE_TOOLS } from '../data/live.mjs';
+import { ASK_DEMO } from '../data/live.mjs';
 import { base, docsHref } from '../site';
 
 interface Props {
@@ -39,15 +39,9 @@ const pillars = [
 		<Picker />
 		<div class="bh-start not-content">
 			<section class="bh-live" aria-labelledby="bh-live-h">
-				<p class="h" id="bh-live-h"><span class="bh-mark" aria-hidden="true"></span>See it live</p>
-				<p>Watch behold follow real terragucci pipelines in a loop. The demo is read-only and needs no install.</p>
-				<a class="go" href={LIVE}>Open the live demo</a>
-				<p class="tools-h">By tool</p>
-				<ul class="tools">
-					{LIVE_TOOLS.map((t) => <li><a href={t.href}>{t.label}</a></li>)}
-				</ul>
-				<p class="tools-h">Recorded</p>
-				<p><a href={ASK_DEMO}>The ask demo</a>: a recording of an agent asking an estate questions that behold answers in Cypher. Your own query runs in the browser.</p>
+				<p class="h" id="bh-live-h"><span class="bh-mark" aria-hidden="true"></span>See it first</p>
+				<p>Watch a coding agent ask an estate questions that behold answers in Cypher. Then run your own query in the browser. It needs no install.</p>
+				<a class="go" href={ASK_DEMO}>Open the demo</a>
 			</section>
 			<section class="bh-prompt-wrap" aria-label="Hand it to an agent">
 				<AgentPrompt text={setupPrompt} label="Start by handing this to an agent" note="Paste it into Claude Code, or any coding agent with a shell." />
@@ -68,7 +62,7 @@ const pillars = [
 )}
 
 <style>
-	/* The live demo beside the agent prompt: two ways to start before installing anything. */
+	/* The demo beside the agent prompt: two ways to start before installing anything. */
 	.bh-start {
 		display: grid;
 		grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
@@ -118,35 +112,6 @@ const pillars = [
 	.bh-live .go:hover {
 		filter: brightness(1.1);
 	}
-	.bh-live .tools-h {
-		font-size: 0.68rem;
-		font-weight: 600;
-		letter-spacing: 0.1em;
-		text-transform: uppercase;
-		color: var(--sl-color-gray-3);
-	}
-	.bh-live .tools {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.4rem;
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-	.bh-live .tools li {
-		margin: 0;
-	}
-	.bh-live .tools a {
-		display: inline-block;
-		padding: 0.2rem 0.65rem;
-		color: var(--sl-color-white);
-		text-decoration: none;
-		border: 1px solid var(--bh-rule);
-		border-radius: 999px;
-	}
-	.bh-live .tools a:hover {
-		border-color: var(--bh-gold);
-	}
 	@media (max-width: 50rem) {
 		.bh-start {
 			grid-template-columns: minmax(0, 1fr);
@@ -157,7 +122,7 @@ const pillars = [
 		justify-items: center;
 		gap: 0.4rem;
 	}
-	/* Level with the live demo card beside it. */
+	/* Level with the demo card beside it. */
 	.bh-prompt-wrap :global(.bh-prompt) {
 		margin-top: 0;
 	}
