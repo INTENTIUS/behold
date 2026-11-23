@@ -1465,7 +1465,7 @@ describe("the runtime view on an AWS project: ECS tasks under their service (beh
     vi.mocked(spawnMock).mockImplementation((() => fakeProc(0, JSON.stringify(LIVE))) as never);
     return makeAppFor(dir);
   };
-  type Body = { ir: { nodes: { id: string; kind: string }[]; groups: { byContainer?: Record<string, string[]> } } };
+  type Body = { ir: { nodes: { id: string; kind: string }[]; groups: { byContainer?: Record<string, string[]>; byStack?: Record<string, string[]> } } };
 
   it("offers the runtime view at chant 0.124.118, with no refusal", async () => {
     const info = (await (await awsProject("0.124.118").request("/api/project")).json()) as { runtimeCapable?: boolean; runtimeRefusal?: unknown };
@@ -1486,6 +1486,7 @@ describe("the runtime view on an AWS project: ECS tasks under their service (beh
     expect(body.ir.nodes.some((n) => n.kind === "AWS::ECS::Task")).toBe(false);
     expect(body.ir.nodes.map((n) => n.id)).toContain(SERVICE);
     expect(body.ir.groups.byContainer?.[SERVICE]).toBeUndefined();
+    expect(body.ir.groups.byStack?.[STACK]).toEqual([`${STACK}::cluster`, SERVICE]);
   });
 
   it("below chant 0.124.118 offers no runtime view, says why, and nests no task under the owner the older chant named", { timeout: 20_000 }, async () => {

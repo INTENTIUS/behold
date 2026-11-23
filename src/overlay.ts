@@ -189,6 +189,19 @@ export function pruneRuntimeChildren<T extends { nodes: OverlayNode[]; edges: Ar
   if (runtime.size === 0) return ir;
   ir.nodes = ir.nodes.filter((n) => !runtime.has(n.id));
   ir.edges = ir.edges.filter((e) => !runtime.has(e.from) && !runtime.has(e.to));
+  // chant lists a live-only node in its stack's `groups.byStack` (chant#5490), so a dropped child leaves every group table too:
+  // a group naming a node the graph does not hold draws an empty slot.
+  const groups = (ir as { groups?: Record<string, unknown> }).groups;
+  for (const table of Object.values(groups ?? {})) {
+    if (!table || typeof table !== "object" || Array.isArray(table)) continue;
+    const t = table as Record<string, unknown>;
+    for (const [k, ids] of Object.entries(t)) {
+      if (!Array.isArray(ids)) continue;
+      const kept = ids.filter((id) => !runtime.has(id as string));
+      if (kept.length) t[k] = kept;
+      else delete t[k];
+    }
+  }
   return ir;
 }
 
