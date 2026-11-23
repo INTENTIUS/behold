@@ -62,6 +62,7 @@ function fakeProc(code: number, stdout = "", stderr = ""): ReturnType<typeof spa
 }
 
 import { createApp } from "./server.ts";
+import { CHANT_FLOORS, floorFor } from "./chant-floors.ts";
 import { OpRunner } from "./op-runner.ts";
 import { Broadcaster } from "./events.ts";
 import { FrameBuffer } from "./frames.ts";
@@ -1421,5 +1422,85 @@ describe("POST /api/workspace/gates/approve (#477)", () => {
     const { app } = makeApp();
     const res = await app.request("/api/workspace/gates?env=--help");
     expect(res.status).toBe(400);
+  });
+});
+
+// behold#1250: chant reads an ECS service's running tasks as runtime nodes owned by the service (chant#5448), and from 0.124.118
+// the owner is the service's real node id on a named stack, with the task in its stack's `groups.byStack` (chant#5490). The
+// fixture is a live read of a one-stack project (`stacks: [{ name: "chant-proof-5452-ecs", ... }]`) in that shape.
+describe("the runtime view on an AWS project: ECS tasks under their service (behold#1250)", () => {
+  let dirs: string[] = [];
+  beforeEach(() => vi.mocked(spawnMock).mockReset());
+  afterEach(() => {
+    dirs.forEach((d) => rmSync(d, { recursive: true, force: true }));
+    dirs = [];
+  });
+  const STACK = "chant-proof-5452-ecs";
+  const SERVICE = `${STACK}::service`;
+  const TASK = `${STACK}::Task/${STACK}-cluster-gKsMl5T6yLpe/b0c5e628aeb041c9afe86e527a162437`;
+  const LIVE = {
+    nodes: [
+      { id: `${STACK}::cluster`, kind: "AWS::ECS::Cluster", lexicon: "aws", attrs: { _status: "good", _ownership: "owned" } },
+      { id: SERVICE, kind: "AWS::ECS::Service", lexicon: "aws", attrs: { LaunchType: "FARGATE", DesiredCount: 1, region: "us-east-2", _status: "good", _ownership: "owned" } },
+      {
+        id: TASK,
+        kind: "AWS::ECS::Task",
+        lexicon: "aws",
+        attrs: { cluster: `${STACK}-cluster-gKsMl5T6yLpe`, service: `${STACK}-service-xJWREXyxiZci`, lastStatus: "RUNNING", launchType: "FARGATE", taskDefinitionRevision: 1, serviceTaskDefinitionRevision: 1, staleRevision: false, _status: "runtime" },
+        physicalId: `arn:aws:ecs:us-east-2:354867293429:task/${STACK}-cluster-gKsMl5T6yLpe/b0c5e628aeb041c9afe86e527a162437`,
+        runtimeOwner: SERVICE,
+      },
+    ],
+    edges: [{ from: SERVICE, to: `${STACK}::cluster`, kind: "ref", viaAttr: "Cluster" }],
+    groups: { byStack: { [STACK]: [`${STACK}::cluster`, SERVICE, TASK] } },
+  };
+  /** A one-stack aws project whose installed chant is `version` (resolveChant reads its package.json), every chant read answering LIVE. */
+  const awsProject = (version: string) => {
+    const dir = mkdtempSync(join(tmpdir(), "behold-aws-runtime-"));
+    dirs.push(dir);
+    writeFileSync(join(dir, "chant.config.ts"), `export default { lexicons: ["aws"], environments: ["${STACK}"], stacks: [{ name: "${STACK}", src: "src", region: "us-east-2" }] };`);
+    mkdirSync(join(dir, "node_modules", "@intentius", "chant"), { recursive: true });
+    writeFileSync(join(dir, "node_modules", "@intentius", "chant", "package.json"), JSON.stringify({ name: "@intentius/chant", version, main: "index.js", bin: { chant: "bin/chant" } }));
+    writeFileSync(join(dir, "node_modules", "@intentius", "chant", "index.js"), "");
+    vi.mocked(spawnMock).mockImplementation((() => fakeProc(0, JSON.stringify(LIVE))) as never);
+    return makeAppFor(dir);
+  };
+  type Body = { ir: { nodes: { id: string; kind: string }[]; groups: { byContainer?: Record<string, string[]>; byStack?: Record<string, string[]> } } };
+
+  it("offers the runtime view at chant 0.124.118, with no refusal", async () => {
+    const info = (await (await awsProject("0.124.118").request("/api/project")).json()) as { runtimeCapable?: boolean; runtimeRefusal?: unknown };
+    expect(info.runtimeCapable).toBe(true);
+    expect(info.runtimeRefusal).toBeUndefined();
+  });
+
+  it("with ?runtime=1 draws the task in its service's box, keyed by the service's node id", { timeout: 20_000 }, async () => {
+    const res = await awsProject("0.124.118").request(`/api/overlay?env=${STACK}&runtime=1`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Body;
+    expect(body.ir.nodes.map((n) => n.id)).toContain(TASK);
+    expect(body.ir.groups.byContainer?.[SERVICE]).toEqual([SERVICE, TASK].sort());
+  });
+
+  it("without ?runtime=1 prunes the task", { timeout: 20_000 }, async () => {
+    const body = (await (await awsProject("0.124.118").request(`/api/overlay?env=${STACK}`)).json()) as Body;
+    expect(body.ir.nodes.some((n) => n.kind === "AWS::ECS::Task")).toBe(false);
+    expect(body.ir.nodes.map((n) => n.id)).toContain(SERVICE);
+    expect(body.ir.groups.byContainer?.[SERVICE]).toBeUndefined();
+    expect(body.ir.groups.byStack?.[STACK]).toEqual([`${STACK}::cluster`, SERVICE]);
+  });
+
+  it("below chant 0.124.118 offers no runtime view, says why, and nests no task under the owner the older chant named", { timeout: 20_000 }, async () => {
+    expect(CHANT_FLOORS).toContainEqual(floorFor("ECS tasks under their service"));
+    const app = awsProject("0.124.114");
+    const info = (await (await app.request("/api/project")).json()) as { runtimeCapable?: boolean; runtimeRefusal?: { code: string; error: string; remedy: string } };
+    expect(info.runtimeCapable).toBeUndefined();
+    expect(info.runtimeRefusal).toEqual({
+      code: "chant-too-old",
+      error: "ECS tasks under their service needs chant 0.124.118 or newer. This project has chant 0.124.114.",
+      remedy: "Upgrade @intentius/chant to 0.124.118 or newer in the project.",
+    });
+    const body = (await (await app.request(`/api/overlay?env=${STACK}&runtime=1`)).json()) as Body;
+    expect(body.ir.nodes.some((n) => n.kind === "AWS::ECS::Task")).toBe(false);
+    expect(body.ir.groups.byContainer).toBeUndefined();
   });
 });

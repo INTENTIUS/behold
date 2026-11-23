@@ -293,6 +293,13 @@ export const AWS_STACK_MEMBER_CHANT_FLOOR = "0.124.114";
  * 0.124.114. Below it the State tab shows the refusal, and no `state` is sent. */
 export const WORKSPACE_STATE_LOCATIONS_CHANT_FLOOR = "0.124.114";
 
+/** The first chant whose AWS live read returns each ECS service's running tasks as runtime nodes (`_status: "runtime"`, kind
+ * `AWS::ECS::Task`) whose `runtimeOwner` is the service's real node id, `<stack>::<service>` on a named stack, with each live-only
+ * node in its stack's `groups.byStack` (INTENTIUS/chant#5448, INTENTIUS/chant#5490). The aws lexicon that carries it is 0.124.107,
+ * whose peer range on core is ^0.124.118; behold compares the project's core chant version, so the floor is core's 0.124.118. Below
+ * it an AWS estate is not offered the runtime view, and an AWS runtime child is not nested under an owner id the older chant named. */
+export const AWS_RUNTIME_TASKS_CHANT_FLOOR = "0.124.118";
+
 export interface ChantFloor {
   /** The read, in words: `the why of a member or a card`. */
   read: string;
@@ -349,6 +356,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "stage state", floor: STAGE_STATE_CHANT_FLOOR, adds: "workspace status members[].pipeline, each stage's release, gate, risk, soak, canary holds, pause and rollback request (chant#5342), and stageQueues for every stage of a member's own pipeline in the same read (chant#5419)" },
   { read: "deployed CloudFormation stacks", floor: AWS_STACK_MEMBER_CHANT_FLOOR, adds: "a cloudformation member's cloudformation-stacks.json draws each named deployed stack, with its status, outputs and physical ids on meta.awsMember.stacks (chant#5455)", degraded: "a stack the member names is not drawn and the member shows its template files only" },
   { read: "state locations", floor: WORKSPACE_STATE_LOCATIONS_CHANT_FLOOR, adds: "chant workspace state --json, where each member's state lives per environment, with its lock and reach (chant#5456)" },
+  { read: "ECS tasks under their service", floor: AWS_RUNTIME_TASKS_CHANT_FLOOR, adds: "the aws live read returns an ECS service's running tasks as runtime nodes owned by the service, by its node id on a named stack (chant#5448, chant#5490)", degraded: "an AWS estate is not offered the runtime view, and an ECS task is not drawn under its service" },
   { read: "decision points", floor: DECISION_POINTS_CHANT_FLOOR, adds: "a gate that asks a decision point, read with chant workspace points --open (chant#3170)", degraded: "the gate strip draws no open decision points, and says which chant adds them" },
 ];
 

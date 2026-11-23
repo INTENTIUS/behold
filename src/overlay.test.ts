@@ -175,6 +175,33 @@ describe("pruneRuntimeChildren (#86)", () => {
     expect(JSON.stringify(pruneRuntimeChildren(aws as unknown as Parameters<typeof pruneRuntimeChildren>[0]))).toBe(before);
   });
 
+  it("drops only the runtime children `only` picks, and the edges touching them (behold#1250)", () => {
+    const ir = {
+      nodes: [
+        { id: "s::service", kind: "AWS::ECS::Service", attrs: { _status: "good" } },
+        { id: "s::Task/c/1", kind: "AWS::ECS::Task", attrs: { _status: "runtime" }, runtimeOwner: "s::service" },
+        { id: "pod", kind: "K8s::Core::Pod", attrs: { _status: "runtime" }, runtimeOwner: "deployment" },
+      ],
+      edges: [{ from: "s::Task/c/1", to: "s::service" }],
+    };
+    const r = pruneRuntimeChildren(ir, (n) => n.kind.startsWith("AWS::"));
+    expect(r.nodes.map((n) => n.id)).toEqual(["s::service", "pod"]);
+    expect(r.edges).toEqual([]);
+  });
+
+  it("takes a dropped child out of the group tables chant listed it in (chant#5490 puts it in its stack's byStack)", () => {
+    const ir = {
+      nodes: [
+        { id: "s::service", kind: "AWS::ECS::Service", attrs: { _status: "good" } },
+        { id: "s::Task/c/1", kind: "AWS::ECS::Task", attrs: { _status: "runtime" }, runtimeOwner: "s::service" },
+      ],
+      edges: [],
+      groups: { byStack: { s: ["s::Task/c/1", "s::service"] }, byLexicon: { aws: ["s::Task/c/1", "s::service"] }, byContainer: { only: ["s::Task/c/1"] } },
+    };
+    const r = pruneRuntimeChildren(ir);
+    expect(r.groups).toEqual({ byStack: { s: ["s::service"] }, byLexicon: { aws: ["s::service"] }, byContainer: {} });
+  });
+
   it("is the inverse of attaching them — the two tiers show different graphs", () => {
     const attached = attachRuntimeContainment(mixed() as unknown as Parameters<typeof attachRuntimeContainment>[0]);
     const pruned = pruneRuntimeChildren(mixed() as unknown as Parameters<typeof pruneRuntimeChildren>[0]);

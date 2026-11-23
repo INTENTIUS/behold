@@ -175,7 +175,7 @@ import { pointsFloorRefusal, readOpenPoints } from "./decision-points.ts";
 import { orgFloorRefusal, readOrgRepos } from "./org-workspace.ts";
 import { approverFlags, approverFor, approverView, type ApproverOptions, type ApproverRead } from "./approver.ts";
 import { readWhy, whyRegion, withChain } from "./workspace-why.ts";
-import { DRIFT_RECORD_CHANT_FLOOR, floorFor, floorMet, floorRefusal, LEDGER_ROOT_MEMBER_CHANT_FLOOR } from "./chant-floors.ts";
+import { type ChantFloor, DRIFT_RECORD_CHANT_FLOOR, floorFor, floorMet, floorRefusal, LEDGER_ROOT_MEMBER_CHANT_FLOOR } from "./chant-floors.ts";
 import { memberBlockGraph } from "./choudoufu-workspace.ts";
 import { allowedHostsFrom, guardRequest } from "./request-guard.ts";
 import { readGraph } from "./read-graph.ts";
@@ -1038,20 +1038,27 @@ async function readoptDispatchedRun(
 /**
  * The lexicons whose live read can report a node BELOW the declaration
  * boundary (#86, #393). chant paints a node `runtime` only when it carries
- * `runtimeOwner` — the declared entity a live object's OWNER-REFERENCE chain
- * resolves to (chant#1077) — and owner references are a Kubernetes API
- * mechanism. Every other substrate behold reads (AWS, Azure, GCP, Fly, Helm's
- * releases, a Terraform root, a choudoufu estate) has no owner chain at all, so
- * the `runtime` stop there could only ever answer "nothing below the
- * declaration boundary": a stop that exists to be refused. `/api/project`
+ * `runtimeOwner`, the declared entity the live object belongs to: a Pod's
+ * owner-reference chain (chant#1077), or the ECS service whose tasks they are
+ * (chant#5448). Azure, GCP, Fly, Helm's releases, a Terraform root and a
+ * choudoufu estate report no such owner, so the `runtime` stop there could only
+ * ever answer "nothing below the declaration boundary". `/api/project`
  * publishes whether any member declares one of these, and the SPA's palette and
  * View tab offer the stop only then.
  *
  * Kustomize and Helm declare Kubernetes objects, but a chant project that
- * reaches a cluster to read them declares `k8s` as well — that is what the
- * cluster connection lives on — so one word is enough.
+ * reaches a cluster to read them declares `k8s` as well (that is what the
+ * cluster connection lives on), so one word is enough.
  */
-const RUNTIME_LEXICONS = new Set(["k8s"]);
+const RUNTIME_LEXICONS = new Set(["k8s", "aws"]);
+
+/** A runtime lexicon whose owner ids are trustworthy only from some chant on. An older chant's ECS tasks named an owner that
+ * was not a node id on a named stack (chant#5490), so below the floor the stop is not offered for that lexicon and its runtime
+ * children are dropped rather than nested under a guess. */
+const RUNTIME_LEXICON_FLOORS: Readonly<Record<string, ChantFloor>> = { aws: floorFor("ECS tasks under their service") };
+
+/** A node from the aws lexicon: chant's `lexicon` field, or the `AWS::` kind prefix where an IR leaves the field off. */
+const isAwsNode = (n: { kind: string; lexicon?: string }): boolean => n.lexicon === "aws" || n.kind.startsWith("AWS::");
 
 /** The groups a logical card's title may drop the name of (#396 finding 1):
  * the estate's member/root boxes, off the IR the projection was handed. The
@@ -1386,6 +1393,14 @@ export function createApp(
   // served beside a Terraform one read as Terraform and the kiosk hid its
   // Components view.
   const estateDirs = (): string[] => cfg.projectDirs ?? [cfg.projectDir];
+  /** The runtime tier (#86): with `runtime`, nest each runtime child under its owner, else drop them. A runtime child from an
+   * AWS read is dropped too when a served member's chant is below `AWS_RUNTIME_TASKS_CHANT_FLOOR`, whose owner ids it names. */
+  const runtimeTier = <T extends Parameters<typeof attachRuntimeContainment>[0] & Parameters<typeof pruneRuntimeChildren>[0]>(ir: T, runtime: boolean): T => {
+    if (!runtime) return pruneRuntimeChildren(ir);
+    const aws = RUNTIME_LEXICON_FLOORS.aws!;
+    if (estateDirs().some((d) => !floorMet(aws, resolveChant(d).version))) pruneRuntimeChildren(ir, isAwsNode);
+    return attachRuntimeContainment(ir);
+  };
   const estateOps = () => discoverEstateOps(estateDirs());
 
   app.get("/api/ops", (c) =>
@@ -2144,18 +2159,31 @@ export function createApp(
     // it — chant is the reader for a directory no kind claims.
     const memberKinds = [...new Set(estateMembers(estateDirs()).map((m) => m.kind))];
     // #393 item 2: whether `runtime` is a zoom this estate can answer. The
-    // tier below the declaration boundary is the owner-referenced children a
-    // substrate maintains — chant stamps `runtimeOwner` on exactly those
-    // (src/overlay.ts), and only a Kubernetes read has an owner-reference chain
-    // to resolve: AWS, Azure, GCP, Terraform and choudoufu have none, so the
-    // stop was offered on every choudoufu estate and always answered "nothing
-    // below the declaration boundary". Read off the DECLARED lexicons of every
+    // tier below the declaration boundary is the owned children a substrate
+    // maintains: chant stamps `runtimeOwner` on exactly those (src/overlay.ts),
+    // a Kubernetes object's owner-referenced children and an ECS service's
+    // tasks. Azure, GCP, Terraform and choudoufu report none, so the stop was
+    // offered on every choudoufu estate and always answered "nothing below the
+    // declaration boundary". Read off the DECLARED lexicons of every
     // member, not off a live read: a stop must exist or not before anyone picks
     // it. Chant members only — a non-chant kind declares no lexicons at all.
     const memberLexicons = await Promise.all(
       estateDirs().map((d) => (memberKindOf(d) === "chant" ? detectProject(d).then((p) => p.lexicons).catch(() => []) : Promise.resolve([] as string[]))),
     );
-    const runtimeCapable = memberLexicons.flat().some((l) => RUNTIME_LEXICONS.has(l));
+    // A lexicon with a floor in RUNTIME_LEXICON_FLOORS counts only when the member's chant meets it; otherwise the first such
+    // refusal is published as `runtimeRefusal`, so the reason the stop is missing is on the record.
+    let runtimeRefusal: ReturnType<typeof floorRefusal> | undefined;
+    const runtimeCapable = estateDirs().some((dir, i) =>
+      (memberLexicons[i] ?? []).some((l) => {
+        if (!RUNTIME_LEXICONS.has(l)) return false;
+        const floor = RUNTIME_LEXICON_FLOORS[l];
+        if (!floor) return true;
+        const version = resolveChant(dir).version;
+        if (floorMet(floor, version)) return true;
+        runtimeRefusal ??= floorRefusal(floor, version);
+        return false;
+      }),
+    );
     return c.json({
       projectDir: cfg.projectDir,
       // behold#571: with --repos, the checkout this request reads and the ones it may ask for.
@@ -2281,7 +2309,7 @@ export function createApp(
       // of them. Both gated exactly like `ops` above — a flag that is only ever
       // true is a flag the SPA can read as "absent means no".
       memberKinds,
-      ...(runtimeCapable ? { runtimeCapable: true } : {}),
+      ...(runtimeCapable ? { runtimeCapable: true } : runtimeRefusal ? { runtimeRefusal } : {}),
       // #897: whether any member declares a component, so an estate without one opens elsewhere and offers no components zoom.
       ...((cfg.projectDirs?.length ?? 0) > 1 ? { componentsDeclared: estateDirs().some((d) => declaresComponents(d)) } : {}),
       // #569: a public view offers no target: `?target=` is refused there.
@@ -4123,7 +4151,7 @@ export function createApp(
         // IR chant's type describes, minus the index signature on `groups`
         // that these passes read through, so it is named as chant's here.
         const composed = est.ir as GraphIR;
-        let ir = runtime ? attachRuntimeContainment(composed) : pruneRuntimeChildren(composed);
+        let ir = runtimeTier(composed, runtime);
         if ((detail ?? 2) < 3) ir = pruneImports(ir);
         // Same passes, in the same order, as /api/graph's estate branch (#188,
         // #166) — the k8s half's only edge source, and the cross-stack joins the
@@ -4382,7 +4410,7 @@ export function createApp(
       // boundary and nests each owner-referenced child under its declared
       // parent. Every other tier stops where your source stops — a Pod is noise
       // in a composites view, and a layer you cannot dial away is not a tier.
-      ir = runtime ? attachRuntimeContainment(ir) : pruneRuntimeChildren(ir);
+      ir = runtimeTier(ir, runtime);
       // Logical/architecture lens (#63): re-project the live overlay into nested
       // region/VPC/subnet ⊃ component boxes, keeping each surviving node's drift
       // colour. Short-circuits the detail-tier pruning/composite plumbing below.
@@ -4552,8 +4580,7 @@ export function createApp(
     // Pods appear only at the runtime zoom, so a Refresh pressed from any other
     // tier doesn't paint children that tier just excluded.
     if (env) {
-      if (new URL(c.req.url).searchParams.get("runtime") === "1") attachRuntimeContainment(result.ir);
-      else pruneRuntimeChildren(result.ir);
+      runtimeTier(result.ir, new URL(c.req.url).searchParams.get("runtime") === "1");
     }
     // And the same import-handle pruning below ATTRIBUTES tier + chant's derived edges.
     if ((optsFromQuery(new URL(c.req.url)).detail ?? 2) < 3) pruneImports(result.ir);
