@@ -11,7 +11,8 @@ import { memberIrFromGraphDocument } from "./workspace.ts";
 
 // The document is shaped as `chant workspace graph` writes it for a workspace with a Terraform member and a
 // cloudformation member that names two deployed stacks (INTENTIUS/chant#5455): `meta.awsMember.stacks` on the
-// member, one stack read and one not, and a derived identity edge from the stack's function to the Terraform role.
+// member (a resource's `node` is the member IR's own id, `<member>/<stack>/<LogicalId>`, while the workspace read
+// prefixes the member again), one stack read and one not, and a derived identity edge from the stack's function to the Terraform role.
 const doc = (): Record<string, unknown> => JSON.parse(readFileSync(join(import.meta.dirname, "__fixtures__", "aws-stacks", "workspace-graph.json"), "utf8")) as Record<string, unknown>;
 
 describe("deployed CloudFormation stacks (behold#1245)", () => {
@@ -30,7 +31,7 @@ describe("deployed CloudFormation stacks (behold#1245)", () => {
 
   it("puts the stack, its status and each physical id on the cards of a read stack", () => {
     const ir = memberIrFromGraphDocument(doc(), "legacy");
-    const fn = ir.nodes.find((n) => n.id === "orders/DeployFn")!;
+    const fn = ir.nodes.find((n) => n.id === "legacy/orders/DeployFn")!;
     expect(fn.attrs._stack).toEqual({ name: "orders", region: "us-east-1", status: "UPDATE_COMPLETE", physicalId: "orders-DeployFn-1A2B3C", resourceStatus: "UPDATE_COMPLETE" });
   });
 
@@ -64,9 +65,9 @@ describe("deployed CloudFormation stacks (behold#1245)", () => {
     applyReferenceCatalog(estate, referenceCatalogOf(d)!);
     const ids = estate.nodes.map((n) => n.id);
     expect(ids).toContain("platform/aws_iam_role.deploy");
-    expect(ids).toContain("legacy/orders/DeployFn");
+    expect(ids).toContain("legacy/legacy/orders/DeployFn");
     expect(ids).toContain("legacy/unread-stack/billing");
-    const identity = estate.edges.find((e) => e.from === "legacy/orders/DeployFn" && e.to === "platform/aws_iam_role.deploy")!;
+    const identity = estate.edges.find((e) => e.from === "legacy/legacy/orders/DeployFn" && e.to === "platform/aws_iam_role.deploy")!;
     expect(identity).toMatchObject({ origin: "derived", rule: "aws:AWS::Lambda::Function:Role" });
   });
 });
