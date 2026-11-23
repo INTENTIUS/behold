@@ -32,11 +32,11 @@
 // reads land on (behold#1227, behold#1228, behold#1236). 0.124.118 is core with ECS tasks owned by their service's node id on a named
 // stack (chant#5490), read by the aws lexicon 0.124.107 (behold#1250).
 export const CHANT_RELEASE = {
-  version: "0.124.118",
+  version: "0.124.119",
   released: true,
   lexicons: {
     "@intentius/chant-lexicon-k8s": "0.124.104",
-    "@intentius/chant-lexicon-aws": "0.124.107",
+    "@intentius/chant-lexicon-aws": "0.124.108",
     "@intentius/chant-lexicon-gcp": "0.124.103",
     "@intentius/chant-lexicon-otel": "0.124.102",
     "@intentius/chant-lexicon-prometheus": "0.124.101",
