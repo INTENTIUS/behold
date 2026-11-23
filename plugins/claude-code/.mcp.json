@@ -4,7 +4,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "@intentius/behold@0.34.1",
+        "@intentius/behold@0.34.5",
         "mcp"
       ]
     }

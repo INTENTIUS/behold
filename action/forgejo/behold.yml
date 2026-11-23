@@ -18,7 +18,7 @@ jobs:
         with:
           fetch-depth: 0
       - id: behold
-        uses: https://github.com/INTENTIUS/behold@behold-v0.34.1
+        uses: https://github.com/INTENTIUS/behold@behold-v0.34.5
         with:
           forge: forgejo
           upload: "false"
