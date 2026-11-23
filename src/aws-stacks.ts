@@ -102,8 +102,9 @@ export const unreadStackId = (name: string): string => `unread-stack/${name}`;
 
 /**
  * Put chant's per-stack answer on the IR's cards, in place. `member` is the
- * workspace member's name: chant writes a resource's `node` as
- * `<member>/<id>`, and the member's IR holds the id alone.
+ * workspace member's name. chant writes a resource's `node` as the member
+ * IR's own id (`<member>/<LogicalId>`), so it is looked up as written; the
+ * form with the member prefix stripped is only a fallback.
  */
 export function attachDeployedStacks(ir: GraphIR, member: string): void {
   const stacks = deployedStacksOf(ir);
@@ -130,7 +131,7 @@ export function attachDeployedStacks(ir: GraphIR, member: string): void {
       continue;
     }
     for (const r of stack.resources) {
-      const node = byId.get(own(r.node));
+      const node = byId.get(r.node) ?? byId.get(own(r.node));
       if (!node) continue;
       const _stack: CardStack = {
         name: stack.name,
