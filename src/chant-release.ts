@@ -31,17 +31,19 @@
 // 0.124.107 is the chant behold releases its products with as one train (behold#1211). 0.124.110 is the chant the delivery epic's
 // reads land on (behold#1227, behold#1228, behold#1236). 0.124.118 is core with ECS tasks owned by their service's node id on a named
 // stack (chant#5490), read by the aws lexicon 0.124.107 (behold#1250). 0.124.120 changes no read behold makes; behold follows it so its
-// products release on the current chant, and the gcp lexicon 0.124.104 keeps its published names stable.
+// products release on the current chant, and the gcp lexicon 0.124.104 keeps its published names stable. 0.124.121 is core whose
+// release verify accepts a cut signed through Sigstore alone and whose npm reveal tries the signature audit again after a fetch error;
+// the k8s, gcp and pulumi lexicons 0.124.105 keep published names stable and hold a Pulumi plan digest across previews.
 export const CHANT_RELEASE = {
-  version: "0.124.120",
+  version: "0.124.121",
   released: true,
   lexicons: {
-    "@intentius/chant-lexicon-k8s": "0.124.104",
+    "@intentius/chant-lexicon-k8s": "0.124.105",
     "@intentius/chant-lexicon-aws": "0.124.108",
-    "@intentius/chant-lexicon-gcp": "0.124.104",
+    "@intentius/chant-lexicon-gcp": "0.124.105",
     "@intentius/chant-lexicon-otel": "0.124.102",
     "@intentius/chant-lexicon-prometheus": "0.124.101",
-    "@intentius/chant-lexicon-pulumi": "0.124.104",
+    "@intentius/chant-lexicon-pulumi": "0.124.105",
     "@intentius/chant-lexicon-sql": "0.124.103",
     "@intentius/chant-lexicon-terraform": "0.124.104",
     "@intentius/chant-k8s-client": "0.124.101",

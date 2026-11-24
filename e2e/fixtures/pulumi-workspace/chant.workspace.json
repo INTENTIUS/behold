@@ -4,7 +4,7 @@
   "pins": [
     {
       "package": "@intentius/chant-lexicon-pulumi",
-      "version": "0.124.104"
+      "version": "0.124.105"
     }
   ],
   "members": [
