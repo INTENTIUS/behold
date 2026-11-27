@@ -33,14 +33,16 @@
 // stack (chant#5490), read by the aws lexicon 0.124.107 (behold#1250). 0.124.120 changes no read behold makes; behold follows it so its
 // products release on the current chant, and the gcp lexicon 0.124.104 keeps its published names stable. 0.124.121 is core whose
 // release verify accepts a cut signed through Sigstore alone and whose npm reveal tries the signature audit again after a fetch error;
-// the k8s, gcp and pulumi lexicons 0.124.105 keep published names stable and hold a Pulumi plan digest across previews.
+// the k8s, gcp and pulumi lexicons 0.124.105 keep published names stable and hold a Pulumi plan digest across previews. 0.124.122 is
+// core whose release verify --sigstore checks an npm package's registry provenance; the k8s lexicon 0.126.0 is Kubernetes v1.37.2, where
+// a Deployment, DaemonSet, StatefulSet and ReplicaSet need `spec`, and the gcp lexicon 0.126.0 is the v1.162.0 schemas.
 export const CHANT_RELEASE = {
-  version: "0.124.121",
+  version: "0.124.122",
   released: true,
   lexicons: {
-    "@intentius/chant-lexicon-k8s": "0.124.105",
+    "@intentius/chant-lexicon-k8s": "0.126.0",
     "@intentius/chant-lexicon-aws": "0.124.108",
-    "@intentius/chant-lexicon-gcp": "0.124.105",
+    "@intentius/chant-lexicon-gcp": "0.126.0",
     "@intentius/chant-lexicon-otel": "0.124.102",
     "@intentius/chant-lexicon-prometheus": "0.124.101",
     "@intentius/chant-lexicon-pulumi": "0.124.105",
